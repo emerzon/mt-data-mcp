@@ -2690,13 +2690,6 @@ def rank_relative_strength(  # noqa: C901
         if str(_mapping(item).get("name") or getattr(item, "name", "")).strip()
     }
     missing_explicit = sorted(explicit - available_names)
-    if missing_explicit:
-        return {
-            "error": "One or more requested candidate symbols are unavailable.",
-            "error_code": "symbol_not_found",
-            "missing_symbols": missing_explicit,
-            "remediation": "Use symbols_list to discover broker symbol names and suffixes.",
-        }
     selected = []
     for item in raw_symbols:
         row = _mapping(item)
@@ -2723,7 +2716,9 @@ def rank_relative_strength(  # noqa: C901
     candidate_symbols = [
         symbol for symbol in selected if symbol != benchmark_symbol
     ]
-    requested_candidates = explicit - ({benchmark_symbol} if benchmark_symbol else set())
+    requested_candidates = (explicit & available_names) - (
+        {benchmark_symbol} if benchmark_symbol else set()
+    )
     omitted_explicit = sorted(requested_candidates - set(candidate_symbols))
     if omitted_explicit:
         return {
@@ -2774,13 +2769,6 @@ def rank_relative_strength(  # noqa: C901
         if symbol in histories
     }
     missing_candidate_history = sorted(set(candidate_symbols) - set(candidate_histories))
-    if missing_candidate_history:
-        return {
-            "error": "Requested candidate history is unavailable or incomplete.",
-            "error_code": "candidate_history_unavailable",
-            "missing_symbols": missing_candidate_history,
-            "skipped": skipped,
-        }
     if benchmark_symbol and benchmark_symbol not in histories:
         return {
             "error": f"Requested benchmark {benchmark_symbol!r} lacks sufficient history.",
@@ -2789,7 +2777,14 @@ def rank_relative_strength(  # noqa: C901
             "skipped": skipped,
         }
     if len(candidate_histories) < 2:
-        return {"error": "At least two symbols with sufficient history are required.", "error_code": "insufficient_data", "skipped": skipped}
+        return {
+            "error": "At least two available symbols with sufficient history are required.",
+            "error_code": "insufficient_data",
+            "missing_symbols": sorted(
+                set(missing_explicit) | set(missing_candidate_history)
+            ),
+            "skipped": skipped,
+        }
     quote_excluded_symbols: List[str] = []
     quote_contexts: Dict[str, Dict[str, Any]] = {}
     scoring_histories: Dict[str, pd.DataFrame] = {}
@@ -3150,7 +3145,11 @@ def rank_relative_strength(  # noqa: C901
             "ranked_symbols": len(published_rankings),
             "scored_symbols": len(ordered),
             "skipped": skipped,
-            "missing_symbols": missing_explicit,
+            "missing_symbols": sorted(
+                set(missing_explicit) | set(missing_candidate_history)
+            ),
+            "unavailable_symbols": missing_explicit,
+            "history_unavailable_symbols": missing_candidate_history,
             "benchmark_excluded_from_ranking": benchmark_symbol
             if benchmark_symbol in selected
             else None,
@@ -3167,6 +3166,18 @@ def rank_relative_strength(  # noqa: C901
         **({"rankings": published_rankings} if request.detail == "full" else {}),
     }
     result_warnings: List[str] = []
+    if missing_explicit:
+        result_warnings.append(
+            "Unavailable requested symbols were omitted: "
+            + ", ".join(missing_explicit)
+            + "."
+        )
+    if missing_candidate_history:
+        result_warnings.append(
+            "Requested symbols with insufficient history were omitted: "
+            + ", ".join(missing_candidate_history)
+            + "."
+        )
     if endpoint_alignment.get("comparable") is False:
         result_warnings.append(
             "Candidate symbols do not share comparable latest-bar endpoints within "

@@ -2363,7 +2363,7 @@ def test_relative_strength_rejects_unavailable_explicit_benchmark() -> None:
     assert result["benchmark"] == "NOTREAL"
 
 
-def test_relative_strength_rejects_unavailable_explicit_candidate() -> None:
+def test_relative_strength_requires_two_available_explicit_candidates() -> None:
     result = rank_relative_strength(
         MarketRelativeStrengthRequest(
             symbols="EURUSD,NOTREAL",
@@ -2373,8 +2373,50 @@ def test_relative_strength_rejects_unavailable_explicit_candidate() -> None:
         FakeGateway(),
     )
 
-    assert result["error_code"] == "symbol_not_found"
+    assert result["error_code"] == "insufficient_data"
     assert result["missing_symbols"] == ["NOTREAL"]
+
+
+def test_relative_strength_omits_unavailable_candidate_from_valid_basket() -> None:
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY,NOTREAL",
+            horizons=[5],
+            weights=[1.0],
+            limit=3,
+        ),
+        FakeGateway(),
+    )
+
+    assert result["success"] is True
+    assert result["universe_size"] == 3
+    assert result["data_quality"]["missing_symbols"] == ["NOTREAL"]
+    assert result["data_quality"]["unavailable_symbols"] == ["NOTREAL"]
+    assert result["data_quality"]["history_unavailable_symbols"] == []
+    assert any("NOTREAL" in warning for warning in result["warnings"])
+
+
+def test_relative_strength_omits_candidate_with_insufficient_history() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows["XAUUSD"] = _bars(drift=0.0003)
+    gateway.bar_rows["USDJPY"] = _bars(20, drift=-0.00005)
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY,XAUUSD",
+            horizons=[5],
+            weights=[1.0],
+            limit=4,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["universe_size"] == 3
+    assert result["data_quality"]["missing_symbols"] == ["USDJPY"]
+    assert result["data_quality"]["unavailable_symbols"] == []
+    assert result["data_quality"]["history_unavailable_symbols"] == ["USDJPY"]
+    assert any("insufficient history" in warning for warning in result["warnings"])
 
 
 def test_relative_strength_reports_empty_filtered_result_without_warnings() -> None:
