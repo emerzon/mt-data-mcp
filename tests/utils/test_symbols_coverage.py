@@ -1295,6 +1295,7 @@ class TestSymbolsDescribe:
         assert sd["price_change_pct"] == -0.7924
         assert sd["price_change_pct_unit"] == "percent (1.0 = 1%)"
         assert sd["price_change_basis"] == "broker_symbol_info_price_change"
+        assert sd["price_change_period"] == "broker_defined_unspecified"
         assert "price_change" not in sd
 
     @patch(f"{_MT5}.symbol_info")

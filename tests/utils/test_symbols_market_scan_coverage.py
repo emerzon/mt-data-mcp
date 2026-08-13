@@ -583,6 +583,11 @@ def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):
     assert row["price_change_basis"] == (
         "previous_completed_close_to_latest_completed_close"
     )
+    assert row["price_change_period"] == {
+        "bars": 1,
+        "timeframe": "H1",
+        "bar_state": "completed",
+    }
 
 
 def test_market_scan_rsi_is_independent_of_generic_lookback(monkeypatch):
@@ -879,6 +884,11 @@ class TestSymbolsTopMarkets:
         assert result["price_change_basis"] == (
             "previous_completed_close_to_latest_completed_close"
         )
+        assert result["price_change_period"] == {
+            "bars": 1,
+            "timeframe": "H1",
+            "bar_state": "completed",
+        }
         assert result["data"][0]["bid"] == 1.0448
         assert result["data"][0]["ask"] == 1.045
         assert result["data"][0]["mid"] == 1.0449
@@ -1463,6 +1473,11 @@ class TestMarketScan:
         assert result["price_change_basis"] == (
             "previous_completed_close_to_latest_completed_close"
         )
+        assert result["price_change_period"] == {
+            "bars": 1,
+            "timeframe": "H1",
+            "bar_state": "completed",
+        }
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["rsi"] == 100.0
         assert result["data"][0]["sma_value"] == 5.0

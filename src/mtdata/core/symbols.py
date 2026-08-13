@@ -243,6 +243,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct",
     "price_change_pct_unit",
     "price_change_basis",
+    "price_change_period",
     "digits",
     "point",
     "trade_contract_size",
@@ -285,6 +286,8 @@ _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
     "warning",
     "price_change_pct",
     "price_change_pct_unit",
+    "price_change_basis",
+    "price_change_period",
     "trade_mode_label",
     "order_mode_labels",
 )
@@ -1756,6 +1759,7 @@ def symbols_describe(  # noqa: C901
                 )
                 symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
                 symbol_data["price_change_basis"] = "broker_symbol_info_price_change"
+                symbol_data["price_change_period"] = "broker_defined_unspecified"
             elif quote_timestamp_available is not False:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
                 session_close = _market_scan_float(symbol_data.get("session_close"))
@@ -1770,6 +1774,7 @@ def symbols_describe(  # noqa: C901
                     )
                     symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
                     symbol_data["price_change_basis"] = "session_open_to_session_close"
+                    symbol_data["price_change_period"] = "broker_current_session"
             symbol_data.pop("price_change", None)
 
             _normalize_spread_float_field(symbol_data)
@@ -2206,6 +2211,11 @@ def _build_market_scan_bar_row(
                 digits=6,
             ),
             "price_change_basis": "previous_completed_close_to_latest_completed_close",
+            "price_change_period": {
+                "bars": 1,
+                "timeframe": timeframe,
+                "bar_state": "completed",
+            },
             "gap_pct": _market_scan_round(
                 ((open_price - previous_close) / previous_close) * 100.0,
                 digits=6,
@@ -3041,6 +3051,11 @@ def _build_market_scan_signal_row(
                 digits=6,
             ),
             "price_change_basis": "previous_completed_close_to_latest_completed_close",
+            "price_change_period": {
+                "bars": 1,
+                "timeframe": timeframe,
+                "bar_state": "completed",
+            },
             "rsi_warmup_bars": rsi_warmup_bars if include_rsi else None,
             "gap_pct": _market_scan_round(
                 ((open_price - previous_close) / previous_close) * 100.0,
@@ -3783,6 +3798,11 @@ def symbols_top_markets(  # noqa: C901
                 out["price_change_basis"] = (
                     "previous_completed_close_to_latest_completed_close"
                 )
+                out["price_change_period"] = {
+                    "bars": 1,
+                    "timeframe": timeframe,
+                    "bar_state": "completed",
+                }
                 out.update(_scope_fields("price_change", price_change_rows))
                 out.update(
                     _market_scan_freshness_summary(
@@ -3821,6 +3841,11 @@ def symbols_top_markets(  # noqa: C901
             out["price_change_basis"] = (
                 "previous_completed_close_to_latest_completed_close"
             )
+            out["price_change_period"] = {
+                "bars": 1,
+                "timeframe": timeframe,
+                "bar_state": "completed",
+            }
             out["rank_categories"] = [
                 "lowest_spread",
                 "highest_tick_volume",
@@ -4672,6 +4697,11 @@ def market_scan(  # noqa: C901
                     "excluded_examples": quote_eligibility_examples,
                 },
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
+                "price_change_period": {
+                    "bars": 1,
+                    "timeframe": timeframe,
+                    "bar_state": "completed",
+                },
                 "gap_basis": "previous_completed_close_to_latest_completed_open",
                 "pagination": build_pagination_meta(
                     total=total_matches,

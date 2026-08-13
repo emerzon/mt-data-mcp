@@ -482,6 +482,13 @@ and the `tight_spread` preset exclude quotes that are not usable for live
 trading before pagination; pass `--quote-usable-only false` only when inspecting
 stale or otherwise non-executable snapshots intentionally.
 
+Price-change rankings compare the previous completed close with the latest
+completed close over exactly one requested `timeframe` bar. Responses expose
+that window in `price_change_period`. `symbols_describe` reports the broker's
+native `price_change` field when available; because MT5 does not define its
+window in symbol metadata, that value is explicitly marked
+`broker_defined_unspecified` rather than presented as a daily return.
+
 `symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
 exact ranking semantics and rejects a filtered candidate universe above 250
 symbols before activating hidden quotes; narrow it with `group` or `category`.
