@@ -6,6 +6,7 @@ import pkgutil
 import sys
 from inspect import signature
 from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -1845,6 +1846,38 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
     assert hints["detail"] == "summary"
     assert "history_tail" not in hints
     assert hints["history_tail_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("implementation", "operation"),
+    [
+        (cf._genetic_search_impl, "forecast_tune_genetic"),
+        (cf._optuna_search_impl, "forecast_tune_optuna"),
+        (cf._optimize_hints_impl, "forecast_optimize_hints"),
+    ],
+)
+def test_forecast_tuners_reject_unknown_symbol_before_search(
+    monkeypatch,
+    implementation,
+    operation,
+):
+    gateway = SimpleNamespace(symbol_info=lambda symbol: None)
+    monkeypatch.setattr(cf, "create_mt5_gateway", lambda **kwargs: gateway)
+    search = Mock(side_effect=AssertionError("candidate search must not start"))
+    monkeypatch.setattr(cf, "_forecast_tune_module", lambda: SimpleNamespace(
+        genetic_search_forecast_params=search,
+        optuna_search_forecast_params=search,
+        genetic_search_optimize_hints=search,
+    ))
+
+    result = implementation(symbol="NO_SUCH_SYMBOL")
+
+    assert result["success"] is False
+    assert result["error_code"] == "symbol_not_found"
+    assert result["operation"] == operation
+    assert result["history_count"] == 0
+    assert result["related_tools"] == ["symbols_list"]
+    search.assert_not_called()
 
 
 def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):

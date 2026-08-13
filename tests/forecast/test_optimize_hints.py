@@ -388,6 +388,70 @@ def test_genetic_search_returns_no_hints_when_all_trials_fail():
     assert result["hints"] == []
 
 
+def test_genetic_search_timeout_retains_completed_candidate(monkeypatch):
+    backtest_result = {
+        "results": {
+            "naive": {
+                "success": True,
+                "avg_rmse": 0.12,
+                "metrics": {"avg_rmse": 0.12},
+            }
+        }
+    }
+    clock = iter([0.0, 0.2, 1.2, 1.3])
+    monkeypatch.setattr("mtdata.forecast.tune.time.time", lambda: next(clock))
+
+    with patch(
+        "mtdata.forecast.tune._eval_candidate",
+        return_value=(0.12, backtest_result),
+    ) as evaluate:
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            population=4,
+            generations=3,
+            top_n=1,
+            fitness_metric="avg_rmse",
+            max_search_time_seconds=1.0,
+            seed=42,
+        )
+
+    assert evaluate.call_count == 2
+    assert result["success"] is True
+    assert result["partial"] is True
+    assert result["stop_reason"] == "timeout"
+    assert result["evaluations_completed"] == 2
+    assert result["hints"][0]["fitness_score"] == 0.12
+    assert result["search_summary"]["elapsed_seconds"] == 1.3
+
+
+def test_genetic_search_timeout_without_finite_candidate_is_distinct(monkeypatch):
+    clock = iter([0.0, 0.2, 1.2, 1.3])
+    monkeypatch.setattr("mtdata.forecast.tune.time.time", lambda: next(clock))
+
+    with patch(
+        "mtdata.forecast.tune._eval_candidate",
+        return_value=(float("inf"), {"error": "candidate failed"}),
+    ):
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            population=4,
+            generations=3,
+            top_n=1,
+            max_search_time_seconds=1.0,
+            seed=42,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "search_timeout_no_results"
+    assert result["partial"] is True
+    assert result["evaluations_completed"] == 2
+    assert result["hints"] == []
+
+
 @pytest.mark.skip(reason="Long-running integration test; run manually")
 class TestGeneticSearchOptimizeHints:
     """Integration test for genetic search (skipped by default)."""

@@ -720,15 +720,52 @@ def _get_library_forecast_capabilities(*args, **kwargs):
     return _forecast_capabilities_module().get_library_capabilities(*args, **kwargs)
 
 
+def _tuning_symbol_error(symbol: str, *, operation: str) -> Optional[Dict[str, Any]]:
+    """Validate the candidate-invariant broker symbol before tuning begins."""
+    gateway = create_mt5_gateway()
+    if gateway.symbol_info(symbol) is not None:
+        return None
+    payload = build_error_payload(
+        (
+            f"Symbol '{symbol}' was not found in MT5. "
+            f"Use symbols_list(search_term='{symbol}') to find broker-specific "
+            "names and suffixes."
+        ),
+        code="symbol_not_found",
+        operation=operation,
+    )
+    payload["history_count"] = 0
+    return payload
+
+
 def _genetic_search_impl(**kwargs):
+    symbol_error = _tuning_symbol_error(
+        str(kwargs.get("symbol") or ""),
+        operation="forecast_tune_genetic",
+    )
+    if symbol_error is not None:
+        return symbol_error
     return _forecast_tune_module().genetic_search_forecast_params(**kwargs)
 
 
 def _optuna_search_impl(**kwargs):
+    symbol_error = _tuning_symbol_error(
+        str(kwargs.get("symbol") or ""),
+        operation="forecast_tune_optuna",
+    )
+    if symbol_error is not None:
+        return symbol_error
     return _forecast_tune_module().optuna_search_forecast_params(**kwargs)
 
 
 def _optimize_hints_impl(**kwargs):
+    symbol_error = _tuning_symbol_error(
+        str(kwargs.get("symbol") or ""),
+        operation="forecast_optimize_hints",
+    )
+    if symbol_error is not None:
+        symbol_error["hints"] = []
+        return symbol_error
     return _forecast_tune_module().genetic_search_optimize_hints(**kwargs)
 
 

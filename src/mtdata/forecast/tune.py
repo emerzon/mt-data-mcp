@@ -1128,6 +1128,7 @@ def genetic_search_optimize_hints(  # noqa: C901
     }
     metric_mode = 'max' if fitness_metric in maximize_metrics else 'min'
     evaluations_attempted = 0
+    timed_out = False
 
     # Build search space if not provided
     if search_space is None:
@@ -1263,17 +1264,17 @@ def genetic_search_optimize_hints(  # noqa: C901
             pop.append((ind, math.inf, {'error': str(ex)}))
 
         # Check timeout
-        if max_search_time_seconds and (time.time() - start_time) > max_search_time_seconds:
-            return {
-                'success': False,
-                'error': f'Search timeout after {time.time() - start_time:.1f}s',
-                'hints': [],
-            }
+        if (
+            max_search_time_seconds
+            and (time.time() - start_time) >= max_search_time_seconds
+        ):
+            timed_out = True
+            break
 
     history: List[Dict[str, Any]] = []
     best_overall = min(pop, key=lambda t: t[1])[1]
     # Generational loop
-    for gen in range(max(1, int(generations))):
+    for gen in range(max(1, int(generations)) if not timed_out else 0):
         # Sort by fitness
         pop.sort(key=lambda t: t[1])
 
@@ -1304,12 +1305,12 @@ def genetic_search_optimize_hints(  # noqa: C901
                 new_pop.append((child, math.inf, {'error': str(ex)}))
 
             # Check timeout
-            if max_search_time_seconds and (time.time() - start_time) > max_search_time_seconds:
-                return {
-                    'success': False,
-                    'error': f'Search timeout after {time.time() - start_time:.1f}s',
-                    'hints': [],
-                }
+            if (
+                max_search_time_seconds
+                and (time.time() - start_time) >= max_search_time_seconds
+            ):
+                timed_out = True
+                break
 
         pop = new_pop[: population_size]
 
@@ -1331,21 +1332,35 @@ def genetic_search_optimize_hints(  # noqa: C901
                 else float('nan')
             )
         history.append(gen_summary)
+        if timed_out:
+            break
 
     # Extract top-N candidates
     pop.sort(key=lambda t: t[1])
     finite_pop = [item for item in pop if math.isfinite(float(item[1]))]
     if not finite_pop:
+        elapsed = time.time() - start_time
         return {
             'success': False,
-            'error': 'No candidate produced a finite requested metric.',
-            'error_code': 'no_successful_trials',
+            'error': (
+                'Search timed out before any candidate produced a finite requested metric.'
+                if timed_out
+                else 'No candidate produced a finite requested metric.'
+            ),
+            'error_code': (
+                'search_timeout_no_results' if timed_out else 'no_successful_trials'
+            ),
             'hints': [],
+            'partial': bool(timed_out),
+            'stop_reason': 'timeout' if timed_out else 'completed',
+            'evaluations_completed': evaluations_attempted,
             'search_summary': {
                 'symbol': symbol,
                 'population': population_size,
                 'population_requested': int(population),
                 'generations': int(generations),
+                'generations_completed': len(history),
+                'elapsed_seconds': round(elapsed, 2),
                 'fitness_metric': fitness_metric,
                 'total_evaluations': evaluations_attempted,
             },
@@ -1415,11 +1430,15 @@ def genetic_search_optimize_hints(  # noqa: C901
     result: Dict[str, Any] = {
         'success': True,
         'hints': top_configs,
+        'partial': bool(timed_out),
+        'stop_reason': 'timeout' if timed_out else 'completed',
+        'evaluations_completed': evaluations_attempted,
         'search_summary': {
             'symbol': symbol,
             'population': population_size,
             'population_requested': int(population),
             'generations': int(generations),
+            'generations_completed': len(history),
             'elapsed_seconds': round(elapsed, 2),
             'fitness_metric': fitness_metric,
             'fitness_score_direction': (
