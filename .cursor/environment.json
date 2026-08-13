@@ -1,0 +1,18 @@
+{
+  "name": "mtdata",
+  "user": "ubuntu",
+  "install": "bash scripts/cloud-agent-install.sh",
+  "terminals": [
+    {
+      "name": "web-api",
+      "command": "cd /workspace && source .venv/bin/activate && WEBAPI_HOST=127.0.0.1 WEBAPI_PORT=8000 CLIENT_TZ=UTC mtdata-webapi",
+      "description": "mtdata FastAPI backend: REST API plus the built React UI at http://127.0.0.1:8000/app/. MT5 data endpoints require a Windows MetaTrader 5 terminal and report a graceful 'not connected' status here."
+    }
+  ],
+  "ports": [
+    {
+      "name": "mtdata web api + ui",
+      "port": 8000
+    }
+  ]
+}
