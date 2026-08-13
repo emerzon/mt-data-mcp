@@ -11,7 +11,7 @@ from ..shared.schema import DetailLiteral
 from ..utils.time import format_datetime_utc, format_relative_time
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import build_pagination_meta, normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -397,11 +397,17 @@ def _apply_news_limit(
             len(out["upcoming_events"]) < original_upcoming_count
         )
     out["total_candidates"] = total_candidates
-    out["returned"] = returned
-    out["truncated"] = truncated
-    out["offset"] = int(offset or 0)
-    out["has_more"] = bool(max(0, total_candidates - int(offset or 0) - returned) > 0)
     out["limit_scope"] = limit_scope
+    if limit is not None or offset:
+        out["pagination"] = build_pagination_meta(
+            total=total_candidates,
+            returned=returned,
+            offset=int(offset or 0),
+            limit=limit,
+        )
+    else:
+        out["returned"] = returned
+        out["truncated"] = truncated
     if bucket_truncation:
         out["bucket_truncation"] = bucket_truncation
     return out

@@ -74,6 +74,10 @@ _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
 }
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("forecast_list_library_models", "limit"): (
+        "Maximum models to return on this page. Omitted compact output uses "
+        "20; omitted full output is unbounded."
+    ),
     ("correlation_matrix", "method"): "Correlation coefficient: pearson or spearman.",
     ("correlation_matrix", "transform"): (
         "Price transform: log_return, pct, diff, level, or log_level."

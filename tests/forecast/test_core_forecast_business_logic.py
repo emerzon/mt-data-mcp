@@ -2437,12 +2437,21 @@ def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     compact_page = cf._forecast_list_library_models_impl("native")
     assert "models_shown" not in compact_page
     assert compact_page["total_filtered"] == 25
-    assert compact_page["has_more"] is True
+    assert compact_page["pagination"] == {
+        "total": 25,
+        "returned": 20,
+        "offset": 0,
+        "limit": 20,
+        "has_more": True,
+        "more_available": 5,
+    }
+    assert "has_more" not in compact_page
     assert compact_page["filters"]["limit"] == 20
 
     full_page = cf._forecast_list_library_models_impl("native", detail="full")
     assert full_page["models_shown"] == 25
     assert full_page["filters"]["limit"] is None
+    assert full_page["pagination"]["has_more"] is False
 
 
 def test_forecast_list_all_library_models_uses_one_global_page(monkeypatch):

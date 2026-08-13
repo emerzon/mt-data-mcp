@@ -894,6 +894,7 @@ def forecast_list_library_models(
 
     - statsforecast: lists `statsforecast.models.*` class names.
     - sktime: lists supported aliases plus notes for using dotted estimator paths.
+    - limit: page size. Omitted compact output uses 20; omitted full output is unbounded.
     """
     return _run_forecast_operation(
         "forecast_list_library_models",
@@ -1545,12 +1546,17 @@ def _forecast_list_library_models_impl(
         "total": len(capabilities_all),
         "total_filtered": len(capabilities),
         "available": available_selected,
-        "has_more": offset_value + len(capabilities_page) < len(capabilities),
         "filters": {
             "show_unavailable": bool(show_unavailable),
             "limit": limit_value,
             "offset": offset_value,
         },
+        "pagination": build_pagination_meta(
+            total=len(capabilities),
+            returned=len(model_rows),
+            offset=offset_value,
+            limit=limit_value,
+        ),
         "detail": detail_mode,
     }
     if detail_mode == "full":
