@@ -99,7 +99,7 @@ mtdata-cli forecast_generate EURUSD --horizon 12 --detail full --json
 Combine it with `--json` for token-lean machine parsing:
 
 ```bash
-mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
+mtdata-cli symbols_describe EURUSD --output-fields symbol,details.digits,details.point --json
 ```
 
 Bare names select top-level keys only. Use a dotted path such as

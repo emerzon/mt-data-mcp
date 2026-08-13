@@ -168,6 +168,32 @@ def test_compact_symbol_news_caps_each_bucket_by_default(monkeypatch) -> None:
     assert "compact_bucket_limit" not in full
 
 
+def test_compact_empty_news_discloses_provider_attempts_and_fallback() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "sources_used": ["finviz", "mt5"],
+        "source_details": {
+            "finviz": {"success": True, "selected_total": 0},
+            "mt5": {"success": False, "error": "terminal feed unavailable"},
+        },
+        "general_news": [],
+        "related_news": [],
+        "impact_news": [],
+        "upcoming_events": [],
+        "recent_events": [],
+        "market_context": [],
+    }
+
+    compact = normalize_news_output(payload, detail="compact")
+
+    assert compact["status"] == "no_results"
+    assert compact["providers_queried"] == ["finviz", "mt5"]
+    assert compact["provider_failures"] == {"mt5": "terminal feed unavailable"}
+    assert compact["related_tools"] == ["finviz_market_news"]
+    assert "finviz_market_news" in compact["hint"]
+
+
 def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> None:
     raw = _unwrap(news)
 

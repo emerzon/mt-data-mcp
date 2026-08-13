@@ -301,6 +301,39 @@ def normalize_news_output(
             continue
         out[key] = subvalue
     out.update(provenance)
+    visible_bucket_keys = tuple(
+        key for key in _NEWS_BUCKET_KEYS if key != "market_context"
+    )
+    if not any(
+        isinstance(result.get(key), list) and bool(result.get(key))
+        for key in visible_bucket_keys
+    ):
+        queried = [
+            str(provider)
+            for provider in (result.get("sources_used") or [])
+            if str(provider or "").strip()
+        ]
+        source_details = result.get("source_details")
+        provider_failures = {
+            str(provider): str(details.get("error"))
+            for provider, details in (
+                source_details.items()
+                if isinstance(source_details, dict)
+                else []
+            )
+            if isinstance(details, dict)
+            and details.get("success") is False
+            and details.get("error") not in (None, "")
+        }
+        out["status"] = "no_results"
+        out["providers_queried"] = queried
+        if provider_failures:
+            out["provider_failures"] = provider_failures
+        out["hint"] = (
+            "No headline or event rows were selected from the queried providers. "
+            "Use finviz_market_news for a raw broad-market Finviz feed."
+        )
+        out["related_tools"] = ["finviz_market_news"]
     return out
 
 

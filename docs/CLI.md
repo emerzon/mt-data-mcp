@@ -163,7 +163,7 @@ presentation options.
 Use `--output-fields` to project the final response without changing domain
 semantics:
 ```bash
-mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
+mtdata-cli symbols_describe EURUSD --output-fields symbol,details.digits,details.point --json
 ```
 
 Bare field names address top-level keys; dotted paths address nested keys.

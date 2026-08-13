@@ -421,6 +421,13 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "sets lookahead_bias=true, and makes labels unsuitable for backtests or training."
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
+    ("news", "limit"): (
+        "Global maximum across all news/event buckets. One upcoming event is "
+        "reserved when available; use --limit-per-bucket to cap each family separately."
+    ),
+    ("news", "limit_per_bucket"): (
+        "Maximum rows in each news/event family while preserving the separate buckets."
+    ),
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",
     ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, harmonic, fractal, or elliott.",
     ("patterns_detect", "engine"): (
