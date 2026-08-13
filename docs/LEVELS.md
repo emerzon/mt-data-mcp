@@ -127,7 +127,7 @@ mtdata-cli volume_profile_levels EURUSD --start "1 day ago" --end "now" \
   --source auto --price-source mid --bucket-points 10 --json
 
 # Window by lookback on a timeframe
-mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
+mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
   --source auto --bucket-points 10 --json
 ```
 

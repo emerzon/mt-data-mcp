@@ -90,12 +90,12 @@ def _empty_patterns_note(
         strength = _round_value(min_strength)
         return (
             f"No candlestick patterns detected in {limit_label} {tf_label} bars "
-            f"with min_strength={strength}. Try increasing limit or lowering "
+            f"with min_strength={strength}. Try increasing lookback or lowering "
             "min_strength."
         )
     return (
         f"No {mode_label} patterns detected in {limit_label} {tf_label} bars. "
-        "Try increasing limit or relaxing mode-specific thresholds."
+        "Try increasing lookback or relaxing mode-specific thresholds."
     )
 
 

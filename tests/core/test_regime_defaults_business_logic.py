@@ -57,7 +57,7 @@ def test_regime_detect_defaults_to_compact_output() -> None:
         out = raw(
             symbol="EURUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             threshold=0.5,
             lookback=20,
@@ -84,7 +84,7 @@ def test_regime_detect_accepts_standard_detail_as_compact() -> None:
         out = raw(
             symbol="EURUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             threshold=0.5,
             detail="standard",
@@ -106,7 +106,7 @@ def test_regime_detect_returns_connection_error_payload(monkeypatch) -> None:
 
     monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", fail_connection)
 
-    out = raw(symbol="EURUSD", timeframe="H1", limit=80, method="bocpd")
+    out = raw(symbol="EURUSD", timeframe="H1", fetch_limit=80, method="bocpd")
 
     assert out["error"] == "Failed to connect to MetaTrader5. Ensure MT5 terminal is running."
     assert out["success"] is False
@@ -142,7 +142,7 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             lookback=20,
             detail="full",  # params_used only in full mode
@@ -189,7 +189,7 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             params={"hazard_lambda": 140},
             lookback=20,
@@ -224,7 +224,7 @@ def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             params={"cp_threshold": 0.2},
             threshold=0.5,
@@ -258,7 +258,7 @@ def test_bocpd_hazard_mode_auto_calibrated_sets_sources_and_diagnostics() -> Non
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             params={"hazard_mode": "auto_calibrated"},
             lookback=20,
@@ -296,7 +296,7 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             params={"hazard_mode": "auto_calibrated", "hazard_lambda": 111},
             lookback=20,
@@ -322,7 +322,7 @@ def test_bocpd_explicit_half_threshold_is_not_auto_calibrated() -> None:
         out = raw(
             symbol="EURUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             threshold=0.5,
             lookback=20,
@@ -362,7 +362,7 @@ def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="H1", limit=80, method="hmm", min_regime_bars=0
+            symbol="EURUSD", timeframe="H1", fetch_limit=80, method="hmm", min_regime_bars=0
         )
     assert "error" in out
     assert "min_regime_bars" in str(out["error"])
@@ -412,7 +412,7 @@ def test_regime_detect_default_fetch_limit_tracks_timeframe_lookback() -> None:
     assert captured == [520]
 
 
-def test_regime_detect_explicit_limit_still_caps_fetch_history() -> None:
+def test_regime_detect_explicit_fetch_limit_caps_history() -> None:
     raw = _unwrap(regime_detect)
     captured: list[int] = []
 
@@ -428,7 +428,7 @@ def test_regime_detect_explicit_limit_still_caps_fetch_history() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=100,
+            fetch_limit=100,
             method="rule_based",
             params={"window_bars": 20},
         )
@@ -459,7 +459,7 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
         out = raw(
             symbol="BTCUSD",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="bocpd",
             threshold=0.6,
             detail="summary",
@@ -499,7 +499,7 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
         out = raw(
             symbol="EURUSD",
             timeframe="H1",
-            limit=220,
+            fetch_limit=220,
             method="bocpd",
             detail="summary",
             params={"cp_confirm_bars": 2},
@@ -600,7 +600,7 @@ def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
         ),
     ):
         out = raw(
-            symbol="BTCUSD", timeframe="H1", limit=220, method="bocpd", detail="summary"
+            symbol="BTCUSD", timeframe="H1", fetch_limit=220, method="bocpd", detail="summary"
         )
 
     cal = out.get("params_used", {}).get("cp_threshold_calibration", {})
@@ -630,7 +630,7 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="H1", limit=220, method="bocpd", detail="summary"
+            symbol="EURUSD", timeframe="H1", fetch_limit=220, method="bocpd", detail="summary"
         )
 
     summary = out.get("summary", {})
@@ -697,7 +697,7 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", detail="summary"
+            symbol="EURUSD", timeframe="D1", fetch_limit=220, method="bocpd", detail="summary"
         )
 
     params_used = out.get("params_used", {})
@@ -762,7 +762,7 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
         ),
     ):
         out = raw(
-            symbol="EURUSD", timeframe="D1", limit=220, method="bocpd", detail="summary"
+            symbol="EURUSD", timeframe="D1", fetch_limit=220, method="bocpd", detail="summary"
         )
 
     cp_filter = out.get("params_used", {}).get("cp_filter", {})

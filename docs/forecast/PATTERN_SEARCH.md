@@ -20,7 +20,7 @@ Identifies visual patterns traders often watch for structure and timing context.
 Single or multi-bar patterns with historical significance.
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 200
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode candlestick --lookback 200
 ```
 
 **Output:**
@@ -52,7 +52,7 @@ mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 Larger geometric patterns formed over multiple bars.
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --lookback 500
 ```
 
 The default classic detector evaluates patterns at the right edge of the input
@@ -83,7 +83,7 @@ continues to control historical visibility for classic, Elliott, and fractal
 modes.
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 500
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --lookback 500
 ```
 
 **Patterns detected:**
@@ -116,7 +116,7 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic \
 Bill Williams-style bullish and bearish fractal levels with confirmation and breakout context.
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --lookback 300
 ```
 
 **Useful fractal config:**

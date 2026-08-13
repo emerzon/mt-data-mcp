@@ -177,7 +177,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("options_heston_calibrate", "valuation_date"): (
         "Valuation date in YYYY-MM-DD format; omit for today's date."
     ),
-    ("volume_profile_levels", "limit"): (
+    ("volume_profile_levels", "lookback"): (
         "Historical bar count for a timeframe-based profile; requires --timeframe."
     ),
     ("outliers_detect", "limit"): "Max anomalous bars to return.",
@@ -338,10 +338,6 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",
-    ("patterns_detect", "limit"): (
-        "Historical bars fetched for pattern analysis; use top_k for compact "
-        "top-pattern count."
-    ),
     ("patterns_detect", "mode"): "Pattern mode: all, candlestick, classic, harmonic, fractal, or elliott.",
     ("patterns_detect", "engine"): (
         "Classic-mode engine: native or stock_pattern. Omitted classic calls "
@@ -373,7 +369,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "for hour/session, 730 days for month, and 365 days for overall "
         "analysis, bounded to 200-20000 bars (H1 session: 1440 bars)."
     ),
-    ("regime_detect", "limit"): (
+    ("regime_detect", "fetch_limit"): (
         "Historical bars fetched for regime detection. Defaults to the effective "
         "lookback plus warmup bars; use max_regimes for compact output count."
     ),

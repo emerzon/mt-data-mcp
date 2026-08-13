@@ -268,7 +268,7 @@ def _elliott_timeframe_suggestion(timeframe: Optional[str]) -> str:
     if not suggestions:
         suggestions = ["H4"] if tf != "H4" else ["D1"]
     if len(suggestions) == 1:
-        return f"Try --timeframe {suggestions[0]} or increase --limit."
+        return f"Try --timeframe {suggestions[0]} or increase --lookback."
     return f"Try --timeframe {suggestions[0]} or --timeframe {suggestions[1]}."
 
 
@@ -498,7 +498,7 @@ def _build_pattern_response(  # noqa: C901
                                 f"(from {oldest_year} to {newest_year}). "
                                 "Older patterns may not reflect current market structure. "
                                 "Consider using W1 or D1 for more recent patterns, or increase "
-                                "the limit to see more recent bars."
+                                "the lookback to see more recent bars."
                             )
                             resp["warnings"].append(warning_msg)
             except Exception:
@@ -1338,12 +1338,12 @@ def patterns_detect(
         - "summary": quick-read highlights and aggregate bias/counts only.
         - "full": complete pattern rows suitable for research/debugging.
     
-    limit : int, optional (default=150)
+    lookback : int, optional (default=150)
         Maximum number of historical bars to analyze after applying any time window
 
     start/end : str, optional
         UTC-compatible analysis window. If only `end` is supplied, the most recent
-        `limit` bars ending at `end` are used.
+        `lookback` bars ending at `end` are used.
     
     Candlestick Mode Parameters:
     ----------------------------
@@ -1452,13 +1452,13 @@ def patterns_detect(
     patterns_detect(symbol="EURUSD", mode="candlestick", timeframe="M15", min_strength=0.70, top_k=3)
     
     # Detect classic chart patterns
-    patterns_detect(symbol="GBPUSD", mode="classic", limit=500)
+    patterns_detect(symbol="GBPUSD", mode="classic", lookback=500)
 
     # Detect fractal levels and breakouts
     patterns_detect(symbol="EURUSD", mode="fractal", timeframe="H1", config={"breakout_basis": "high_low"})
 
     # Detect Fibonacci harmonic patterns
-    patterns_detect(symbol="EURUSD", mode="harmonic", timeframe="H1", limit=500)
+    patterns_detect(symbol="EURUSD", mode="harmonic", timeframe="H1", lookback=500)
 
     # Detect Elliott Wave patterns
     patterns_detect(symbol="BTCUSD", mode="elliott", timeframe="H4", detail="full")

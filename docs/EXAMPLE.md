@@ -170,14 +170,14 @@ Interpretation shortcuts:
 Change-points (BOCPD):
 
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --fetch-limit 1500 \
   --method bocpd --threshold 0.6 --lookback 300 --json
 ```
 
 Regime labels (HMM):
 
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --fetch-limit 1500 \
   --method hmm --params "n_states=3" --lookback 300 --json
 ```
 
@@ -199,26 +199,26 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 Candlestick patterns:
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode candlestick --limit 500 \
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode candlestick --lookback 500 \
   --robust-only true --json
 ```
 
 Classic chart patterns:
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 800 --json
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --lookback 800 --json
 ```
 
 Harmonic Fibonacci-ratio patterns:
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 800 --json
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --lookback 800 --json
 ```
 
 Bill Williams fractal price-structure levels:
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300 --json
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --lookback 300 --json
 ```
 
 Volume-profile structure levels from bounded tick data:
@@ -232,14 +232,14 @@ mtdata-cli volume_profile_levels EURUSD \
 Equivalent H1 lookback form:
 
 ```bash
-mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
+mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
   --source auto --price-source mid --bucket-points 10 --json
 ```
 
 Combine the two by opting fractal detection into volume-profile confluence:
 
 ```bash
-mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300 \
+mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --lookback 300 \
   --config '{"volume_profile":true,"volume_profile_tolerance_points":25}' --json
 ```
 

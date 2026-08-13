@@ -56,7 +56,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 3},
             detail="full",
@@ -71,7 +71,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 2},
             detail="full",
@@ -87,7 +87,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"wavelet": "db4", "n_states": 3, "energy_window": 40},
             detail="full",
@@ -106,7 +106,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 2},
             detail="compact",
@@ -119,7 +119,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 2},
             detail="summary",
@@ -136,7 +136,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"wavelet": "haar", "n_states": 2},
             detail="full",
@@ -151,7 +151,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 2},
             detail="full",
@@ -168,7 +168,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"n_states": 3},
             detail="full",
@@ -196,7 +196,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=30,
+            fetch_limit=30,
             method="wavelet",
             params={"n_states": 2, "energy_window": 30},
             detail="full",
@@ -212,7 +212,7 @@ class TestWaveletRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="wavelet",
             params={"wavelet": "totally_invalid_wavelet_xyz"},
             detail="full",

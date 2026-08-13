@@ -33,7 +33,7 @@ Detect structural breaks and label regimes so you avoid trading through hostile 
 1.1 BOCPD change‑points (returns)
 
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --fetch-limit 1500 \
   --method bocpd --threshold 0.6 --lookback 24 --json
 ```
 
@@ -42,7 +42,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 1.2 HMM‑lite regimes (returns)
 
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --fetch-limit 1500 \
   --method hmm --params "n_states=3" --lookback 300 --json
 ```
 
@@ -51,7 +51,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 
 Optional: MS‑AR(1) (statsmodels)
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
+mtdata-cli regime_detect EURUSD --timeframe H1 --fetch-limit 1500 \
   --method ms_ar --params "n_states=2 order=1" --json
 ```
 

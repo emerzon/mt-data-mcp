@@ -258,17 +258,17 @@ def test_historical_profile_anchors_freshness_to_observed_data(monkeypatch):
     assert result["freshness_applicability"] == "historical_query"
 
 
-def test_compute_volume_profile_payload_rejects_limit_without_timeframe():
+def test_compute_volume_profile_payload_rejects_lookback_without_timeframe():
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
         source="ticks",
-        limit=5000,
+        lookback=5000,
         bucket_size=0.0001,
     )
 
     assert result == {
         "error": (
-            "limit is a bar count and requires timeframe; "
+            "lookback is a bar count and requires timeframe; "
             "use max_ticks to cap tick rows."
         )
     }
@@ -360,7 +360,7 @@ def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
         start=None,
         end=None,
         timeframe=None,
-        limit=None,
+        lookback=None,
     )
 
     assert window == {
@@ -512,7 +512,9 @@ def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage
     }
 
 
-def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monkeypatch):
+def test_compute_volume_profile_payload_derives_window_from_timeframe_lookback(
+    monkeypatch,
+):
     captured = {}
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(
@@ -546,7 +548,7 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
         symbol="EURUSD",
         end="2026-01-02 00:00:00",
         timeframe="H1",
-        limit=24,
+        lookback=24,
         source="ticks",
         bucket_size=0.0001,
     )
@@ -560,7 +562,7 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
     assert captured["end"] == "2026-01-02T00:00:00Z"
 
 
-def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
+def test_compute_volume_profile_payload_defaults_timeframe_lookback(monkeypatch):
     captured = {}
     monkeypatch.setattr(
         vp,
@@ -662,7 +664,7 @@ def test_volume_profile_bar_window_skips_weekend_clock_hours(monkeypatch):
         symbol="EURUSD",
         end="2026-01-12T00:00:00Z",
         timeframe="H1",
-        limit=4,
+        lookback=4,
         source="m1_bars",
         bucket_size=0.0001,
         detail="full",
@@ -706,7 +708,7 @@ def test_volume_profile_rejects_insufficient_completed_bar_history(monkeypatch):
         symbol="EURUSD",
         end="2026-01-02T00:00:00Z",
         timeframe="H1",
-        limit=4,
+        lookback=4,
         source="m1_bars",
     )
 
@@ -715,17 +717,17 @@ def test_volume_profile_rejects_insufficient_completed_bar_history(monkeypatch):
     assert result["available_bars"] == 2
 
 
-def test_compute_volume_profile_payload_invalid_limit_suggests_default() -> None:
+def test_compute_volume_profile_payload_invalid_lookback_suggests_default() -> None:
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
         timeframe="H1",
-        limit=0,
+        lookback=0,
     )
 
     assert result == {
         "error": (
-            "limit must be a positive integer when timeframe is provided; "
-            "omit limit to use the default 200 bars."
+            "lookback must be a positive integer when timeframe is provided; "
+            "omit lookback to use the default 200 bars."
         )
     }
 

@@ -149,9 +149,9 @@ def _summary_window_size(lookback: int, size: int) -> int:
     return min(max(lookback_i, 0), int(size))
 
 
-def _history_fetch_limit(limit: Optional[int], lookback: int) -> int:
-    if limit is not None and int(limit) >= 0:
-        return int(max(int(limit), 50))
+def _history_fetch_limit(fetch_limit: Optional[int], lookback: int) -> int:
+    if fetch_limit is not None and int(fetch_limit) >= 0:
+        return int(max(int(fetch_limit), 50))
     return int(max(int(lookback), 50)) + 20
 
 
@@ -1092,7 +1092,7 @@ def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
 def regime_detect(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    limit: Optional[int] = None,
+    fetch_limit: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     method: Literal[
@@ -1120,12 +1120,12 @@ def regime_detect(  # noqa: C901
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over a bounded history window.
 
-    - limit: Optional bars to fetch/analyze. If omitted, the fetch window tracks
+    - fetch_limit: Optional bars to fetch/analyze. If omitted, the fetch window tracks
       the effective lookback plus warmup bars.
-      For rule_based, an explicit limit also becomes params.window_bars when
+      For rule_based, an explicit fetch_limit also becomes params.window_bars when
       that parameter and lookback are omitted; at least 20 bars are required.
-    - start/end: Optional UTC-compatible analysis window. If provided, `limit`
-      caps bars analysed after the window is fetched; omitted limit uses the
+    - start/end: Optional UTC-compatible analysis window. If provided, `fetch_limit`
+      caps bars analysed after the window is fetched; omitted fetch_limit uses the
       effective lookback cap.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
       Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' (Gaussian hidden Markov model), 'gmm' (i.i.d. Gaussian mixture),
@@ -1149,8 +1149,8 @@ def regime_detect(  # noqa: C901
         `cp_confirm_bars` (default `1`, live-oriented),
         `min_cp_distance_bars`, `cp_edge_multiplier`.
     - include_series: If True, include raw time series data (probs, states) in output. Default False.
-    - lookback: Number of recent observations to analyze when `limit` is omitted,
-      and the summary window when `limit` is provided. Extra history may be fetched
+    - lookback: Number of recent observations to analyze when `fetch_limit` is omitted,
+      and the summary window when `fetch_limit` is provided. Extra history may be fetched
       for feature warmup but is excluded from model fitting. Omit for timeframe-based defaults:
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Confirm a new state only after it persists for this many
@@ -1238,7 +1238,7 @@ def regime_detect(  # noqa: C901
         method=requested_method,
         target=target,
         detail=detail,
-        limit=limit,
+        fetch_limit=fetch_limit,
         start=start,
         end=end,
     )
@@ -1267,7 +1267,7 @@ def regime_detect(  # noqa: C901
             method=requested_method,
             target=target,
             detail=detail,
-            limit=limit,
+            fetch_limit=fetch_limit,
             start=start,
             end=end,
         )
@@ -1328,14 +1328,14 @@ def regime_detect(  # noqa: C901
             else tf_defaults["min_regime_bars"]
         )
         lookback_mapped_to_window = False
-        limit_mapped_to_window = False
+        fetch_limit_mapped_to_window = False
         if method == "rule_based" and "window_bars" not in p:
             if lookback is not None:
                 p["window_bars"] = int(effective_lookback)
                 lookback_mapped_to_window = True
-            elif limit is not None:
-                p["window_bars"] = int(limit)
-                limit_mapped_to_window = True
+            elif fetch_limit is not None:
+                p["window_bars"] = int(fetch_limit)
+                fetch_limit_mapped_to_window = True
 
         min_regime_bars_val, min_regime_bars_error = _coerce_param(
             p,
@@ -1364,7 +1364,7 @@ def regime_detect(  # noqa: C901
         )
 
         rule_based_config: Optional[Dict[str, Any]] = None
-        fetch_limit = _history_fetch_limit(limit, lookback)
+        effective_fetch_limit = _history_fetch_limit(fetch_limit, lookback)
         if method == "rule_based":
             efficiency_threshold, efficiency_error = _coerce_param(
                 p,
@@ -1403,18 +1403,18 @@ def regime_detect(  # noqa: C901
             if window_error is not None:
                 return _finish({"error": window_error})
             if int(requested_window_bars) < 20:
-                if limit_mapped_to_window:
+                if fetch_limit_mapped_to_window:
                     return _finish({
                         "error": (
-                            "limit must be >= 20 for method='rule_based'; "
+                            "fetch_limit must be >= 20 for method='rule_based'; "
                             "increase the requested history window or choose another method."
                         )
                     })
                 return _finish({"error": "params.window_bars must be >= 20."})
-            if limit is not None and int(limit) < int(requested_window_bars):
+            if fetch_limit is not None and int(fetch_limit) < int(requested_window_bars):
                 return _finish({
                     "error": (
-                        f"limit ({int(limit)}) must be greater than or equal to "
+                        f"fetch_limit ({int(fetch_limit)}) must be greater than or equal to "
                         f"params.window_bars ({int(requested_window_bars)}) for "
                         "method='rule_based'."
                     )
@@ -1425,26 +1425,26 @@ def regime_detect(  # noqa: C901
                 "trend_strength_threshold": float(trend_strength_threshold),
                 "window_bars": int(requested_window_bars),
             }
-            fetch_limit = (
-                int(limit)
-                if limit is not None
-                else int(max(fetch_limit, int(requested_window_bars)))
+            effective_fetch_limit = (
+                int(fetch_limit)
+                if fetch_limit is not None
+                else int(max(effective_fetch_limit, int(requested_window_bars)))
             )
 
         history_kwargs: Dict[str, Any] = {"as_of": None}
         if start or end:
             history_kwargs.update({"start": start, "end": end})
-        df = _fetch_history(symbol, timeframe, fetch_limit, **history_kwargs)
+        df = _fetch_history(symbol, timeframe, effective_fetch_limit, **history_kwargs)
         fetched_range_bars = len(df)
-        if (start or end) and len(df) > fetch_limit:
-            df = df.iloc[-fetch_limit:].reset_index(drop=True)
+        if (start or end) and len(df) > effective_fetch_limit:
+            df = df.iloc[-effective_fetch_limit:].reset_index(drop=True)
         if start or end:
             analysis_window_meta.update(
                 {
                     "range_bars_fetched": int(fetched_range_bars),
                     "bars_analyzed": int(len(df)),
                     "truncated": bool(fetched_range_bars > len(df)),
-                    "limit_applied": int(fetch_limit),
+                    "fetch_limit_applied": int(effective_fetch_limit),
                 }
             )
             if len(df) and "time" in df:
@@ -1487,7 +1487,9 @@ def regime_detect(  # noqa: C901
             bars_analyzed = min(analysis_limit, int(price_series.size))
             warmup_bars = max(0, int(len(df)) - bars_analyzed)
         else:
-            analysis_limit = int(limit) if limit is not None else int(lookback)
+            analysis_limit = (
+                int(fetch_limit) if fetch_limit is not None else int(lookback)
+            )
             observations_available = int(x.size)
             if observations_available > analysis_limit:
                 x = x[-analysis_limit:]
@@ -3629,7 +3631,7 @@ def regime_detect(  # noqa: C901
                         regime_detect,
                         symbol=symbol,
                         timeframe=timeframe,
-                        limit=limit,
+                        fetch_limit=fetch_limit,
                         method=sm,  # type: ignore[arg-type]
                         target=target,
                         params=sub_params,
@@ -3962,7 +3964,7 @@ def regime_detect(  # noqa: C901
                         regime_detect,
                         symbol=symbol,
                         timeframe=timeframe,
-                        limit=limit,
+                        fetch_limit=fetch_limit,
                         method=m,  # type: ignore[arg-type]
                         target=target,
                         params=sub_params,
@@ -4041,7 +4043,7 @@ def regime_detect(  # noqa: C901
                     regime_detect,
                     symbol=symbol,
                     timeframe=timeframe,
-                    limit=limit,
+                    fetch_limit=fetch_limit,
                     method="ensemble",
                     target=target,
                     params=ens_params,

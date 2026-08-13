@@ -63,7 +63,7 @@ class TestBuildPatternResponse:
 
         assert resp["note"] == (
             "No classic patterns detected in 500 H1 bars. "
-            "Try increasing limit or relaxing mode-specific thresholds."
+            "Try increasing lookback or relaxing mode-specific thresholds."
         )
 
     def test_compact_rounds_confidence_noise(self):

@@ -341,7 +341,7 @@ mtdata-cli volume_profile_levels EURUSD --start "1 day ago" --end "now" \
 You can also derive the window from a lookback:
 
 ```bash
-mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
+mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
   --source auto --bucket-points 10 --json
 ```
 
@@ -674,7 +674,7 @@ Shock values are percentage price moves. `*` is a fallback for any open-position
 mtdata-cli patterns_detect EURUSD --mode candlestick --robust-only true
 
 # Harmonic Fibonacci-ratio patterns
-mtdata-cli patterns_detect EURUSD --mode harmonic --limit 800
+mtdata-cli patterns_detect EURUSD --mode harmonic --lookback 800
 
 # Regime detection
 mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"

@@ -993,7 +993,7 @@ class TestResolveParamKwargs:
             ("market_relative_strength", "weights", "matching --horizons"),
             ("market_relative_strength", "limit", "ranked symbols"),
             ("options_chain", "limit", "option contracts"),
-            ("volume_profile_levels", "limit", "Historical bar count"),
+            ("volume_profile_levels", "lookback", "Historical bar count"),
             ("outliers_detect", "limit", "anomalous bars"),
             ("temporal_analyze", "limit", "time buckets"),
             ("temporal_analyze", "session_calendar", "auto, fx, or equity"),
@@ -1299,8 +1299,8 @@ class TestResolveParamKwargs:
             None,
             cmd_name="causal_discover_signals",
         )
-        regime_limit_kwargs, _ = _resolve_param_kwargs(
-            {"name": "limit", "type": int, "required": False, "default": 100},
+        regime_fetch_limit_kwargs, _ = _resolve_param_kwargs(
+            {"name": "fetch_limit", "type": int, "required": False, "default": 100},
             None,
             cmd_name="regime_detect",
         )
@@ -1313,7 +1313,7 @@ class TestResolveParamKwargs:
         assert "Historical bars per symbol" in correlation_window_kwargs["help"]
         assert causal_limit_kwargs["help"] == "Max causal link rows to return."
         assert "Historical bars per symbol" in causal_window_kwargs["help"]
-        assert "max_regimes" in regime_limit_kwargs["help"]
+        assert "max_regimes" in regime_fetch_limit_kwargs["help"]
 
     @pytest.mark.parametrize(
         "cmd_name",

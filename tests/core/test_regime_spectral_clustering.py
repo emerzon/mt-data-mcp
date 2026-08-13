@@ -55,7 +55,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"algorithm": "spectral", "n_states": 2, "window_size": 20},
             detail="full",
@@ -72,7 +72,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"algorithm": "spectral", "n_states": 3},
             detail="full",
@@ -88,7 +88,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"algorithm": "spectral", "n_states": 2},
             detail="compact",
@@ -101,7 +101,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"algorithm": "spectral", "affinity": "rbf", "n_states": 2},
             detail="full",
@@ -116,7 +116,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"n_states": 2, "window_size": 20},
             detail="full",
@@ -131,7 +131,7 @@ class TestSpectralClustering:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={
                 "algorithm": "spectral",

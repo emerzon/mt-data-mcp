@@ -17,7 +17,11 @@ class PatternsDetectRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     mode: PatternModeLiteral = "candlestick"
     detail: PatternsDetailLiteral = "compact"
-    limit: int = Field(150, ge=1)
+    lookback: int = Field(
+        150,
+        ge=1,
+        description="Historical bars fetched for pattern analysis.",
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -59,9 +63,9 @@ class PatternsDetectRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_request(self) -> "PatternsDetectRequest":
-        if self.mode == "all" and self.limit < 150:
+        if self.mode == "all" and self.lookback < 150:
             raise ValueError(
-                "mode='all' requires limit >= 150; use a single pattern mode "
+                "mode='all' requires lookback >= 150; use a single pattern mode "
                 "for smaller analysis windows"
             )
         return self

@@ -291,9 +291,10 @@ class TestFetchPatternData:
 
 # ── patterns_detect (main tool) ──────────────────────────────────────────
 
-def test_patterns_detect_request_default_limit_is_recent_window():
+def test_patterns_detect_request_default_lookback_is_recent_window():
     request = PatternsDetectRequest(symbol="EURUSD")
-    assert request.limit == 150
+    assert request.lookback == 150
+    assert "limit" not in PatternsDetectRequest.model_fields
     assert request.mode == "candlestick"
     assert request.min_strength == 0.70
 
@@ -319,13 +320,13 @@ class TestPatternsDetect:
             symbol="EURUSD",
             mode="candlestick",
             timeframe="H1",
-            limit=3,
+            lookback=3,
             min_strength=0.7,
         )
 
         assert result["note"] == (
             "No candlestick patterns detected in 3 H1 bars with min_strength=0.7. "
-            "Try increasing limit or lowering min_strength."
+            "Try increasing lookback or lowering min_strength."
         )
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
@@ -652,7 +653,7 @@ class TestPatternsDetect:
             symbol="EURUSD",
             mode="harmonic",
             timeframe="H1",
-            limit=20,
+            lookback=20,
         )
 
         assert result["recommended_min_bars"] == 120
@@ -1329,7 +1330,9 @@ class TestPatternsDetectAllMode:
         ], None)
         mock_elliott.return_value = []
 
-        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1", limit=500)
+        result = _call_patterns_detect(
+            symbol="EURUSD", mode="all", timeframe="H1", lookback=500
+        )
         classic_names = [p["name"] for p in result["classic"]["patterns"]]
         # New-Moderate should rank first due to recency boost
         assert classic_names[0] == "New-Moderate"

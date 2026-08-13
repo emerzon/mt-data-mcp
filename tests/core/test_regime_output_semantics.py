@@ -451,7 +451,7 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=len(history),
+            fetch_limit=len(history),
             method="rule_based",
             target="return",
             params={"window_bars": 60},
@@ -478,7 +478,7 @@ def test_rule_based_full_series_uses_price_window_timestamps_for_return_target()
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=100,
+            fetch_limit=100,
             method="rule_based",
             target="return",
             params={"window_bars": 100},
@@ -498,20 +498,22 @@ def test_rule_based_rejects_limit_below_explicit_window() -> None:
     out = raw(
         symbol="TEST",
         timeframe="H1",
-        limit=100,
+        fetch_limit=100,
         method="rule_based",
         params={"window_bars": 160},
         detail="full",
     )
 
     assert out["error"] == (
-        "limit (100) must be greater than or equal to params.window_bars (160) "
+        "fetch_limit (100) must be greater than or equal to params.window_bars (160) "
         "for method='rule_based'."
     )
 
 
-@pytest.mark.parametrize("limit", [20, 160, 200])
-def test_rule_based_explicit_limit_controls_default_window(limit: int) -> None:
+@pytest.mark.parametrize("fetch_limit", [20, 160, 200])
+def test_rule_based_explicit_fetch_limit_controls_default_window(
+    fetch_limit: int,
+) -> None:
     raw = _unwrap(regime_detect)
     captured: dict[str, int] = {}
 
@@ -527,21 +529,21 @@ def test_rule_based_explicit_limit_controls_default_window(limit: int) -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=limit,
+        fetch_limit=fetch_limit,
             method="rule_based",
             detail="full",
         )
 
-    assert captured["limit"] == limit
-    assert out["regime"]["window_bars"] == limit
-    assert out["params_used"]["window_bars"] == limit
+    assert captured["limit"] == fetch_limit
+    assert out["regime"]["window_bars"] == fetch_limit
+    assert out["params_used"]["window_bars"] == fetch_limit
 
 
 def test_rule_based_rejects_limit_below_minimum_window() -> None:
     raw = _unwrap(regime_detect)
-    out = raw(symbol="TEST", timeframe="H1", limit=1, method="rule_based")
+    out = raw(symbol="TEST", timeframe="H1", fetch_limit=1, method="rule_based")
 
-    assert out["error"].startswith("limit must be >= 20")
+    assert out["error"].startswith("fetch_limit must be >= 20")
 
 
 @pytest.mark.parametrize(
@@ -610,7 +612,7 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=120,
+            fetch_limit=120,
             method="rule_based",
             params={"window_bars": 60},
             detail="full",
@@ -639,7 +641,7 @@ def test_rule_based_compact_explains_direction_bias() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=120,
+            fetch_limit=120,
             method="rule_based",
             params={"window_bars": 60},
         )
@@ -681,7 +683,7 @@ def test_rule_based_summary_explains_direction_bias() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=120,
+            fetch_limit=120,
             method="rule_based",
             params={"window_bars": 60},
             detail="summary",
@@ -706,7 +708,7 @@ def test_rule_based_warns_for_inapplicable_parameters() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=120,
+            fetch_limit=120,
             method="rule_based",
             threshold=0.9,
             lookback=50,
@@ -733,7 +735,7 @@ def test_rule_based_lookback_controls_window_when_window_bars_omitted() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=120,
+            fetch_limit=120,
             method="rule_based",
             lookback=50,
         )
@@ -767,7 +769,7 @@ def test_gmm_reports_distinct_method_and_common_reliability() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=len(history),
+            fetch_limit=len(history),
             method="gmm",
             params={"n_states": 2},
             detail="full",
@@ -803,7 +805,7 @@ def test_ensemble_rejects_bocpd_change_point_votes() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=n,
+            fetch_limit=n,
             method="ensemble",
             target="price",
             params={"methods": ["bocpd"], "n_states": 2},
@@ -855,7 +857,7 @@ def test_ensemble_discloses_kurtosis_state_count_heuristic() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=n,
+            fetch_limit=n,
             method="ensemble",
             params={"methods": ["hmm"]},
             detail="full",
@@ -904,7 +906,7 @@ def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=n,
+            fetch_limit=n,
             method="ensemble",
             params={"methods": ["hmm"], "n_states": 2},
             detail="full",
@@ -927,7 +929,7 @@ def test_garch_rejects_price_target() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="garch",
             target="price",
         )
@@ -959,7 +961,7 @@ def test_wavelet_rejects_non_positive_energy_window() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=80,
+            fetch_limit=80,
             method="wavelet",
             params={"energy_window": 0},
         )

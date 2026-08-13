@@ -1330,7 +1330,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_tru
         mode="elliott",
         detail="full",
         timeframe="H1",
-        limit=100,
+        lookback=100,
         include_completed=False,
         __cli_raw=True,
     )
@@ -1511,7 +1511,7 @@ def test_patterns_detect_rejects_removed_precise_patterns_engine(monkeypatch):
         mode="all",
         detail="full",
         timeframe="H1",
-        limit=150,
+        lookback=150,
         __cli_raw=True,
     )
 
@@ -1520,8 +1520,8 @@ def test_patterns_detect_rejects_removed_precise_patterns_engine(monkeypatch):
 
 
 def test_patterns_detect_all_mode_rejects_insufficient_history() -> None:
-    with pytest.raises(ValueError, match="requires limit >= 150"):
-        PatternsDetectRequest(symbol="EURUSD", mode="all", limit=1)
+    with pytest.raises(ValueError, match="requires lookback >= 150"):
+        PatternsDetectRequest(symbol="EURUSD", mode="all", lookback=1)
 
 
 def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):

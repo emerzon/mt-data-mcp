@@ -129,6 +129,25 @@ class TestGetFunctionInfo:
         detail_param = next(p for p in info["params"] if p["name"] == "detail")
         assert detail_param["default"] == "compact"
 
+        param_names = {param["name"] for param in info["params"]}
+        assert "lookback" in param_names
+        assert "limit" not in param_names
+
+    def test_analysis_history_controls_do_not_expose_limit(self):
+        from mtdata.core.regime.api import regime_detect
+        from mtdata.core.volume_profile import volume_profile_levels
+
+        for tool, history_parameter in (
+            (regime_detect, "fetch_limit"),
+            (volume_profile_levels, "lookback"),
+        ):
+            param_names = {
+                parameter["name"]
+                for parameter in get_function_info(tool)["params"]
+            }
+            assert history_parameter in param_names
+            assert "limit" not in param_names
+
 
 # ========================================================================
 # _apply_schema_overrides

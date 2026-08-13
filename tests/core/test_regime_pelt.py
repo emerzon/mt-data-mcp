@@ -63,7 +63,7 @@ def test_pelt_detects_structural_break(monkeypatch):
     result = _raw_regime_detect()(
         symbol="TEST",
         timeframe="H1",
-        limit=len(frame),
+        fetch_limit=len(frame),
         method="pelt",
         target="return",
         params={"penalty": "auto", "min_size": 20},

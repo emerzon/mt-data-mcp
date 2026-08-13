@@ -53,7 +53,7 @@ def test_clustering_reliability_uses_feature_space(_mocked_fetch) -> None:
     result = regime_detect(
         symbol="TEST",
         timeframe="H1",
-        limit=800,
+        fetch_limit=800,
         method="clustering",
         params={"window_size": 20, "n_states": 2},
         detail="full",
@@ -77,7 +77,7 @@ def main(_mocked_fetch) -> int:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="clustering",
             params={"window_size": 20, "n_states": 2},
             detail="full",

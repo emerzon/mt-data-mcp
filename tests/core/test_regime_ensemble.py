@@ -58,7 +58,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2},
             detail="full",
@@ -80,7 +80,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"], "voting": "soft"},
             detail="full",
@@ -94,7 +94,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["gmm", "clustering"], "voting": "soft"},
             detail="full",
@@ -108,7 +108,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"], "voting": "hard"},
             detail="full",
@@ -147,7 +147,7 @@ class TestEnsembleRegime:
             res = regime_detect(
                 symbol="TEST",
                 timeframe="H1",
-                limit=limit,
+                fetch_limit=limit,
                 method="ensemble",
                 params={
                     "n_states": 4,
@@ -172,7 +172,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "clustering"]},
             detail="full",
@@ -189,7 +189,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2},
             detail="compact",
@@ -202,7 +202,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2},
             detail="summary",
@@ -217,7 +217,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "ensemble", "clustering"]},
             detail="full",
@@ -232,7 +232,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm", "wavelet"]},
             detail="full",
@@ -246,7 +246,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["hmm"]},
             detail="full",
@@ -260,7 +260,7 @@ class TestEnsembleRegime:
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
-            limit=800,
+            fetch_limit=800,
             method="ensemble",
             params={"n_states": 2, "methods": ["ensemble", "rule_based"]},
             detail="full",

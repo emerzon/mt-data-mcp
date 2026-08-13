@@ -907,7 +907,7 @@ def confluence_levels(  # noqa: C901
                     start=start,
                     end=end,
                     timeframe=vp_timeframe,
-                    limit=int(lookback),
+                    lookback=int(lookback),
                     source=volume_profile_source,
                     price_source="mid",
                     volume_source="auto",

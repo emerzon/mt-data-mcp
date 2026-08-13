@@ -73,11 +73,11 @@ def _resolve_profile_window(
     start: Optional[str],
     end: Optional[str],
     timeframe: Optional[str],
-    limit: Optional[int],
+    lookback: Optional[int],
 ) -> Dict[str, Any]:
     if start:
         return {"start": start, "end": end}
-    if timeframe is None and limit is None:
+    if timeframe is None and lookback is None:
         end_dt = _parse_end_datetime(end) if end else _utc_now_naive()
         if end and end_dt is None:
             return {"error": f"Could not parse end datetime {end!r}"}
@@ -88,23 +88,23 @@ def _resolve_profile_window(
             "end": end if end else end_dt.isoformat(sep=" ", timespec="seconds"),
         }
     if not timeframe:
-        return {"error": "timeframe is required when limit is provided"}
+        return {"error": "timeframe is required when lookback is provided"}
     tf = str(timeframe).strip().upper()
     seconds = TIMEFRAME_SECONDS.get(tf)
     if seconds is None:
         return {"error": f"Invalid timeframe {timeframe!r}"}
-    if limit is None:
+    if lookback is None:
         bars = _DEFAULT_PROFILE_LIMIT
     else:
         try:
-            bars = int(limit)
+            bars = int(lookback)
         except (TypeError, ValueError):
             bars = 0
         if bars <= 0:
             return {
                 "error": (
-                    "limit must be a positive integer when timeframe is provided; "
-                    f"omit limit to use the default {int(_DEFAULT_PROFILE_LIMIT)} bars."
+                    "lookback must be a positive integer when timeframe is provided; "
+                    f"omit lookback to use the default {int(_DEFAULT_PROFILE_LIMIT)} bars."
                 )
             }
     end_dt = _parse_end_datetime(end) if end else _utc_now_naive()
@@ -733,7 +733,7 @@ def compute_volume_profile_payload(
     start: Optional[str] = None,
     end: Optional[str] = None,
     timeframe: Optional[TimeframeLiteral] = None,
-    limit: Optional[int] = None,
+    lookback: Optional[int] = None,
     source: VolumeProfileSourceLiteral = "auto",
     price_source: VolumeProfilePriceSourceLiteral = "mid",
     volume_source: VolumeProfileVolumeSourceLiteral = "auto",
@@ -748,10 +748,10 @@ def compute_volume_profile_payload(
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    if limit is not None and not timeframe:
+    if lookback is not None and not timeframe:
         return {
             "error": (
-                "limit is a bar count and requires timeframe; "
+                "lookback is a bar count and requires timeframe; "
                 "use max_ticks to cap tick rows."
             )
         }
@@ -759,7 +759,7 @@ def compute_volume_profile_payload(
         start=start,
         end=end,
         timeframe=timeframe,
-        limit=limit,
+        lookback=lookback,
     )
     if window.get("error"):
         return {"error": window["error"]}
@@ -930,7 +930,7 @@ def volume_profile_levels(  # noqa: PLR0913
     start: Optional[str] = None,
     end: Optional[str] = None,
     timeframe: Optional[TimeframeLiteral] = None,
-    limit: Optional[int] = None,
+    lookback: Optional[int] = None,
     source: VolumeProfileSourceLiteral = "auto",
     price_source: VolumeProfilePriceSourceLiteral = "mid",
     volume_source: VolumeProfileVolumeSourceLiteral = "auto",
@@ -949,9 +949,9 @@ def volume_profile_levels(  # noqa: PLR0913
 
     With no window arguments, the profile covers the latest 24 hours and fetches
     at most 50,000 ticks. `source="auto"` uses bounded raw ticks for short windows and falls back to
-    M1-bar approximation for larger windows. `limit` is always a bar count and
+    M1-bar approximation for larger windows. `lookback` is always a bar count and
     requires `timeframe`; use `max_ticks` to cap tick rows. When `timeframe` is
-    provided without `limit`, the window defaults to 200 bars. `price_source="mid"`
+    provided without `lookback`, the window defaults to 200 bars. `price_source="mid"`
     is the safe default for FX symbols where tick `last` is often unavailable.
     """
 
@@ -963,7 +963,7 @@ def volume_profile_levels(  # noqa: PLR0913
                 start=start,
                 end=end,
                 timeframe=timeframe,
-                limit=limit,
+                lookback=lookback,
                 source=source,
                 price_source=price_source,
                 volume_source=volume_source,
@@ -990,7 +990,7 @@ def volume_profile_levels(  # noqa: PLR0913
         start=start,
         end=end,
         timeframe=timeframe,
-        limit=limit,
+        lookback=lookback,
         source=source,
         price_source=price_source,
         volume_source=volume_source,

@@ -109,6 +109,11 @@ Finviz fundamentals) selects source data and is not response projection.
 
 List-style tools return a normalized pagination block so you can page deterministically:
 
+Public `limit` parameters always cap returned rows (including returned candles or
+ticks). Historical samples used only for analysis are named `lookback`,
+`fetch_limit`, or `window_bars` so generic paging controls cannot silently shrink
+an analytical window.
+
 ```json
 {
   "total": 420,

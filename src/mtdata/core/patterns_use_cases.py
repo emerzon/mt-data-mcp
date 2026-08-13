@@ -170,16 +170,16 @@ def _limit_pattern_payload_rows(payload: Any, *, top_k: Any) -> Any:
 def _attach_pattern_window_metadata(
     payload: Any,
     *,
-    limit: Any,
+    lookback: Any,
     top_k: Any,
     last_n_bars: Any = None,
 ) -> None:
     if not isinstance(payload, dict) or payload.get("error"):
         return
     try:
-        applied_limit = int(limit)
+        applied_lookback = int(lookback)
     except Exception:
-        applied_limit = limit
+        applied_lookback = lookback
     try:
         applied_top_k = int(top_k)
     except Exception:
@@ -188,20 +188,20 @@ def _attach_pattern_window_metadata(
         applied_last_n = int(last_n_bars) if last_n_bars is not None else None
     except Exception:
         applied_last_n = last_n_bars
-    payload.setdefault("applied_limit", applied_limit)
+    payload.setdefault("applied_lookback", applied_lookback)
     payload.setdefault("applied_top_k", applied_top_k)
     payload.setdefault("applied_last_n_bars", applied_last_n)
     try:
-        observed_bars = int(payload.get("candles", applied_limit))
+        observed_bars = int(payload.get("candles", applied_lookback))
     except Exception:
-        observed_bars = applied_limit
+        observed_bars = applied_lookback
     payload["effective_window"] = {
         "fetched_bars": observed_bars,
         "pattern_filter_bars": min(observed_bars, applied_last_n)
         if isinstance(applied_last_n, int)
         else observed_bars,
-        "requested_limit": applied_limit,
-        "limit_satisfied": observed_bars >= applied_limit,
+        "requested_lookback": applied_lookback,
+        "lookback_satisfied": observed_bars >= applied_lookback,
         "returned_cap": applied_top_k,
     }
 
@@ -223,14 +223,16 @@ def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps"
     summary["signal_bias"] = signal_bias
 
 
-def _attach_recommended_min_bars(resp: Dict[str, Any], mode: str, limit: Any) -> None:
+def _attach_recommended_min_bars(
+    resp: Dict[str, Any], mode: str, lookback: Any
+) -> None:
     if not isinstance(resp, dict) or resp.get("error"):
         return
     recommended = _MODE_RECOMMENDED_MIN_BARS.get(str(mode).strip().lower())
     if recommended is None:
         return
     try:
-        requested = int(resp.get("candles", limit))
+        requested = int(resp.get("candles", lookback))
     except Exception:
         requested = 0
     if requested >= int(recommended):
@@ -451,7 +453,7 @@ def run_patterns_detect(  # noqa: C901
         out = deps.detect_candlestick_patterns(
             symbol=request.symbol,
             timeframe=tf_single,
-            limit=request.limit,
+            limit=request.lookback,
             min_strength=request.min_strength,
             min_gap=request.min_gap,
             robust_only=request.robust_only,
@@ -465,7 +467,7 @@ def run_patterns_detect(  # noqa: C901
         if isinstance(out, dict) and not out.get("error"):
             _attach_pattern_window_metadata(
                 out,
-                limit=request.limit,
+                lookback=request.lookback,
                 top_k=request.top_k,
                 last_n_bars=last_n_bars_val,
             )
@@ -473,7 +475,7 @@ def run_patterns_detect(  # noqa: C901
             if isinstance(rows, list) and not rows and not out.get("note"):
                 out["note"] = _empty_patterns_note(
                     "candlestick",
-                    request.limit,
+                    request.lookback,
                     tf_single,
                     min_strength=request.min_strength,
                 )
@@ -520,14 +522,14 @@ def run_patterns_detect(  # noqa: C901
         # Apply timeframe-aware age/span defaults when user didn't set them
         user_cfg = request.config if isinstance(request.config, dict) else {}
         if "max_pattern_age_bars" not in user_cfg:
-            age_bars, _ = _timeframe_aware_age_limits(tf_single, request.limit)
+            age_bars, _ = _timeframe_aware_age_limits(tf_single, request.lookback)
             cfg.max_pattern_age_bars = age_bars
         if "max_pattern_span_bars" not in user_cfg:
-            _, span_bars = _timeframe_aware_age_limits(tf_single, request.limit)
+            _, span_bars = _timeframe_aware_age_limits(tf_single, request.lookback)
             cfg.max_pattern_span_bars = span_bars
         df, err = _fetch_pattern_frame(
             tf_single,
-            request.limit,
+            request.lookback,
             fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["classic"],
         )
         if err:
@@ -566,7 +568,7 @@ def run_patterns_detect(  # noqa: C901
             resp = deps.build_pattern_response(
                 request.symbol,
                 tf_single,
-                request.limit,
+                request.lookback,
                 mode_value,
                 [],
                 request.include_completed,
@@ -610,7 +612,7 @@ def run_patterns_detect(  # noqa: C901
         resp = deps.build_pattern_response(
             request.symbol,
             tf_single,
-            request.limit,
+            request.lookback,
             mode_value,
             out_list,
             request.include_completed,
@@ -653,7 +655,7 @@ def run_patterns_detect(  # noqa: C901
 
         df, err = _fetch_pattern_frame(
             tf_single,
-            request.limit,
+            request.lookback,
             fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["fractal"],
         )
         if err:
@@ -672,7 +674,7 @@ def run_patterns_detect(  # noqa: C901
         resp = deps.build_pattern_response(
             request.symbol,
             tf_single,
-            request.limit,
+            request.lookback,
             mode_value,
             out_list,
             request.include_completed,
@@ -710,7 +712,7 @@ def run_patterns_detect(  # noqa: C901
                 max_ticks=_config_int(
                     request.config, "volume_profile_max_ticks", 50_000
                 ),
-                max_m1_bars=max(1, int(request.limit) * 60),
+                max_m1_bars=max(1, int(request.lookback) * 60),
                 detail="compact",
             )
             resp["volume_profile"] = vp_payload
@@ -749,7 +751,7 @@ def run_patterns_detect(  # noqa: C901
 
         df, err = _fetch_pattern_frame(
             tf_single,
-            request.limit,
+            request.lookback,
             fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["harmonic"],
         )
         if err:
@@ -759,7 +761,7 @@ def run_patterns_detect(  # noqa: C901
         resp = deps.build_pattern_response(
             request.symbol,
             tf_single,
-            request.limit,
+            request.lookback,
             mode_value,
             out_list,
             request.include_completed,
@@ -769,7 +771,7 @@ def run_patterns_detect(  # noqa: C901
             detail=detail_value,
             top_k=request.top_k,
         )
-        _attach_recommended_min_bars(resp, mode_value, request.limit)
+        _attach_recommended_min_bars(resp, mode_value, request.lookback)
         _attach_signal_bias_summary(resp, deps)
         return resp
 
@@ -789,11 +791,11 @@ def run_patterns_detect(  # noqa: C901
         cfg._external_denoise_applied = bool(request.denoise)
         elliott_user_cfg = request.config if isinstance(request.config, dict) else {}
         if "recent_bars" not in elliott_user_cfg:
-            cfg.recent_bars = max(3, min(20, round(int(request.limit) * 0.05)))
+            cfg.recent_bars = max(3, min(20, round(int(request.lookback) * 0.05)))
 
         if tf_norm:
             age_bars, span_bars = _timeframe_aware_age_limits(
-                tf_norm, int(request.limit)
+                tf_norm, int(request.lookback)
             )
             if "max_pattern_age_bars" not in elliott_user_cfg:
                 cfg.max_pattern_age_bars = age_bars
@@ -801,7 +803,7 @@ def run_patterns_detect(  # noqa: C901
                 cfg.max_pattern_span_bars = span_bars
             df, err = _fetch_pattern_frame(
                 tf_norm,
-                request.limit,
+                request.lookback,
                 fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["elliott"],
             )
             if err:
@@ -811,7 +813,7 @@ def run_patterns_detect(  # noqa: C901
             resp = deps.build_pattern_response(
                 request.symbol,
                 tf_norm,
-                request.limit,
+                request.lookback,
                 mode_value,
                 out_list,
                 request.include_completed,
@@ -821,7 +823,7 @@ def run_patterns_detect(  # noqa: C901
                 detail=detail_value,
                 top_k=request.top_k,
             )
-            _attach_recommended_min_bars(resp, mode_value, request.limit)
+            _attach_recommended_min_bars(resp, mode_value, request.lookback)
             return resp
 
         scanned_timeframes = deps.resolve_elliott_scan_timeframes(cfg)
@@ -835,7 +837,7 @@ def run_patterns_detect(  # noqa: C901
 
         for tf in scanned_timeframes:
             age_bars, span_bars = _timeframe_aware_age_limits(
-                tf, int(request.limit)
+                tf, int(request.lookback)
             )
             if "max_pattern_age_bars" not in elliott_user_cfg:
                 cfg.max_pattern_age_bars = age_bars
@@ -843,7 +845,7 @@ def run_patterns_detect(  # noqa: C901
                 cfg.max_pattern_span_bars = span_bars
             df, err = _fetch_pattern_frame(
                 tf,
-                request.limit,
+                request.lookback,
                 fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["elliott"],
             )
             if err:
@@ -898,13 +900,13 @@ def run_patterns_detect(  # noqa: C901
             if int(len(filtered)) == 0:
                 if completed_hidden > 0:
                     finding_row["diagnostic"] = (
-                        f"No developing Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
+                        f"No developing Elliott Wave structures detected in {int(request.lookback)} {tf} bars. "
                         f"{int(completed_hidden)} confirmed structure(s) were detected but hidden by default. "
                         f"{deps.elliott_timeframe_suggestion(tf)}"
                     )
                 else:
                     finding_row["diagnostic"] = (
-                        f"No valid Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
+                        f"No valid Elliott Wave structures detected in {int(request.lookback)} {tf} bars. "
                         f"{deps.elliott_timeframe_suggestion(tf)}"
                     )
             tf_warnings = _filter_non_actionable_elliott_warnings(
@@ -953,7 +955,7 @@ def run_patterns_detect(  # noqa: C901
             "success": True,
             "symbol": request.symbol,
             "timeframe": "ALL",
-            "lookback": int(request.limit),
+            "lookback": int(request.lookback),
             "mode": mode_value,
             "scanned_timeframes": scanned_timeframes,
             "findings": findings,
@@ -1010,7 +1012,7 @@ def run_patterns_detect(  # noqa: C901
 
         # Age/span limits are set per-timeframe in the loop below via
         # _timeframe_aware_age_limits(), unless the user provided overrides.
-        fractal_cfg.max_age_bars = max(100, request.limit // 3)
+        fractal_cfg.max_age_bars = max(100, request.lookback // 3)
 
         classic_invalid: List[str] = []
         elliott_invalid: List[str] = []
@@ -1088,14 +1090,14 @@ def run_patterns_detect(  # noqa: C901
         # the analysis window consistently with single-mode detection.
         if not (isinstance(request.config, dict) and "recent_bars" in request.config):
             elliott_cfg.recent_bars = max(
-                3, min(20, round(int(request.limit) * 0.05))
+                3, min(20, round(int(request.lookback) * 0.05))
             )
 
         effective_top_k = request.top_k
 
         for tf in timeframes:
             # Scale fetch limit so higher TFs don't pull decades of data
-            tf_limit = _all_mode_fetch_limit(tf, request.limit)
+            tf_limit = _all_mode_fetch_limit(tf, request.lookback)
 
             # Apply timeframe-aware age/span defaults (only when user didn't set them)
             user_cfg = request.config if isinstance(request.config, dict) else {}
@@ -1233,11 +1235,11 @@ def run_patterns_detect(  # noqa: C901
             ]
 
         # Score and sort each section by relevance (confidence + recency)
-        score_all_mode_patterns(candlestick_patterns, request.limit)
-        score_all_mode_patterns(classic_patterns, request.limit)
-        score_all_mode_patterns(harmonic_patterns, request.limit)
-        score_all_mode_patterns(elliott_patterns, request.limit)
-        score_all_mode_patterns(fractal_patterns, request.limit)
+        score_all_mode_patterns(candlestick_patterns, request.lookback)
+        score_all_mode_patterns(classic_patterns, request.lookback)
+        score_all_mode_patterns(harmonic_patterns, request.lookback)
+        score_all_mode_patterns(elliott_patterns, request.lookback)
+        score_all_mode_patterns(fractal_patterns, request.lookback)
 
         total = (
             len(candlestick_patterns)

@@ -463,7 +463,7 @@ class TestRegimeDetectBOCPD:
             res = fn(
                 "EURUSD",
                 timeframe="H1",
-                limit=50,
+                fetch_limit=50,
                 method="bocpd",
                 target="return",
                 threshold=0.5,
@@ -522,7 +522,7 @@ class TestRegimeDetectBOCPD:
     def test_insufficient_history(self, mock_fetch, mock_denoise, mock_fmt):
         mock_fetch.return_value = _make_df(5)
         fn = _get_regime_detect()
-        res = fn("EURUSD", limit=50, method="bocpd")
+        res = fn("EURUSD", fetch_limit=50, method="bocpd")
         assert res.get("error") == "Insufficient history"
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -537,7 +537,7 @@ class TestRegimeDetectBOCPD:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=60,
+                fetch_limit=60,
                 method="bocpd",
                 detail="summary",
                 threshold=0.5,
@@ -557,7 +557,7 @@ class TestRegimeDetectBOCPD:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=60,
+                fetch_limit=60,
                 method="bocpd",
                 detail="compact",
                 threshold=0.5,
@@ -574,7 +574,7 @@ class TestRegimeDetectBOCPD:
         cp = np.zeros(50)
         with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="bocpd", target="price", detail="full")
+            res = fn("EURUSD", fetch_limit=50, method="bocpd", target="price", detail="full")
         assert "error" not in res or isinstance(res.get("error"), str)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -588,7 +588,7 @@ class TestRegimeDetectBOCPD:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=60,
+                fetch_limit=60,
                 method="bocpd",
                 params={"hazard_lambda": 100, "max_run_length": 500},
             )
@@ -611,7 +611,7 @@ class TestRegimeDetectBOCPD:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=12,
+                fetch_limit=12,
                 method="bocpd",
                 target="return",
                 detail="full",
@@ -637,7 +637,7 @@ class TestRegimeDetectBOCPD:
         with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=50, method="bocpd", detail="full", include_series=True
+                "EURUSD", fetch_limit=50, method="bocpd", detail="full", include_series=True
             )
         assert isinstance(res, dict)
 
@@ -653,7 +653,7 @@ class TestRegimeDetectBOCPD:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=60,
+                fetch_limit=60,
                 method="bocpd",
                 detail="compact",
                 include_series=True,
@@ -695,7 +695,7 @@ class TestRegimeDetectMSAR:
                 fn = _get_regime_detect()
                 res = fn(
                     "EURUSD",
-                    limit=60,
+                    fetch_limit=60,
                     method="ms_ar",
                     detail="full",
                     include_series=True,
@@ -724,7 +724,7 @@ class TestRegimeDetectMSAR:
             "sys.modules", {"statsmodels.tsa.regime_switching.markov_autoregression": None}
         ):
             # Import will fail → error
-            res = fn("EURUSD", limit=50, method="ms_ar")
+            res = fn("EURUSD", fetch_limit=50, method="ms_ar")
         assert "error" in res
         assert res["error_code"] == "dependency_missing"
         assert res["details"] == {"method": "ms_ar", "requires": ["statsmodels"]}
@@ -746,7 +746,7 @@ class TestRegimeDetectMSAR:
             return real_import(name, globals, locals, fromlist, level)
 
         with patch("builtins.__import__", side_effect=_raising_import):
-            res = fn("EURUSD", limit=50, method="ms_ar")
+            res = fn("EURUSD", fetch_limit=50, method="ms_ar")
 
         assert "error" in res
         assert "broken statsmodels import hook" in res["error"]
@@ -777,7 +777,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", detail="summary")
+                res = fn("EURUSD", fetch_limit=60, method="ms_ar", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -806,7 +806,7 @@ class TestRegimeDetectMSAR:
             ):
                 fn = _get_regime_detect()
                 res = fn(
-                    "EURUSD", limit=60, method="ms_ar", detail="compact", lookback=20
+                    "EURUSD", fetch_limit=60, method="ms_ar", detail="compact", lookback=20
                 )
         assert isinstance(res, dict)
 
@@ -830,7 +830,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=50, method="ms_ar")
+                res = fn("EURUSD", fetch_limit=50, method="ms_ar")
         assert "error" in res
         assert "MS-AR fitting error" in res["error"]
 
@@ -864,7 +864,7 @@ class TestRegimeDetectMSAR:
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", detail="full")
+                res = fn("EURUSD", fetch_limit=60, method="ms_ar", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -899,7 +899,7 @@ class TestRegimeDetectMSAR:
                 # Use full mode to check technical params
                 res = fn(
                     "EURUSD",
-                    limit=60,
+                    fetch_limit=60,
                     method="ms_ar",
                     detail="full",
                     lookback=20,
@@ -927,7 +927,7 @@ class TestRegimeDetectMSAR:
             ):
                 res_compact = fn(
                     "EURUSD",
-                    limit=60,
+                    fetch_limit=60,
                     method="ms_ar",
                     detail="compact",
                     lookback=20,
@@ -966,7 +966,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", detail="full")
+            res = fn("EURUSD", fetch_limit=60, method="hmm", detail="full")
         assert isinstance(res, dict)
         assert "error" not in res
         assert (
@@ -991,7 +991,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", detail="summary")
+            res = fn("EURUSD", fetch_limit=60, method="hmm", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1011,7 +1011,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="hmm", detail="compact", lookback=20)
+            res = fn("EURUSD", fetch_limit=60, method="hmm", detail="compact", lookback=20)
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1031,7 +1031,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=60, method="gmm", detail="full")
+            res = fn("EURUSD", fetch_limit=60, method="gmm", detail="full")
         assert isinstance(res, dict)
         assert res.get("method") == "gmm"
         assert "transition_matrix" not in res["regime_params"]
@@ -1060,7 +1060,7 @@ class TestRegimeDetectHMM:
         ):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=30, method="gmm", detail="summary", min_regime_bars=2
+                "EURUSD", fetch_limit=30, method="gmm", detail="summary", min_regime_bars=2
             )
         assert isinstance(res, dict)
         summary = res.get("summary", {})
@@ -1078,7 +1078,7 @@ class TestRegimeDetectHMM:
         mock_fetch.return_value = df
         with patch.dict("sys.modules", {"mtdata.forecast.monte_carlo": None}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="hmm")
+            res = fn("EURUSD", fetch_limit=50, method="hmm")
         # Should return an error about import
         assert isinstance(res, dict)
 
@@ -1099,7 +1099,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="hmm", detail="full")
+            res = fn("EURUSD", fetch_limit=50, method="hmm", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1122,7 +1122,7 @@ class TestRegimeDetectHMM:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=50,
+                fetch_limit=50,
                 method="gmm",
                 params={"n_states": 3},
                 detail="full",
@@ -1166,7 +1166,7 @@ class TestRegimeDetectHMM:
         ):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=60, method="hmm", params={"n_states": 3}, detail="full"
+                "EURUSD", fetch_limit=60, method="hmm", params={"n_states": 3}, detail="full"
             )
         assert isinstance(res, dict)
 
@@ -1218,7 +1218,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=12, method="gmm", detail="full")
+            res = fn("EURUSD", fetch_limit=12, method="gmm", detail="full")
 
         assert res["params_used"]["relabeled"] is True
         assert res["params_used"]["label_mapping"] == {"1": 0, "0": 1}
@@ -1233,7 +1233,7 @@ class TestRegimeDetectHMM:
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
-            summary_res = fn("EURUSD", limit=12, method="gmm", detail="summary")
+            summary_res = fn("EURUSD", fetch_limit=12, method="gmm", detail="summary")
 
         assert summary_res["summary"]["state_sigma"] == pytest.approx(
             {0: 0.001, 1: 0.003}
@@ -1250,7 +1250,7 @@ class TestRegimeDetectHMM:
         ) as mock_fit:
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=60, method="hmm", params={"n_states": 1}, detail="full"
+                "EURUSD", fetch_limit=60, method="hmm", params={"n_states": 1}, detail="full"
             )
         assert res == {"error": "n_states must be >= 2 for hmm."}
         mock_fit.assert_not_called()
@@ -1295,7 +1295,7 @@ class TestRegimeDetectClustering:
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", detail="full")
+            res = fn("EURUSD", fetch_limit=80, method="clustering", detail="full")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1339,7 +1339,7 @@ class TestRegimeDetectClustering:
 
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=80, method="clustering", target="price", detail="full"
+                "EURUSD", fetch_limit=80, method="clustering", target="price", detail="full"
             )
         assert isinstance(res, dict)
         # The price-feature warning must always be present. With short-state
@@ -1360,7 +1360,7 @@ class TestRegimeDetectClustering:
         mock_fetch.return_value = df
         with patch.dict("sys.modules", {"mtdata.core.features": None}):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="clustering")
+            res = fn("EURUSD", fetch_limit=50, method="clustering")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1401,7 +1401,7 @@ class TestRegimeDetectClustering:
             mock_kmeans_cls.return_value = mock_kmeans
 
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=80, method="clustering", detail="summary")
+            res = fn("EURUSD", fetch_limit=80, method="clustering", detail="summary")
         assert isinstance(res, dict)
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1443,7 +1443,7 @@ class TestRegimeDetectClustering:
 
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=80, method="clustering", detail="compact", lookback=30
+                "EURUSD", fetch_limit=80, method="clustering", detail="compact", lookback=30
             )
         assert isinstance(res, dict)
 
@@ -1458,7 +1458,7 @@ class TestRegimeDetectClustering:
             "mtdata.core.features.extract_rolling_features", return_value=empty_features
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=50, method="clustering")
+            res = fn("EURUSD", fetch_limit=50, method="clustering")
         assert "error" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1491,7 +1491,7 @@ class TestRegimeDetectClustering:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=80,
+                fetch_limit=80,
                 method="clustering",
                 params={"use_pca": False},
                 detail="full",
@@ -1505,7 +1505,7 @@ class TestRegimeDetectEdgeCases:
     @patch(_FETCH, side_effect=RuntimeError("connection lost"))
     def test_fetch_exception(self, mock_fetch, mock_denoise, mock_fmt):
         fn = _get_regime_detect()
-        res = fn("EURUSD", limit=50, method="bocpd")
+        res = fn("EURUSD", fetch_limit=50, method="bocpd")
         assert "error" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1519,7 +1519,7 @@ class TestRegimeDetectEdgeCases:
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
-                limit=50,
+                fetch_limit=50,
                 method="bocpd",
                 denoise={"method": "ema", "params": {"alpha": 0.2}},
             )
@@ -1539,6 +1539,6 @@ class TestRegimeDetectEdgeCases:
         )
         mock_fetch.return_value = df
         fn = _get_regime_detect()
-        res = fn("EURUSD", limit=12, method="bocpd", target="return")
+        res = fn("EURUSD", fetch_limit=12, method="bocpd", target="return")
         assert res["error"] == "Insufficient finite observations after filter"
 
