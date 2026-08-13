@@ -2,6 +2,7 @@
 Tests for finviz service and tools.
 """
 
+import re
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -2645,7 +2646,7 @@ class TestFinvizTools:
         ):
             result = finviz_calendar.__wrapped__(start="2026-01-05", end="2026-01-12")
 
-        assert result["success"] is True
+            assert result["success"] is True
         mock_calendar.assert_called_once_with(
             impact=None,
             limit=500,
@@ -2653,6 +2654,20 @@ class TestFinvizTools:
             date_from="2026-01-05",
             date_to="2026-01-12",
         )
+
+    def test_finviz_calendar_accepts_relative_dates(self):
+        from mtdata.core.finviz import finviz_calendar
+
+        with patch(
+            "mtdata.core.finviz.get_economic_calendar",
+            return_value={"success": True, "items": []},
+        ) as get_calendar:
+            result = finviz_calendar.__wrapped__(start="2 days ago", end="today")
+
+        assert result["success"] is True
+        call = get_calendar.call_args.kwargs
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", call["date_from"])
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", call["date_to"])
 
     def test_finviz_calendar_compact_replaces_opaque_symbol_with_country(self):
         from mtdata.core.finviz import finviz_calendar

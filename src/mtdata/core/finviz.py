@@ -45,6 +45,7 @@ from ..services.news_text import normalize_news_text
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ..utils.time import format_datetime_utc
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -4145,8 +4146,52 @@ def finviz_calendar(
     }
 
     def _run() -> Dict[str, Any]:
-        start_value = str(start or "").strip() or None
-        end_value = str(end or "").strip() or None
+        def _calendar_date(value: Optional[str], *, inclusive_end: bool) -> Optional[str]:
+            text = str(value or "").strip()
+            if not text:
+                return None
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+                try:
+                    return datetime.strptime(text, "%Y-%m-%d").date().isoformat()
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid calendar date {text!r}. Use a real YYYY-MM-DD date."
+                    ) from exc
+            relative_day = text.lower()
+            if relative_day in {"today", "yesterday", "tomorrow"}:
+                day_offset = {"yesterday": -1, "today": 0, "tomorrow": 1}[
+                    relative_day
+                ]
+                current_ny = datetime.now(timezone.utc).astimezone(
+                    ZoneInfo("America/New_York")
+                )
+                return (current_ny.date() + timedelta(days=day_offset)).isoformat()
+            parsed = (
+                _parse_end_datetime(text)
+                if inclusive_end
+                else _parse_start_datetime(text)
+            )
+            if parsed is None:
+                raise ValueError(
+                    f"Invalid calendar date {text!r}. Use YYYY-MM-DD, an ISO "
+                    "datetime, or a relative expression such as '2 days ago'."
+                )
+            aware_utc = parsed.replace(tzinfo=timezone.utc)
+            return aware_utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+
+        try:
+            start_value = _calendar_date(start, inclusive_end=False)
+            end_value = _calendar_date(end, inclusive_end=True)
+        except ValueError as exc:
+            return build_error_payload(
+                str(exc),
+                code="finviz_calendar_invalid_date",
+                operation="finviz_calendar",
+                remediation=(
+                    "Pass YYYY-MM-DD or a dateparser expression such as "
+                    "start='2 days ago', end='today'."
+                ),
+            )
 
         cal = (calendar or "economic").strip().lower()
         upcoming_only = (
