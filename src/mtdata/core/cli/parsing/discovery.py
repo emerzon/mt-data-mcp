@@ -119,7 +119,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_task_cancel_all", "status_filter"): (
         "Cancelable task status: all, pending, or running. Defaults to all active tasks."
     ),
-    ("indicators_list", "trading_style"): "Filter indicators by common trading workflow: intraday, swing, or position.",
+    ("indicators_list", "trading_style"): (
+        "Filter by broad workflow tags (intraday, swing, or position). Many tags "
+        "are category heuristics, not indicator-specific recommendations."
+    ),
     ("trade_place", "magic"): "MT5 magic number: integer strategy/order identifier used to group EA or strategy trades. Defaults to configured order_magic when omitted.",
     ("trade_get_open", "magic"): "MT5 magic number filter for positions from one strategy or EA. Omit for all magic numbers.",
     ("trade_get_pending", "magic"): "MT5 magic number filter for pending orders from one strategy or EA. Omit for all magic numbers.",

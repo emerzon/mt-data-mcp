@@ -314,7 +314,20 @@ def _indicator_trading_context(item: Dict[str, Any]) -> Dict[str, Any]:
     name = str(item.get("name") or "").strip().lower()
     category = str(item.get("category") or "").strip().lower()
     context = dict(_CATEGORY_TRADING_CONTEXT.get(category, {}))
-    context.update(_INDICATOR_TRADING_CONTEXT.get(name, {}))
+    if context:
+        context["trading_styles_basis"] = "category_heuristic"
+        context["trading_styles_note"] = (
+            "Broad workflow tag inherited from the indicator category; it is not "
+            "an indicator-specific recommendation or performance claim."
+        )
+    indicator_context = _INDICATOR_TRADING_CONTEXT.get(name)
+    if indicator_context:
+        context.update(indicator_context)
+        context["trading_styles_basis"] = "curated_indicator"
+        context["trading_styles_note"] = (
+            "Indicator-specific workflow tag curated for catalog discovery; validate "
+            "parameters and performance on the intended timeframe."
+        )
     return context
 
 
@@ -526,6 +539,14 @@ def indicators_list(  # noqa: C901
                 return {"error": f"Invalid trading_style: {trading_style}. Use intraday, swing, or position."}
             if style_q:
                 items = [it for it in items if _matches_trading_style(it, style_q)]
+            style_basis_counts: Dict[str, int] = {}
+            if style_q:
+                for item in items:
+                    basis = str(
+                        _indicator_trading_context(item).get("trading_styles_basis")
+                        or "unknown"
+                    )
+                    style_basis_counts[basis] = style_basis_counts.get(basis, 0) + 1
             if not search_active and category is None and not style_q:
                 items.sort(key=_default_indicator_sort_key)
             elif not search_active:
@@ -618,6 +639,24 @@ def indicators_list(  # noqa: C901
             result["detail"] = detail_mode
             if style_q:
                 result["trading_style"] = style_q
+                heuristic_matches = int(
+                    style_basis_counts.get("category_heuristic", 0)
+                )
+                result["trading_style_filter"] = {
+                    "requested": style_q,
+                    "semantics": "broad_workflow_tag_not_performance_recommendation",
+                    "curated_indicator_matches": int(
+                        style_basis_counts.get("curated_indicator", 0)
+                    ),
+                    "category_heuristic_matches": heuristic_matches,
+                    "unknown_basis_matches": int(style_basis_counts.get("unknown", 0)),
+                }
+                if heuristic_matches:
+                    result["warnings"] = [
+                        f"{heuristic_matches} match(es) inherit the {style_q} tag from "
+                        "a broad indicator category. Inspect trading_context and the "
+                        "indicator description before treating the tag as suitable."
+                    ]
             more_available = max(0, total_matches - offset_value - len(items))
             result["pagination"] = build_pagination_meta(
                 total=total_matches,

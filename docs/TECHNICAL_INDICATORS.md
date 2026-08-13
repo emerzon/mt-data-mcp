@@ -22,6 +22,11 @@ mtdata-cli indicators_list --category trend
 mtdata-cli indicators_list --category volatility
 ```
 
+`--trading-style` filters broad discovery tags, not measured suitability or
+historical performance. The response reports how many matches use curated
+indicator tags versus category-level heuristics; full-detail rows expose the
+same basis under `trading_context.trading_styles_basis`.
+
 **Get indicator details:**
 ```bash
 mtdata-cli indicators_describe rsi --json
