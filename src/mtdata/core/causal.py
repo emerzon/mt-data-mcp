@@ -260,13 +260,29 @@ def _causal_connection_error() -> Dict[str, Any] | None:
     )
 
 
-def _parse_symbols(value: Optional[str]) -> List[str]:
+def _parse_symbol_request(value: Optional[str]) -> tuple[List[str], int]:
     items: List[str] = []
     for chunk in str(value or "").replace(";", ",").split(","):
         name = chunk.strip()
         if name:
             items.append(name)
-    return list(dict.fromkeys(items))  # dedupe preserving order
+    return list(dict.fromkeys(items)), len(items)
+
+
+def _parse_symbols(value: Optional[str]) -> List[str]:
+    return _parse_symbol_request(value)[0]
+
+
+def _duplicate_only_symbol_error(
+    symbols: List[str], entry_count: int
+) -> Optional[str]:
+    if entry_count <= 1 or len(symbols) >= 2:
+        return None
+    duplicate = symbols[0] if symbols else "the same symbol"
+    return (
+        "symbols must contain at least two distinct symbols when multiple entries "
+        f"are supplied; {duplicate} was provided more than once."
+    )
 
 
 def _visible_group_members(
@@ -1776,7 +1792,7 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list, symbol_entry_count = _parse_symbol_request(symbols)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -1788,6 +1804,15 @@ def causal_discover_signals(  # noqa: C901
         if group and symbol_list:
             return _causal_error(
                 "Provide either symbols or group for causal discovery, not both.",
+                code="invalid_input",
+                meta=meta,
+            )
+        duplicate_error = _duplicate_only_symbol_error(
+            symbol_list, symbol_entry_count
+        )
+        if duplicate_error:
+            return _causal_error(
+                duplicate_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -1812,7 +1837,7 @@ def causal_discover_signals(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
-        elif len(symbol_list) == 1:
+        elif symbol_entry_count == 1:
             expanded, err, group_path = _expand_symbols_for_group(
                 symbol_list[0], gateway=mt5_gateway
             )
@@ -2376,7 +2401,7 @@ def correlation_matrix(  # noqa: C901
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list, symbol_entry_count = _parse_symbol_request(symbols)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -2388,6 +2413,15 @@ def correlation_matrix(  # noqa: C901
         if group and symbol_list:
             return _causal_error(
                 "Provide either symbols or group for correlation analysis, not both.",
+                code="invalid_input",
+                meta=meta,
+            )
+        duplicate_error = _duplicate_only_symbol_error(
+            symbol_list, symbol_entry_count
+        )
+        if duplicate_error:
+            return _causal_error(
+                duplicate_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -2412,7 +2446,7 @@ def correlation_matrix(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
-        elif len(symbol_list) == 1:
+        elif symbol_entry_count == 1:
             expanded, err, group_path = _expand_symbols_for_group(
                 symbol_list[0],
                 gateway=mt5_gateway,
@@ -2801,7 +2835,16 @@ def cross_correlation(  # noqa: C901
                 code=str(connection_error.get("error_code") or "mt5_connection_error"),
                 meta=meta,
             )
-        symbol_list = _parse_symbols(symbols)
+        symbol_list, symbol_entry_count = _parse_symbol_request(symbols)
+        duplicate_error = _duplicate_only_symbol_error(
+            symbol_list, symbol_entry_count
+        )
+        if duplicate_error:
+            return _causal_error(
+                duplicate_error,
+                code="invalid_input",
+                meta=meta,
+            )
         if len(symbol_list) != 2:
             return _causal_error(
                 "cross_correlation requires exactly two comma-separated symbols.",
@@ -3094,7 +3137,7 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        symbol_list = _parse_symbols(symbols)
+        symbol_list, symbol_entry_count = _parse_symbol_request(symbols)
         if symbol_list:
             meta["symbols_input"] = list(symbol_list)
         if group is not None:
@@ -3106,6 +3149,15 @@ def cointegration_test(  # noqa: C901
         if group and symbol_list:
             return _causal_error(
                 "Provide either symbols or group for cointegration testing, not both.",
+                code="invalid_input",
+                meta=meta,
+            )
+        duplicate_error = _duplicate_only_symbol_error(
+            symbol_list, symbol_entry_count
+        )
+        if duplicate_error:
+            return _causal_error(
+                duplicate_error,
                 code="invalid_input",
                 meta=meta,
             )
@@ -3130,7 +3182,7 @@ def cointegration_test(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
-        elif len(symbol_list) == 1:
+        elif symbol_entry_count == 1:
             expanded, err, group_path = _expand_symbols_for_group(
                 symbol_list[0],
                 gateway=mt5_gateway,

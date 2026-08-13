@@ -71,6 +71,34 @@ def test_causal_discovery_rejects_invalid_significance_before_connecting(signifi
     connect.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "tool",
+    [
+        causal.causal_discover_signals,
+        causal.correlation_matrix,
+        causal.cross_correlation,
+        causal.cointegration_test,
+    ],
+)
+def test_causal_tools_reject_duplicate_only_explicit_symbol_lists(tool):
+    raw = tool
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    with (
+        patch.object(causal, "_causal_connection_error", return_value=None),
+        patch.object(causal, "create_mt5_gateway"),
+        patch.object(causal, "_expand_symbols_for_group") as expand,
+    ):
+        result = raw(symbols="EURUSD,EURUSD")
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_input"
+    assert "at least two distinct symbols" in result["error"]
+    assert "EURUSD was provided more than once" in result["error"]
+    expand.assert_not_called()
+
+
 def test_causal_discovery_fails_when_requested_lag_prevents_all_tests():
     index = pd.date_range("2026-01-01", periods=50, freq="h")
     left = pd.Series(range(1, 51), index=index, dtype=float)
