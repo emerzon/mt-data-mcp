@@ -234,6 +234,10 @@ def _run_data_fetch_candles_impl(
     )
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
+        _normalize_public_candle_timestamp_mode(
+            result,
+            include_raw=detail_mode == "full",
+        )
         limit_explicit = "limit" in getattr(request, "model_fields_set", set())
         applied_limit = (
             effective_limit if effective_limit is not None else request.limit
@@ -621,8 +625,20 @@ def _apply_range_limit_cap(
     provider_bounded = bool(query.get("provider_bounded"))
     if available <= limit_value and not provider_bounded:
         spacing_mismatch = bool(result.get("timeframe_spacing_mismatch"))
-        result["range_complete"] = not spacing_mismatch
-        if spacing_mismatch:
+        forming_bar_excluded = bool(
+            result.get("forming_candle_status") == "skipped"
+            and (
+                result.get("has_forming_candle") is True
+                or int(result.get("incomplete_candles_skipped") or 0) > 0
+            )
+        )
+        result["range_complete"] = not spacing_mismatch and not forming_bar_excluded
+        if forming_bar_excluded:
+            result["range_incomplete_reason"] = "forming_bar_excluded"
+            data_window = result.get("data_window")
+            if isinstance(data_window, dict):
+                data_window["latest_bar_complete"] = False
+        elif spacing_mismatch:
             result["range_incomplete_reason"] = "timeframe_spacing_mismatch"
         return
 
@@ -764,6 +780,7 @@ def _compact_candles_payload(
         "bar_time_convention",
         "meta",
         "raw_time_basis",
+        "raw_timestamp_mode",
         "time_normalization",
         "broker_server_tz",
         "broker_utc_offset_seconds",
@@ -778,7 +795,9 @@ def _compact_candles_payload(
         compact.pop(key, None)
     if not bool(compact.get("has_forming_candle")):
         compact.pop("has_forming_candle", None)
-        compact.pop("forming_candle_status", None)
+        compact["forming_candle_status"] = str(
+            compact.get("forming_candle_status") or "none"
+        )
         compact.pop("forming_candle_included", None)
         compact.pop("forming_candle_skipped", None)
     elif not include_forming_booleans:
@@ -788,10 +807,7 @@ def _compact_candles_payload(
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
     _attach_candle_timestamp_metadata(compact)
-    if (
-        compact.get("timestamp_mode") == "server_clock"
-        and compact_time_normalization not in (None, "")
-    ):
+    if compact_time_normalization not in (None, ""):
         compact["time_normalization"] = compact_time_normalization
     for key in (
         "query_type",
@@ -839,6 +855,24 @@ def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
             payload["timestamp_format"] = "iso_utc"
             payload.pop("timestamp_format_hint", None)
             return
+
+
+def _normalize_public_candle_timestamp_mode(
+    payload: Dict[str, Any],
+    *,
+    include_raw: bool,
+) -> None:
+    """Name the clock used by emitted timestamps, not the raw MT5 epoch axis."""
+    raw_mode = str(payload.get("timestamp_mode") or "").strip()
+    time_basis = str(payload.get("time_basis") or "").strip().lower()
+    if not raw_mode or time_basis != "utc":
+        return
+    payload["timestamp_mode"] = "utc"
+    payload["public_timestamp_mode"] = "utc"
+    if include_raw:
+        payload["raw_timestamp_mode"] = raw_mode
+    else:
+        payload.pop("raw_timestamp_mode", None)
 
 
 def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
@@ -1166,7 +1200,11 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noq
             public["freshness_policy_relaxed"] = normalize_policy_relaxed(
                 freshness.get("freshness_policy_relaxed")
             )
-        if query_mode == "range" and freshness.get("data_freshness_seconds") is not None:
+        if (
+            query_mode == "range"
+            and result.get("range_incomplete_reason") != "forming_bar_excluded"
+            and freshness.get("data_freshness_seconds") is not None
+        ):
             try:
                 seconds = max(0.0, float(freshness["data_freshness_seconds"]))
             except Exception:

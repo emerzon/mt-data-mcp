@@ -88,8 +88,8 @@ MT5_SERVER_TZ=Europe/Athens
 
 ## Time metadata
 
-Compact candle responses retain the thin time contract (`time_basis` and
-`timestamp_mode`). Latest-N queries expose `limit_satisfied`; historical
+Compact candle responses retain the thin public time contract (`time_basis`,
+`timestamp_mode=utc`, and `public_timestamp_mode=utc`). Latest-N queries expose `limit_satisfied`; historical
 ranges expose `range_complete`, `limit_reached`, and a `query_applied` block
 that states whether the limit was anchored at the start or end. An omitted
 range limit is reported as `safety_limit`, not as a user-requested count.
@@ -100,15 +100,15 @@ to inspect the full normalization contract:
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --detail full --json
 ```
 
-With no configured broker offset, payloads use the upstream native-UTC
-contract and report `raw_time_basis=mt5_utc_epoch`,
-`time_basis=utc`, `time_normalization=mt5_utc_native`, and
-`timestamp_mode=native_utc`. A detected server-clock terminal instead reports
-`raw_time_basis=mt5_server_clock_epoch`,
-`time_normalization=server_clock_to_utc`, and `timestamp_mode=server_clock`.
-Compact candle payloads retain `time_normalization=server_clock_to_utc` in this
-mode so their public `Z` timestamps cannot be mistaken for raw broker-clock
-values.
+With no configured broker offset, full payloads report
+`raw_time_basis=mt5_utc_epoch`, `raw_timestamp_mode=native_utc`, and
+`time_normalization=mt5_utc_native`. A detected server-clock terminal instead
+reports `raw_time_basis=mt5_server_clock_epoch`,
+`raw_timestamp_mode=server_clock`, and
+`time_normalization=server_clock_to_utc`. Public candle payloads use
+`timestamp_mode=utc`; compact server-clock payloads retain
+`time_normalization=server_clock_to_utc` without exposing the raw mode as the
+public timestamp axis.
 The public timestamp values are UTC in both cases.
 
 MT5 stamps candles at bar open. Daily, weekly, and monthly candle rows also

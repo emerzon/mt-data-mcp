@@ -2543,6 +2543,15 @@ def _market_scan_freshness_summary(
     ]
     if row_times:
         out["data_as_of"] = max(row_times)
+        out["bar_as_of"] = out["data_as_of"]
+        out["data_as_of_basis"] = "latest_completed_bar_open"
+    quote_times = [
+        str(row.get("quote_as_of") or "").strip()
+        for row in rows
+        if str(row.get("quote_as_of") or "").strip()
+    ]
+    if quote_times:
+        out["quote_as_of"] = max(quote_times)
 
     now_epoch = time.time()
     closed_count = sum(
@@ -4608,6 +4617,7 @@ def market_scan(  # noqa: C901
                 "symbol",
                 "asset_class",
                 "close",
+                "quote_as_of",
                 "bid",
                 "ask",
                 "spread_quality",

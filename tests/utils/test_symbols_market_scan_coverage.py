@@ -340,6 +340,26 @@ def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
     assert result["unsafe_quote_rows"] == 2
 
 
+def test_market_scan_freshness_separates_bar_and_quote_clocks():
+    from mtdata.core.symbols import _market_scan_freshness_summary
+
+    result = _market_scan_freshness_summary(
+        [
+            {
+                "symbol": "EURUSD",
+                "time": "2026-08-13T19:00:00Z",
+                "quote_as_of": "2026-08-13T20:45:00Z",
+                "data_stale": False,
+            }
+        ]
+    )
+
+    assert result["data_as_of"] == "2026-08-13T19:00:00Z"
+    assert result["bar_as_of"] == "2026-08-13T19:00:00Z"
+    assert result["quote_as_of"] == "2026-08-13T20:45:00Z"
+    assert result["data_as_of_basis"] == "latest_completed_bar_open"
+
+
 def test_market_scan_freshness_summary_labels_closed_weekend_snapshot():
     from mtdata.core.symbols import _market_scan_freshness_summary
 

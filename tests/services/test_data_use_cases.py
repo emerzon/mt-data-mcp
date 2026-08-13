@@ -474,6 +474,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
         "timeframe": "H1",
         "count": 5,
         "limit_satisfied": True,
+        "forming_candle_status": "none",
         "data": [],
         "source": {"provider": "mt5", "context_available": False},
     }
@@ -824,6 +825,41 @@ def test_run_data_fetch_candles_range_is_incomplete_on_spacing_mismatch():
     assert result["range_incomplete_reason"] == "timeframe_spacing_mismatch"
 
 
+def test_range_with_only_excluded_forming_bar_is_not_complete():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="D1",
+        start="today",
+        end="today",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": [],
+            "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "incomplete_candles_skipped": 1,
+            "data_window": {"latest_bar_complete": True},
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "range"},
+                    "freshness": {"data_freshness_seconds": 86_400},
+                }
+            },
+        },
+    )
+
+    assert result["count"] == 0
+    assert result["range_complete"] is False
+    assert result["range_incomplete_reason"] == "forming_bar_excluded"
+    assert result["forming_candle_status"] == "skipped"
+    assert result["data_window"]["latest_bar_complete"] is False
+    assert "query_end_gap" not in result
+
+
 def test_run_data_fetch_candles_normalizes_count_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -901,7 +937,7 @@ def test_live_spread_reference_uses_reconciled_tick_stream(monkeypatch) -> None:
         data_service.mt5,
         "symbol_info_tick",
         lambda _symbol: SimpleNamespace(
-            time=now + 8.0,
+            time=now + 12.0,
             bid=1.10000,
             ask=1.10009,
         ),
@@ -1388,7 +1424,26 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "candles_requested" not in result
     assert result["limit_satisfied"] is False
     assert result["time_basis"] == "utc"
-    assert result["timestamp_mode"] == "native_utc"
+    assert result["timestamp_mode"] == "utc"
+    assert result["public_timestamp_mode"] == "utc"
+
+
+def test_compact_candles_always_names_forming_candle_status():
+    request = DataFetchCandlesRequest(symbol="AAPL.NAS", timeframe="H1", limit=1)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "candles": 1,
+            "data": [{"time": "2026-08-13T19:00:00Z", "close": 305.21}],
+            "has_forming_candle": False,
+            "forming_candle_status": "none",
+        },
+    )
+
+    assert result["forming_candle_status"] == "none"
 
 
 def test_compact_server_clock_candles_keep_utc_normalization_disclosure():
@@ -1410,9 +1465,35 @@ def test_compact_server_clock_candles_keep_utc_normalization_disclosure():
         },
     )
 
-    assert result["timestamp_mode"] == "server_clock"
+    assert result["timestamp_mode"] == "utc"
+    assert result["public_timestamp_mode"] == "utc"
+    assert "raw_timestamp_mode" not in result
     assert result["time_basis"] == "utc"
     assert result["time_normalization"] == "server_clock_to_utc"
+
+
+def test_full_server_clock_candles_disclose_raw_and_public_modes():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=1,
+        detail="full",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "time_basis": "utc",
+            "timestamp_mode": "server_clock",
+            "data": [{"time": "2026-08-13T13:00:00Z", "close": 1.15}],
+        },
+    )
+
+    assert result["timestamp_mode"] == "utc"
+    assert result["public_timestamp_mode"] == "utc"
+    assert result["raw_timestamp_mode"] == "server_clock"
 
 
 def test_compact_indicator_candles_disclose_warmup_history() -> None:

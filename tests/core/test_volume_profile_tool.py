@@ -204,9 +204,9 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_uni
         detail="standard",
     )
 
-    assert result["as_of"] == "2026-06-02T12:00:00Z"
+    assert result["as_of"] == "2026-06-02T12:00:01.000Z"
     assert result["timezone"] == "UTC"
-    assert result["data_age_seconds"] == 12.5
+    assert result["data_age_seconds"] == 59.0
     assert result["data_stale"] is False
     assert result["window"] == {
         "start": "2026-06-02T12:00:00.000Z",
@@ -375,7 +375,12 @@ def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
     }
 
 
-def test_latest_bar_window_uses_source_freshness_instead_of_historical_clock():
+def test_latest_bar_window_uses_profile_window_end_for_freshness(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "_utc_now_naive",
+        lambda: vp.datetime(2026, 8, 13, 14, 30),
+    )
     out = vp._profile_freshness_meta(
         {
             "data_fetched_at": "2026-08-13T14:36:21Z",
@@ -387,7 +392,9 @@ def test_latest_bar_window_uses_source_freshness_instead_of_historical_clock():
     )
 
     assert out["query_type"] == "latest"
-    assert out["data_stale"] is False
+    assert out["as_of"] == "2026-08-13T14:00:00Z"
+    assert out["data_age_seconds"] == 1800.0
+    assert out["data_stale"] is True
     assert "freshness_applicability" not in out
 
 

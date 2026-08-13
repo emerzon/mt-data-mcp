@@ -687,7 +687,7 @@ def _profile_freshness_meta(
             if value not in (None, "", [], {}):
                 out[target] = value
                 break
-    if historical_query and data_as_of:
+    if data_as_of:
         observed_at = _parse_start_datetime(data_as_of)
         if observed_at is not None:
             age_seconds = max(
@@ -699,10 +699,11 @@ def _profile_freshness_meta(
                     "as_of": data_as_of,
                     "data_age_seconds": round(age_seconds, 3),
                     "data_stale": age_seconds > 300.0,
-                    "freshness_applicability": "historical_query",
-                    "query_type": "historical",
+                    "query_type": "historical" if historical_query else "latest",
                 }
             )
+            if historical_query:
+                out["freshness_applicability"] = "historical_query"
         return out
     for target, source_names in (
         ("as_of", ("as_of", "data_fetched_at")),
