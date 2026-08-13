@@ -10,6 +10,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
+from mtdata.forecast import barriers_shared
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.barriers_probabilities import (
     _history_freshness_context,
@@ -86,6 +87,28 @@ def test_barrier_reference_prefers_live_stream_over_future_cached_tick():
     assert result["reference_freshness_state"] == "live"
     assert result["reference_usable_for_live"] is True
     assert result["reference_spread_quality"] == "two_sided"
+
+
+def test_live_reference_price_reads_mapping_stream_tick():
+    stream_tick = {
+        "time_msc": 1_786_628_800_000,
+        "bid": 1.15316,
+        "ask": 1.15318,
+        "last": 0.0,
+    }
+
+    with patch.object(
+        barriers_shared,
+        "resolve_quote_tick",
+        return_value=(stream_tick, {}),
+    ):
+        price, source = barriers_shared._get_live_reference_price(
+            "EURUSD",
+            "long",
+        )
+
+    assert price == 1.15318
+    assert source == "live_tick_ask"
 
 
 def test_barrier_optimize_rejects_removed_profile_alias():
@@ -288,7 +311,7 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         paths = self._sample_paths()
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
              patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")), \
-             patch(f'{_BARRIER_PROB_ROOT}._live_reference_time_context', return_value={"reference_price_stale": False}):
+             patch(f'{_BARRIER_PROB_ROOT}._live_reference_time_context', return_value={"reference_price_stale": False, "reference_usable_for_live": True}):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -319,7 +342,8 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)), \
+             patch(f'{_BARRIER_PROB_ROOT}._history_freshness_context', return_value={"history_policy_ok": True, "data_as_of": "2026-08-13T13:00Z"}):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -334,6 +358,12 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertAlmostEqual(result["last_price"], 1.0, places=8)
         self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
         self.assertEqual(result["last_price_source"], "close")
+        self.assertFalse(result["usable_for_live_trading"])
+        self.assertEqual(
+            result["execution_blockers"],
+            ["live_reference_quote_not_used"],
+        )
+        self.assertIn("executable live reference quote", result["warnings"][0])
 
     def test_forecast_barrier_hmm_warns_when_states_collapse(self):
         self._set_flat_history(1.0, bars=200)

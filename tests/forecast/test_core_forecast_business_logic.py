@@ -3730,6 +3730,32 @@ def test_forecast_barrier_prob_marks_stale_reference_verdict_research_only():
     assert out["verdict"] == "Research only — SL-first probability bias"
 
 
+def test_forecast_barrier_prob_compact_keeps_execution_blockers():
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        {
+            "success": True,
+            "prob_tp_first": 0.4,
+            "prob_sl_first": 0.6,
+            "usable_for_live_trading": False,
+            "usable_for_live_trading_basis": "model_history_and_reference_quote",
+            "execution_blockers": ["live_reference_quote_not_used"],
+        },
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="compact",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.3,
+            },
+        ),
+    )
+
+    assert out["usable_for_live_trading"] is False
+    assert out["execution_blockers"] == ["live_reference_quote_not_used"]
+
+
 def test_forecast_barrier_optimize_uses_reference_price_context():
     def fake_optimize(**_kwargs):
         return {

@@ -999,10 +999,25 @@ def _apply_barrier_freshness_contract(
             reasons.append(blocker)
     out["trade_gate_reasons"] = reasons
     warnings_out = list(out.get("warnings") or [])
-    warning = (
-        "Barrier output is not execution-ready because the model history or "
-        "reference quote is outside its live freshness policy."
+    reference_only_blocker = bool(
+        model_ready
+        and len(blockers) == 1
+        and blockers[0] in {
+            "live_reference_quote_not_used",
+            "reference_quote_not_live",
+        }
+        and out.get("status") in (None, "ok")
     )
+    if reference_only_blocker:
+        warning = (
+            "Barrier output is not execution-ready because an executable live "
+            "reference quote was unavailable; results remain anchored to research data."
+        )
+    else:
+        warning = (
+            "Barrier output is not execution-ready because the model history or "
+            "reference quote is outside its live freshness policy."
+        )
     if warning not in warnings_out:
         warnings_out.append(warning)
     out["warnings"] = warnings_out
@@ -1012,6 +1027,14 @@ def _apply_barrier_freshness_contract(
     out["recommendation"] = "avoid"
     out["recommendation_reason"] = blocker_reason
     out["actionability_reason"] = blocker_reason
+    if reference_only_blocker:
+        out["remediation"] = {
+            "next_steps": [
+                "Call market_ticker to confirm a fresh executable quote.",
+                "Retry the barrier request after the live quote is available.",
+                "Use the close-anchored output only for historical research.",
+            ]
+        }
     if out.get("status") == "ok":
         out["status_reason"] = blocker_reason
     actionability_flags = list(out.get("actionability_flags") or [])
@@ -1050,9 +1073,11 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
             return None
         return out
 
-    bid = _valid_price(getattr(tick, "bid", None))
-    ask = _valid_price(getattr(tick, "ask", None))
-    last = _valid_price(getattr(tick, "last", None))
+    # Reconciled stream ticks are mapping/record-like while symbol_info_tick
+    # returns an attribute object. The canonical accessor handles both.
+    bid = _valid_price(tick_value(tick, "bid"))
+    ask = _valid_price(tick_value(tick, "ask"))
+    last = _valid_price(tick_value(tick, "last"))
 
     direction_norm, _ = normalize_trade_direction(direction)
     if direction_norm == "long":

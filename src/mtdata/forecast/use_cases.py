@@ -1669,6 +1669,8 @@ def _apply_barrier_prob_detail(
         "as_of",
         "data_as_of",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
+        "execution_blockers",
         "verdict",
         "status",
         "status_reason",

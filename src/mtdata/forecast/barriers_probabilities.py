@@ -22,6 +22,7 @@ from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
     BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL,
     BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING,
+    _apply_barrier_freshness_contract,
     _auto_barrier_method,
     _binomial_se,
     _binomial_wilson_95,
@@ -503,46 +504,23 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "time_to_tp_bars": tp_stats,
             "time_to_sl_bars": sl_stats,
         }
-        out.update(freshness_context)
-        out["model_data_usable_for_live"] = bool(
-            freshness_context.get("history_policy_ok")
-        )
+        reference_context: Dict[str, Any] = {}
         if str(last_price_source or "").startswith("live_tick"):
             reference_context = _live_reference_time_context(symbol, timeframe)
-            out.update(reference_context)
-            out["usable_for_live_trading"] = bool(
-                out.get("model_data_usable_for_live")
-                and reference_context.get("reference_usable_for_live")
-            )
-            out["usable_for_live_trading_basis"] = (
-                "model_history_and_reference_quote"
-            )
-            blockers = []
-            if not out.get("model_data_usable_for_live"):
-                blockers.append("model_history_outside_policy")
-            if not reference_context.get("reference_usable_for_live"):
-                blockers.append("reference_quote_not_live")
-            out["execution_blockers"] = blockers
-            if (
-                reference_context.get("reference_price_stale") is True
-                or reference_context.get("market_status") == "closed"
-            ):
-                out["last_price_source"] = str(last_price_source).replace(
-                    "live_tick", "last_tick", 1
-                )
-        elif freshness_context.get("data_as_of"):
-            out["reference_price_time"] = freshness_context.get("data_as_of")
-            out["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
+        _apply_barrier_freshness_contract(
+            out,
+            history_context=freshness_context,
+            reference_context=reference_context,
+            last_price_source=last_price_source,
+        )
         out["conditioning_note"] = (
             "Probabilities use closed bars through "
             f"{out.get('data_as_of')}; barriers are measured from "
             f"{out.get('last_price_source')}."
         )
-        if not out.get("usable_for_live_trading"):
-            warnings_out.append(
-                "Barrier output is not execution-ready because the model history "
-                "or reference quote is outside its live freshness policy."
-            )
+        for warning_text in out.get("warnings") or []:
+            if warning_text not in warnings_out:
+                warnings_out.append(str(warning_text))
         if price_precision is not None:
             out["price_precision"] = int(price_precision)
         if method_requested != method_key:
