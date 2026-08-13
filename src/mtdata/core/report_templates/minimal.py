@@ -71,7 +71,9 @@ def template_minimal(
             symbol=symbol,
             timeframe=tf,
             limit=int(p.get("context_limit", 200)),
-            start=start,
+            # Context is an as-of snapshot, so an explicit limit must anchor at
+            # the range end rather than select the first bars after start.
+            start=None,
             end=end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,

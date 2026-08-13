@@ -196,6 +196,38 @@ def test_report_section_plan_only_runs_dependencies_available_to_template() -> N
 
     assert minimal["execution"] == ["forecast"]
     assert basic["execution"] == ["backtest", "forecast"]
+    assert basic["selected_runtime_estimate_seconds"] == 30.0
+    assert basic["required_dependencies"] == {
+        "forecast": [
+            {"section": "backtest", "estimated_runtime_seconds": 25.0}
+        ]
+    }
+
+
+def test_report_section_plan_runtime_budget_includes_dependencies() -> None:
+    from mtdata.core.report.use_cases import _resolve_report_section_plan
+
+    insufficient = _resolve_report_section_plan(
+        "basic",
+        include_sections=["context", "forecast"],
+        max_runtime=33.0,
+    )
+    sufficient = _resolve_report_section_plan(
+        "basic",
+        include_sections=["context", "forecast"],
+        max_runtime=34.0,
+    )
+
+    assert insufficient["selected_runtime_estimate_seconds"] == 34.0
+    assert insufficient["execution"] == ["context"]
+    assert insufficient["runtime_omitted"] == ["forecast"]
+    assert insufficient["runtime_omitted_details"]["forecast"] == {
+        "estimated_incremental_seconds": 30.0,
+        "budget_remaining_seconds": 29.0,
+        "shortfall_seconds": 1.0,
+        "required_dependencies": ["backtest"],
+    }
+    assert sufficient["execution"] == ["context", "backtest", "forecast"]
 
 
 def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
@@ -423,6 +455,79 @@ def test_run_report_generate_returns_budgeted_partial_sections():
     ]
 
 
+def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    def basic_template(_symbol, _horizon, _denoise, params):
+        assert params["_report_execution_sections"] == ["context"]
+        return {"sections": {"context": {"last_snapshot": {"close": 1.1}}}}
+
+    with patch(
+        "mtdata.core.report_templates.template_basic",
+        basic_template,
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                template="basic",
+                include_sections=["context", "forecast"],
+                max_runtime=33,
+                detail="full",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    plan = result["runtime_plan"]
+    assert plan["selected_runtime_estimate_seconds"] == 34.0
+    assert plan["scheduled_sections"] == ["context"]
+    assert plan["required_dependencies"] == {
+        "forecast": [
+            {"section": "backtest", "estimated_runtime_seconds": 25.0}
+        ]
+    }
+    assert plan["runtime_omitted_details"]["forecast"]["shortfall_seconds"] == 1.0
+
+
+def test_run_report_generate_promotes_common_symbol_failure_in_compact_output():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    message = "Symbol 'NO_SUCH_SYMBOL' was not found in MT5."
+
+    def minimal_template(_symbol, _horizon, _denoise, _params):
+        return {
+            "sections": {
+                "context": {"error": message},
+                "forecast": {"error": message},
+            }
+        }
+
+    with patch(
+        "mtdata.core.report_templates.template_minimal",
+        minimal_template,
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(symbol="NO_SUCH_SYMBOL", detail="compact"),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda error: {"error": str(error)},
+            append_diagnostic_warning=lambda report, warning: None,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "symbol_not_found"
+    assert result["request_id"]
+    assert result["operation"] == "report_generate"
+    assert result["related_tools"] == ["symbols_list"]
+    assert result["sections_status"]["summary"]["error"] == 2
+
+
 def test_run_report_generate_warns_once_for_degraded_sections(caplog):
     from mtdata.core.report.requests import ReportGenerateRequest
     from mtdata.core.report.use_cases import run_report_generate
@@ -537,6 +642,29 @@ def test_compact_report_payload_omits_string_summary_when_structured_exists():
 
     assert out["summary_structured"] == {"market": {"close": 1.10}}
     assert "summary" not in out
+
+
+def test_compact_failed_report_preserves_error_envelope():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": False,
+            "error": "Symbol 'NO_SUCH_SYMBOL' was not found in MT5.",
+            "error_code": "symbol_not_found",
+            "request_id": "request-1",
+            "operation": "report_generate",
+            "remediation": "Use symbols_list.",
+            "related_tools": ["symbols_list"],
+            "sections_status": {"summary": {"ok": 0, "partial": 0, "error": 2}},
+        },
+        symbol="NO_SUCH_SYMBOL",
+        template="minimal",
+    )
+
+    assert out["error_code"] == "symbol_not_found"
+    assert out["request_id"] == "request-1"
+    assert out["related_tools"] == ["symbols_list"]
 
 
 def test_compact_report_payload_rounds_summary_floats_to_six_significant_digits():

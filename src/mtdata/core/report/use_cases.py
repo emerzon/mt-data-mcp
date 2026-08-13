@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ...utils.time import format_datetime_utc
+from ..error_envelope import build_error_payload, normalize_error_payload
 from ..execution_logging import log_operation_exception, run_logged_operation
 from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
@@ -653,6 +654,19 @@ def _compact_report_payload(  # noqa: C901
         "template": template,
         "detail": "compact",
     }
+    if not compact["success"]:
+        for key in (
+            "error",
+            "error_code",
+            "request_id",
+            "operation",
+            "remediation",
+            "related_tools",
+            "details",
+        ):
+            value = report.get(key)
+            if value not in (None, "", [], {}):
+                compact[key] = value
     timezone_label = _valid_timezone_label(report.get("timezone"))
     if timezone_label:
         compact["timezone"] = timezone_label
@@ -808,20 +822,37 @@ def _resolve_report_section_plan(
 
     execution: List[str] = []
     runtime_omitted: List[str] = []
+    runtime_omitted_details: Dict[str, Dict[str, Any]] = {}
     estimated_runtime = 0.0
-    for section in selected:
+    required_dependencies: Dict[str, List[Dict[str, Any]]] = {}
+    requested_execution: List[str] = []
+
+    def _required_sections(section: str) -> List[str]:
         required = [
             dependency
             for dependency in _REPORT_SECTION_DEPENDENCIES.get(section, ())
-            if dependency in available and dependency not in execution
+            if dependency in available
         ]
-        if (
-            template == "scalping"
-            and section == "barriers"
-            and "market" not in execution
-            and "market" not in required
-        ):
+        if template == "scalping" and section == "barriers" and "market" not in required:
             required.append("market")
+        return required
+
+    for section in selected:
+        all_required = _required_sections(section)
+        if all_required:
+            required_dependencies[section] = [
+                {
+                    "section": dependency,
+                    "estimated_runtime_seconds": _REPORT_SECTION_RUNTIME_ESTIMATES.get(
+                        dependency, 5.0
+                    ),
+                }
+                for dependency in all_required
+            ]
+        for item in [*all_required, section]:
+            if item not in requested_execution:
+                requested_execution.append(item)
+        required = [item for item in all_required if item not in execution]
         additions = [*required, section]
         additions = list(dict.fromkeys(additions))
         additional_cost = sum(
@@ -834,6 +865,13 @@ def _resolve_report_section_plan(
             and estimated_runtime + additional_cost > float(max_runtime)
         ):
             runtime_omitted.append(section)
+            remaining = max(0.0, float(max_runtime) - estimated_runtime)
+            runtime_omitted_details[section] = {
+                "estimated_incremental_seconds": round(additional_cost, 3),
+                "budget_remaining_seconds": round(remaining, 3),
+                "shortfall_seconds": round(max(0.0, additional_cost - remaining), 3),
+                "required_dependencies": list(all_required),
+            }
             continue
         for item in additions:
             if item not in execution:
@@ -845,12 +883,62 @@ def _resolve_report_section_plan(
         "execution": execution,
         "missing": missing,
         "runtime_omitted": runtime_omitted,
+        "runtime_omitted_details": runtime_omitted_details,
+        "required_dependencies": required_dependencies,
+        "requested_execution": requested_execution,
         "estimated_runtime_seconds": round(estimated_runtime, 3),
         "selected_runtime_estimate_seconds": round(
-            sum(_REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0) for item in selected),
+            sum(
+                _REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0)
+                for item in requested_execution
+            ),
             3,
         ),
     }
+
+
+def _failed_report_error_envelope(
+    *,
+    sections_status: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a stable top-level envelope, promoting a canonical nested cause."""
+    nested_errors: List[Dict[str, str]] = []
+    details = sections_status.get("details")
+    if isinstance(details, dict):
+        for section, detail in details.items():
+            errors = detail.get("errors") if isinstance(detail, dict) else None
+            if not isinstance(errors, list):
+                continue
+            for item in errors:
+                if not isinstance(item, dict):
+                    continue
+                message = str(item.get("message") or "").strip()
+                if message:
+                    nested_errors.append(
+                        {
+                            "section": str(section),
+                            "path": str(item.get("path") or section),
+                            "message": message,
+                        }
+                    )
+
+    generic_message = "Every selected report section failed or was omitted."
+    candidate = normalize_error_payload(
+        {
+            "error": nested_errors[0]["message"] if nested_errors else generic_message,
+            "error_code": "tool_error",
+            "details": {"section_errors": nested_errors[:10]},
+        },
+        operation="report_generate",
+    )
+    if candidate.get("error_code") not in {"tool_error", "internal_error"}:
+        return candidate
+    return build_error_payload(
+        generic_message,
+        code="report_sections_failed",
+        operation="report_generate",
+        details={"section_errors": nested_errors[:10]} if nested_errors else None,
+    )
 
 
 def _apply_report_section_controls(
@@ -1279,6 +1367,13 @@ def run_report_generate(  # noqa: C901
                 ],
                 "scheduled_sections": list(section_plan["execution"]),
                 "runtime_omitted_sections": list(section_plan["runtime_omitted"]),
+                "runtime_omitted_details": dict(
+                    section_plan["runtime_omitted_details"]
+                ),
+                "required_dependencies": dict(section_plan["required_dependencies"]),
+                "requested_execution_sections": list(
+                    section_plan["requested_execution"]
+                ),
                 "deadline_policy": "cooperative_between_subtools",
             }
             if captured_warnings:
@@ -1757,15 +1852,22 @@ def run_report_generate(  # noqa: C901
                     )
                 )
                 if selection_failed:
-                    rep["error_code"] = "report_sections_not_found"
-                    rep["error"] = (
-                        "None of the requested report sections were available: "
-                        + ", ".join(str(name) for name in missing_requested)
-                        + "."
+                    rep.update(
+                        build_error_payload(
+                            "None of the requested report sections were available: "
+                            + ", ".join(str(name) for name in missing_requested)
+                            + ".",
+                            code="report_sections_not_found",
+                            operation="report_generate",
+                            details={"missing_sections": list(missing_requested)},
+                        )
                     )
                 elif hard_failed:
-                    rep["error_code"] = "report_sections_failed"
-                    rep["error"] = "Every selected report section failed or was omitted."
+                    rep.update(
+                        _failed_report_error_envelope(
+                            sections_status=sections_status,
+                        )
+                    )
                 sections_with_issues: Dict[str, List[str]] = {}
                 partial_section_names = _report_section_names_by_status(sections_status, "partial")
                 error_section_names = _report_section_names_by_status(sections_status, "error")

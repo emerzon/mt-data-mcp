@@ -146,6 +146,37 @@ def test_template_minimal_forwards_context_indicators_param() -> None:
     assert requested_indicators == ["ema(20),rsi(14)"]
 
 
+def test_template_minimal_anchors_bounded_context_at_end() -> None:
+    calls = {}
+
+    def _fake_get_raw_result(func, *args, **kwargs):
+        func_name = getattr(func, "__name__", "")
+        calls[func_name] = kwargs
+        if func_name == "data_fetch_candles":
+            return {"bars": _make_context_bars()}
+        if func_name == "forecast_generate":
+            return {"forecast_price": [1.1070]}
+        raise AssertionError(f"Unexpected tool call: {func_name}")
+
+    with patch(
+        "mtdata.core.report_templates.minimal._get_raw_result",
+        side_effect=_fake_get_raw_result,
+    ):
+        from mtdata.core.report_templates.minimal import template_minimal
+
+        template_minimal(
+            "EURUSD",
+            2,
+            None,
+            {"start": "2026-03-01", "end": "2026-03-29"},
+        )
+
+    assert calls["data_fetch_candles"]["start"] is None
+    assert calls["data_fetch_candles"]["end"] == "2026-03-29"
+    assert calls["forecast_generate"]["start"] == "2026-03-01"
+    assert calls["forecast_generate"]["end"] == "2026-03-29"
+
+
 def test_template_minimal_context_plan_skips_forecast_call() -> None:
     calls: list[str] = []
 
@@ -202,6 +233,37 @@ def test_template_basic_context_plan_skips_expensive_sections() -> None:
     assert calls == ["data_fetch_candles"]
     assert list(report["sections"]) == ["context"]
     attach_mtf.assert_not_called()
+
+
+def test_template_basic_anchors_bounded_context_at_end() -> None:
+    requested = {}
+
+    def _fake_get_raw_result(func, *args, **kwargs):
+        requested.update(kwargs)
+        return {"data": _make_context_bars()}
+
+    with (
+        patch(
+            "mtdata.core.report_templates.basic._get_raw_result",
+            side_effect=_fake_get_raw_result,
+        ),
+        patch("mtdata.core.report_templates.basic.attach_multi_timeframes"),
+    ):
+        from mtdata.core.report_templates.basic import template_basic
+
+        template_basic(
+            "EURUSD",
+            2,
+            None,
+            {
+                "start": "2026-03-01",
+                "end": "2026-03-29",
+                "_report_execution_sections": ["context"],
+            },
+        )
+
+    assert requested["start"] is None
+    assert requested["end"] == "2026-03-29"
 
 
 def test_template_basic_forwards_context_indicators_param() -> None:
