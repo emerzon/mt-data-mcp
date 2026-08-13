@@ -22,6 +22,8 @@ def test_market_snapshot_help_discloses_builtin_section_methods():
     assert "detail`` mainly shapes" in doc
     assert "assembled_at" in doc
     assert "quote_as_of" in doc
+    assert "top-level `timezone` is `UTC`" in doc
+    assert "lookback=150" in doc
 
 
 def test_market_snapshot_rejects_invalid_forecast_horizon_before_preflight():
@@ -555,6 +557,7 @@ def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
     assert result["as_of"] == "2026-06-15T19:34:08Z"
     assert result["quote_as_of"] == "2023-11-14T22:13:20Z"
     assert result["assembled_at"] == "2026-06-15T19:34:08Z"
+    assert result["timezone"] == "UTC"
 
 
 def test_market_snapshot_fetches_quote_after_analytical_sections(monkeypatch):

@@ -2,15 +2,18 @@
 
 import logging
 import math
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ...shared.constants import BROKER_VOLUME_UNIT
 from ...utils.coercion import round_finite
+from ...utils.time import format_datetime_utc
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..market_depth import market_ticker
 from ..market_status import _check_symbol_market_status
 from ..output_contract import ensure_common_meta
+from ..runtime_metadata import attach_mt5_source
 from .account import trade_account_info
 from .positions import trade_get_open, trade_get_pending
 from .requests import (
@@ -362,6 +365,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
         for key in (
             "success",
             "symbol",
+            "as_of",
+            "assembled_at",
+            "timezone",
+            "source",
             "state",
             "state_scope",
             "portfolio_positions_count",
@@ -568,6 +575,9 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
     exposure and position sizing, or `trade_var_cvar_calculate` for portfolio
     VaR/CVaR.
 
+    Successful responses include top-level `as_of`/`assembled_at` UTC timestamps,
+    `timezone="UTC"`, and MT5 `source` provenance for snapshot reconciliation.
+
     Parameters: symbol, detail, include_account
     """
 
@@ -658,9 +668,13 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         ):
             other_positions_count = portfolio_positions_count - symbol_positions_count
 
+        assembled_at = format_datetime_utc(datetime.now(timezone.utc))
         payload = {
             "success": True,
             "symbol": request.symbol,
+            "as_of": assembled_at,
+            "assembled_at": assembled_at,
+            "timezone": "UTC",
             "state": state,
             "state_scope": "symbol",
             "open_positions": open_res,
@@ -668,6 +682,9 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "quote": quote_res,
             "quote_quality": _build_quote_quality(quote_res),
         }
+        if isinstance(quote_res, dict) and isinstance(quote_res.get("source"), dict):
+            payload["source"] = dict(quote_res["source"])
+        payload = attach_mt5_source(payload)
         if tradability.get("error") not in (None, ""):
             payload["market_status_error"] = tradability["error"]
             partial_failure = True

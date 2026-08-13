@@ -821,7 +821,8 @@ def market_snapshot(
     - quote: ``market_ticker``; honors top-level ``detail``
     - status: ``market_status`` symbol tradability, detail=compact
     - levels: support/resistance, detail=compact, lookback=200, max_levels=4
-    - patterns: candlestick mode only, detail=summary, top_k=3, last_n_bars=3
+    - patterns: candlestick mode only, detail=summary, lookback=150, top_k=3,
+      last_n_bars=3
     - regime (opt-in): HMM only, detail=summary
     - forecast (opt-in): Theta only, detail=compact; ``horizon`` applies here only
 
@@ -831,8 +832,9 @@ def market_snapshot(
     snapshot stays fast and comparable. Call dedicated regime/forecast/pattern
     tools for custom methods and parameters.
 
-    Timestamp semantics: `as_of` and `assembled_at` record when this snapshot
-    payload was built, while `quote_as_of` records the normalized source quote
+    Timestamp semantics: `as_of` and `assembled_at` record in UTC when this
+    snapshot payload was built; top-level `timezone` is `UTC` and `source`
+    identifies the MT5 feed. `quote_as_of` records the normalized source quote
     time when available. The quote runs
     after analytical sections and its freshness is revalidated at `assembled_at`,
     so live-readiness describes the delivered snapshot rather than an early step.
@@ -897,6 +899,7 @@ def market_snapshot(
             "timeframe": timeframe,
             "as_of": assembled_at,
             "assembled_at": assembled_at,
+            "timezone": "UTC",
             "sections_requested": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
         }

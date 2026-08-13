@@ -301,6 +301,10 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert "show_all_hint" not in out
     assert out["meta"]["tool"] == "trade_session_context"
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
+    assert out["as_of"].endswith("Z")
+    assert out["assembled_at"] == out["as_of"]
+    assert out["timezone"] == "UTC"
+    assert out["source"]["provider"] == "mt5"
 
 
 def test_trade_session_context_surfaces_closed_market_tradability() -> None:
