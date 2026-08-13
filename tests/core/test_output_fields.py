@@ -37,6 +37,27 @@ def test_output_fields_allows_error_field_on_success() -> None:
     assert result == {"success": True, "symbol": "EURUSD", "data": [1, 2]}
 
 
+def test_output_fields_keeps_requested_query_context_on_error() -> None:
+    payload = {
+        "success": False,
+        "error": "No data available",
+        "error_code": "data_fetch_candles_no_data",
+        "query_applied": {
+            "resolved_start": "2026-08-12T00:00:00Z",
+            "start_bound": "inclusive_day_start",
+        },
+    }
+
+    result = _select_output_fields(payload, "success,query_applied")
+
+    assert result == {
+        "success": False,
+        "error": "No data available",
+        "error_code": "data_fetch_candles_no_data",
+        "query_applied": payload["query_applied"],
+    }
+
+
 def test_output_fields_does_not_inject_units_for_selected_values() -> None:
     payload = {
         "success": True,

@@ -115,6 +115,7 @@ from ..utils.time import (
 )
 from ..utils.utils import (
     _format_numeric_rows_from_df,
+    _is_calendar_period_expression,
     _normalize_ohlcv_arg,
     _parse_end_datetime,
     _parse_start_datetime,
@@ -417,12 +418,20 @@ def _build_no_data_error_with_context(
         # Silently ignore any errors when trying to get available range
         pass
     
-    return build_error_payload(
+    payload = build_error_payload(
         error_msg,
         code="data_fetch_candles_no_data",
         operation="data_fetch_candles",
         details=details or None,
     )
+    if start_datetime or end_datetime:
+        payload["query_applied"] = _candle_query_applied(
+            timeframe=timeframe,
+            start=start_datetime,
+            end=end_datetime,
+            limit=None,
+        )
+    return payload
 
 
 def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
@@ -856,6 +865,54 @@ def _format_resolved_query_bound(value: datetime) -> str:
     )
     timespec = "microseconds" if resolved.microsecond else "seconds"
     return format_datetime_utc(resolved, timespec=timespec)
+
+
+def _is_calendar_query_bound(value: Optional[str]) -> bool:
+    return _is_iso_date_only(value) or _is_calendar_period_expression(value)
+
+
+def _candle_query_applied(
+    *,
+    timeframe: TimeframeLiteral,
+    start: Optional[str],
+    end: Optional[str],
+    limit: Optional[int],
+) -> Dict[str, Any]:
+    query: Dict[str, Any] = {"mode": "range", "timeframe": timeframe}
+    if limit is not None:
+        query["limit"] = int(limit)
+    calendar_session_bounds = timeframe in {"D1", "W1", "MN1"} and (
+        _is_calendar_query_bound(start) or _is_calendar_query_bound(end)
+    )
+    if calendar_session_bounds:
+        query["bound_basis"] = "broker_session_calendar"
+
+    for name, raw_value, end_bound in (
+        ("start", start, False),
+        ("end", end, True),
+    ):
+        if raw_value in (None, ""):
+            continue
+        query[name] = raw_value
+        resolved, _ = _parse_fetch_datetime_arg(raw_value, end_bound=end_bound)
+        if resolved is None:
+            continue
+        query[f"resolved_{name}"] = _format_resolved_query_bound(resolved)
+        is_iso_day = _is_iso_date_only(raw_value)
+        is_natural_period = _is_calendar_period_expression(raw_value)
+        if calendar_session_bounds and (is_iso_day or is_natural_period):
+            bound_mode = "inclusive_broker_session_period"
+        elif is_iso_day:
+            bound_mode = "inclusive_day_end" if end_bound else "inclusive_day_start"
+        elif is_natural_period:
+            period_kind = (
+                "week" if "week" in str(raw_value).strip().lower() else "day"
+            )
+            bound_mode = f"inclusive_{period_kind}_{'end' if end_bound else 'start'}"
+        else:
+            bound_mode = "inclusive_instant"
+        query[f"{name}_bound"] = bound_mode
+    return query
 
 
 def _future_start_error(
@@ -2476,50 +2533,12 @@ def fetch_candles(  # noqa: C901
             if isinstance(data_rows, list) and data_rows:
                 payload["forming_candle_index"] = len(data_rows) - 1
         if query_mode == "range":
-            query_applied: Dict[str, Any] = {
-                "mode": query_mode,
-                "timeframe": timeframe,
-                "limit": candles_requested,
-            }
-            calendar_session_bounds = timeframe in {"D1", "W1", "MN1"} and (
-                _is_iso_date_only(start_datetime) or _is_iso_date_only(end_datetime)
+            payload["query_applied"] = _candle_query_applied(
+                timeframe=timeframe,
+                start=start_datetime,
+                end=end_datetime,
+                limit=candles_requested,
             )
-            if calendar_session_bounds:
-                query_applied["bound_basis"] = "broker_session_calendar"
-            if start_datetime not in (None, ""):
-                query_applied["start"] = start_datetime
-                resolved_start, _ = _parse_fetch_datetime_arg(start_datetime)
-                if resolved_start is not None:
-                    query_applied["resolved_start"] = _format_resolved_query_bound(
-                        resolved_start
-                    )
-                    query_applied["start_bound"] = (
-                        "inclusive_broker_session_period"
-                        if calendar_session_bounds
-                        and _is_iso_date_only(start_datetime)
-                        else "inclusive_day_start"
-                        if _is_iso_date_only(start_datetime)
-                        else "inclusive_instant"
-                    )
-            if end_datetime not in (None, ""):
-                query_applied["end"] = end_datetime
-                resolved_end, _ = _parse_fetch_datetime_arg(
-                    end_datetime,
-                    end_bound=True,
-                )
-                if resolved_end is not None:
-                    query_applied["resolved_end"] = _format_resolved_query_bound(
-                        resolved_end
-                    )
-                    query_applied["end_bound"] = (
-                        "inclusive_broker_session_period"
-                        if calendar_session_bounds
-                        and _is_iso_date_only(end_datetime)
-                        else "inclusive_day_end"
-                        if _is_iso_date_only(end_datetime)
-                        else "inclusive_instant"
-                    )
-            payload["query_applied"] = query_applied
         if price_currency:
             payload["price_currency"] = price_currency
         payload["price_basis"] = price_basis

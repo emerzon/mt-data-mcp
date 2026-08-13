@@ -375,29 +375,71 @@ def _parse_iana_timezone_datetime(value: str) -> Optional[datetime]:
     return utc_time.replace(tzinfo=None)
 
 
+def _calendar_period_bounds(
+    value: str,
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[tuple[datetime, datetime, str]]:
+    """Resolve day/week-valued natural language to inclusive UTC bounds."""
+    text = " ".join(str(value or "").strip().lower().split())
+    if not text:
+        return None
+    current = now or datetime.now(timezone.utc)
+    current_date = current.astimezone(timezone.utc).date()
+    period_start = None
+    kind = "day"
+    if text in {"today", "yesterday", "tomorrow"}:
+        offset = {"yesterday": -1, "today": 0, "tomorrow": 1}[text]
+        period_start = datetime.combine(
+            current_date + timedelta(days=offset),
+            datetime.min.time(),
+        )
+    elif text in {"last week", "this week", "next week"}:
+        offset_weeks = {"last week": -1, "this week": 0, "next week": 1}[text]
+        monday = current_date - timedelta(days=current_date.weekday())
+        period_start = datetime.combine(
+            monday + timedelta(weeks=offset_weeks),
+            datetime.min.time(),
+        )
+        kind = "week"
+    else:
+        parts = text.split()
+        weekdays = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
+        if len(parts) != 2 or parts[0] not in {"last", "next"} or parts[1] not in weekdays:
+            return None
+        target_weekday = weekdays[parts[1]]
+        if parts[0] == "next":
+            days = (target_weekday - current_date.weekday()) % 7 or 7
+        else:
+            days = -((current_date.weekday() - target_weekday) % 7 or 7)
+        period_start = datetime.combine(
+            current_date + timedelta(days=days),
+            datetime.min.time(),
+        )
+    duration = timedelta(weeks=1) if kind == "week" else timedelta(days=1)
+    return period_start, period_start + duration - timedelta(microseconds=1), kind
+
+
+def _is_calendar_period_expression(value: Optional[str]) -> bool:
+    return bool(value and _calendar_period_bounds(str(value)) is not None)
+
+
 def _parse_start_datetime(value: str) -> Optional[datetime]:
     """Parse a date/time string, including IANA zone names, into naive UTC."""
     if not value:
         return None
     text = str(value).strip()
-    parts = text.lower().split()
-    weekdays = {
-        "monday": 0,
-        "tuesday": 1,
-        "wednesday": 2,
-        "thursday": 3,
-        "friday": 4,
-        "saturday": 5,
-        "sunday": 6,
-    }
-    if len(parts) == 2 and parts[0] in {"last", "next"} and parts[1] in weekdays:
-        today = datetime.now(timezone.utc).date()
-        target_weekday = weekdays[parts[1]]
-        if parts[0] == "next":
-            days = (target_weekday - today.weekday()) % 7 or 7
-        else:
-            days = -((today.weekday() - target_weekday) % 7 or 7)
-        return datetime.combine(today + timedelta(days=days), datetime.min.time())
+    calendar_period = _calendar_period_bounds(text)
+    if calendar_period is not None:
+        return calendar_period[0]
     named_timezone_datetime = _parse_iana_timezone_datetime(text)
     if named_timezone_datetime is not None:
         return named_timezone_datetime
@@ -436,7 +478,10 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
 
 
 def _parse_end_datetime(value: str) -> Optional[datetime]:
-    """Parse an inclusive range end, expanding ISO date-only values to day end."""
+    """Parse an inclusive range end, expanding calendar periods to their end."""
+    calendar_period = _calendar_period_bounds(value)
+    if calendar_period is not None:
+        return calendar_period[1]
     parsed = _parse_start_datetime(value)
     if parsed is None:
         return None

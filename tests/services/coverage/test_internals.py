@@ -19,6 +19,7 @@ from mtdata.services.data_service import (
     _build_candle_headers,
     _build_no_data_error_with_context,
     _build_rates_df,
+    _candle_query_applied,
     _compact_tick_summary,
     _fetch_rates_with_warmup,
     _fetch_recent_ticks_backwards,
@@ -159,6 +160,27 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
         "earliest_status": "not_scanned",
     }
     assert result["error"] == "No data available"
+    assert result["query_applied"] == {
+        "mode": "range",
+        "timeframe": "H1",
+        "start": "1970-01-01 00:00:01",
+        "resolved_start": "1970-01-01T00:00:01Z",
+        "start_bound": "inclusive_instant",
+    }
+
+
+def test_candle_query_context_expands_natural_calendar_periods() -> None:
+    query = _candle_query_applied(
+        timeframe="H1",
+        start="yesterday",
+        end="yesterday",
+        limit=100,
+    )
+
+    assert query["start_bound"] == "inclusive_day_start"
+    assert query["end_bound"] == "inclusive_day_end"
+    assert query["resolved_start"].endswith("T00:00:00Z")
+    assert query["resolved_end"].endswith("T23:59:59.999999Z")
 
 
 def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:

@@ -1,6 +1,6 @@
 """Tests for src/mtdata/utils/utils.py — pure utility functions."""
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -308,6 +308,23 @@ class TestParseEndDatetime:
         assert _parse_end_datetime("2023-01-15 12:34:56") == datetime(
             2023, 1, 15, 12, 34, 56
         )
+
+    @pytest.mark.parametrize("value", ["today", "yesterday", "last friday"])
+    def test_natural_day_periods_expand_to_inclusive_day(self, value):
+        start = _parse_start_datetime(value)
+        end = _parse_end_datetime(value)
+
+        assert start is not None and end is not None
+        assert start.time() == datetime.min.time()
+        assert end - start == timedelta(days=1) - timedelta(microseconds=1)
+
+    def test_this_week_expands_to_monday_through_sunday(self):
+        start = _parse_start_datetime("this week")
+        end = _parse_end_datetime("this week")
+
+        assert start is not None and end is not None
+        assert start.weekday() == 0
+        assert end - start == timedelta(weeks=1) - timedelta(microseconds=1)
 
 
 def test_validate_historical_range_rejects_future_start() -> None:
