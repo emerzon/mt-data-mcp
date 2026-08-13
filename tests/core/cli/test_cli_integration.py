@@ -2966,6 +2966,8 @@ def test_help_search_indexes_reviewed_examples():
     [
         ("outliers_detect", "--method mad", "theta"),
         ("forecast_volatility_estimate", "--method ewma", "theta"),
+        ("finviz_fundamentals", "AAPL", "EURUSD"),
+        ("options_heston_calibrate", "AAPL", "EURUSD"),
         ("portfolio_risk_decompose", "--method historical", "theta"),
         ("options_barrier_price", "150 --strike 155", "<"),
         ("wait_event", "--max-wait-seconds 1", "mtdata-cli wait_event\n"),

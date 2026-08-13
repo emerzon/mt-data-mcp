@@ -1464,6 +1464,14 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method ewma",
         f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method rolling_std --horizon 8",
     ),
+    "finviz_fundamentals": (
+        f"{CLI_PROGRAM} finviz_fundamentals AAPL",
+        None,
+    ),
+    "options_heston_calibrate": (
+        f"{CLI_PROGRAM} options_heston_calibrate AAPL",
+        None,
+    ),
     "portfolio_risk_decompose": (
         f"{CLI_PROGRAM} portfolio_risk_decompose --method historical",
         f"{CLI_PROGRAM} portfolio_risk_decompose --method filtered_historical --lookback 1000",
