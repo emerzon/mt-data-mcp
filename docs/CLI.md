@@ -16,7 +16,10 @@ batches, ignores blank lines and `#` comments, and exits nonzero if any command
 fails. Batch output is NDJSON: each executable input line produces one compact
 JSON envelope with `line`, `command`, `success`, and `status`. Parsed child JSON
 is nested under `result`; non-JSON output and diagnostics use `output` and
-`stderr`.
+`stderr`. Shared options may follow `shell`, for example
+`mtdata-cli shell --json --timeframe H4`. A shell timeframe is applied only to
+child commands that accept one, so timeframe-free commands remain usable in the
+same session.
 Repeated agent or application calls should keep a process alive with
 `mtdata-stdio`, `mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
 available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API

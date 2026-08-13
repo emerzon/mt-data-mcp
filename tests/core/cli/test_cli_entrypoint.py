@@ -331,5 +331,89 @@ def test_shell_is_registered_and_has_help(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Run an interactive mtdata-cli session" in output
     assert "batch from stdin" in output
+    assert "--json" in output
+    assert "--precision" in output
+    assert "--output-fields" in output
+    assert "--timeframe" in output
     assert "exit or quit" in output
     assert "NDJSON" in output
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["shell", "--json"],
+        ["--json", "shell"],
+        ["--precision", "full", "shell", "--precision", "compact", "--json"],
+    ],
+)
+def test_shell_accepts_shared_options_before_or_after_command(
+    monkeypatch, capsys, argv
+):
+    from mtdata.core.cli import api
+
+    def sample_tool(**_kwargs) -> dict:
+        return {"success": True, "value": 7}
+
+    monkeypatch.setattr(api, "load_environment", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "discover_tools",
+        lambda *_args: {
+            "sample_tool": {
+                "func": sample_tool,
+                "meta": {"description": "Sample tool"},
+            }
+        },
+    )
+    monkeypatch.setattr(api.sys, "stdin", io.StringIO("sample_tool\n"))
+    monkeypatch.setattr(api.sys, "argv", ["mtdata-cli", *argv])
+
+    status = api.main()
+
+    assert status == 0
+    record = json.loads(capsys.readouterr().out)
+    assert record["result"] == {"success": True, "value": 7}
+
+
+def test_shell_timeframe_only_reaches_compatible_children(monkeypatch, capsys):
+    from mtdata.core.cli import api
+
+    def candles(timeframe: str = "H1", **_kwargs) -> dict:
+        return {"success": True, "timeframe": timeframe}
+
+    def ticker(**_kwargs) -> dict:
+        return {"success": True, "kind": "ticker"}
+
+    monkeypatch.setattr(api, "load_environment", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "discover_tools",
+        lambda *_args: {
+            "candles": {
+                "func": candles,
+                "meta": {"description": "Candles"},
+            },
+            "ticker": {
+                "func": ticker,
+                "meta": {"description": "Ticker"},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        api.sys,
+        "stdin",
+        io.StringIO("candles\nticker\n"),
+    )
+    monkeypatch.setattr(
+        api.sys,
+        "argv",
+        ["mtdata-cli", "shell", "--json", "--timeframe", "H4"],
+    )
+
+    status = api.main()
+
+    assert status == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0]["result"]["timeframe"] == "H4"
+    assert records[1]["result"]["kind"] == "ticker"

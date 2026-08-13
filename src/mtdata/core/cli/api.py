@@ -428,6 +428,8 @@ def _apply_global_cli_overrides(
     command = command.replace("-", "_")
     args.command = command
     global_timeframe = getattr(args, "_global_timeframe", None)
+    if command == "shell":
+        global_timeframe = None
     if global_timeframe is not None:
         if functions is not None and command not in {
             "confluence_levels",
@@ -1958,10 +1960,27 @@ def main():  # noqa: C901
         formatter_class=_CLIHelpFormatter,
         allow_abbrev=False,
     )
+    add_global_args_to_parser(
+        shell_parser,
+        exclude_params=["timeframe"],
+        suppress_defaults=True,
+    )
+    shell_parser.add_argument(
+        "--timeframe",
+        dest="_global_timeframe",
+        default=argparse.SUPPRESS,
+        metavar="TIMEFRAME",
+        help=(
+            "Default MT5 timeframe for shell child commands that accept a "
+            "timeframe. For confluence_levels, this defaults "
+            "--pivot-timeframe instead."
+        ),
+    )
     shell_parser.set_defaults(
         func=lambda shell_args: run_shell(
             interactive=sys.stdin.isatty(),
             inherited_argv=_shell_inherited_argv(shell_args),
+            timeframe_commands=_shell_timeframe_commands(functions),
         )
     )
 
@@ -2376,8 +2395,55 @@ def _shell_inherited_argv(args: Any) -> List[str]:
     return inherited
 
 
+def _shell_timeframe_commands(functions: Dict[str, ToolInfo]) -> set[str]:
+    """Return shell child commands that can consume a session timeframe."""
+    supported = {"confluence_levels", "forecast_generate"}
+    for name, tool in functions.items():
+        func_info = tool.get("_cli_func_info") or get_function_info(tool["func"])
+        param_names = {
+            str(param.get("name") or "")
+            for param in (func_info.get("params") or [])
+            if isinstance(param, dict)
+        }
+        if "timeframe" in param_names:
+            supported.add(str(name).replace("-", "_"))
+    return supported
+
+
+def _shell_inherited_argv_for_command(
+    inherited_argv: Sequence[str],
+    command_argv: Sequence[str],
+    *,
+    timeframe_commands: Optional[set[str]],
+) -> List[str]:
+    """Drop a session timeframe for children that do not declare one."""
+    inherited = list(inherited_argv)
+    if timeframe_commands is None:
+        return inherited
+    command = _resolve_raw_cli_command(command_argv).replace("-", "_")
+    if command in timeframe_commands:
+        return inherited
+
+    filtered: List[str] = []
+    index = 0
+    while index < len(inherited):
+        token = str(inherited[index])
+        if token == "--timeframe":
+            index += 2
+            continue
+        if token.startswith("--timeframe="):
+            index += 1
+            continue
+        filtered.append(token)
+        index += 1
+    return filtered
+
+
 def run_shell(
-    *, interactive: bool = True, inherited_argv: Optional[Sequence[str]] = None
+    *,
+    interactive: bool = True,
+    inherited_argv: Optional[Sequence[str]] = None,
+    timeframe_commands: Optional[set[str]] = None,
 ) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
     global _INTERACTIVE_SHELL_SESSION_DEPTH, _SHELL_SESSION_DEPTH
@@ -2430,7 +2496,12 @@ def run_shell(
                         }
                     )
                 continue
-            effective_command_argv = [*inherited, *command_argv]
+            command_inherited = _shell_inherited_argv_for_command(
+                inherited,
+                command_argv,
+                timeframe_commands=timeframe_commands,
+            )
+            effective_command_argv = [*command_inherited, *command_argv]
             if command_argv and command_argv[0].lower() == "shell":
                 message = "A shell session is already active."
                 if interactive:
