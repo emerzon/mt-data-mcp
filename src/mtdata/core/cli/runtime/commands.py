@@ -581,7 +581,13 @@ def create_command_function(  # noqa: C901
                 if choices:
                     message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."
                 elif missing_name in {"symbol", "symbols"}:
-                    message += " Use symbols_list to browse available broker symbols."
+                    if str(cmd_name).startswith("finviz_"):
+                        message += (
+                            " Pass a US exchange ticker such as AAPL; broker suffixes "
+                            "such as AAPL.NAS are accepted and normalized."
+                        )
+                    else:
+                        message += " Use symbols_list to browse available broker symbols."
             if cmd_name in LIVE_TRADE_MUTATION_TOOLS:
                 message += f" {LIVE_TRADE_MUTATION_WARNING}"
             render_cli_result(

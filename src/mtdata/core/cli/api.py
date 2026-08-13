@@ -670,7 +670,24 @@ class _CLIArgumentParser(argparse.ArgumentParser):
                 "The broker must also provide Level 2/DOM data."
             )
         program_parts = str(self.prog or "").split()
-        operation = program_parts[-1] if len(program_parts) > 1 else "cli"
+        last_program_part = program_parts[-1] if program_parts else ""
+        operation = (
+            "cli"
+            if last_program_part in {"mtdata", "mtdata-cli", "cli.py", "__main__.py"}
+            else last_program_part
+        )
+        if operation == "cli":
+            requested_command = _resolve_raw_cli_command(sys.argv[1:])
+            if requested_command:
+                operation = requested_command
+        help_program = str(self.prog)
+        if operation != "cli" and last_program_part in {
+            "mtdata",
+            "mtdata-cli",
+            "cli.py",
+            "__main__.py",
+        }:
+            help_program = f"{self.prog} {operation}"
         payload = build_error_payload(
             message_text,
             code=(
@@ -682,11 +699,15 @@ class _CLIArgumentParser(argparse.ArgumentParser):
             ),
             operation=operation,
             remediation=(
-                "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
+                (
+                    'PowerShell: $env:MTDATA_ENABLE_MARKET_DEPTH_FETCH="1"; '
+                    "bash: export MTDATA_ENABLE_MARKET_DEPTH_FETCH=1. Then restart "
+                    "the CLI; the broker must provide Level 2/DOM data."
+                )
                 if market_depth_disabled
                 else "Provide: " + ", ".join(missing_arguments) + "."
                 if missing_required and missing_arguments
-                else f"Run '{self.prog} --help' to inspect valid arguments."
+                else f"Run '{help_program} --help' to inspect valid arguments."
             ),
             details=(
                 {"missing_arguments": missing_arguments}
@@ -1931,7 +1952,8 @@ def main():  # noqa: C901
         _print_extended_help(functions, help_query)
         return 0
 
-    parser_prog = os.path.basename(str(sys.argv[0] or "")) or CLI_PROGRAM
+    argv0 = os.path.basename(str(sys.argv[0] or ""))
+    parser_prog = "python -m mtdata" if argv0 == "__main__.py" else argv0 or CLI_PROGRAM
 
     parser = _CLIArgumentParser(
         prog=parser_prog,
