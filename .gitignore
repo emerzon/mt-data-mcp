@@ -37,12 +37,6 @@ logs/
 .vscode/
 .idea/
 .swival/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Project-specific
 .claude/
 .opencode/
 .antigravity/
@@ -51,9 +45,14 @@ Thumbs.db
 .grok/
 .codex/
 .repowise/
+.soulforge
+.mcp.json
 
+# OS files
+.DS_Store
+Thumbs.db
 
-
+# Project-specific
 .mtdata_cache/*
 lightning_logs/*
 jscpd_report.xml/*
@@ -71,8 +70,6 @@ prompts/*
 !prompts/agent_intraday_trend.md
 !prompts/agent_range_reversion.md
 !prompts/agent_risk_supervisor.md
-code-reports/*
-.soulforge
 
-.mcp.json
-AGENTS.md
+#Code review reports
+code-reports/*
