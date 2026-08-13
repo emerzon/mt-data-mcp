@@ -1163,6 +1163,14 @@ class TestSymbolsDescribe:
         assert details["data_age_seconds"] == 1.0
         assert details["freshness_state"] == "live"
         assert details["usable_for_live_trading"] is True
+        assert details["bid"] == 1.10004
+        assert details["ask"] == 1.10005
+        assert details["mid"] == 1.100045
+        assert details["spread"] == 0.00001
+        assert details["spread_points"] == 1.0
+        assert details["spread_pips"] == 0.1
+        assert details["spread_valid"] is True
+        assert details["spread_quality"] == "two_sided"
 
     # Sunday 20:00 UTC is still within standard weekend closure; 21:00 is market open.
     @patch("mtdata.core.symbols.time.time", return_value=1779652800.0)
@@ -1301,8 +1309,13 @@ class TestSymbolsDescribe:
         assert sd["session_close"] == 4760.87
         assert sd["price_change_pct"] == -0.7924
         assert sd["price_change_pct_unit"] == "percent (1.0 = 1%)"
-        assert sd["price_change_basis"] == "broker_symbol_info_price_change"
-        assert sd["price_change_period"] == "broker_defined_unspecified"
+        assert sd["price_change_basis"] == (
+            "previous_trading_day_close_to_current_quote"
+        )
+        assert sd["price_change_period"] == {
+            "start": "previous_trading_day_close",
+            "end": "current_quote",
+        }
         assert "price_change" not in sd
 
     @patch(f"{_MT5}.symbol_info")

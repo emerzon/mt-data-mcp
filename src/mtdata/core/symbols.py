@@ -244,6 +244,16 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct_unit",
     "price_change_basis",
     "price_change_period",
+    "bid",
+    "ask",
+    "last",
+    "mid",
+    "spread",
+    "spread_points",
+    "spread_pips",
+    "spread_pct",
+    "spread_valid",
+    "spread_quality",
     "digits",
     "point",
     "trade_contract_size",
@@ -288,6 +298,16 @@ _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct_unit",
     "price_change_basis",
     "price_change_period",
+    "bid",
+    "ask",
+    "last",
+    "mid",
+    "spread",
+    "spread_points",
+    "spread_pips",
+    "spread_pct",
+    "spread_valid",
+    "spread_quality",
     "trade_mode_label",
     "order_mode_labels",
 )
@@ -1741,6 +1761,44 @@ def symbols_describe(  # noqa: C901
                     )
                 )
                 symbol_data.update(quote_source)
+                digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
+                point = _market_scan_float(getattr(symbol_info, "point", None))
+                tick_size = _market_scan_float(
+                    getattr(symbol_info, "trade_tick_size", None)
+                )
+                bid = _market_scan_float(tick_value(resolved_tick, "bid"))
+                ask = _market_scan_float(tick_value(resolved_tick, "ask"))
+                last = _market_scan_float(tick_value(resolved_tick, "last"))
+                points_per_pip = _market_scan_points_per_pip(
+                    symbol_info,
+                    point=point or 0.0,
+                    digits=digits,
+                )
+                spread_metrics = compute_spread_metrics(
+                    bid,
+                    ask,
+                    point=point,
+                    points_per_pip=points_per_pip,
+                    tick_size=tick_size,
+                )
+                if bid is not None and bid > 0:
+                    symbol_data["bid"] = _market_scan_round(bid, digits=digits)
+                if ask is not None and ask > 0:
+                    symbol_data["ask"] = _market_scan_round(ask, digits=digits)
+                if last is not None and last > 0:
+                    symbol_data["last"] = _market_scan_round(last, digits=digits)
+                for field, precision in (
+                    ("mid", digits + 1),
+                    ("spread", digits),
+                    ("spread_points", 4),
+                    ("spread_pips", 4),
+                    ("spread_pct", 6),
+                ):
+                    value = spread_metrics.get(field)
+                    if value is not None:
+                        symbol_data[field] = _market_scan_round(value, digits=precision)
+                symbol_data["spread_valid"] = bool(spread_metrics["spread_valid"])
+                symbol_data["spread_quality"] = spread_metrics["spread_quality"]
                 if isinstance(symbol_data.get("quote_source_conflict"), dict):
                     symbol_data["usable_for_live_trading"] = False
                     symbol_data["usable_for_live_trading_basis"] = (
@@ -1758,8 +1816,13 @@ def symbols_describe(  # noqa: C901
                     digits=6,
                 )
                 symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
-                symbol_data["price_change_basis"] = "broker_symbol_info_price_change"
-                symbol_data["price_change_period"] = "broker_defined_unspecified"
+                symbol_data["price_change_basis"] = (
+                    "previous_trading_day_close_to_current_quote"
+                )
+                symbol_data["price_change_period"] = {
+                    "start": "previous_trading_day_close",
+                    "end": "current_quote",
+                }
             elif quote_timestamp_available is not False:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
                 session_close = _market_scan_float(symbol_data.get("session_close"))

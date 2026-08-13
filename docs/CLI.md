@@ -501,9 +501,11 @@ stale or otherwise non-executable snapshots intentionally.
 Price-change rankings compare the previous completed close with the latest
 completed close over exactly one requested `timeframe` bar. Responses expose
 that window in `price_change_period`. `symbols_describe` reports the broker's
-native `price_change` field when available; because MT5 does not define its
-window in symbol metadata, that value is explicitly marked
-`broker_defined_unspecified` rather than presented as a daily return.
+native `price_change` field when available. MT5 defines it as the current quote
+relative to the previous trading day's close, so the response identifies that
+distinct live window in `price_change_basis` and `price_change_period`.
+Describe responses also include the live `bid`, `ask`, `mid`, and spread metrics
+used by their freshness and execution-readiness fields.
 
 `symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
 exact ranking semantics and rejects a filtered candidate universe above 250
