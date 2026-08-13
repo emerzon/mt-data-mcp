@@ -543,18 +543,21 @@ class TestFinvizService:
         assert result["count"] == 2
         assert len(result["earnings"]) == 2
 
+    @patch("mtdata.services.finviz.api._finviz_market_time")
     @patch("mtdata.services.finviz.api._finviz_market_date")
     @patch("finvizfinance.screener.financial.Financial")
     def test_get_earnings_calendar_filters_elapsed_dates_before_pagination(
         self,
         mock_financial_class,
         mock_market_date,
+        mock_market_time,
     ):
-        from datetime import date
+        from datetime import date, time
 
         from mtdata.services.finviz import get_earnings_calendar
 
         mock_market_date.return_value = date(2026, 8, 12)
+        mock_market_time.return_value = time(12, 0)
         mock_screener = mock_financial_class.return_value
         mock_screener.screener_view.return_value = pd.DataFrame(
             [
@@ -572,6 +575,35 @@ class TestFinvizService:
         assert result["elapsed_filter_applied"] is True
         assert result["total"] == 2
         assert result["has_more"] is True
+
+    @patch("mtdata.services.finviz.api._finviz_market_time")
+    @patch("mtdata.services.finviz.api._finviz_market_date")
+    @patch("finvizfinance.screener.financial.Financial")
+    def test_get_earnings_calendar_filters_elapsed_same_day_sessions(
+        self,
+        mock_financial_class,
+        mock_market_date,
+        mock_market_time,
+    ):
+        from datetime import date, time
+
+        from mtdata.services.finviz import get_earnings_calendar
+
+        mock_market_date.return_value = date(2026, 8, 13)
+        mock_market_time.return_value = time(18, 12)
+        mock_financial_class.return_value.screener_view.return_value = pd.DataFrame(
+            [
+                {"Ticker": "BEFORE", "Earnings": "Aug 13/b"},
+                {"Ticker": "AFTER", "Earnings": "Aug 13/a"},
+                {"Ticker": "UNKNOWN", "Earnings": "Aug 13"},
+                {"Ticker": "NEXT", "Earnings": "Aug 14/b"},
+            ]
+        )
+
+        result = get_earnings_calendar(period="This Week", limit=10, page=1)
+
+        assert [row["Ticker"] for row in result["earnings"]] == ["UNKNOWN", "NEXT"]
+        assert result["calendar_reference_time"] == "18:12:00"
 
     def test_get_earnings_calendar_invalid_period(self):
         """Test earnings calendar with invalid period."""
@@ -1994,7 +2026,8 @@ class TestFinvizTools:
                 "earnings_timing": "before_market",
                 "market_cap": "14.17M",
                 "price": 12.85,
-                "change_pct": -2.58,
+                "price_change_pct": -2.58,
+                "price_change_basis": "daily_market_move",
                 "volume": "6593",
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
@@ -2004,6 +2037,7 @@ class TestFinvizTools:
         ]
         assert result["data_delayed"] is True
         assert result["price_source"] == "finviz_delayed"
+        assert result["units"]["price_change_pct"] == "percent (1.0 = 1%)"
 
     def test_finviz_earnings_yearless_dates_follow_period_across_new_year(self):
         from datetime import date

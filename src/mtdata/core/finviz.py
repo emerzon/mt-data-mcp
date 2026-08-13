@@ -1964,7 +1964,8 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "eps_estimate",
     "market_cap",
     "price",
-    "change",
+    "price_change_pct",
+    "price_change_basis",
     "volume",
     "price_source",
     "data_delayed",
@@ -2236,6 +2237,9 @@ def _normalize_finviz_earnings_rows(
             continue
         row = _canonicalize_finviz_market_row(row)
         normalized[index] = row
+        if row.get("change_pct") not in (None, ""):
+            row["price_change_pct"] = row.pop("change_pct")
+            row["price_change_basis"] = "daily_market_move"
         if row.get("price") not in (None, ""):
             row.update(_mark_finviz_delayed_price(row))
         earnings_text = str(row.get("earnings") or "").strip().lower()
@@ -2475,10 +2479,6 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
             for field in _FINVIZ_EARNINGS_COMPACT_FIELDS
             if field in item
         }
-        if "change" in row:
-            row["change_pct"] = row.pop("change")
-        elif item.get("change_pct") not in (None, ""):
-            row["change_pct"] = item["change_pct"]
         if "market_cap" in row:
             market_cap_formatted = _format_finviz_large_number(row.get("market_cap"))
             if market_cap_formatted:
@@ -4287,8 +4287,8 @@ def finviz_earnings(
     page : int
         Page number for pagination (default 1)
     include_elapsed : bool
-        Include dates before the current New York calendar date in this-week
-        and this-month results (default false).
+        Include events that have elapsed in New York time. Before-market events
+        elapse at 09:30 and after-market events at 16:00 (default false).
     detail : {"compact", "full"}
         Response detail level. Compact returns calendar-focused rows; full keeps
         all normalized provider columns and adds the tool metadata block.
@@ -4406,8 +4406,12 @@ def finviz_earnings(
                 )
             ),
         }
+        if result.get("calendar_reference_time") not in (None, ""):
+            out["calendar_reference_time"] = result["calendar_reference_time"]
         if result.get("elapsed_filter_applied") is True:
             out["elapsed_cutoff_date"] = reference_date.isoformat()
+            if result.get("calendar_reference_time") not in (None, ""):
+                out["elapsed_cutoff_time"] = result["calendar_reference_time"]
         units = _finviz_screen_units_for_rows(output_items)
         if units:
             out["units"] = units

@@ -15,6 +15,14 @@ def _finviz_market_date(now: Optional[datetime.datetime] = None) -> datetime.dat
     return current.astimezone(_FINVIZ_CALENDAR_TZ).date()
 
 
+def _finviz_market_time(now: Optional[datetime.datetime] = None) -> datetime.time:
+    """Return the current wall-clock time in the Finviz calendar timezone."""
+    current = now or datetime.datetime.now(datetime.timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=datetime.timezone.utc)
+    return current.astimezone(_FINVIZ_CALENDAR_TZ).time().replace(tzinfo=None)
+
+
 def parse_iso_date_input(value: Any, *, field_name: str) -> datetime.date:
     text = str(value).strip()
     if not text:

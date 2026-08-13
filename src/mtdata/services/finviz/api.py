@@ -15,6 +15,7 @@ from .client import (
 from .dates import (
     FINVIZ_CALENDAR_TIMEZONE,
     _finviz_market_date,
+    _finviz_market_time,
     align_to_next_monday_if_weekend,
     finviz_earnings_period_window,
     normalize_finviz_dates_in_rows,
@@ -32,6 +33,26 @@ from .utils import (
 _resolve_date_range = resolve_date_range
 _align_to_next_monday_if_weekend = align_to_next_monday_if_weekend
 _apply_finvizfinance_timeout_patch = apply_finvizfinance_timeout_patch
+
+
+def _earnings_event_has_elapsed(
+    value: Any,
+    *,
+    event_date: datetime.date,
+    reference_date: datetime.date,
+    reference_time: datetime.time,
+) -> bool:
+    """Return whether a dated Finviz `/b` or `/a` earnings slot has passed."""
+    if event_date < reference_date:
+        return True
+    if event_date > reference_date:
+        return False
+    token = str(value or "").strip().lower()
+    if token.endswith("/b"):
+        return reference_time >= datetime.time(9, 30)
+    if token.endswith("/a"):
+        return reference_time >= datetime.time(16, 0)
+    return False
 
 logger = logging.getLogger(__name__)
 
@@ -982,6 +1003,7 @@ def get_earnings_calendar(
             return {"error": "No earnings calendar data available"}
 
         reference_date = _finviz_market_date()
+        reference_time = _finviz_market_time()
         source_count = len(df.index)
         source_complete = source_count < fetch_limit
         elapsed_filter_applied = False
@@ -1000,7 +1022,12 @@ def get_earnings_calendar(
                         reference_date=reference_date,
                         period_window=period_window,
                     )
-                    if earnings_date is None or earnings_date >= reference_date:
+                    if earnings_date is None or not _earnings_event_has_elapsed(
+                        value,
+                        event_date=earnings_date,
+                        reference_date=reference_date,
+                        reference_time=reference_time,
+                    ):
                         keep_positions.append(position)
                 df = df.iloc[keep_positions].reset_index(drop=True)
 
@@ -1034,6 +1061,7 @@ def get_earnings_calendar(
             "include_elapsed": bool(include_elapsed),
             "elapsed_filter_applied": elapsed_filter_applied,
             "calendar_reference_date": reference_date.isoformat(),
+            "calendar_reference_time": reference_time.isoformat(timespec="seconds"),
             "calendar_timezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items_list),
             "limit": safe_limit,
