@@ -178,6 +178,34 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["method"] == "sf_autoarima"
     assert out["library"] == "statsforecast"
 
+    stored_model_id = "sf_autoarima/EURUSD_H1/abc123"
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="statsforecast",
+            method="sf_autoarima",
+            model_id=stored_model_id,
+            model_cache="require_existing",
+        )
+    )
+    assert out["ok"] is True
+    assert captured["method"] == "sf_autoarima"
+    assert "model_name" not in captured["params"]
+    assert captured["model_id"] == stored_model_id
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="statsforecast",
+            method="AutoARIMA",
+            model_id=stored_model_id,
+            model_cache="require_existing",
+        )
+    )
+    assert out["ok"] is True
+    assert captured["method"] == "sf_autoarima"
+    assert "model_name" not in captured["params"]
+
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="statsforecast:autoarima", params={}))
     assert out["ok"] is True
     assert captured["method"] == "statsforecast"
@@ -789,13 +817,12 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=3))
 
     assert "forecast_price" not in out
-    assert "forecast" not in out
-    assert out["forecast_summary"] == {
-        "steps": 3,
-        "first": {"time": "t1", "value": 1.16836},
-        "last": {"time": "t3", "value": 1.16836},
-        "path_omitted": "non_informative_flat_path",
-    }
+    assert out["forecast"] == [
+        {"time": "t1", "value": 1.16836},
+        {"time": "t2", "value": 1.16836},
+        {"time": "t3", "value": 1.16836},
+    ]
+    assert "forecast_summary" not in out
     assert "theta_signal" not in out
     assert "params_used" not in out
     assert out["path_flat"] is True
@@ -994,7 +1021,22 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert "upper_price" not in out
     assert "forecast_time" not in out
     assert "forecast_price" not in out
-    assert "forecast" not in out
+    assert out["forecast"] == [
+        {
+            "time": "t1",
+            "bar_state": "forming",
+            "value": 100.0,
+            "lower_price": 99.0,
+            "upper_price": 101.0,
+        },
+        {
+            "time": "t2",
+            "bar_state": "future",
+            "value": 101.0,
+            "lower_price": 99.5,
+            "upper_price": 102.5,
+        },
+    ]
     assert "direction" not in out["forecast_vs_last_price"]
     assert out["forecast_vs_last_price"]["point_estimate_direction"] == "bullish"
     assert out["forecast_vs_last_price"]["direction_actionable"] is False
@@ -2524,6 +2566,12 @@ def test_forecast_list_all_library_models_uses_one_global_page(monkeypatch):
     assert len(shown) == 4
     assert page["pagination"]["offset"] == 2
     assert page["pagination"]["returned"] == 4
+    assert page["page_order"] == "round_robin_by_library"
+
+    default_page = cf._forecast_list_library_models_impl("all")
+    assert default_page["pagination"]["returned"] == 15
+    assert all(section["models"] for section in default_page["libraries"])
+    assert all(section["has_more"] is False for section in default_page["libraries"])
 
 
 def test_forecast_list_library_models_compact_deduplicates_model_rows(monkeypatch):
@@ -2780,6 +2828,19 @@ def test_forecast_list_library_models_logs_finish_event(caplog):
 
 def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     raw = _unwrap(cf.forecast_conformal_intervals)
+
+    invalid = raw(
+        request=ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="not_a_method",
+            horizon=2,
+        )
+    )
+    assert invalid["success"] is False
+    assert invalid["error_code"] == "invalid_method"
+    assert invalid["operation"] == "forecast_conformal_intervals"
+    assert invalid["details"] == {"method": "not_a_method"}
+    assert invalid["related_tools"] == ["forecast_list_methods"]
 
     monkeypatch.setattr(
         cf,

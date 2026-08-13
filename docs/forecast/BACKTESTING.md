@@ -329,7 +329,7 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods fourier_ols \
 | `--mode` | `auto` | Uses the metric's standard direction; `min` or `max` explicitly overrides it |
 | `--slippage-bps` | `0` | Execution slippage per side; always disclosed in tuning output |
 | `--trade-threshold` | `0` | Minimum expected return required to enter a simulated trade |
-| `--population` | 12 | Population size per generation |
+| `--population` | 12 | Population size per generation (minimum 2) |
 | `--generations` | 10 | Number of generations |
 | `--crossover-rate` | 0.6 | Probability of crossover |
 | `--mutation-rate` | 0.3 | Probability of mutation |

@@ -189,6 +189,21 @@ class TestForecastOptimizeHintsRequest:
         assert req.timeframes == ["H1", "H4", "D1", "W1"]
         assert req.slippage_bps == 0.0
 
+    def test_rejects_population_below_two(self):
+        with pytest.raises(ValueError, match="greater than or equal to 2"):
+            ForecastOptimizeHintsRequest(symbol="EURUSD", population=1)
+
+
+def test_genetic_search_optimize_hints_rejects_population_below_two():
+    with pytest.raises(ValueError, match="greater than or equal to 2"):
+        genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["theta"],
+            population=1,
+            generations=1,
+        )
+
 
 def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():
     backtest_result = {

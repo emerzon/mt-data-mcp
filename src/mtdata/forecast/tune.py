@@ -890,7 +890,9 @@ def genetic_search_forecast_params(  # noqa: C901
     has_method_gene = (not method_scoped) and ('method' in raw) and str(raw['method'].get('type', 'categorical')).lower() == 'categorical' if 'method' in raw and isinstance(raw['method'], dict) else False
 
     # Initialize population
-    population_size = max(2, int(population))
+    population_size = int(population)
+    if population_size < 2:
+        raise ValueError("population must be greater than or equal to 2")
     pop: List[Dict[str, Any]] = []
     for _ in range(population_size):
         cand: Dict[str, Any] = {}
@@ -1251,7 +1253,9 @@ def genetic_search_optimize_hints(  # noqa: C901
         return fitness_score, res
 
     # Initialize population
-    population_size = max(2, int(population))
+    population_size = int(population)
+    if population_size < 2:
+        raise ValueError("population must be greater than or equal to 2")
     pop: List[Tuple[Dict[str, Any], float, Dict[str, Any]]] = []
 
     for _ in range(population_size):

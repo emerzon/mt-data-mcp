@@ -932,7 +932,8 @@ def forecast_list_library_models(
     - statsforecast: lists `statsforecast.models.*` class names.
     - sktime: lists supported aliases plus notes for using dotted estimator paths.
     - show_unavailable: include models missing optional dependencies (default true).
-    - limit: page size. Omitted compact output uses 20; omitted full output is unbounded.
+    - limit: page size. Omitted compact output uses 20, distributed round-robin
+      across libraries; omitted full output is unbounded.
     """
     return _run_forecast_operation(
         "forecast_list_library_models",
@@ -1436,6 +1437,43 @@ def forecast_barrier_optimize(
     )
 
 
+def _round_robin_library_model_rows(
+    library_results: List[tuple[str, Dict[str, Any]]],
+) -> List[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]]:
+    """Flatten per-library catalogs without letting one library monopolize a page."""
+    rows_by_library: List[
+        tuple[str, List[tuple[Dict[str, Any], Optional[Dict[str, Any]]]]]
+    ] = []
+    for library_name, section in library_results:
+        rows = section.get("models")
+        capabilities = section.get("capabilities")
+        capability_rows = capabilities if isinstance(capabilities, list) else []
+        library_rows: List[tuple[Dict[str, Any], Optional[Dict[str, Any]]]] = []
+        for index, row in enumerate(rows if isinstance(rows, list) else []):
+            if not isinstance(row, dict):
+                continue
+            capability = (
+                capability_rows[index]
+                if index < len(capability_rows)
+                and isinstance(capability_rows[index], dict)
+                else None
+            )
+            library_rows.append((row, capability))
+        rows_by_library.append((library_name, library_rows))
+
+    global_rows: List[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]] = []
+    max_library_rows = max(
+        (len(rows) for _library, rows in rows_by_library),
+        default=0,
+    )
+    for row_index in range(max_library_rows):
+        for library_name, library_rows in rows_by_library:
+            if row_index < len(library_rows):
+                row, capability = library_rows[row_index]
+                global_rows.append((library_name, row, capability))
+    return global_rows
+
+
 def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     *,
@@ -1485,20 +1523,7 @@ def _forecast_list_library_models_impl(
             total_unavailable_hidden += int(section.get("unavailable_hidden") or 0)
             library_results.append((library_name, section))
 
-        global_rows: List[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]] = []
-        for library_name, section in library_results:
-            rows = section.get("models")
-            capabilities = section.get("capabilities")
-            capability_rows = capabilities if isinstance(capabilities, list) else []
-            for index, row in enumerate(rows if isinstance(rows, list) else []):
-                if not isinstance(row, dict):
-                    continue
-                capability = (
-                    capability_rows[index]
-                    if index < len(capability_rows) and isinstance(capability_rows[index], dict)
-                    else None
-                )
-                global_rows.append((library_name, row, capability))
+        global_rows = _round_robin_library_model_rows(library_results)
         page_end = None if limit_value is None else offset_value + limit_value
         selected_rows = global_rows[offset_value:page_end]
 
@@ -1519,6 +1544,8 @@ def _forecast_list_library_models_impl(
                 "total_filtered": section.get("total_filtered"),
                 "available": section.get("available"),
                 "models_shown": len(selected_for_library),
+                "has_more": len(selected_for_library)
+                < int(section.get("total_filtered") or 0),
             }
             if detail_mode == "full":
                 section_out.update(
@@ -1552,6 +1579,7 @@ def _forecast_list_library_models_impl(
                 offset=offset_value,
                 limit=limit_value,
             ),
+            "page_order": "round_robin_by_library",
         }
         if detail_mode == "full":
             out["unavailable_hidden"] = total_unavailable_hidden

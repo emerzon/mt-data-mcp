@@ -371,7 +371,11 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
         "auto",
         description="Objective direction. auto uses the standard direction for the selected metric.",
     )
-    population: int = Field(12, ge=1)
+    population: int = Field(
+        12,
+        ge=2,
+        description="Population size per generation (minimum 2).",
+    )
     generations: int = Field(10, ge=1)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
@@ -569,7 +573,12 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive optimization backtest anchors.")
-    population: int = Field(8, ge=1, le=100)
+    population: int = Field(
+        8,
+        ge=2,
+        le=100,
+        description="Population size per generation (minimum 2).",
+    )
     generations: int = Field(5, ge=1, le=100)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)

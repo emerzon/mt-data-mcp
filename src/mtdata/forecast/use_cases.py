@@ -36,6 +36,7 @@ from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
 from .forecast_methods import get_forecast_method_names, get_forecast_methods_snapshot
+from .forecast_registry import ForecastRegistry
 from .forecast_validation import format_invalid_method_error
 from .requests import (
     ForecastBacktestRequest,
@@ -1203,17 +1204,7 @@ def _apply_forecast_generate_detail(  # noqa: C901
                 compact[key] = value
     forecast_rows = _forecast_generate_compact_rows(payload)
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
-    if is_non_informative and forecast_rows:
-        compact["forecast_summary"] = {
-            "steps": len(forecast_rows),
-            "first": forecast_rows[0],
-            "last": forecast_rows[-1],
-            "path_omitted": "non_informative_flat_path",
-        }
-    elif forecast_rows and (
-        not ci_has_intervals
-        or str(compact.get("quantity") or "").strip().lower() == "return"
-    ):
+    if forecast_rows:
         compact["forecast"] = forecast_rows
     elif volatility_rows:
         compact["forecast"] = volatility_rows
@@ -2312,6 +2303,51 @@ def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+def _resolve_stored_model_execution_alias(
+    *,
+    library: str,
+    requested_method: str,
+    resolved_method: str,
+    params: Dict[str, Any],
+    original_params: Dict[str, Any],
+    model_id: Any,
+) -> tuple[str, Dict[str, Any]]:
+    """Execute a compatible stored wrapper under its canonical model ID."""
+    parts = str(model_id or "").split("/")
+    if (
+        len(parts) != 3
+        or library != "statsforecast"
+        or resolved_method != "statsforecast"
+    ):
+        return resolved_method, params
+    stored_method = parts[0]
+    if not stored_method.startswith("sf_"):
+        return resolved_method, params
+    try:
+        stored_class = ForecastRegistry.get_class(stored_method)
+    except ValueError:
+        return resolved_method, params
+    selector_key = str(
+        getattr(stored_class, "CAPABILITY_SELECTOR_KEY", "") or ""
+    )
+    selector_value = str(
+        getattr(stored_class, "CAPABILITY_SELECTOR_VALUE", "") or ""
+    )
+    requested_selector = str(params.get(selector_key) or "")
+    method_matches = requested_method.strip().lower() == stored_method.lower()
+    selector_matches = bool(
+        selector_key
+        and selector_value
+        and requested_selector.lower() == selector_value.lower()
+    )
+    if not (method_matches or selector_matches):
+        return resolved_method, params
+    alias_params = dict(params)
+    if selector_key and selector_key not in original_params:
+        alias_params.pop(selector_key, None)
+    return stored_method, alias_params
+
+
 def run_forecast_generate(  # noqa: C901
     request: ForecastGenerateRequest,
     *,
@@ -2427,6 +2463,15 @@ def run_forecast_generate(  # noqa: C901
                 params.setdefault("model", method)
         else:
             raise ForecastError(f"Unsupported library: {request.library}")
+
+        resolved_method, params = _resolve_stored_model_execution_alias(
+            library=lib,
+            requested_method=requested_method,
+            resolved_method=resolved_method,
+            params=params,
+            original_params=original_resolution[2],
+            model_id=getattr(request, "model_id", None),
+        )
 
         proxy_value = request.proxy
         proxy_defaulted = False
@@ -2715,6 +2760,18 @@ def run_forecast_conformal_intervals(
     residual quantiles, and reported coverage is empirical leave-one-out on
     those residuals—not a guaranteed finite-sample coverage bound.
     """
+    requested_method = str(request.method or "").strip()
+    valid_methods = list(get_forecast_method_names())
+    if requested_method.lower() not in {
+        str(method).lower() for method in valid_methods
+    }:
+        return build_error_payload(
+            format_invalid_method_error(requested_method, valid_methods),
+            code="invalid_method",
+            operation="forecast_conformal_intervals",
+            details={"method": requested_method},
+            related_tools=["forecast_list_methods"],
+        )
     started_at = time.perf_counter()
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     log_operation_start(

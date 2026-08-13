@@ -7,6 +7,7 @@ import warnings
 import pytest
 
 from mtdata.forecast import tune
+from mtdata.forecast.requests import ForecastTuneGeneticRequest
 
 
 def test_default_search_space_modes():
@@ -27,6 +28,21 @@ def test_default_search_space_modes():
     none_given = tune.default_search_space()
     assert "_shared" in none_given
     assert "theta" in none_given
+
+
+def test_genetic_search_rejects_population_below_two():
+    with pytest.raises(ValueError, match="greater than or equal to 2"):
+        ForecastTuneGeneticRequest(symbol="EURUSD", population=1)
+
+    with pytest.raises(ValueError, match="greater than or equal to 2"):
+        tune.genetic_search_forecast_params(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            search_space={},
+            population=1,
+            generations=1,
+        )
 
 
 def test_suppress_noisy_forecast_tune_loggers_raises_verbose_loggers(monkeypatch):
