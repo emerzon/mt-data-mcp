@@ -571,6 +571,7 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
     out: Dict[str, Any] = {}
     if isinstance(quote, dict):
         for key in (
+            "price_precision",
             "bid",
             "ask",
             "mid",

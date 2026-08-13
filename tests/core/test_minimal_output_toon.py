@@ -125,6 +125,25 @@ class TestEncodeTabular:
         result = _encode_tabular("data", ["x"], [])
         assert "data[0]" in result
 
+    def test_generic_numeric_cells_do_not_depend_on_other_rows(self):
+        one = _encode_tabular(
+            "data",
+            ["time", "rsi_14"],
+            [{"time": "target", "rsi_14": 48.167938}],
+        )
+        many = _encode_tabular(
+            "data",
+            ["time", "rsi_14"],
+            [
+                {"time": "low", "rsi_14": 42.1},
+                {"time": "high", "rsi_14": 51.9},
+                {"time": "target", "rsi_14": 48.167938},
+            ],
+        )
+
+        assert "target,48.1679" in one
+        assert "target,48.1679" in many
+
 
 class TestStringifyForToon:
     @pytest.mark.parametrize(

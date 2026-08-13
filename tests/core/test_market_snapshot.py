@@ -129,6 +129,22 @@ def test_snapshot_execution_cannot_open_when_quote_is_not_live_ready() -> None:
     assert result["execution"]["can_open_new_positions"] is False
 
 
+def test_snapshot_summary_preserves_quote_price_precision() -> None:
+    result = snapshot_mod._snapshot_summary_payload(
+        {
+            "quote": {
+                "price_precision": 5,
+                "bid": 1.15279,
+                "ask": 1.1528,
+                "mid": 1.152795,
+                "spread": 0.00001,
+            }
+        }
+    )
+
+    assert result["price_precision"] == 5
+
+
 def test_market_snapshot_summary_explains_non_live_quote_age() -> None:
     summary = snapshot_mod._snapshot_summary(
         "EURUSD",

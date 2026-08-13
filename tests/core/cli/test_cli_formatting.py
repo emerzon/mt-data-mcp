@@ -194,6 +194,45 @@ class TestFormatResultForCli:
         )
         assert result == "minimal output"
 
+    def test_toon_quote_fields_use_consistent_fixed_precision(self):
+        describe = _format_result_for_cli(
+            {
+                "success": True,
+                "details": {
+                    "digits": 5,
+                    "bid": 1.15279,
+                    "ask": 1.1528,
+                    "mid": 1.152795,
+                    "spread": 0.00001,
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="symbols_describe",
+        )
+        snapshot = _format_result_for_cli(
+            {
+                "success": True,
+                "snapshot": {
+                    "price_precision": 5,
+                    "bid": 1.15279,
+                    "ask": 1.1528,
+                    "mid": 1.152795,
+                    "spread": 0.00001,
+                },
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_snapshot",
+        )
+
+        for rendered in (describe, snapshot):
+            assert "bid: 1.15279" in rendered
+            assert "ask: 1.15280" in rendered
+            assert "mid: 1.152795" in rendered
+            assert "spread: 0.00001" in rendered
+            assert "1e-05" not in rendered
+
     @patch("mtdata.core.cli.formatting._shared_minimal", side_effect=TypeError("bad"))
     def test_toon_format_fallback(self, mock_shared):
         result = _format_result_for_cli(

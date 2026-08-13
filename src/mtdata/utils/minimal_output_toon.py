@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from numbers import Number
 from typing import Any, Dict, Iterable, List, Optional, cast
 
@@ -64,6 +65,26 @@ _SYMBOL_PRICE_PRECISION_FIELDS = {
 _PROBABILITY_FIELDS = frozenset(
     {"p_value", "p_value_raw", "q_value", "adjusted_p_value"}
 )
+_INDICATOR_FIELD_PREFIXES = (
+    "adx",
+    "atr",
+    "bb",
+    "bollinger",
+    "cci",
+    "ema",
+    "hma",
+    "ichimoku",
+    "macd",
+    "mfi",
+    "momentum",
+    "obv",
+    "roc",
+    "rsi",
+    "sma",
+    "stoch",
+    "willr",
+    "wma",
+)
 
 
 def _format_small_probability(value: float, field: Any) -> Optional[str]:
@@ -81,6 +102,14 @@ def _quote_decimals_for_field(field: Any) -> Optional[int]:
     if forced is not None:
         return forced
     return _QUOTE_DECIMALS_BY_FIELD.get(text.lower())
+
+
+def _is_indicator_field(field: Any) -> bool:
+    name = str(field or "").rsplit(".", 1)[-1].strip().lower()
+    return any(
+        name == prefix or name.startswith(f"{prefix}_")
+        for prefix in _INDICATOR_FIELD_PREFIXES
+    )
 
 
 def _coerce_precision(value: Any) -> Optional[int]:
@@ -120,6 +149,8 @@ def _symbol_precision_for_field(
         return None
     text = str(field)
     lowered = text.lower()
+    if lowered == "mid" or lowered.endswith(".mid"):
+        return min(15, precision + 1)
     if lowered in _SYMBOL_PRICE_PRECISION_FIELDS:
         return precision
     if "." in text:
@@ -179,6 +210,12 @@ def _is_empty_value(value: Any) -> bool:
 
 def _format_number_full(num: float) -> str:
     text = repr(float(num))
+    return "0.0" if text == "-0.0" else text
+
+
+def _format_number_plain(num: float) -> str:
+    """Preserve a float's canonical digits without scientific notation."""
+    text = format(Decimal(str(float(num))), "f")
     return "0.0" if text == "-0.0" else text
 
 
@@ -257,6 +294,12 @@ def _stringify_cell(
                     return _format_fixed_float(num, price_decimals)
                 if decimals is not None:
                     return _format_float(num, int(decimals))
+                if (
+                    not simplify_numbers
+                    and _forced_scalar_decimals(key, parent_key=parent_key)
+                    is not None
+                ):
+                    return _format_number_plain(num)
                 return (
                     format_number(num)
                     if simplify_numbers
@@ -479,6 +522,11 @@ def _stringify_for_toon_value(
             return probability
         if decimals is not None:
             return _format_float(num, int(decimals))
+        if (
+            not simplify_numbers
+            and _forced_scalar_decimals(field, parent_key=parent_key) is not None
+        ):
+            return _format_number_plain(num)
         return format_number(num) if simplify_numbers else _format_number_full(num)
     return _quote_if_needed(str(value), delimiter)
 
@@ -522,10 +570,20 @@ def _encode_tabular(
                 if num is not None and math.isfinite(num):
                     vals.append(_format_fixed_float(num, fixed_decimals))
                     continue
+            cell_decimals = col_decimals.get(header)
+            if (
+                simplify_numbers
+                and _is_indicator_field(header)
+                and isinstance(value, Number)
+                and not isinstance(value, bool)
+            ):
+                num = _coerce_float(value)
+                if num is not None and math.isfinite(num):
+                    cell_decimals = _optimal_decimals([num])
             vals.append(
                 _stringify_for_toon_value(
                     value,
-                    col_decimals.get(header),
+                    cell_decimals,
                     delimiter,
                     simplify_numbers=simplify_numbers,
                     field=header,
@@ -695,6 +753,10 @@ def _format_to_toon(
                 rendered = (
                     _format_fixed_float(num, int(symbol_decimals))
                     if symbol_decimals is not None and decimals is None
+                    else _format_number_plain(num)
+                    if not simplify_numbers
+                    and _forced_scalar_decimals(key, parent_key=parent_key)
+                    is not None
                     else _stringify_for_toon_value(
                         num,
                         int(forced_decimals),
