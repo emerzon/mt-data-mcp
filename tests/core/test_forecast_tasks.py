@@ -506,6 +506,53 @@ class TestForecastModels:
         assert result["pagination"]["has_more"] is True
         assert [row["model_id"] for row in result["models"]] == ["m/S1/h", "m/S2/h"]
 
+    def test_models_compact_default_caps_large_store_at_ten(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(
+                f"m/S{i:02d}/h",
+                "m" if i < 11 else "theta",
+                f"S{i:02d}",
+                "h",
+                float(i),
+            )
+            for i in range(15)
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = handles
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)()
+
+        assert result["count"] == 10
+        assert result["pagination"] == {
+            "total": 15,
+            "returned": 10,
+            "limit": 10,
+            "offset": 0,
+            "has_more": True,
+            "more_available": 5,
+        }
+        assert result["count_by_method"] == {"m": 11, "theta": 4}
+
+    def test_models_explicit_fifty_limit_returns_larger_page(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(f"m/S{i:02d}/h", "m", f"S{i:02d}", "h", float(i))
+            for i in range(15)
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = handles
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)(limit=50)
+
+        assert result["count"] == 15
+        assert result["pagination"]["limit"] == 50
+        assert result["pagination"]["has_more"] is False
+
     def test_lists_models_distinguishes_empty_page_from_empty_store(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
 

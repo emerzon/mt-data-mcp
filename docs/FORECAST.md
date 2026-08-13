@@ -388,8 +388,12 @@ formats remain responsible for their own compatibility checks.
 
 ```bash
 mtdata-cli forecast_models_list --json
+mtdata-cli forecast_models_list --limit 50 --json  # Larger explicit page
 mtdata-cli forecast_models_delete --model-id "nhits/EURUSD_H1/abc123"
 ```
+
+The compact listing defaults to ten models and reports total pagination plus
+counts by method. Increase `--limit` explicitly when browsing a larger store.
 
 Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 

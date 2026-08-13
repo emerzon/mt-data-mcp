@@ -970,7 +970,7 @@ def forecast_task_list(
 def forecast_models_list(
     method: Optional[str] = None,
     detail: DetailLevel = "compact",
-    limit: Annotated[int, Field(ge=1, le=500)] = 50,
+    limit: Annotated[int, Field(ge=1, le=500)] = 10,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """List usable stored trained forecast models.
@@ -979,7 +979,8 @@ def forecast_models_list(
     Expired artifacts are intentionally excluded; use a dry-run
     ``forecast_models_cleanup`` call to inspect them. Use ``detail='full'`` to
     include stored model metadata. Results use deterministic model-id ordering
-    and are paged with ``limit``/``offset``.
+    and are paged with ``limit``/``offset``. The default returns at most ten
+    rows; pass ``limit=50`` (or another explicit cap) for a larger page.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
@@ -1007,6 +1008,11 @@ def forecast_models_list(
             "row_key": "models",
             "expired_models_hidden": max(0, len(all_handles) - len(handles)),
         }
+        count_by_method: Dict[str, int] = {}
+        for handle in handles:
+            method_name = str(getattr(handle, "method", "") or "unknown")
+            count_by_method[method_name] = count_by_method.get(method_name, 0) + 1
+        out["count_by_method"] = dict(sorted(count_by_method.items()))
         if out["expired_models_hidden"]:
             out["expired_models_hint"] = (
                 "Use forecast_models_cleanup with dry_run=true to inspect expired artifacts."
