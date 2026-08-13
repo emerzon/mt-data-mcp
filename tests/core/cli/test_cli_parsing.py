@@ -796,7 +796,11 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["--ticket", "123456"])
         assert args.position_ticket == 123456
 
-    def test_forecast_backtest_methods_accepts_method_alias(self):
+    @pytest.mark.parametrize(
+        "command",
+        ["forecast_backtest_run", "forecast_tune_genetic", "forecast_tune_optuna"],
+    )
+    def test_forecast_multi_methods_accepts_method_alias(self, command):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -808,7 +812,7 @@ class TestAddDynamicArguments:
                 },
             ]
         }
-        add_dynamic_arguments(parser, func_info, cmd_name="forecast_backtest_run")
+        add_dynamic_arguments(parser, func_info, cmd_name=command)
         args = parser.parse_args(["--method", "theta"])
         assert args.methods == ["theta"]
 

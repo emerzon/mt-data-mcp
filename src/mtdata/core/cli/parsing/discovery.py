@@ -985,7 +985,11 @@ def add_dynamic_arguments(  # noqa: C901
         extras: list[str] = []
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
-        if cmd_name_value == "forecast_backtest_run" and param_name == "methods":
+        if cmd_name_value in {
+            "forecast_backtest_run",
+            "forecast_tune_genetic",
+            "forecast_tune_optuna",
+        } and param_name == "methods":
             extras.append("--method")
         if cmd_name_value in _SEARCH_ALIAS_COMMANDS and param_name == "search":
             extras.append("--search-term")
