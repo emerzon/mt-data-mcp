@@ -2157,9 +2157,21 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
     assert unavailable_method["unavailable_reason"] == "Requires: mlforecast, sklearn"
 
+    compact_available = _unwrap(cf.forecast_list_methods)(profile="all")
+    assert compact_available["catalog_total"] == 2
+    assert compact_available["filtered_total"] == 2
+    assert compact_available["available"] == 1
+    assert compact_available["unavailable"] == 1
+    assert compact_available["unavailable_hidden"] == 1
+    assert len(compact_available["methods"]) == 1
+    assert compact_available["pagination"]["total"] == 1
+
     full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True, profile="all")
     assert full["detail"] == "full"
     assert full["catalog_total"] == 2
+    assert full["filtered_total"] == 2
+    assert full["available"] == 1
+    assert full["unavailable"] == 1
     assert full["pagination"]["total"] == 2
     assert full["pagination"]["returned"] == 2
     assert isinstance(full.get("methods"), list)

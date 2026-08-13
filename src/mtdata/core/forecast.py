@@ -1992,8 +1992,6 @@ def _forecast_list_methods_impl(  # noqa: C901
                 and _item_supports_training(item) is not bool(supports_training)
             ):
                 return False
-            if not show_unavailable and not bool(item.get("available")):
-                return False
             if not search_value:
                 return True
             desc = str(item.get("description") or "")
@@ -2035,17 +2033,28 @@ def _forecast_list_methods_impl(  # noqa: C901
             methods_full = snapshot.get("methods")
             if not isinstance(methods_full, list):
                 return data
+            eligible_full = [
+                row for row in methods_full
+                if isinstance(row, dict) and _method_matches(row)
+            ]
+            available_count = int(
+                sum(1 for row in eligible_full if bool(row.get("available")))
+            )
+            unavailable_count = int(len(eligible_full) - available_count)
+            visible_full = [
+                row
+                for row in eligible_full
+                if show_unavailable or bool(row.get("available"))
+            ]
             filtered_full = [
                 _forecast_list_full_row(row, method_to_category=method_to_category)
-                for row in methods_full
-                if isinstance(row, dict) and _method_matches(row)
+                for row in visible_full
             ]
             total_filtered = len(filtered_full)
             if offset_value:
                 filtered_full = filtered_full[offset_value:]
             if limit_value is not None:
                 filtered_full = filtered_full[:limit_value]
-            available_count = int(sum(1 for row in filtered_full if bool(row.get("available"))))
             out_full = dict(data)
             out_full["detail"] = "full"
             out_full["methods"] = filtered_full
@@ -2053,7 +2062,10 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["catalog_total"] = int(data.get("total") or len(methods_full))
             out_full.pop("total", None)
             out_full["available"] = available_count
-            out_full["unavailable"] = int(len(filtered_full) - available_count)
+            out_full["unavailable"] = unavailable_count
+            out_full["filtered_total"] = len(eligible_full)
+            if unavailable_count and not show_unavailable:
+                out_full["unavailable_hidden"] = unavailable_count
             hidden_count = int(
                 max(0, total_filtered - offset_value - len(filtered_full))
             )
@@ -2114,21 +2126,24 @@ def _forecast_list_methods_impl(  # noqa: C901
             return data
 
         compact_methods: List[Dict[str, Any]] = []
-        available_count = 0
-        unavailable_count = 0
+        eligible_methods = [
+            item
+            for item in methods
+            if isinstance(item, dict)
+            and _method_matches(item)
+            and item.get("method") not in (None, "")
+        ]
+        available_count = int(
+            sum(1 for item in eligible_methods if bool(item.get("available")))
+        )
+        unavailable_count = int(len(eligible_methods) - available_count)
         by_category: Dict[str, List[Dict[str, Any]]] = {}
-        for item in methods:
-            if not _method_matches(item):
+        for item in eligible_methods:
+            if not show_unavailable and not bool(item.get("available")):
                 continue
             name = item.get("method")
-            if name in (None, ""):
-                continue
             method_name = str(name)
             available = bool(item.get("available"))
-            if available:
-                available_count += 1
-            else:
-                unavailable_count += 1
 
             row: Dict[str, Any] = {
                 "method": method_name,
@@ -2207,6 +2222,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 )
         out = {
             "catalog_total": int(data.get("total") or len(compact_methods)),
+            "filtered_total": len(eligible_methods),
             "available": available_count,
             "unavailable": unavailable_count,
             "methods": selected_methods,
@@ -2218,6 +2234,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 limit=effective_limit_value,
             ),
         }
+        if unavailable_count and not show_unavailable:
+            out["unavailable_hidden"] = unavailable_count
         if detail_value == "standard":
             out["detail"] = "standard"
             if volatility_methods is not None:
