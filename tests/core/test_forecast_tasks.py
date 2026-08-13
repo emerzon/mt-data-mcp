@@ -649,6 +649,79 @@ class TestForecastTrain:
             quantity="price",
         )
 
+    def test_training_can_wait_for_completed_model(self):
+        from src.mtdata.core.forecast_tasks import forecast_train
+
+        handle = TrainedModelHandle(
+            model_id="mlf_rf/EURUSD_H1/abc",
+            method="mlf_rf",
+            data_scope="EURUSD_H1",
+            params_hash="abc",
+            created_at=1060.0,
+        )
+        running = _make_task(task_id="task-train-1", method="mlf_rf", status="running")
+        completed = _make_task(
+            task_id="task-train-1",
+            method="mlf_rf",
+            status="completed",
+            result=handle,
+        )
+        mock_tm = MagicMock()
+        mock_tm.submit_forecast_request.return_value = ("task-train-1", True)
+        mock_tm.get_status.return_value = running
+        mock_tm.wait_for_status.return_value = completed
+
+        with (
+            patch(_PATCH_TM, return_value=mock_tm),
+            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+        ):
+            result = _unwrap(forecast_train)(
+                ForecastTrainRequest(
+                    symbol="EURUSD",
+                    method="mlf_rf",
+                    wait=True,
+                )
+            )
+
+        assert result["success"] is True
+        assert result["status"] == "completed"
+        assert result["model_id"] == "mlf_rf/EURUSD_H1/abc"
+        assert result["foreground_wait"] is True
+        assert "process_lifetime_warning" not in result
+        mock_tm.wait_for_status.assert_called_once_with(
+            "task-train-1", timeout_seconds=30.0
+        )
+
+    def test_training_wait_surfaces_task_failure(self):
+        from src.mtdata.core.forecast_tasks import forecast_train
+
+        failed = _make_task(
+            task_id="task-train-1",
+            method="mlf_rf",
+            status="failed",
+            error="training exploded",
+        )
+        mock_tm = MagicMock()
+        mock_tm.submit_forecast_request.return_value = ("task-train-1", True)
+        mock_tm.get_status.return_value = failed
+
+        with (
+            patch(_PATCH_TM, return_value=mock_tm),
+            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+        ):
+            result = _unwrap(forecast_train)(
+                ForecastTrainRequest(
+                    symbol="EURUSD",
+                    method="mlf_rf",
+                    wait=True,
+                )
+            )
+
+        assert result["success"] is False
+        assert result["status"] == "failed"
+        assert result["error_code"] == "forecast_training_failed"
+        assert result["error"] == "training exploded"
+
     def test_training_request_rejects_as_of_with_explicit_range(self):
         with pytest.raises(ValueError, match="as_of cannot be combined with start/end"):
             ForecastTrainRequest(

@@ -44,10 +44,11 @@ timeframe applies only to child commands that accept one.
 Keep a long-lived process for agents and apps: `mtdata-stdio`,
 `mtdata-streamable-http`, or `mtdata-webapi`.
 
-Background training is rejected by one-shot CLI processes (workers would die
-when the command returned). Stdin batches are rejected for the same reason.
-Run `forecast_train` or `forecast_generate --async-mode true` inside an
-interactive `mtdata-cli shell`, through MCP, or through the Web API.
+One-shot `forecast_train` commands and stdin batches wait in the foreground so
+their worker remains alive and the command returns the stored `model_id`.
+Interactive shell, MCP, and Web API calls submit training in the background by
+default. `forecast_generate --async-mode true` still requires one of those
+persistent processes.
 
 ---
 

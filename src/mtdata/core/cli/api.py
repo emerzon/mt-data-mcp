@@ -1247,17 +1247,7 @@ def create_command_function(
 
     def _forecast_train_cmd(args: Any) -> int:
         if _INTERACTIVE_SHELL_SESSION_DEPTH <= 0:
-            return _render_cli_result_status(
-                build_error_payload(
-                    "Background forecast training cannot run in a one-shot CLI process.",
-                    code="cli_background_process_required",
-                    operation=cmd_name,
-                    remediation=_BACKGROUND_COMMAND_REMEDIATION,
-                    documentation="docs/FORECAST.md#background-training--model-store",
-                ),
-                args=args,
-                cmd_name=cmd_name,
-            )
+            args.wait = "true"
         return command_func(args)
 
     return _forecast_train_cmd

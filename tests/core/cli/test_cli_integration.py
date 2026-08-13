@@ -1503,14 +1503,19 @@ class TestMain:
         assert "Traceback" in err or "Error" in err
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_forecast_train_rejects_one_shot_process(
+    def test_forecast_train_waits_in_one_shot_process(
         self, mock_discover, capsys
     ):
         invoked = []
 
-        def forecast_train(symbol: str, **_kwargs):
-            invoked.append(symbol)
-            return {"status": "pending", "task_id": "task-1"}
+        def forecast_train(symbol: str, wait: bool = False, **_kwargs):
+            invoked.append((symbol, wait))
+            return {
+                "success": True,
+                "status": "completed",
+                "task_id": "task-1",
+                "model_id": "mlf_rf/EURUSD_H1/abc",
+            }
 
         mock_discover.return_value = {
             "forecast_train": {
@@ -1523,22 +1528,27 @@ class TestMain:
             result = main()
 
         payload = json.loads(capsys.readouterr().out)
-        assert result == 1
-        assert payload["error_code"] == "cli_background_process_required"
-        assert payload["operation"] == "forecast_train"
-        assert invoked == []
+        assert result == 0
+        assert payload["status"] == "completed"
+        assert payload["model_id"] == "mlf_rf/EURUSD_H1/abc"
+        assert invoked == [("EURUSD", True)]
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_forecast_train_rejects_stdin_shell_batch(
+    def test_forecast_train_waits_in_stdin_shell_batch(
         self, mock_discover, monkeypatch, capsys
     ):
         from mtdata.core.cli import api
 
         invoked = []
 
-        def forecast_train(symbol: str):
-            invoked.append(symbol)
-            return {"status": "pending", "task_id": "task-1"}
+        def forecast_train(symbol: str, wait: bool = False, **_kwargs):
+            invoked.append((symbol, wait))
+            return {
+                "success": True,
+                "status": "completed",
+                "task_id": "task-1",
+                "model_id": "mlf_rf/EURUSD_H1/abc",
+            }
 
         mock_discover.return_value = {
             "forecast_train": {
@@ -1554,11 +1564,11 @@ class TestMain:
 
         status = api.run_shell(interactive=False)
 
-        assert status == 1
+        assert status == 0
         record = json.loads(capsys.readouterr().out)
-        assert record["result"]["error_code"] == "cli_background_process_required"
-        assert "Stdin shell batches" in record["result"]["remediation"]
-        assert invoked == []
+        assert record["result"]["status"] == "completed"
+        assert record["result"]["model_id"] == "mlf_rf/EURUSD_H1/abc"
+        assert invoked == [("EURUSD", True)]
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_train_is_allowed_in_interactive_shell(
@@ -1569,8 +1579,8 @@ class TestMain:
         invoked = []
         commands = iter(["forecast_train EURUSD --json", "exit"])
 
-        def forecast_train(symbol: str, **_kwargs):
-            invoked.append(symbol)
+        def forecast_train(symbol: str, wait: bool = False, **_kwargs):
+            invoked.append((symbol, wait))
             return {"success": True, "status": "pending", "task_id": "task-1"}
 
         mock_discover.return_value = {
@@ -1584,7 +1594,7 @@ class TestMain:
         status = api.run_shell(interactive=True)
 
         assert status == 0
-        assert invoked == ["EURUSD"]
+        assert invoked == [("EURUSD", False)]
         assert '"status": "pending"' in capsys.readouterr().out
 
 

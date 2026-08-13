@@ -345,7 +345,10 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 Heavyweight methods (neural / foundation models, large `mlforecast` runs) can take minutes to fit. mtdata exposes a small task-and-cache layer so those fits happen once and are reused.
 
 ```bash
-# Start a long-lived CLI session; background tasks run in this process.
+# One-shot commands wait for training and return the stored model_id.
+mtdata-cli forecast_train EURUSD --timeframe H1 --method mlf_rf --horizon 24
+
+# Start a long-lived CLI session to submit background tasks.
 mtdata-cli shell
 
 # Then submit and observe the task from that shell.
@@ -362,11 +365,12 @@ forecast_task_cancel <task_id>
 forecast_task_cancel_all --dry-run false  # pending and running tasks
 ```
 
-One-shot `mtdata-cli forecast_train ...`, stdin shell batches, and
-`mtdata-cli forecast_generate ... --async-mode true` commands are rejected: they
-cannot keep an in-process worker alive after the command exits. Use
-an interactive `mtdata-cli shell`, an MCP server, or the Web API for training tasks. A
-`forecast_task_wait` deadline returns
+One-shot `mtdata-cli forecast_train ...` commands and stdin shell batches wait
+for a terminal task state and return the stored `model_id`; this keeps the
+in-process worker alive without bypassing the task runtime. Interactive shell,
+MCP, and Web API calls remain background submissions by default.
+`mtdata-cli forecast_generate ... --async-mode true` requires one of those
+persistent processes. A `forecast_task_wait` deadline returns
 `success: false`, `status: "timeout"`, and preserves the live task state in
 `task_status` so automation does not treat an unfinished model as usable.
 `--as-of` cannot be combined with `--start`/`--end`. The submitted window is

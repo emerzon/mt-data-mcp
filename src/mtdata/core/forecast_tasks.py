@@ -93,6 +93,14 @@ class ForecastTrainRequest(BaseModel):
             "forecast_volatility_estimate tool and is not separately trainable."
         ),
     )
+    wait: bool = Field(
+        False,
+        description=(
+            "Wait for training to reach a terminal state and return the stored model. "
+            "One-shot CLI execution enables this automatically; persistent MCP, Web "
+            "API, and interactive CLI sessions default to background submission."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastTrainRequest":
@@ -600,7 +608,7 @@ def _get_registry():
 
 @mcp.tool()
 def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
-    """Start an explicit background training job for a trainable forecast method."""
+    """Start training, optionally waiting for the stored model artifact."""
     def _execute() -> Dict[str, Any]:
         from ..utils.mt5 import ensure_mt5_connection_or_raise
 
@@ -620,6 +628,15 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
             quantity=request.quantity,
         )
         task = tm.get_status(task_id)
+        if request.wait:
+            while task is None or task.status not in {"completed", "failed", "cancelled"}:
+                task = tm.wait_for_status(task_id, timeout_seconds=30.0)
+                if task is None:
+                    return build_error_payload(
+                        f"Training task '{task_id}' was not found after submission.",
+                        code="forecast_task_not_found",
+                        operation="forecast_train",
+                    )
         if task is None:
             return {
                 "success": True,
@@ -634,6 +651,18 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
             detail="compact",
             runtime=tm.runtime_snapshot(),
         )
+        payload["training_window"] = request.training_window()
+        if request.wait:
+            payload["foreground_wait"] = True
+            if task.status == "failed":
+                payload["success"] = False
+                payload["error_code"] = "forecast_training_failed"
+                payload["error"] = str(task.error or "Forecast training failed.")
+            elif task.status == "cancelled":
+                payload["success"] = False
+                payload["error_code"] = "forecast_training_cancelled"
+                payload["error"] = "Forecast training was cancelled."
+            return payload
         payload["message"] = (
             "Training task queued. Poll forecast_task_status or use forecast_task_wait "
             "to observe completion from the same long-lived process."
@@ -641,10 +670,9 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
         payload["process_lifetime_warning"] = (
             "Tasks run in the submitting process. For CLI use, submit and poll from "
             "an interactive mtdata-cli shell; MCP and Web API servers remain active "
-            "while running. One-shot commands and stdin shell batches cannot retain "
-            "a queued task."
+            "while running. Set wait=true when the caller must remain attached until "
+            "the model is stored."
         )
-        payload["training_window"] = request.training_window()
         return payload
 
     return run_logged_operation(
