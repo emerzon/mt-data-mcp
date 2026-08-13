@@ -567,7 +567,7 @@ class TestPivotHappyPath:
         assert res["calculation_basis"]["session_boundary"] == "MT5 broker/session calendar"
         assert res["calculation_basis"]["display_timezone"] == "UTC"
         assert "null cells mean that pivot method does not define that level." in res["levels_note"]
-        assert "Camarilla levels are centered on the close price" in res["levels_note"]
+        assert "documented reference convention" in res["levels_note"]
 
     def test_client_timezone_label_uses_resolved_timezone_name(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
@@ -649,7 +649,10 @@ class TestPivotMethods:
         m = self._levels(H, L, C, O)
         rng = H - L
         k = 1.1
+        assert m["camarilla"]["PP"] == C
         assert abs(m["camarilla"]["R1"] - (C + k * rng / 12.0)) < 1e-6
+        assert m["camarilla"]["R1"] > m["camarilla"]["PP"]
+        assert m["camarilla"]["S1"] < m["camarilla"]["PP"]
 
     def test_woodie_pp(self):
         H, L, C, O = 1.1050, 1.0950, 1.1020, 1.1000

@@ -62,7 +62,7 @@ def compute_pivot_method_levels(
     elif name == "camarilla":
         k = 1.1
         levels_raw = {
-            "PP": (high + low + close) / 3.0,
+            "PP": close,
             "R1": close + (k * range_value) / 12.0,
             "S1": close - (k * range_value) / 12.0,
             "R2": close + (k * range_value) / 6.0,
@@ -111,6 +111,8 @@ def compute_pivot_method_levels(
         **(
             {"pivot_convention": "retail_x_over_4_extension"}
             if name == "demark"
+            else {"pivot_convention": "prior_close_reference"}
+            if name == "camarilla"
             else {}
         ),
     }

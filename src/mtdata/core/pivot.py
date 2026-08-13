@@ -147,7 +147,7 @@ _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
         "intended_use": "Traders who align pivot levels with Fibonacci retracement/extension zones.",
     },
     "camarilla": {
-        "method_description": "Levels are close-centered using 1.1 * prior range fractions; includes R1-R4/S1-S4.",
+        "method_description": "PP is the prior close; R/S levels use 1.1 * prior range fractions around that reference.",
         "intended_use": "Intraday mean-reversion/breakout context; R3/S3 and R4/S4 are commonly watched.",
     },
     "woodie": {
@@ -619,7 +619,7 @@ def pivot_compute_points(  # noqa: C901
                 },
                 "levels_note": (
                     "null cells mean that pivot method does not define that level. "
-                    "Camarilla levels are centered on the close price, so S1 may be above PP and R1 may be below PP."
+                    "Each method's PP follows that method's documented reference convention."
                 ),
                 "method_descriptions": {
                     name: dict(_PIVOT_METHOD_INFO.get(name, {}))
