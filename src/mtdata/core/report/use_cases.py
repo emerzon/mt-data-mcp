@@ -777,10 +777,18 @@ def _compact_report_top_patterns(patterns_section: Any, *, limit: int = 3) -> Li
 def _section_timeframes(section: Any) -> List[str]:
     if not isinstance(section, dict):
         return []
+    non_timeframe_keys = {
+        "__base_timeframe__",
+        "error",
+        "reason",
+        "status",
+        "timeframe_errors",
+        "warning",
+    }
     return [
         str(key)
         for key, value in section.items()
-        if key != "__base_timeframe__" and isinstance(value, dict)
+        if str(key).lower() not in non_timeframe_keys and isinstance(value, dict)
     ]
 
 

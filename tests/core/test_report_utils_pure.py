@@ -827,6 +827,31 @@ class TestAsFloat:
 
 
 class TestAttachMultiTimeframes:
+    def test_pivot_multi_extracts_structured_tool_payload(self, monkeypatch):
+        monkeypatch.setattr(
+            "mtdata.core.report.utils.call_tool_sync_structured",
+            lambda func, **kwargs: {
+                "levels": {"PP": 1.1, "R1": 1.2, "S1": 1.0},
+                "methods": [{"method": "classic"}],
+                "period": "2026-08-12",
+                "timeframe": kwargs["timeframe"],
+                "calculation_basis": "completed_bar",
+                "timezone": "UTC",
+            },
+        )
+
+        report = {"sections": {"pivot": {"timeframe": "D1"}}}
+        attach_multi_timeframes(
+            report,
+            "EURUSD",
+            None,
+            extra_timeframes=[],
+            pivot_timeframes=["H4"],
+        )
+
+        assert report["sections"]["pivot_multi"]["H4"]["levels"]["PP"] == 1.1
+        assert report["sections"]["pivot_multi"]["H4"]["timeframe"] == "H4"
+
     def test_contexts_multi_omits_trend_compact_payload(self, monkeypatch):
         snap = {
             "close": 100.0,

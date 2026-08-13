@@ -268,6 +268,7 @@ def test_template_basic_anchors_bounded_context_at_end() -> None:
 
 def test_template_basic_forwards_context_indicators_param() -> None:
     requested_indicators = []
+    requested_pattern_kwargs = []
 
     def _fake_get_raw_result(func, *args, **kwargs):
         func_name = getattr(func, "__name__", "")
@@ -290,6 +291,7 @@ def test_template_basic_forwards_context_indicators_param() -> None:
         if func_name == "forecast_barrier_optimize":
             return {"error": "barrier skipped"}
         if func_name == "patterns_detect":
+            requested_pattern_kwargs.append(kwargs)
             return {"error": "patterns skipped"}
         if func_name == "volatility_analyze":
             return {"error": "volatility skipped"}
@@ -306,4 +308,6 @@ def test_template_basic_forwards_context_indicators_param() -> None:
         template_basic("EURUSD", 12, None, {"context_indicators": "ema(20),rsi(14)"})
 
     assert requested_indicators == ["ema(20),rsi(14)"]
+    assert requested_pattern_kwargs[0]["lookback"] == 120
+    assert "limit" not in requested_pattern_kwargs[0]
     assert mock_attach_multi_timeframes.call_args.kwargs["context_indicators"] == "ema(20),rsi(14)"

@@ -1080,7 +1080,12 @@ def attach_multi_timeframes(  # noqa: C901
                         pivot_errors[str(tfp)] = report_runtime_error(operation)
                         continue
                     emit_report_progress(operation, "started")
-                    res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
+                    res = call_tool_sync_structured(
+                        _compute_pivot_points,
+                        symbol=symbol,
+                        timeframe=tfp,
+                        raw_tool_output=True,
+                    )
                     emit_report_progress(operation, "finished")
                     if isinstance(res, dict) and not res.get('error'):
                         pivs[str(tfp)] = {

@@ -796,7 +796,7 @@ def template_basic(  # noqa: C901
             timeframe=tf,
             mode='candlestick',
             detail='compact',
-            limit=int(p.get('patterns_limit', 120)),
+            lookback=int(p.get('patterns_limit', 120)),
             start=start,
             end=end,
         )
