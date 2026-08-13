@@ -14,8 +14,11 @@ from .client import (
 )
 from .dates import (
     FINVIZ_CALENDAR_TIMEZONE,
+    _finviz_market_date,
     align_to_next_monday_if_weekend,
+    finviz_earnings_period_window,
     normalize_finviz_dates_in_rows,
+    parse_finviz_earnings_date,
     resolve_date_range,
 )
 from .symbols import looks_like_non_equity_symbol, normalize_finviz_equity_symbol
@@ -931,6 +934,7 @@ def get_earnings_calendar(
     period: str = "This Week",
     limit: int = 50,
     page: int = 1,
+    include_elapsed: bool = False,
 ) -> Dict[str, Any]:
     """Get upcoming earnings calendar from Finviz.
 
@@ -955,30 +959,73 @@ def get_earnings_calendar(
 
         screener = Financial()
         screener.set_filter(filters_dict={"Earnings Date": period})
+        period_key = period.lower().replace(" ", "-")
+        filter_elapsed = not include_elapsed and period_key in {
+            "this-week",
+            "this-month",
+        }
+        fetch_limit_arg = _FINVIZ_SCREENER_MAX_ROWS if filter_elapsed else limit
+        fetch_page = 1 if filter_elapsed else page
         df, fetch_limit = _run_screener_view(
             screener,
             order="Earnings Date",
-            limit=limit,
-            page=page,
+            limit=fetch_limit_arg,
+            page=fetch_page,
         )
 
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
+
+        reference_date = _finviz_market_date()
+        source_count = len(df.index)
+        source_complete = source_count < fetch_limit
+        elapsed_filter_applied = False
+        if filter_elapsed:
+            period_window = finviz_earnings_period_window(
+                period_key,
+                reference_date,
+            )
+            keep_positions = []
+            earnings_column = "Earnings" if "Earnings" in df.columns else None
+            if earnings_column is not None:
+                elapsed_filter_applied = True
+                for position, value in enumerate(df[earnings_column].tolist()):
+                    earnings_date = parse_finviz_earnings_date(
+                        value,
+                        reference_date=reference_date,
+                        period_window=period_window,
+                    )
+                    if earnings_date is None or earnings_date >= reference_date:
+                        keep_positions.append(position)
+                df = df.iloc[keep_positions].reset_index(drop=True)
 
         items_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
             df,
             limit=limit,
             page=page,
         )
-        pagination_meta = _screener_pagination_metadata(
-            fetched_count=total,
-            fetch_limit=fetch_limit,
-            limit=safe_limit,
-            page=safe_page,
-        )
+        if elapsed_filter_applied and not source_complete:
+            pagination_meta = {
+                "total": None,
+                "pages": None,
+                "has_more": True,
+                "total_lower_bound": total,
+                "truncated": True,
+            }
+        else:
+            pagination_meta = _screener_pagination_metadata(
+                fetched_count=total,
+                fetch_limit=fetch_limit,
+                limit=safe_limit,
+                page=safe_page,
+            )
         return {
             "success": True,
             "period": period,
+            "include_elapsed": bool(include_elapsed),
+            "elapsed_filter_applied": elapsed_filter_applied,
+            "calendar_reference_date": reference_date.isoformat(),
+            "calendar_timezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items_list),
             "limit": safe_limit,
             "page": safe_page,

@@ -33,6 +33,10 @@ from ..services.finviz import (
     get_stock_ratings,
     screen_stocks,
 )
+from ..services.finviz.dates import (
+    finviz_earnings_period_window,
+    parse_finviz_earnings_date,
+)
 from ..services.finviz.symbols import (
     looks_like_non_equity_symbol,
     normalize_finviz_equity_symbol,
@@ -2174,22 +2178,7 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
 def _finviz_earnings_period_window(
     period_key: str, reference_date: Any
 ) -> tuple[Any, Any]:
-    week_start = reference_date - timedelta(days=reference_date.weekday())
-    if period_key == "next-week":
-        start = week_start + timedelta(days=7)
-        return start, start + timedelta(days=6)
-    if period_key == "previous-week":
-        start = week_start - timedelta(days=7)
-        return start, start + timedelta(days=6)
-    if period_key == "this-month":
-        start = reference_date.replace(day=1)
-        next_month = (
-            start.replace(year=start.year + 1, month=1)
-            if start.month == 12
-            else start.replace(month=start.month + 1)
-        )
-        return start, next_month - timedelta(days=1)
-    return week_start, week_start + timedelta(days=6)
+    return finviz_earnings_period_window(period_key, reference_date)
 
 
 def _normalize_finviz_earnings_rows(
@@ -2248,38 +2237,12 @@ def _finviz_earnings_date_from_token(
     reference_date: Any = None,
     period_window: Optional[tuple[Any, Any]] = None,
 ) -> Optional[str]:
-    if value in (None, ""):
-        return None
-    token = str(value).strip()
-    if not token:
-        return None
-    date_part = token.split("/", 1)[0].strip()
-    if not date_part:
-        return None
-    for fmt in ("%Y-%m-%d",):
-        try:
-            parsed = datetime.strptime(date_part, fmt)
-        except ValueError:
-            continue
-        return parsed.date().isoformat()
-    reference = reference_date or datetime.now(timezone.utc).date()
-    candidates = []
-    for year in (reference.year - 1, reference.year, reference.year + 1):
-        for fmt in ("%b %d %Y", "%B %d %Y"):
-            try:
-                parsed = datetime.strptime(f"{date_part} {year}", fmt).date()
-            except ValueError:
-                continue
-            candidates.append(parsed)
-            break
-    if period_window is not None:
-        start, end = period_window
-        within = [candidate for candidate in candidates if start <= candidate <= end]
-        if within:
-            return min(within, key=lambda candidate: abs(candidate - reference)).isoformat()
-    if candidates:
-        return min(candidates, key=lambda candidate: abs(candidate - reference)).isoformat()
-    return None
+    parsed = parse_finviz_earnings_date(
+        value,
+        reference_date=reference_date,
+        period_window=period_window,
+    )
+    return parsed.isoformat() if parsed is not None else None
 
 
 def _normalize_finviz_date_value(value: Any) -> Any:
@@ -4166,6 +4129,7 @@ def finviz_earnings(
     period: Literal["this-week", "next-week", "previous-week", "this-month"] = "this-week",
     limit: Annotated[int, Field(ge=1)] = 10,
     page: Annotated[int, Field(ge=1)] = 1,
+    include_elapsed: bool = False,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -4179,12 +4143,15 @@ def finviz_earnings(
     ----------
     period : str
         Calendar period: this-week, next-week, previous-week, or this-month.
-        Rows are ordered from the start of the selected period and can include
-        elapsed dates for this-week and this-month.
+        Current periods return upcoming dates by default. Previous-week is
+        always an archive.
     limit : int
         Max items per page (default 10)
     page : int
         Page number for pagination (default 1)
+    include_elapsed : bool
+        Include dates before the current New York calendar date in this-week
+        and this-month results (default false).
     detail : {"compact", "full"}
         Response detail level. Compact returns calendar-focused rows; full keeps
         all normalized provider columns and adds the tool metadata block.
@@ -4215,12 +4182,18 @@ def finviz_earnings(
             "period": period_key,
             "limit": limit,
             "page": page,
+            "include_elapsed": include_elapsed,
             "detail": detail,
         }
         detail_error = _validate_finviz_detail(detail, operation="finviz_earnings")
         if detail_error is not None:
             return detail_error
-        result = get_earnings_calendar(period=period_value, limit=limit, page=page)
+        result = get_earnings_calendar(
+            period=period_value,
+            limit=limit,
+            page=page,
+            include_elapsed=include_elapsed,
+        )
         if not isinstance(result, dict):
             return {
                 "success": False,
@@ -4245,9 +4218,13 @@ def finviz_earnings(
         items = result.get("earnings")
         if not isinstance(items, list):
             items = []
-        reference_date = datetime.now(timezone.utc).astimezone(
-            ZoneInfo("America/New_York")
-        ).date()
+        reference_date_text = str(result.get("calendar_reference_date") or "")
+        try:
+            reference_date = datetime.strptime(reference_date_text, "%Y-%m-%d").date()
+        except ValueError:
+            reference_date = datetime.now(timezone.utc).astimezone(
+                ZoneInfo("America/New_York")
+            ).date()
         normalized_items = _normalize_finviz_earnings_rows(
             items,
             period_key=period_key,
@@ -4275,10 +4252,25 @@ def finviz_earnings(
             "has_more": bool(result.get("has_more")),
             "truncated": bool(result.get("truncated")),
             "calendar_reference_date": reference_date.isoformat(),
-            "calendar_timezone": "America/New_York",
-            "calendar_order": "period_start_ascending",
-            "includes_elapsed_dates": period_key in {"this-week", "this-month"},
+            "calendar_timezone": str(
+                result.get("calendar_timezone") or "America/New_York"
+            ),
+            "calendar_order": (
+                "upcoming_date_ascending"
+                if result.get("elapsed_filter_applied") is True
+                else "period_start_ascending"
+            ),
+            "include_elapsed": bool(include_elapsed),
+            "includes_elapsed_dates": bool(
+                period_key == "previous-week"
+                or (
+                    period_key in {"this-week", "this-month"}
+                    and result.get("elapsed_filter_applied") is not True
+                )
+            ),
         }
+        if result.get("elapsed_filter_applied") is True:
+            out["elapsed_cutoff_date"] = reference_date.isoformat()
         units = _finviz_screen_units_for_rows(output_items)
         if units:
             out["units"] = units
@@ -4324,6 +4316,12 @@ def finviz_earnings(
 
     return _run_logged_tool(
         "finviz_earnings",
-        {"period": period, "limit": limit, "page": page, "detail": detail},
+        {
+            "period": period,
+            "limit": limit,
+            "page": page,
+            "include_elapsed": include_elapsed,
+            "detail": detail,
+        },
         _run,
     )

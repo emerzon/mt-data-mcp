@@ -525,7 +525,12 @@ class TestFinvizService:
         mock_screener.screener_view.return_value = mock_df
         mock_financial_class.return_value = mock_screener
 
-        result = get_earnings_calendar(period="This Week", limit=10, page=1)
+        result = get_earnings_calendar(
+            period="This Week",
+            limit=10,
+            page=1,
+            include_elapsed=True,
+        )
 
         mock_financial_class.assert_called_once_with()
         mock_screener.set_filter.assert_called_once_with(
@@ -536,6 +541,36 @@ class TestFinvizService:
         assert result["period"] == "This Week"
         assert result["count"] == 2
         assert len(result["earnings"]) == 2
+
+    @patch("mtdata.services.finviz.api._finviz_market_date")
+    @patch("finvizfinance.screener.financial.Financial")
+    def test_get_earnings_calendar_filters_elapsed_dates_before_pagination(
+        self,
+        mock_financial_class,
+        mock_market_date,
+    ):
+        from datetime import date
+
+        from mtdata.services.finviz import get_earnings_calendar
+
+        mock_market_date.return_value = date(2026, 8, 12)
+        mock_screener = mock_financial_class.return_value
+        mock_screener.screener_view.return_value = pd.DataFrame(
+            [
+                {"Ticker": "MON", "Earnings": "Aug 10/b"},
+                {"Ticker": "THU", "Earnings": "Aug 13/a"},
+                {"Ticker": "FRI", "Earnings": "Aug 14/b"},
+            ]
+        )
+
+        result = get_earnings_calendar(period="This Week", limit=1, page=1)
+
+        assert [row["Ticker"] for row in result["earnings"]] == ["THU"]
+        assert result["calendar_reference_date"] == "2026-08-12"
+        assert result["calendar_timezone"] == "America/New_York"
+        assert result["elapsed_filter_applied"] is True
+        assert result["total"] == 2
+        assert result["has_more"] is True
 
     def test_get_earnings_calendar_invalid_period(self):
         """Test earnings calendar with invalid period."""
@@ -1927,15 +1962,24 @@ class TestFinvizTools:
             "total": 12,
             "page": 1,
             "pages": 2,
+            "calendar_reference_date": "2026-04-27",
+            "calendar_timezone": "America/New_York",
+            "elapsed_filter_applied": True,
         }
 
         raw = getattr(finviz_earnings, "__wrapped__", finviz_earnings)
         result = raw()
 
-        mock_get_earnings.assert_called_once_with(period="This Week", limit=10, page=1)
+        mock_get_earnings.assert_called_once_with(
+            period="This Week",
+            limit=10,
+            page=1,
+            include_elapsed=False,
+        )
         assert result["detail"] == "compact"
-        assert result["calendar_order"] == "period_start_ascending"
-        assert result["includes_elapsed_dates"] is True
+        assert result["calendar_order"] == "upcoming_date_ascending"
+        assert result["includes_elapsed_dates"] is False
+        assert result["elapsed_cutoff_date"] == "2026-04-27"
         assert result["pagination"]["more_available"] == 11
         assert result["items"] == [
             {

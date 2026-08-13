@@ -315,13 +315,14 @@ were excluded and paginate the filtered collection.
 
 ### `finviz_earnings`
 
-Get a period-based earnings calendar ordered from the beginning of the selected
-week or month. `this-week` and `this-month` include elapsed dates; use
-`finviz_calendar --calendar earnings --start ... --end ...` for an explicit
-upcoming date range.
+Get a period-based earnings calendar. Current-week and current-month results
+omit dates before the current New York calendar date before pagination, so the
+default first page starts with upcoming reports. Pass `--include-elapsed true`
+for the complete period-start archive. `previous-week` is always an archive.
 
 ```bash
 mtdata-cli finviz_earnings --period this-week --json
+mtdata-cli finviz_earnings --period this-week --include-elapsed true --json
 mtdata-cli finviz_earnings --period next-week --json
 ```
 
@@ -330,6 +331,7 @@ mtdata-cli finviz_earnings --period next-week --json
 | `--period` | `this-week` | `this-week`, `next-week`, `previous-week`, `this-month` |
 | `--limit` | 10 | Max items |
 | `--page` | 1 | Pagination page |
+| `--include-elapsed` | false | Include earlier dates for current periods |
 
 ---
 

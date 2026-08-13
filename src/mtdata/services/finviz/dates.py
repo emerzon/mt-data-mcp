@@ -69,6 +69,68 @@ def normalize_finviz_dates_in_rows(
     return out
 
 
+def finviz_earnings_period_window(
+    period_key: str,
+    reference_date: datetime.date,
+) -> tuple[datetime.date, datetime.date]:
+    """Resolve the calendar bounds used to interpret yearless earnings dates."""
+    week_start = reference_date - datetime.timedelta(days=reference_date.weekday())
+    if period_key == "next-week":
+        start = week_start + datetime.timedelta(days=7)
+        return start, start + datetime.timedelta(days=6)
+    if period_key == "previous-week":
+        start = week_start - datetime.timedelta(days=7)
+        return start, start + datetime.timedelta(days=6)
+    if period_key == "this-month":
+        start = reference_date.replace(day=1)
+        next_month = (
+            start.replace(year=start.year + 1, month=1)
+            if start.month == 12
+            else start.replace(month=start.month + 1)
+        )
+        return start, next_month - datetime.timedelta(days=1)
+    return week_start, week_start + datetime.timedelta(days=6)
+
+
+def parse_finviz_earnings_date(
+    value: Any,
+    *,
+    reference_date: Optional[datetime.date] = None,
+    period_window: Optional[tuple[datetime.date, datetime.date]] = None,
+) -> Optional[datetime.date]:
+    """Parse a Finviz earnings token such as ``Aug 12/a`` into a date."""
+    if value in (None, ""):
+        return None
+    date_part = str(value).strip().split("/", 1)[0].strip()
+    if not date_part:
+        return None
+    try:
+        return datetime.date.fromisoformat(date_part)
+    except ValueError:
+        pass
+
+    reference = reference_date or _finviz_market_date()
+    candidates: List[datetime.date] = []
+    for year in (reference.year - 1, reference.year, reference.year + 1):
+        for fmt in ("%b %d %Y", "%B %d %Y"):
+            try:
+                parsed = datetime.datetime.strptime(
+                    f"{date_part} {year}", fmt
+                ).date()
+            except ValueError:
+                continue
+            candidates.append(parsed)
+            break
+    if period_window is not None:
+        start, end = period_window
+        within = [candidate for candidate in candidates if start <= candidate <= end]
+        if within:
+            return min(within, key=lambda candidate: abs(candidate - reference))
+    if candidates:
+        return min(candidates, key=lambda candidate: abs(candidate - reference))
+    return None
+
+
 def strip_string_fields_in_rows(
     rows: List[Dict[str, Any]], *keys: str
 ) -> List[Dict[str, Any]]:
@@ -139,6 +201,8 @@ __all__ = [
     "parse_iso_date_input",
     "normalize_finviz_date_string",
     "normalize_finviz_dates_in_rows",
+    "finviz_earnings_period_window",
+    "parse_finviz_earnings_date",
     "strip_string_fields_in_rows",
     "resolve_date_range",
     "align_to_next_monday_if_weekend",
