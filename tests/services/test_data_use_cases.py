@@ -1866,6 +1866,39 @@ def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warning
     assert len(result["warnings"]) == 2
 
 
+def test_run_data_fetch_ticks_compact_marks_normal_quote_only_feed_ok():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=2, detail="compact"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "count": 2,
+            "trade_event_count": 0,
+            "quote_update_count": 2,
+            "feed_tier": "quote_only",
+            "data": [
+                {"time": "t1", "bid": 1.1, "ask": 1.1001},
+                {"time": "t2", "bid": 1.10001, "ask": 1.10011},
+            ],
+            "data_quality": {
+                "complete_ticks": 2,
+                "incomplete_ticks": 0,
+                "total_ticks": 2,
+                "one_sided_updates": 1,
+                "one_sided_update_status": "expected",
+                "incomplete_quote_status": "info",
+            },
+            "last_unavailable": True,
+        },
+    )
+
+    assert result["feed_tier"] == "quote_only"
+    assert result["quality"] == "ok"
+    assert result["last_unavailable"] is True
+    assert "warnings" not in result
+
+
 def test_run_data_fetch_ticks_compact_does_not_infer_mid_outside_locked_quote():
     result = run_data_fetch_ticks(
         DataFetchTicksRequest(symbol="EURUSD", limit=2, detail="compact"),

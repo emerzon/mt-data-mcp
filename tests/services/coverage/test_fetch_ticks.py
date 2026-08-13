@@ -400,6 +400,12 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(row["flags_decoded"], ["ask"])
         self.assertEqual(result["trade_event_count"], 0)
         self.assertEqual(result["quote_update_count"], 2)
+        self.assertEqual(result["feed_tier"], "quote_only")
+        self.assertTrue(result["last_unavailable"])
+        self.assertEqual(result["data_quality"]["incomplete_quote_status"], "info")
+        self.assertEqual(result["data_quality"]["one_sided_update_status"], "expected")
+        self.assertNotIn("warning_ratio", result["data_quality"])
+        self.assertNotIn("Broker tick data did not provide", " ".join(result.get("warnings", [])))
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))

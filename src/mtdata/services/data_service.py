@@ -128,7 +128,7 @@ logger = logging.getLogger(__name__)
 
 
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
-_ONE_SIDED_TICK_WARNING_RATIO = 0.50
+_INCOMPLETE_TICK_WARNING_RATIO = 0.50
 _DATE_FORMAT_HINT = (
     "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
     "'2026-01-15T14:30:00Z', '2026-01-15 09:30 America/New_York', "
@@ -2961,6 +2961,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "broker_server_tz",
         "session_utc_offset_seconds",
         "spread_statistics_basis",
+        "feed_tier",
         "history_window_truncated",
         "history_window_limit_days",
         "history_window_floor",
@@ -3188,6 +3189,8 @@ def fetch_ticks(  # noqa: C901
         )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
         has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
+        trade_event_count = int(sum(trade_events))
+        quote_only_feed = not has_last and trade_event_count == 0
         incomplete_quote_count = sum(
             1
             for bid, ask in zip(effective_bids, effective_asks, strict=False)
@@ -3402,12 +3405,13 @@ def fetch_ticks(  # noqa: C901
                 "valid_spread_ticks": int(sum(spread_sample_eligible_flags)),
                 "spread_sample_basis": "coherent_bid_ask_updates",
                 "zero_spread_ticks": int(zero_spread_count),
-                "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
+                "incomplete_quote_warning_ratio": _INCOMPLETE_TICK_WARNING_RATIO,
                 "quote_type_counts": quote_type_counts,
             }
+            if one_sided_update_count > 0:
+                payload["data_quality"]["one_sided_update_status"] = "expected"
             if (
-                incomplete_ratio < _ONE_SIDED_TICK_WARNING_RATIO
-                and one_sided_update_count <= 0
+                incomplete_ratio < _INCOMPLETE_TICK_WARNING_RATIO
                 and zero_spread_count <= 0
             ):
                 payload["data_quality"]["incomplete_quote_status"] = "info"
@@ -3417,7 +3421,7 @@ def fetch_ticks(  # noqa: C901
             if not isinstance(warnings_list, list):
                 warnings_list = []
             warning = (
-                "Spread statistics exclude incomplete and one-sided quote updates; "
+                "Spread statistics exclude incomplete quote snapshots; "
                 "zero-spread counts include only coherent two-sided updates."
             )
             if warning not in warnings_list:
@@ -3428,6 +3432,8 @@ def fetch_ticks(  # noqa: C901
             if has_last:
                 return
             payload["last_unavailable"] = True
+            if quote_only_feed:
+                return
             warnings_list = payload.get("warnings")
             if not isinstance(warnings_list, list):
                 warnings_list = []
@@ -3438,6 +3444,8 @@ def fetch_ticks(  # noqa: C901
 
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
             payload["spread_statistics_basis"] = "coherent_bid_ask_updates"
+            if quote_only_feed:
+                payload["feed_tier"] = "quote_only"
             if start or end:
                 query_applied: Dict[str, Any] = {
                     "mode": "historical",

@@ -52,6 +52,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "tick_count",
     "trade_event_count",
     "quote_update_count",
+    "feed_tier",
     "data",
     "last_quote",
     "execution_quote",
@@ -1417,12 +1418,15 @@ def _compact_tick_quality(payload: Dict[str, Any]) -> Optional[str]:
             status = str(data_quality.get("incomplete_quote_status") or "").strip().lower()
             if status and status not in {"ok", "info"}:
                 notes.append(f"quote_quality={status}")
-    if payload.get("last_unavailable") is True:
+    quote_only = payload.get("feed_tier") == "quote_only"
+    if payload.get("last_unavailable") is True and not quote_only:
         notes.append("last=unavailable")
     warnings = payload.get("warnings")
     if not notes and isinstance(warnings, list) and warnings:
         notes.append(f"warnings={len(warnings)}")
-    return "; ".join(notes) if notes else None
+    if notes:
+        return "; ".join(notes)
+    return "ok" if quote_only else None
 
 
 def _as_nonnegative_int(value: Any) -> Optional[int]:
