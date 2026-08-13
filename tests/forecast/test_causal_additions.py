@@ -74,8 +74,43 @@ def test_cross_correlation_warns_when_symbol_sessions_have_low_overlap(monkeypat
     }
     assert result["context"]["samples_raw_aligned"] == 75
     assert result["context"]["aligned_fraction"] == 0.75
+    assert result["context"]["alignment_loss_pct"] == 25.0
     assert result["context"]["alignment_ok"] is False
     assert "Session-calendar gaps" in result["warnings"][0]
+
+
+def test_cross_correlation_measures_alignment_against_longer_series(monkeypatch):
+    left_index = pd.date_range("2025-01-01", periods=100, freq="h")
+    right_index = left_index[:80]
+    series = {
+        "LEFT": pd.Series(np.arange(100, dtype=float), index=left_index),
+        "RIGHT": pd.Series(np.arange(80, dtype=float), index=right_index),
+    }
+    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(
+        causal,
+        "_fetch_series_for_window",
+        lambda symbol, *args, **kwargs: (series[symbol], None),
+    )
+
+    result = _raw(causal.cross_correlation)(
+        symbols="LEFT,RIGHT",
+        transform="level",
+        max_lag=2,
+        min_overlap=50,
+        bootstrap_samples=50,
+    )
+
+    assert result["success"] is True
+    assert result["context"]["samples_available_by_symbol"] == {
+        "LEFT": 100,
+        "RIGHT": 80,
+    }
+    assert result["context"]["samples_raw_aligned"] == 80
+    assert result["context"]["aligned_fraction"] == 0.8
+    assert result["context"]["alignment_loss_pct"] == 20.0
+    assert result["context"]["alignment_ok"] is False
+    assert "larger input series" in result["warnings"][0]
 
 
 def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):

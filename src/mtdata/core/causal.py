@@ -98,6 +98,7 @@ _COINTEGRATION_TREND_ALIASES: Dict[str, str] = {
 
 _MIN_ENGLE_GRANGER_SAMPLES = 20
 _MIN_PAIR_ALIGNMENT_FRACTION = 0.90
+_ALIGNMENT_WARNING_THRESHOLD_PCT = 5.0
 
 
 # Human-readable legends for output interpretation
@@ -1673,6 +1674,68 @@ def _build_alignment_detail(
     }
 
 
+def _pair_alignment_diagnostics(
+    symbol_rows: Dict[str, int],
+    pair_overlaps: Dict[str, int],
+    symbols: List[str],
+) -> Dict[str, Any]:
+    pairs: Dict[str, Dict[str, Any]] = {}
+    for pair, aligned_samples in pair_overlaps.items():
+        left, right = _pair_overlap_symbols(pair, symbols)
+        left_samples = int(symbol_rows.get(left, 0))
+        right_samples = int(symbol_rows.get(right, 0))
+        reference_samples = max(left_samples, right_samples)
+        alignment_loss_pct = (
+            max(
+                0.0,
+                (1.0 - (float(aligned_samples) / float(reference_samples)))
+                * 100.0,
+            )
+            if reference_samples > 0
+            else 0.0
+        )
+        pairs[str(pair)] = {
+            "series_a": left,
+            "series_b": right,
+            "raw_samples_series_a": left_samples,
+            "raw_samples_series_b": right_samples,
+            "aligned_samples": int(aligned_samples),
+            "alignment_loss_pct": round(alignment_loss_pct, 2),
+        }
+    return {
+        "warning_threshold_pct": _ALIGNMENT_WARNING_THRESHOLD_PCT,
+        "loss_reference": "larger_transformed_input_series",
+        "pairs": pairs,
+    }
+
+
+def _pair_alignment_warning(diagnostics: Dict[str, Any]) -> Optional[str]:
+    pairs = diagnostics.get("pairs")
+    if not isinstance(pairs, dict):
+        return None
+    offenders = [
+        (str(pair), row)
+        for pair, row in pairs.items()
+        if isinstance(row, dict)
+        and float(row.get("alignment_loss_pct") or 0.0)
+        > _ALIGNMENT_WARNING_THRESHOLD_PCT
+    ]
+    if not offenders:
+        return None
+    examples = ", ".join(
+        f"{pair} {float(row['alignment_loss_pct']):.2f}% "
+        f"({int(row['aligned_samples'])}/"
+        f"{max(int(row['raw_samples_series_a']), int(row['raw_samples_series_b']))} retained)"
+        for pair, row in offenders[:5]
+    )
+    suffix = "" if len(offenders) <= 5 else f"; plus {len(offenders) - 5} more pair(s)"
+    return (
+        "Timestamp alignment discarded more than 5% of at least one pair's "
+        f"larger transformed input series: {examples}{suffix}. Session-calendar "
+        "or holiday gaps can bias cointegration results."
+    )
+
+
 def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
     pair_overlaps = detail.get("pair_overlaps")
     if not isinstance(pair_overlaps, dict):
@@ -2925,17 +2988,18 @@ def cross_correlation(  # noqa: C901
             for symbol_name in symbol_list
         }
         raw_aligned = frame[symbol_list].dropna(how="any")
-        minimum_available = min(samples_available_by_symbol.values())
+        maximum_available = max(samples_available_by_symbol.values())
         aligned_fraction = (
-            float(len(raw_aligned)) / float(minimum_available)
-            if minimum_available > 0
+            float(len(raw_aligned)) / float(maximum_available)
+            if maximum_available > 0
             else 0.0
         )
-        alignment_ok = aligned_fraction >= _MIN_PAIR_ALIGNMENT_FRACTION
+        alignment_threshold = 1.0 - (_ALIGNMENT_WARNING_THRESHOLD_PCT / 100.0)
+        alignment_ok = aligned_fraction >= alignment_threshold
         alignment_warning = None
         if not alignment_ok:
             alignment_warning = (
-                f"Only {aligned_fraction:.1%} of the smaller input series shares "
+                f"Only {aligned_fraction:.1%} of the larger input series shares "
                 "timestamps across both symbols. Session-calendar gaps can distort "
                 "lead/lag estimates; compare instruments with compatible sessions or "
                 "use an explicit analysis window."
@@ -3015,7 +3079,8 @@ def cross_correlation(  # noqa: C901
                 "samples_raw_aligned": int(len(raw_aligned)),
                 "samples_available_by_symbol": samples_available_by_symbol,
                 "aligned_fraction": round(aligned_fraction, 6),
-                "alignment_threshold": _MIN_PAIR_ALIGNMENT_FRACTION,
+                "alignment_loss_pct": round((1.0 - aligned_fraction) * 100.0, 2),
+                "alignment_threshold": alignment_threshold,
                 "alignment_ok": alignment_ok,
                 "max_lag": int(max_lag),
                 "bootstrap_samples": int(bootstrap_samples),
@@ -3431,6 +3496,22 @@ def cointegration_test(  # noqa: C901
                 warnings=warnings_out,
             )
 
+        transformed_series_map = {
+            symbol: transformed[symbol].dropna() for symbol in symbols_used
+        }
+        pair_overlaps = _pair_overlap_counts(
+            transformed_series_map,
+            symbols_used,
+        )
+        alignment_diagnostics = _pair_alignment_diagnostics(
+            transformed_rows,
+            pair_overlaps,
+            symbols_used,
+        )
+        alignment_warning = _pair_alignment_warning(alignment_diagnostics)
+        if alignment_warning:
+            warnings_out.append(alignment_warning)
+
         if method_value == "johansen":
             complete = transformed[symbols_used].dropna(how="any")
             available_overlap = int(len(complete))
@@ -3524,6 +3605,7 @@ def cointegration_test(  # noqa: C901
                     "det_order": int(det_order),
                     "k_ar_diff": int(k_ar_diff),
                     "significance": float(significance),
+                    "alignment_diagnostics": alignment_diagnostics,
                 },
                 "summary": {
                     "selected_rank": int(selected_rank),
@@ -3537,7 +3619,6 @@ def cointegration_test(  # noqa: C901
             return out
 
         rows: List[Dict[str, Any]] = []
-        pair_overlaps: Dict[str, int] = {}
         pair_failures: List[Dict[str, Any]] = []
         pairs_skipped_min_overlap = 0
 
@@ -3670,6 +3751,7 @@ def cointegration_test(  # noqa: C901
                 "transform": transform_value,
                 "trend": trend_value,
                 "min_overlap": min_overlap_value,
+                "alignment_diagnostics": alignment_diagnostics,
                 **_bar_completion_context(
                     series_map, include_incomplete=bool(include_incomplete)
                 ),

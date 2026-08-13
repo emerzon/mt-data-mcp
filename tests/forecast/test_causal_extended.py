@@ -1525,6 +1525,45 @@ class TestCointegrationTest:
         assert "window_truncated" not in pair
         assert "window_interpretation" not in result["meta"].get("stats", {})
 
+    @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_compact_reports_mismatched_series_alignment(
+        self,
+        mock_fetch,
+        _mock_coint,
+    ):
+        index = pd.date_range("2024-01-01", periods=120, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(100.0, 120.0, 120), index=index),
+            "B": pd.Series(np.linspace(50.0, 60.0, 100), index=index[:100]),
+        }
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
+            series_map[symbol],
+            None,
+        )
+
+        result = self._unwrapped()(
+            "A,B",
+            transform="level",
+            window_bars=60,
+            min_overlap=40,
+        )
+
+        assert result["success"] is True
+        diagnostics = result["context"]["alignment_diagnostics"]
+        assert diagnostics["warning_threshold_pct"] == 5.0
+        assert diagnostics["loss_reference"] == "larger_transformed_input_series"
+        assert diagnostics["pairs"]["A-B"] == {
+            "series_a": "A",
+            "series_b": "B",
+            "raw_samples_series_a": 120,
+            "raw_samples_series_b": 100,
+            "aligned_samples": 100,
+            "alignment_loss_pct": 16.67,
+        }
+        assert "Timestamp alignment discarded more than 5%" in result["warnings"][0]
+
     @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
