@@ -55,7 +55,9 @@ tick retrieval method remains in its tool-specific field.
 
 ## Detail levels (detail)
 
-`detail` controls **how much field-level verbosity** a response carries. The accepted values are:
+For tools whose schema includes it, `detail` controls **how much field-level
+verbosity** a response carries. It is not a universal parameter. The accepted
+values for tools that expose the complete detail contract are:
 
 | Value | Meaning |
 |-------|---------|
@@ -73,9 +75,11 @@ Notes:
 
 ## Richer output
 
-Compact output is implicit. Set `detail=full` to retain the richer metadata and
-diagnostic sections a tool produces. Tools with a meaningful intermediate or
-summary representation expose only those detail values in their schema.
+Compact output is implicit. When the tool schema or command help lists
+`detail`, set `detail=full` to retain the richer metadata and diagnostic
+sections it produces. Tools with a meaningful intermediate or summary
+representation expose only those detail values in their schema; tools without
+`detail` reject the parameter.
 
 ```bash
 # Full market-session diagnostics

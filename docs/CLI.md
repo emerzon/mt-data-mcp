@@ -132,11 +132,16 @@ controls only text presentation; internal tool processing and JSON/raw payloads
 keep numeric values.
 
 ### Detail and field selection
-Compact output is implicit. Use `--detail full` for richer runtime metadata,
-diagnostics, request context, and supporting rows:
+Compact output is implicit. `--detail` is a per-command domain parameter, not
+a global CLI option. When a command's `--help` lists it, use `--detail full`
+for richer runtime metadata, diagnostics, request context, and supporting rows:
 ```bash
 mtdata-cli market_status --detail full
 ```
+
+Commands whose help does not list `--detail` have one output shape and reject
+the option. `--json`, `--output-fields`, and `--precision` are the global
+presentation options.
 
 Use `--output-fields` to project the final response without changing domain
 semantics:
