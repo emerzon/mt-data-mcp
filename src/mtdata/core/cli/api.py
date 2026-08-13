@@ -1811,6 +1811,33 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print("")
 
 
+def _resolve_raw_cli_command(argv: Sequence[str]) -> str:
+    """Find the command after any root-level output/help options."""
+    switches = {"--json", "--help", "-h"}
+    valued_options = {
+        "--output-fields",
+        "--output_fields",
+        "--precision",
+        "--timeframe",
+    }
+    index = 0
+    while index < len(argv):
+        token = str(argv[index])
+        if token in switches:
+            index += 1
+            continue
+        if token in valued_options:
+            if index + 1 >= len(argv):
+                return ""
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in valued_options):
+            index += 1
+            continue
+        return "" if token.startswith("-") else token
+    return ""
+
+
 def main():  # noqa: C901
     """Main CLI entry point with dynamic parameter discovery"""
     raw_argv = sys.argv[1:]
@@ -1822,7 +1849,7 @@ def main():  # noqa: C901
     # Discover only the requested command family for one-shot execution. Root
     # help, search, tools_list, and unknown commands retain full discovery.
     _DISCOVERY_ERRORS.clear()
-    raw_command = raw_argv[0] if raw_argv and not raw_argv[0].startswith("-") else ""
+    raw_command = _resolve_raw_cli_command(raw_argv)
     selective_modules = cli_tool_module_names(raw_command)
     functions = (
         discover_tools(selective_modules)

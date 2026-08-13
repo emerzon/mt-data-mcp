@@ -57,6 +57,7 @@ from mtdata.core.cli.api import (
     _normalize_cli_list_value,
     _parse_kv_string,
     _parse_set_overrides,
+    _resolve_raw_cli_command,
     _resolve_param_kwargs,
     add_dynamic_arguments,
     get_function_info,
@@ -77,6 +78,24 @@ def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
         "symbols_list",
         "tools_list",
     }.issubset(cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["data_fetch_candles", "EURUSD"],
+        ["--json", "data_fetch_candles", "EURUSD"],
+        ["--output-fields", "success,data", "data_fetch_candles", "EURUSD"],
+        ["--output-fields=success,data", "--precision", "full", "data_fetch_candles"],
+        ["--timeframe", "H1", "--json", "data_fetch_candles", "EURUSD"],
+    ],
+)
+def test_selective_bootstrap_finds_command_after_global_options(argv) -> None:
+    assert _resolve_raw_cli_command(argv) == "data_fetch_candles"
+
+
+def test_selective_bootstrap_keeps_unknown_leading_option_on_full_discovery() -> None:
+    assert _resolve_raw_cli_command(["--bogus", "data_fetch_candles"]) == ""
 
 
 def test_required_symbol_help_shows_positional_and_flag_forms() -> None:
