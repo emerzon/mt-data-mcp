@@ -59,9 +59,9 @@ from .barriers_shared import (
     _history_freshness_context,
     _least_negative_ref,
     _live_reference_time_context,
+    _prepare_brownian_bridge_draws,
     _resolve_reference_prices,
     _safe_float,
-    _scale_price_paths_to_reference,
     _sort_candidate_results,
     _stable_barrier_seed,
     _symbol_price_precision,
@@ -2360,37 +2360,21 @@ def forecast_barrier_optimize(  # noqa: C901
                 if len(local_paths_list) > 1
                 else local_paths_list[0]
             )
-            try:
-                sim_anchor_price = float(calibration_prices[-1])
-            except Exception:
-                sim_anchor_price = float(last_price_close)
-            local_paths = _scale_price_paths_to_reference(
+            (
                 local_paths,
-                simulated_anchor_price=sim_anchor_price,
+                local_bb_enabled,
+                local_bb_sigma,
+                local_bb_log_paths,
+                local_bb_uniform_tp,
+                local_bb_uniform_sl,
+            ) = _prepare_brownian_bridge_draws(
+                local_paths,
+                calibration_prices=calibration_prices,
+                last_price_close=last_price_close,
                 reference_price=last_price,
+                bb_enabled=local_bb_enabled,
+                seed_base=local_seed_base,
             )
-
-            local_bb_sigma = 0.0
-            local_bb_log_paths = None
-            local_bb_uniform_tp = None
-            local_bb_uniform_sl = None
-            if local_bb_enabled:
-                rets = _log_returns_from_prices(calibration_prices)
-                rets = rets[np.isfinite(rets)]
-                local_bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
-                if not np.isfinite(local_bb_sigma) or local_bb_sigma <= 0:
-                    local_bb_enabled = False
-                else:
-                    local_sims_total, local_horizon = local_paths.shape
-                    log_paths = np.log(np.clip(local_paths, 1e-12, None))
-                    log_s0 = float(np.log(max(last_price, 1e-12)))
-                    local_bb_log_paths = np.concatenate(
-                        [np.full((local_sims_total, 1), log_s0), log_paths],
-                        axis=1,
-                    )
-                    rng_bb = np.random.RandomState(offset_barrier_seed(local_seed_base, 7))
-                    local_bb_uniform_tp = rng_bb.rand(local_sims_total, local_horizon)
-                    local_bb_uniform_sl = rng_bb.rand(local_sims_total, local_horizon)
 
             return (
                 local_paths,

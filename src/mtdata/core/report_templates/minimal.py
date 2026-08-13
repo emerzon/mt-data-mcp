@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
+from ..report.trend import _TREND_COMPACT_LEGEND, _compute_compact_trend
 from ..report.utils import (
     adapt_forecast_payload_for_report,
     normalize_report_methods,
@@ -11,7 +12,7 @@ from ..report.utils import (
     report_section_enabled,
     resolve_report_context_indicators,
 )
-from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
+from .basic import _get_raw_result
 
 _MINIMAL_SKIPPED_SECTIONS = (
     "pivot",

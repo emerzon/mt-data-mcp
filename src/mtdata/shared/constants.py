@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..utils.mt5 import mt5
-
 # Precision/formatting constants
 PRECISION_REL_TOL = 1e-6
 PRECISION_ABS_TOL = 1e-12
@@ -64,28 +62,29 @@ SIMPLIFY_DEFAULT_RATIO = 0.25
 SIMPLIFY_DEFAULT_MIN_POINTS = 100
 SIMPLIFY_DEFAULT_MAX_POINTS = 500
 
-# Shared timeframe mapping (per MetaTrader5 docs)
+# Shared timeframe mapping. Values are the documented MetaTrader 5 period
+# codes so this module stays adapter-free at import time.
 TIMEFRAME_MAP = {
-    "M1": mt5.TIMEFRAME_M1,
-    "M2": mt5.TIMEFRAME_M2,
-    "M3": mt5.TIMEFRAME_M3,
-    "M4": mt5.TIMEFRAME_M4,
-    "M5": mt5.TIMEFRAME_M5,
-    "M6": mt5.TIMEFRAME_M6,
-    "M10": mt5.TIMEFRAME_M10,
-    "M12": mt5.TIMEFRAME_M12,
-    "M15": mt5.TIMEFRAME_M15,
-    "M20": mt5.TIMEFRAME_M20,
-    "M30": mt5.TIMEFRAME_M30,
-    "H1": mt5.TIMEFRAME_H1,
-    "H2": mt5.TIMEFRAME_H2,
-    "H3": mt5.TIMEFRAME_H3,
-    "H4": mt5.TIMEFRAME_H4,
-    "H6": mt5.TIMEFRAME_H6,
-    "H8": mt5.TIMEFRAME_H8,
-    "H12": mt5.TIMEFRAME_H12,
-    "D1": mt5.TIMEFRAME_D1,
-    "W1": mt5.TIMEFRAME_W1,
-    "MN1": mt5.TIMEFRAME_MN1,
+    "M1": 1,
+    "M2": 2,
+    "M3": 3,
+    "M4": 4,
+    "M5": 5,
+    "M6": 6,
+    "M10": 10,
+    "M12": 12,
+    "M15": 15,
+    "M20": 20,
+    "M30": 30,
+    "H1": 16385,
+    "H2": 16386,
+    "H3": 16387,
+    "H4": 16388,
+    "H6": 16390,
+    "H8": 16392,
+    "H12": 16396,
+    "D1": 16408,
+    "W1": 32769,
+    "MN1": 49153,
 }
 

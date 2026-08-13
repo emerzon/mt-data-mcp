@@ -186,6 +186,66 @@ def _scale_price_paths_to_reference(
     return paths * scale
 
 
+def _prepare_brownian_bridge_draws(
+    price_paths: np.ndarray,
+    *,
+    calibration_prices: Any,
+    last_price_close: Any,
+    reference_price: Any,
+    bb_enabled: bool,
+    seed_base: Any,
+    seed_offset: int = 7,
+) -> Tuple[
+    np.ndarray,
+    bool,
+    float,
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+]:
+    """Scale simulated paths to the live reference and optionally build BB draws.
+
+    Returns ``(paths, bb_enabled, bb_sigma, bb_log_paths, uniform_tp, uniform_sl)``.
+    When sigma is non-finite or non-positive, Brownian-bridge extras are disabled
+    and the scaled paths are still returned.
+    """
+    try:
+        sim_anchor_price = float(np.asarray(calibration_prices, dtype=float).ravel()[-1])
+    except Exception:
+        sim_anchor_price = float(last_price_close)
+    paths = _scale_price_paths_to_reference(
+        price_paths,
+        simulated_anchor_price=sim_anchor_price,
+        reference_price=reference_price,
+    )
+
+    bb_sigma = 0.0
+    bb_log_paths = None
+    bb_uniform_tp = None
+    bb_uniform_sl = None
+    enabled = bool(bb_enabled)
+    if not enabled:
+        return paths, False, bb_sigma, None, None, None
+
+    rets = _log_returns_from_prices(np.asarray(calibration_prices, dtype=float))
+    rets = rets[np.isfinite(rets)]
+    bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
+    if not np.isfinite(bb_sigma) or bb_sigma <= 0:
+        return paths, False, bb_sigma, None, None, None
+
+    sims_total, horizon = paths.shape
+    log_paths = np.log(np.clip(paths, 1e-12, None))
+    log_s0 = float(np.log(max(float(reference_price), 1e-12)))
+    bb_log_paths = np.concatenate(
+        [np.full((sims_total, 1), log_s0), log_paths],
+        axis=1,
+    )
+    rng_bb = np.random.RandomState(offset_barrier_seed(seed_base, seed_offset))
+    bb_uniform_tp = rng_bb.rand(sims_total, horizon)
+    bb_uniform_sl = rng_bb.rand(sims_total, horizon)
+    return paths, True, bb_sigma, bb_log_paths, bb_uniform_tp, bb_uniform_sl
+
+
 def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) -> None:
     def _candidate_geometry(row: Dict[str, Any]) -> Tuple[float, ...]:
         """Provide a deterministic tie-break without changing grid-order semantics."""

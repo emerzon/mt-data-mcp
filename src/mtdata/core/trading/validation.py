@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Literal, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Tuple, Union
 
 from ...shared.market_units import (
     forex_points_per_pip,
@@ -12,8 +12,10 @@ from ...shared.market_units import (
 )
 from ...utils.coercion import coerce_finite_float, coerce_scalar
 from ...utils.quote import tick_value
-from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .sizing import _floor_volume_steps
+
+if TYPE_CHECKING:
+    from .gateway import MT5TradingGateway
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
 OrderTypeLiteral = Literal[
@@ -1126,6 +1128,8 @@ def _prevalidate_trade_place_market_input(
     gateway: Optional[MT5TradingGateway] = None,
 ) -> Optional[Dict[str, Any]]:
     """Validate symbol and volume before market-order SL/TP enforcement returns."""
+    from .gateway import create_trading_gateway, trading_connection_error
+
     mt5 = create_trading_gateway(gateway=gateway)
     connection_error = trading_connection_error(mt5)
     if connection_error is not None:

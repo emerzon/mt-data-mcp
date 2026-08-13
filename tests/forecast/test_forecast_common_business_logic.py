@@ -10,6 +10,30 @@ import pytest
 from mtdata.forecast import common as fc
 
 
+def test_describe_forecast_calendar_treatment_labels_fx_crypto_and_unknown():
+    hour = 3600
+    day = 86400
+
+    assert fc.describe_forecast_calendar_treatment(
+        "EURUSD", hour, calendar_timeframe=False
+    ) == "forex_weekend_skipped"
+    assert fc.describe_forecast_calendar_treatment(
+        "EURUSD", day, calendar_timeframe=True
+    ) == "broker_calendar_boundaries_and_forex_weekend_skipped"
+    assert fc.describe_forecast_calendar_treatment(
+        "BTCUSD", hour, calendar_timeframe=False
+    ) == "continuous_no_weekend_skip"
+    assert fc.describe_forecast_calendar_treatment(
+        "BTCUSD", day, calendar_timeframe=True
+    ) == "broker_calendar_boundaries_continuous_crypto"
+    assert fc.describe_forecast_calendar_treatment(
+        "US500", day, calendar_timeframe=True
+    ) == "calendar_estimate_session_schedule_unknown"
+    assert fc.describe_forecast_calendar_treatment(
+        "US500", hour, calendar_timeframe=False
+    ) == "continuous_no_weekend_skip"
+
+
 def test_future_as_of_is_rejected_against_wall_clock():
     now = datetime(2026, 8, 12, 14, 0).timestamp()
 

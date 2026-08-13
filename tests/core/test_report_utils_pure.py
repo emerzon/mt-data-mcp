@@ -928,7 +928,7 @@ class TestContextForTf:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _wrapped_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: {"slope_atr_scores": [12], "volatility_bps": 45, "squeeze_percentile": 60},
         )
 

@@ -30,14 +30,13 @@ from .barriers_shared import (
     _get_live_reference_price,
     _history_freshness_context,
     _live_reference_time_context,
+    _prepare_brownian_bridge_draws,
     _resolve_reference_prices,
-    _scale_price_paths_to_reference,
     _stable_barrier_seed,
     _symbol_price_precision,
     barrier_method_error,
     normalize_barrier_method,
     normalize_barrier_seed,
-    offset_barrier_seed,
 )
 from .common import annualization_context as _annualization_context
 from .common import fetch_history as _fetch_history
@@ -343,34 +342,22 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             }
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
-        S, H = price_paths.shape
-        try:
-            sim_anchor_price = float(prices[-1])
-        except Exception:
-            sim_anchor_price = float(last_price_close)
-        price_paths = _scale_price_paths_to_reference(
+        (
             price_paths,
-            simulated_anchor_price=sim_anchor_price,
+            bb_enabled,
+            bb_sigma,
+            bb_log_paths,
+            bb_uniform_tp,
+            bb_uniform_sl,
+        ) = _prepare_brownian_bridge_draws(
+            price_paths,
+            calibration_prices=prices,
+            last_price_close=last_price_close,
             reference_price=last_price,
+            bb_enabled=bb_enabled,
+            seed_base=request_seed_base,
         )
-
-        bb_sigma = 0.0
-        bb_uniform_tp = None
-        bb_uniform_sl = None
-        bb_log_paths = None
-        if bb_enabled:
-            rets = _log_returns_from_prices(prices)
-            rets = rets[np.isfinite(rets)]
-            bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
-            if not np.isfinite(bb_sigma) or bb_sigma <= 0:
-                bb_enabled = False
-            else:
-                log_paths = np.log(np.clip(price_paths, 1e-12, None))
-                log_s0 = float(np.log(max(last_price, 1e-12)))
-                bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
-                rng_bb = np.random.RandomState(offset_barrier_seed(request_seed_base, 7))
-                bb_uniform_tp = rng_bb.rand(S, H)
-                bb_uniform_sl = rng_bb.rand(S, H)
+        S, H = price_paths.shape
         
         # Vectorized hit detection
         # hits_tp/sl: boolean (S, H)

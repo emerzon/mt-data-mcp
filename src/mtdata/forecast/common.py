@@ -428,6 +428,24 @@ def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> boo
     )
 
 
+def describe_forecast_calendar_treatment(
+    symbol: Optional[str],
+    tf_secs: int,
+    *,
+    calendar_timeframe: bool,
+) -> str:
+    """Return the forecast calendar-treatment label for a symbol and step."""
+    if calendar_timeframe and uses_standard_weekend_projection(symbol, tf_secs):
+        return "broker_calendar_boundaries_and_forex_weekend_skipped"
+    if calendar_timeframe and is_probably_crypto_symbol(symbol):
+        return "broker_calendar_boundaries_continuous_crypto"
+    if calendar_timeframe:
+        return "calendar_estimate_session_schedule_unknown"
+    if uses_standard_weekend_projection(symbol, tf_secs):
+        return "forex_weekend_skipped"
+    return "continuous_no_weekend_skip"
+
+
 def _next_standard_weekend_open_epoch(epoch: float) -> float:
     dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
     window = standard_weekend_window(dt_utc)

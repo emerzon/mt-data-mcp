@@ -22,6 +22,7 @@ from .shared import (
     _indicator_key_variants,
     format_number,
 )
+from .trend import _compute_compact_trend
 
 _REPORT_PROGRESS_CALLBACK: ContextVar[
     Optional[Callable[[str, str], None]]
@@ -909,7 +910,6 @@ def context_for_tf(
 
         # Compute trend compact data for MTF matrix
         try:
-            from ..report_templates.basic import _compute_compact_trend
             compact = _compute_compact_trend(all_rows)
             if compact:
                 out['trend_compact'] = compact

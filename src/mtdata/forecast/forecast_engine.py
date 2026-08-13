@@ -41,6 +41,7 @@ from . import forecast_preprocessing as _forecast_preprocessing
 from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
     default_seasonality,
+    describe_forecast_calendar_treatment,
     is_standard_weekend_closed_epoch,
     next_times_from_last,
     uses_standard_weekend_projection,
@@ -1592,18 +1593,10 @@ def _format_forecast_output(
         "last_price_source": "candle_close" if last_price is not None else None,
         "direction_threshold_pct": float(round(direction_threshold_pct, 6)),
         "direction_threshold_basis": direction_threshold_basis,
-        "calendar_treatment": (
-            "broker_calendar_boundaries_and_forex_weekend_skipped"
-            if calendar_timeframe and uses_standard_weekend_projection(symbol, tf_secs)
-            else "broker_calendar_boundaries_continuous_crypto"
-            if calendar_timeframe and is_probably_crypto_symbol(symbol)
-            else "calendar_estimate_session_schedule_unknown"
-            if calendar_timeframe
-            else (
-                "forex_weekend_skipped"
-                if uses_standard_weekend_projection(symbol, tf_secs)
-                else "continuous_no_weekend_skip"
-            )
+        "calendar_treatment": describe_forecast_calendar_treatment(
+            symbol,
+            tf_secs,
+            calendar_timeframe=calendar_timeframe,
         ),
     }
     if calendar_gaps:

@@ -42,7 +42,7 @@ class TestContextForTfCache:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _counting_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -67,7 +67,7 @@ class TestContextForTfCache:
             lambda **_kwargs: {"data": rows},
         )
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda values: analyzed_lengths.append(len(values)) or {"bars": len(values)},
         )
 
@@ -88,7 +88,7 @@ class TestContextForTfCache:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _counting_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -108,7 +108,7 @@ class TestContextForTfCache:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _counting_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -128,7 +128,7 @@ class TestContextForTfCache:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -183,7 +183,7 @@ class TestContextForTfCache:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _counting_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -206,7 +206,7 @@ class TestAttachMultiTimeframesCacheThreading:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -239,7 +239,7 @@ class TestAttachMultiTimeframesCacheThreading:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: None,
         )
 
@@ -312,7 +312,7 @@ class TestAttachMultiTimeframesCacheThreading:
 
         monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
         monkeypatch.setattr(
-            "mtdata.core.report_templates.basic._compute_compact_trend",
+            "mtdata.core.report.utils._compute_compact_trend",
             lambda _rows: {"bias": "fetched"},
         )
         monkeypatch.setattr("mtdata.core.pivot.pivot_compute_points", _tracking_pivot)
