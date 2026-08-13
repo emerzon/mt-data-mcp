@@ -258,6 +258,7 @@ class _TrainingSpec:
     exog: Optional[np.ndarray] = None
     request_payload: Optional[Dict[str, Any]] = None
     method_object: Any = None
+    training_window: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -458,17 +459,20 @@ def _execute_training_spec(
     )
     cancel_token.raise_if_cancelled()
     store = ModelStore(root=store_root)
+    metadata: Dict[str, Any] = {
+        **(result.metadata or {}),
+        "params_used": result.params_used,
+        "source_task_id": source_task_id,
+        "training_context": training_context,
+    }
+    if spec.training_window:
+        metadata["training_window"] = dict(spec.training_window)
     return store.save(
         method=prepared["method_name"],
         data_scope=prepared["data_scope"],
         params_hash=prepared["params_hash"],
         artifact_bytes=result.artifact_bytes,
-        metadata={
-            **(result.metadata or {}),
-            "params_used": result.params_used,
-            "source_task_id": source_task_id,
-            "training_context": training_context,
-        },
+        metadata=metadata,
     )
 
 
@@ -1000,6 +1004,9 @@ class TaskManager:
         method_name: str,
         horizon: int,
         lookback: Optional[int] = None,
+        as_of: Optional[str] = None,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
         quantity: str = "price",
     ) -> tuple[str, bool]:
@@ -1018,6 +1025,9 @@ class TaskManager:
             method=method_name,
             horizon=int(horizon),
             lookback=lookback,
+            as_of=as_of,
+            start=start,
+            end=end,
             params=request_params,
             quantity=quantity,
         )
@@ -1047,6 +1057,19 @@ class TaskManager:
                 else context.exog_used
             ),
             method_object=ForecastRegistry.get(context.method_l),
+            training_window={
+                "mode": (
+                    "as_of"
+                    if as_of is not None
+                    else "range"
+                    if start is not None or end is not None
+                    else "latest"
+                ),
+                **({"lookback": int(lookback)} if lookback is not None else {}),
+                **({"as_of": as_of} if as_of is not None else {}),
+                **({"start": start} if start is not None else {}),
+                **({"end": end} if end is not None else {}),
+            },
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 

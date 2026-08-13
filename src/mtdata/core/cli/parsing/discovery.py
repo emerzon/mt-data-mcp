@@ -74,6 +74,26 @@ _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
 }
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("forecast_train", "lookback"): (
+        "Maximum historical bars to use for training after applying the requested "
+        "time window."
+    ),
+    ("forecast_train", "as_of"): (
+        "Train on closed bars available at this historical reference time. Cannot "
+        "be combined with --start/--end."
+    ),
+    ("forecast_train", "start"): (
+        "Optional start of the historical training range. Cannot be combined "
+        "with --as-of."
+    ),
+    ("forecast_train", "end"): (
+        "Optional end of the historical training range. Cannot be combined "
+        "with --as-of."
+    ),
+    ("forecast_train", "quantity"): (
+        "Train a price-level or return target. Volatility uses "
+        "forecast_volatility_estimate and is not separately trainable."
+    ),
     ("forecast_list_library_models", "limit"): (
         "Maximum models to return on this page. Omitted compact output uses "
         "20; omitted full output is unbounded."

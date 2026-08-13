@@ -346,6 +346,9 @@ mtdata-cli shell
 
 # Then submit and observe the task from that shell.
 forecast_train EURUSD --timeframe H1 --method nhits --horizon 24
+# Pin a reproducible historical anchor (or use --start/--end for a range).
+forecast_train EURUSD --timeframe H1 --method nhits --horizon 24 \
+  --as-of "2026-01-15T12:00:00Z" --lookback 500
 forecast_task_status <task_id> --json
 forecast_task_wait <task_id> --timeout-seconds 120 --json
 forecast_task_list --json
@@ -362,6 +365,9 @@ an interactive `mtdata-cli shell`, an MCP server, or the Web API for training ta
 `forecast_task_wait` deadline returns
 `success: false`, `status: "timeout"`, and preserves the live task state in
 `task_status` so automation does not treat an unfinished model as usable.
+`--as-of` cannot be combined with `--start`/`--end`. The submitted window is
+returned as `training_window` and stored with the completed model alongside the
+observed training context.
 
 Once training completes, the model is persisted under a key derived from method,
 symbol, timeframe, horizon, seasonality, exogenous-input shape, preprocessing, and

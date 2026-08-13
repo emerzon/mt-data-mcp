@@ -565,13 +565,47 @@ class TestForecastTrain:
             patch(_PATCH_TM, return_value=mock_tm),
             patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
-            result = _unwrap(forecast_train)(ForecastTrainRequest(symbol="EURUSD", timeframe="H1", method="nhits", horizon=24))
+            result = _unwrap(forecast_train)(
+                ForecastTrainRequest(
+                    symbol="EURUSD",
+                    timeframe="H1",
+                    method="nhits",
+                    horizon=24,
+                    lookback=500,
+                    as_of="2026-01-15T12:00:00Z",
+                )
+            )
 
         assert result["success"] is True
         assert result["status"] == "pending"
         assert result["task_id"] == "task-abc"
+        assert result["training_window"] == {
+            "mode": "as_of",
+            "lookback": 500,
+            "as_of": "2026-01-15T12:00:00Z",
+        }
         assert "mtdata-cli shell" in result["process_lifetime_warning"]
-        mock_tm.submit_forecast_request.assert_called_once()
+        mock_tm.submit_forecast_request.assert_called_once_with(
+            symbol="EURUSD",
+            timeframe="H1",
+            method_name="nhits",
+            horizon=24,
+            lookback=500,
+            as_of="2026-01-15T12:00:00Z",
+            start=None,
+            end=None,
+            params=None,
+            quantity="price",
+        )
+
+    def test_training_request_rejects_as_of_with_explicit_range(self):
+        with pytest.raises(ValueError, match="as_of cannot be combined with start/end"):
+            ForecastTrainRequest(
+                symbol="EURUSD",
+                method="nhits",
+                as_of="2026-01-15T12:00:00Z",
+                start="2025-01-01",
+            )
 
 
 class TestForecastGenerateRequestAsync:

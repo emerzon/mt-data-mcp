@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from mtdata.forecast.interface import (
+    CancelToken,
     ForecastMethod,
     ForecastResult,
     TrainedModelHandle,
@@ -24,6 +25,7 @@ from mtdata.forecast.model_store import ModelStore
 from mtdata.forecast.task_manager import (
     TaskManager,
     TrainingTask,
+    _execute_training_spec,
     _snapshot,
     _TrainingSpec,
 )
@@ -293,7 +295,7 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
             patch(
                 "mtdata.forecast.forecast_engine.build_training_context",
                 return_value=context,
-            ),
+            ) as build_context,
             patch.object(self.tm, "_submit_spec", return_value=("task-1", True)) as submit,
         ):
             mock_reg.get.return_value = fake
@@ -306,6 +308,8 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
                 timeframe="H1",
                 method_name="fake",
                 horizon=5,
+                start="2025-01-01",
+                end="2025-12-31",
                 params={"lr": 0.01},
             )
 
@@ -323,6 +327,60 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
         self.assertEqual(spec.task_kind, "prepared")
         self.assertEqual(spec.seasonality, 18)
         self.assertEqual(spec.params_hash, expected_hash)
+        self.assertEqual(
+            spec.training_window,
+            {
+                "mode": "range",
+                "start": "2025-01-01",
+                "end": "2025-12-31",
+            },
+        )
+        build_context.assert_called_once_with(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="fake",
+            horizon=5,
+            lookback=None,
+            as_of=None,
+            start="2025-01-01",
+            end="2025-12-31",
+            params={"lr": 0.01},
+            quantity="price",
+        )
+
+    def test_training_window_is_saved_with_model_metadata(self):
+        training_window = {
+            "mode": "range",
+            "start": "2025-01-01",
+            "end": "2025-12-31",
+        }
+        spec = _TrainingSpec(
+            task_kind="prepared",
+            method_name="fake",
+            data_scope="EURUSD_H1",
+            params_hash="window-hash",
+            horizon=5,
+            seasonality=1,
+            params={"_training_context": {"training_end_epoch": 1_700_000_000.0}},
+            timeframe="H1",
+            series=_make_series(),
+            method_object=_FakeMethod(delay=0.0),
+            training_window=training_window,
+        )
+
+        handle = _execute_training_spec(
+            spec,
+            store_root=str(self._store.root),
+            progress_callback=None,
+            cancel_token=CancelToken(lambda: False),
+            source_task_id="task-window",
+        )
+
+        self.assertEqual(handle.metadata["training_window"], training_window)
+        self.assertEqual(
+            handle.metadata["training_context"],
+            {"training_end_epoch": 1_700_000_000.0},
+        )
 
     def test_progress_and_heartbeat_update_task(self):
         fake = _FakeMethod(delay=0.05)

@@ -1269,6 +1269,34 @@ class TestResolveParamKwargs:
         assert kwargs["help"] == "Correlation coefficient: pearson or spearman."
         assert "forecast_list_methods" not in kwargs["help"]
 
+    @pytest.mark.parametrize(
+        ("param_name", "expected"),
+        [
+            ("lookback", "after applying the requested time window"),
+            ("as_of", "Cannot be combined with --start/--end"),
+            ("start", "Cannot be combined with --as-of"),
+            ("end", "Cannot be combined with --as-of"),
+            ("quantity", "forecast_volatility_estimate"),
+        ],
+    )
+    def test_forecast_train_help_explains_training_window_and_targets(
+        self,
+        param_name,
+        expected,
+    ):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": param_name,
+                "type": str,
+                "required": False,
+                "default": None,
+            },
+            None,
+            cmd_name="forecast_train",
+        )
+
+        assert expected in kwargs["help"]
+
     def test_common_analysis_params_have_specific_help(self):
         transform_kwargs, _ = _resolve_param_kwargs(
             {"name": "transform", "type": str, "required": False, "default": None},

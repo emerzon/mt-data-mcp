@@ -15,9 +15,13 @@ import logging
 import time
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.schema import (
+    DetailLiteral,
+    TimeframeLiteral,
+    validate_as_of_time_window,
+)
 from ..utils.time import format_epoch_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -66,8 +70,53 @@ class ForecastTrainRequest(BaseModel):
     method: str = Field(..., description="Forecast method name (e.g. nhits, tft, mlf_rf).")
     horizon: int = Field(12, ge=1)
     lookback: Optional[int] = Field(None, ge=1)
+    as_of: Optional[str] = Field(
+        None,
+        description=(
+            "Train on closed bars available at this historical reference time; "
+            "cannot be combined with start/end."
+        ),
+    )
+    start: Optional[str] = Field(
+        None,
+        description="Optional start of the historical training range.",
+    )
+    end: Optional[str] = Field(
+        None,
+        description="Optional end of the historical training range.",
+    )
     params: Optional[Dict[str, Any]] = None
-    quantity: Literal["price", "return"] = "price"
+    quantity: Literal["price", "return"] = Field(
+        "price",
+        description=(
+            "Train a price-level or return target. Volatility uses the dedicated "
+            "forecast_volatility_estimate tool and is not separately trainable."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastTrainRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
+        return self
+
+    def training_window(self) -> Dict[str, Any]:
+        """Return the user-requested training window as stable response metadata."""
+        window: Dict[str, Any] = {
+            "mode": (
+                "as_of"
+                if self.as_of is not None
+                else "range"
+                if self.start is not None or self.end is not None
+                else "latest"
+            )
+        }
+        if self.lookback is not None:
+            window["lookback"] = int(self.lookback)
+        for field_name in ("as_of", "start", "end"):
+            value = getattr(self, field_name)
+            if value is not None:
+                window[field_name] = value
+        return window
 
 
 class ForecastTaskStatusRequest(BaseModel):
@@ -564,6 +613,9 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
             method_name=request.method,
             horizon=request.horizon,
             lookback=request.lookback,
+            as_of=request.as_of,
+            start=request.start,
+            end=request.end,
             params=request.params,
             quantity=request.quantity,
         )
@@ -575,6 +627,7 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
                 "status": "pending",
                 "method": request.method,
                 "data_scope": f"{request.symbol}_{request.timeframe}",
+                "training_window": request.training_window(),
             }
         payload = _task_status_payload(
             task,
@@ -591,6 +644,7 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
             "while running. One-shot commands and stdin shell batches cannot retain "
             "a queued task."
         )
+        payload["training_window"] = request.training_window()
         return payload
 
     return run_logged_operation(
