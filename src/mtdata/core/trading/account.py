@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from ...bootstrap.settings import mt5_config
+from ...shared.schema import DetailLiteral
 from ...utils.coercion import round_finite
 from ...utils.mt5 import (
     MT5ConnectionError,
@@ -32,6 +33,7 @@ from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,
+    normalize_output_verbosity_detail,
     resolve_output_contract,
 )
 from . import comments, safety, validation
@@ -920,22 +922,25 @@ def _trade_account_equity_balance_delta(info: Any) -> Optional[float]:
 
 @mcp.tool()
 def trade_account_info(
-    detail: Literal["compact", "full"] = "compact",
+    detail: DetailLiteral = "compact",
 ) -> dict:
-    """Get account information with compact or full account output modes.
+    """Get account information using the canonical output detail levels.
 
-    Use `detail="compact"` (default) for routine balance and margin checks.
-    Use `detail="full"` for broker/account identifiers and execution diagnostics.
+    Compact, standard, and summary return routine balance and margin fields.
+    Full adds broker/account identifiers and execution diagnostics.
     """
 
     def _run() -> dict:
         try:
             contract = resolve_output_contract(detail=detail, default_detail="compact")
         except ValueError:
-            return {"error": "Invalid detail level. Use 'compact' or 'full'."}
-        if contract.detail not in {"compact", "full"}:
-            return {"error": "Invalid detail level. Use 'compact' or 'full'."}
-        requested_mode = contract.detail
+            return {
+                "error": (
+                    "Invalid detail level. Use 'compact', 'standard', 'full', "
+                    "or 'summary'."
+                )
+            }
+        requested_mode = normalize_output_verbosity_detail(contract.detail)
 
         mt5 = create_trading_gateway(
             adapter=mt5_adapter,

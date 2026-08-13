@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from inspect import signature
 from types import SimpleNamespace
+from typing import get_args, get_type_hints
 from zoneinfo import ZoneInfo
 
 import mtdata.core.market_status as market_status_mod
@@ -28,6 +29,30 @@ def test_market_status_tool_supports_detail_contract() -> None:
     assert params[1].default == "all"
     assert params[2].default == "auto"
     assert params[3].default == "compact"
+    assert get_args(get_type_hints(raw)["detail"]) == (
+        "compact",
+        "standard",
+        "summary",
+        "full",
+    )
+
+
+def test_market_status_standard_and_summary_use_compact_shape() -> None:
+    payload = {
+        "success": True,
+        "message": "human summary",
+        "markets": [{"symbol": "NYSE", "status": "open", "message": "open"}],
+        "upcoming_holidays": [{"date": "2031-01-01"}],
+    }
+
+    compact = market_status_mod.normalize_market_status_output(payload, detail="compact")
+
+    assert market_status_mod.normalize_market_status_output(
+        payload, detail="standard"
+    ) == compact
+    assert market_status_mod.normalize_market_status_output(
+        payload, detail="summary"
+    ) == compact
 
 
 def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -> None:

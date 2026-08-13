@@ -279,21 +279,48 @@ def test_trade_account_info_includes_terminal_server_clock_when_available() -> N
     assert out["clock_skew_seconds"] == 2.0
 
 
-def test_trade_account_info_rejects_unsupported_detail_modes() -> None:
+@pytest.mark.parametrize("detail", ["standard", "summary"])
+def test_trade_account_info_accepts_canonical_compact_detail_modes(detail) -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=1000.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+            login=123456,
+        ),
+        terminal_info=lambda: None,
+        build_trade_preflight=lambda account_info=None, terminal_info=None: {
+            "login": 123456,
+            "execution_ready": True,
+            "execution_blockers": [],
+        },
+    )
     raw = _unwrap(trade_account_info)
 
-    assert raw(detail="standard") == {
-        "error": "Invalid detail level. Use 'compact' or 'full'."
-    }
-    assert raw(detail="summary") == {
-        "error": "Invalid detail level. Use 'compact' or 'full'."
-    }
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        out = raw(detail=detail)
+
+    assert out["success"] is True
+    assert out["balance"] == 10000.0
+    assert "execution_ready" not in out
 
 
 def test_trade_account_info_rejects_unknown_detail() -> None:
     raw = _unwrap(trade_account_info)
 
-    assert raw(detail="basic") == {"error": "Invalid detail level. Use 'compact' or 'full'."}
+    assert raw(detail="basic") == {
+        "error": (
+            "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
+        )
+    }
 
 
 def test_trade_account_info_returns_connection_error_payload() -> None:

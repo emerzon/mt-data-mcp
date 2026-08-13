@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import holidays
 
+from ..shared.schema import DetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.freshness import is_standard_weekend_closure
 from ..utils.market_metadata import build_tick_freshness_context
@@ -1327,7 +1328,7 @@ def market_status(
     symbol: Optional[str] = None,
     region: Literal["us", "europe", "asia", "all"] = "all",
     timezone_display: Literal["local", "utc", "server", "auto"] = "auto",
-    detail: Literal["compact", "full"] = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.
 
@@ -1347,9 +1348,10 @@ def market_status(
         Time display format: "local" (market's local time), "utc", "server"
         for MT5 symbol mode, or "auto" (default). Auto uses local exchange
         time in global mode and broker/server time in symbol mode.
-    detail : {"compact", "full"}, optional
-        Response detail level. `compact` (default) omits per-market messages
-        and upcoming holiday details, while `full` preserves them.
+    detail : {"compact", "standard", "summary", "full"}, optional
+        Response detail level. `compact`, `standard`, and `summary` use the
+        concise view without per-market messages or upcoming holiday details;
+        `full` preserves them.
 
     Returns
     -------
