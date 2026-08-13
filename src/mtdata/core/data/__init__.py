@@ -755,12 +755,14 @@ def wait_event(
     `max_wait_seconds` selects duration mode and must be omitted when
     `timeframe` or `end_on` is set. Explicit `end_on` timeframes must match the
     top-level `timeframe`.
-    A timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
-    and produces a nonzero CLI exit status. Timeout responses set
+    When `watch_for` is omitted, reaching the requested duration or timeframe
+    boundary is a successful completion if no inferred watcher matches first.
+    With explicit `watch_for`, a timeout is a failed wait (`success=false`,
+    `error_code=wait_event_timeout`) and produces a nonzero CLI exit status. Timeout responses set
     `timed_out=true`, return `events=[]`, identify `wait_mode`, and include the
     requested/elapsed timing context plus a retry remediation. For singular
-    waits with active watchers, reaching an `end_on` boundary before a match is
-    also a failed wait
+    waits with explicit watchers, reaching an `end_on` boundary before a match
+    is also a failed wait
     (`success=false`, `matched=false`,
     `error_code=wait_event_boundary_reached`); `completed=true` distinguishes
     that terminal boundary from a timeout. Basket boundaries complete
@@ -890,6 +892,7 @@ def wait_event(
                 **request_kwargs,
                 watch_for=resolved_watch_for,
             )
+            request._watch_for_inferred = not explicit_watch_for
         except ValidationError as exc:
             error_message, error_code = _wait_event_validation_error(exc)
             return {

@@ -537,10 +537,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "watchers apply to every basket member."
     ),
     ("wait_event", "timeframe"): (
-        "Candle-boundary wait mode. Cannot be combined with max_wait_seconds."
+        "Candle-boundary wait mode. Cannot be combined with max_wait_seconds. "
+        "With inferred watchers, reaching the boundary is a successful completion."
     ),
     ("wait_event", "max_wait_seconds"): (
-        "Duration wait mode in seconds. Cannot be combined with timeframe or end_on."
+        "Duration wait mode in seconds. Cannot be combined with timeframe or end_on. "
+        "With inferred watchers, elapsed duration is a successful completion."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
@@ -553,7 +555,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "
         "Put candle_close boundaries in end_on. Omit for the lightweight core "
         "order/position and market-activity watcher set; generated S/R and pivot "
-        "zones are not inferred."
+        "zones are not inferred. Explicit watchers make an unmatched timeout or "
+        "boundary a failed wait."
     ),
     ("wait_event", "end_on"): (
         "Optional timeframe-mode boundaries. Explicit boundary timeframes must "

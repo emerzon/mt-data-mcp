@@ -122,7 +122,7 @@ def run_wait_event_loop(  # noqa: C901
             return None
         return _build_wait_result(
             request=request,
-            status="timeout",
+            status="completed" if watch_for_inferred else "timeout",
             started_at_utc=started_at_utc,
             observed_at_utc=_normalize_utc_datetime(now_utc_impl()),
             polls=polls,
@@ -355,7 +355,9 @@ def _compile_request(
     started_at_utc: datetime,
 ) -> Dict[str, Any]:
     raw_watch_specs = request.watch_for
-    watch_for_inferred = raw_watch_specs is None
+    watch_for_inferred = bool(
+        raw_watch_specs is None or request._watch_for_inferred
+    )
     source_watch_specs = _expanded_watch_specs(request, raw_watch_specs)
     source_end_specs: List[Any]
     end_on_inferred = False
@@ -2675,10 +2677,17 @@ def _build_wait_result(
     timed_out = status == "timeout"
     matched = status in {"matched", "already_satisfied"}
     successful_boundary = status == "boundary_reached" and (
-        not watch_for_payload or request.symbols is not None
+        not watch_for_payload
+        or watch_for_inferred
+        or request.symbols is not None
+    )
+    successful_duration = (
+        status == "completed"
+        and request.max_wait_seconds is not None
+        and watch_for_inferred
     )
     result = {
-        "success": matched or successful_boundary,
+        "success": matched or successful_boundary or successful_duration,
         "completed": not timed_out,
         "status": status,
         "timed_out": timed_out,
@@ -2708,6 +2717,10 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
+    if successful_duration:
+        result["completion_reason"] = "duration_elapsed"
+    elif successful_boundary:
+        result["completion_reason"] = "candle_boundary_reached"
     if request.symbols is not None:
         result["symbols"] = list(request.symbols)
     if isinstance(boundary_event, dict) and boundary_event.get("candle_failures"):

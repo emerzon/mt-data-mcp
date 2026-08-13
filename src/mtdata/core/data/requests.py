@@ -10,6 +10,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    PrivateAttr,
     field_validator,
     model_validator,
 )
@@ -767,6 +768,8 @@ WAIT_EVENT_MAX_SYMBOLS = 12
 
 class WaitEventRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    _watch_for_inferred: bool = PrivateAttr(default=False)
 
     watch_for: Optional[List[WaitWatchEventSpec]] = Field(
         default=None,

@@ -115,7 +115,11 @@ def test_zero_wait_budget_returns_before_gateway_bootstrap() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "timeout"
+    assert result["status"] == "completed"
+    assert result["success"] is True
+    assert result["completed"] is True
+    assert result["timed_out"] is False
+    assert result["completion_reason"] == "duration_elapsed"
     assert result["elapsed_seconds"] == 0.0
     assert result["polls"] == 0
 
@@ -273,10 +277,9 @@ class DisconnectingGateway(SequenceGateway):
 def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     def _mock_run_wait_event(request, gateway):
         return {
-            "success": False,
+            "success": True,
             "completed": True,
-            "error_code": "wait_event_boundary_reached",
-            "error": "A wait boundary was reached before any watched event matched.",
+            "completion_reason": "candle_boundary_reached",
             "symbol": request.symbol,
             "timeframe": request.timeframe,
             "status": "boundary_reached",
@@ -348,9 +351,9 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(symbol="BTCUSD", timeframe="M1")
 
-    assert result["success"] is False
+    assert result["success"] is True
     assert result["completed"] is True
-    assert result["error_code"] == "wait_event_boundary_reached"
+    assert result["completion_reason"] == "candle_boundary_reached"
     assert result["symbol"] == "BTCUSD"
     assert result["boundary_event"] == {
         "type": "candle_close",
@@ -842,6 +845,38 @@ def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
     assert any(item["type"] == "price_change" for item in result["criteria"]["watch_for"])
     assert result["criteria"]["end_on_inferred"] is False
 
+
+def test_inferred_watcher_duration_completes_when_clock_expires() -> None:
+    gateway = SequenceGateway(
+        orders_seq=[[], [], []],
+        positions_seq=[[], [], []],
+        history_orders_seq=[[], [], []],
+        history_deals_seq=[[], [], []],
+    )
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            poll_interval_seconds=0.5,
+            max_wait_seconds=1.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "completed"
+    assert result["success"] is True
+    assert result["completed"] is True
+    assert result["timed_out"] is False
+    assert result["matched"] is False
+    assert result["completion_reason"] == "duration_elapsed"
+    assert result["elapsed_seconds"] == 1.0
+    assert result["criteria"]["watch_for_inferred"] is True
+
+
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data.wait_events._next_candle_wait_payload",
@@ -935,10 +970,10 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
     )
 
     assert result["status"] == "boundary_reached"
-    assert result["success"] is False
+    assert result["success"] is True
     assert result["completed"] is True
     assert result["matched"] is False
-    assert result["error_code"] == "wait_event_boundary_reached"
+    assert result["completion_reason"] == "candle_boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
     assert result["bid"] == 1.205
