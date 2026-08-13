@@ -523,6 +523,31 @@ def _select_profile_rows(
         diagnostics = tick_result.setdefault("diagnostics", {})
         if isinstance(diagnostics, dict):
             diagnostics["tick_price_quality"] = quality
+        if (
+            source_value == "auto"
+            and isinstance(diagnostics, dict)
+            and diagnostics.get("tick_limit_reached") is True
+        ):
+            fallback = _fetch_m1_rows(
+                symbol=symbol,
+                start=start,
+                end=end,
+                max_m1_bars=max_m1_bars,
+            )
+            fallback_diagnostics = fallback.setdefault("diagnostics", {})
+            if isinstance(fallback_diagnostics, dict):
+                fallback_diagnostics.update(
+                    {
+                        "auto_fallback_reason": "max_ticks",
+                        "tick_rows": diagnostics.get("tick_rows"),
+                        "requested_max_ticks": diagnostics.get(
+                            "requested_max_ticks"
+                        ),
+                        "tick_limit_reached": True,
+                        "tick_price_quality": quality,
+                    }
+                )
+            return fallback
         if source_value == "auto" and _should_fallback_from_tick_prices(quality):
             fallback = _fetch_m1_rows(
                 symbol=symbol,
@@ -865,7 +890,10 @@ def compute_volume_profile_payload(
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
     }
-    if profile["diagnostics"].get("tick_limit_reached") is True:
+    if (
+        str(selected.get("source") or "").lower() == "ticks"
+        and profile["diagnostics"].get("tick_limit_reached") is True
+    ):
         profile["truncated"] = True
         profile["truncation_reason"] = "max_ticks"
         profile["volume_profile_accuracy"] = "tick_truncated"

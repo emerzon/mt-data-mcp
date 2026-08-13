@@ -424,6 +424,68 @@ def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
     assert "does not represent the full requested window" in result["coverage_note"]
 
 
+def test_auto_profile_falls_back_to_m1_when_tick_cap_is_reached(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "limit_reached": True,
+            "data": [
+                {"time": "2026-01-01T12:00:00Z", "bid": 1.0, "ask": 1.1},
+                {"time": "2026-01-01T23:00:00Z", "bid": 1.1, "ask": 1.2},
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: {
+            "data": [
+                {
+                    "time": "2026-01-01T00:00:00Z",
+                    "open": 1.0,
+                    "high": 1.2,
+                    "low": 0.9,
+                    "close": 1.1,
+                    "tick_volume": 90,
+                    "real_volume": 0,
+                }
+            ]
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-01-01T00:00:00Z",
+        end="2026-01-02T00:00:00Z",
+        source="auto",
+        max_ticks=2,
+        bucket_size=0.1,
+        detail="full",
+    )
+
+    assert result["profile_source"] == "m1_bars"
+    assert result["source_decision"] == {
+        "requested": "auto",
+        "selected": "m1_bars",
+        "reason": "max_ticks",
+    }
+    assert result["volume_profile_accuracy"] == "approximated_from_m1_bars"
+    assert result["diagnostics"]["tick_limit_reached"] is True
+    assert result["diagnostics"]["requested_max_ticks"] == 2
+    assert result.get("truncated") is not True
+
+
 def test_tick_profile_discloses_partial_observed_window(monkeypatch):
     monkeypatch.setattr(
         vp,
