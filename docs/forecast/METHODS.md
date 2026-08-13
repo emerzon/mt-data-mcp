@@ -9,6 +9,9 @@ Plain-language method families: [Theta](../GLOSSARY.md#theta-method) · [ARIMA](
 > mtdata-cli forecast_list_methods --json
 > mtdata-cli forecast_list_methods --library statsforecast --json
 > ```
+> The catalog includes unavailable methods by default and marks them with
+> `available=false` plus the missing requirement. Pass
+> `--show-unavailable false` for installed methods only.
 > Defaults below match the code; `"auto"` parameters are estimated from data unless you override them.
 
 **Related:** [Forecasting concepts](../FORECAST.md) · [Parameter optimization](../FORECAST.md#parameter-optimization) · [forecast_generate](FORECAST_GENERATE.md) · [Glossary](../GLOSSARY.md)

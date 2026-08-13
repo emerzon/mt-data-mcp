@@ -449,7 +449,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
     if operation == "forecast_list_library_models":
         return _forecast_list_library_models_impl(
             payload.get("library", "all"),
-            show_unavailable=bool(payload.get("show_unavailable", False)),
+            show_unavailable=bool(payload.get("show_unavailable", True)),
             detail=payload.get("detail", "compact"),
             limit=payload.get("limit"),
             offset=int(payload.get("offset", 0) or 0),
@@ -487,7 +487,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             supports_ci=payload.get("supports_ci"),
             supports_training=payload.get("supports_training"),
             profile=payload.get("profile", "all"),
-            show_unavailable=bool(payload.get("show_unavailable", False)),
+            show_unavailable=bool(payload.get("show_unavailable", True)),
         )
 
     if operation == "forecast_conformal_intervals":
@@ -922,15 +922,16 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 @mcp.tool()
 def forecast_list_library_models(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"] = "all",
-    show_unavailable: bool = False,
+    show_unavailable: bool = True,
     detail: DetailLiteral = "compact",  # type: ignore
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
-    """List available model names within a forecast library.
+    """List registered model names within a forecast library.
 
     - statsforecast: lists `statsforecast.models.*` class names.
     - sktime: lists supported aliases plus notes for using dotted estimator paths.
+    - show_unavailable: include models missing optional dependencies (default true).
     - limit: page size. Omitted compact output uses 20; omitted full output is unbounded.
     """
     return _run_forecast_operation(
@@ -1045,13 +1046,15 @@ def forecast_list_methods(
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
     profile: Literal["quickstart", "core", "all"] = "all",
-    show_unavailable: bool = False,
+    show_unavailable: bool = True,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
     Compact output is the default. Standard adds descriptions, capability
     details, and related volatility methods; full adds parameter documentation.
-    The default ``all`` profile returns the full available catalog. Use
+    The default ``all`` profile returns every registered method, including
+    unavailable methods with their missing requirements. Set
+    ``show_unavailable=false`` for installed methods only, or use
     profile='quickstart' for a small native baseline set.
     """
     search_term_value = str(search_term or "").strip() or None
@@ -1436,7 +1439,7 @@ def forecast_barrier_optimize(
 def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     *,
-    show_unavailable: bool = False,
+    show_unavailable: bool = True,
     detail: DetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
@@ -1906,7 +1909,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
     profile: str = "all",
-    show_unavailable: bool = False,
+    show_unavailable: bool = True,
 ) -> Dict[str, Any]:
     try:
         snapshot = _get_forecast_methods_snapshot()

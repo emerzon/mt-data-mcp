@@ -2060,7 +2060,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         if lib == "native"
         else [],
     )
-    out_native_available = raw_list_models("native")
+    out_native_available = raw_list_models("native", show_unavailable=False)
     assert out_native_available["models"] == [
         {"method": "theta", "available": True}
     ]
@@ -2068,7 +2068,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert out_native_available["total_filtered"] == 1
     assert out_native_available["available"] == 1
     assert out_native_available["filters"]["show_unavailable"] is False
-    out_native_all = raw_list_models("native", show_unavailable=True)
+    out_native_all = raw_list_models("native")
     assert out_native_all["models"] == [
         {"method": "theta", "available": True},
         {"method": "unavailable_model", "available": False},
@@ -2191,7 +2191,10 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
     assert unavailable_method["unavailable_reason"] == "Requires: mlforecast, sklearn"
 
-    compact_available = _unwrap(cf.forecast_list_methods)(profile="all")
+    compact_available = _unwrap(cf.forecast_list_methods)(
+        profile="all",
+        show_unavailable=False,
+    )
     assert compact_available["catalog_total"] == 2
     assert compact_available["filtered_total"] == 2
     assert compact_available["available"] == 1
@@ -2273,7 +2276,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "show_unavailable" in params
     assert "all" not in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
-    assert len(sf_rows) == 3
+    assert len(sf_rows) == 4
     assert all(str(r.get("category")) == "statsforecast" for r in sf_rows)
     assert grouped["pagination"]["more_available"] == 0
     filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1, profile="all")
@@ -2304,6 +2307,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "sf_autoarima",
         "sf_naive",
         "sf_theta",
+        "sf_ets",
     ]
     assert "profile" not in trainable_auto
     assert "profile_auto_expanded" not in trainable_auto
