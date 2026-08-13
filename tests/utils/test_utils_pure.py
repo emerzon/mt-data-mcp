@@ -338,6 +338,36 @@ def test_validate_historical_range_rejects_future_start() -> None:
     assert "no historical data" in error["error"]
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "invalid_fields"),
+    [
+        ("definitely-not-a-date", "2026-08-12", ["start"]),
+        ("2026-08-01", "definitely-not-a-date", ["end"]),
+        ("bad-start", "bad-end", ["start", "end"]),
+    ],
+)
+def test_validate_historical_range_identifies_malformed_bounds(
+    start,
+    end,
+    invalid_fields,
+) -> None:
+    error = validate_historical_range(start, end)
+
+    assert error["error_code"] == "invalid_datetime"
+    assert [item["field"] for item in error["details"]["invalid_fields"]] == invalid_fields
+    assert "ISO 8601" in error["error"]
+
+
+def test_validate_historical_range_reserves_range_code_for_inversion() -> None:
+    error = validate_historical_range("2026-08-12", "2026-08-01")
+
+    assert error == {
+        "success": False,
+        "error": "start must be before or equal to end.",
+        "error_code": "invalid_date_range",
+    }
+
+
 class TestFormatNumericRowsFromDf:
     def test_basic_formatting(self):
         df = pd.DataFrame({"time": [0], "close": [1.23456789]})

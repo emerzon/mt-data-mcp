@@ -207,3 +207,21 @@ def test_normalize_error_payload_canonicalizes_date_ranges_and_details():
     assert out["error"] == "start must be before or equal to end."
     assert out["details"] == ["start_datetime must be before end_datetime"]
     assert out["remediation"] == "Set start to a timestamp earlier than or equal to end."
+
+
+def test_normalize_error_payload_preserves_malformed_datetime_diagnosis():
+    out = normalize_error_payload(
+        {
+            "error": "Could not parse historical datetime bound(s): start='bad'.",
+            "error_code": "invalid_datetime",
+            "details": {
+                "invalid_fields": [{"field": "start", "value": "bad"}]
+            },
+        },
+        operation="correlation_matrix",
+    )
+
+    assert out["error_code"] == "invalid_datetime"
+    assert "start='bad'" in out["error"]
+    assert out["details"]["invalid_fields"][0]["field"] == "start"
+    assert "ISO 8601" in out["remediation"]

@@ -31,6 +31,32 @@ def test_causal_tools_reject_future_ranges_before_connecting(tool, kwargs):
     connect.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "field"),
+    [
+        ("definitely-not-a-date", "2026-08-12", "start"),
+        ("2026-08-01", "definitely-not-a-date", "end"),
+    ],
+)
+def test_correlation_matrix_identifies_malformed_range_bound(start, end, field):
+    raw = causal.correlation_matrix
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    with patch.object(causal, "_causal_connection_error") as connect:
+        result = raw(
+            symbols="EURUSD,GBPUSD",
+            start=start,
+            end=end,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_datetime"
+    assert result["details"]["invalid_fields"][0]["field"] == field
+    assert "ISO 8601" in result["error"]
+    connect.assert_not_called()
+
+
 @pytest.mark.parametrize("significance", [0.0, 1.0, -0.1, 2.0, float("nan"), float("inf")])
 def test_causal_discovery_rejects_invalid_significance_before_connecting(significance):
     with patch.object(causal, "_causal_connection_error") as connect:

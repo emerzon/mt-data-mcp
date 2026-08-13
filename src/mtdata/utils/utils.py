@@ -499,17 +499,28 @@ def validate_historical_range(
     """Return a stable validation error for invalid or future-only history bounds."""
     start_dt = _parse_start_datetime(start) if start else None
     end_dt = _parse_end_datetime(end) if end else None
+    invalid_fields = []
     if start and start_dt is None:
-        return {
-            "success": False,
-            "error": "Invalid start time.",
-            "error_code": "invalid_date_range",
-        }
+        invalid_fields.append({"field": "start", "value": str(start)[:200]})
     if end and end_dt is None:
+        invalid_fields.append({"field": "end", "value": str(end)[:200]})
+    if invalid_fields:
+        invalid_text = ", ".join(
+            f"{item['field']}={item['value']!r}" for item in invalid_fields
+        )
         return {
             "success": False,
-            "error": "Invalid end time.",
-            "error_code": "invalid_date_range",
+            "error": (
+                f"Could not parse historical datetime bound(s): {invalid_text}. "
+                "Accepted formats include YYYY-MM-DD, ISO 8601 timestamps such as "
+                "2026-08-12T14:30:00Z, and supported natural calendar periods."
+            ),
+            "error_code": "invalid_datetime",
+            "details": {"invalid_fields": invalid_fields},
+            "remediation": (
+                "Correct the listed start/end value using an ISO 8601 date or "
+                "timestamp."
+            ),
         }
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         return {

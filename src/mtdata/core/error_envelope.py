@@ -33,6 +33,11 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
     "invalid_date_range": {
         "remediation": "Set start to a timestamp earlier than or equal to end.",
     },
+    "invalid_datetime": {
+        "remediation": (
+            "Correct the listed start/end value using an ISO 8601 date or timestamp."
+        ),
+    },
     "forecast_task_not_found": {
         "remediation": (
             "Use forecast_task_list to inspect active and recent forecast tasks."
