@@ -4351,7 +4351,32 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     compact_cal = raw_cal("AAPL", detail="compact")
     assert compact_cal["params"] == {"kappa": 1.0}
     assert "sample_contracts" not in compact_cal
-    assert raw_cal("AAPL", detail="full")["sample_contracts"] == [{"strike": 100.0, "iv": 0.2}]
+    assert raw_cal("AAPL", detail="full")["sample_contracts"] == [
+        {"strike": 100.0, "iv": 0.2}
+    ]
+
+
+def test_options_chain_uses_detail_aware_default_limits(monkeypatch):
+    raw_chain = _unwrap(opt.options_chain)
+    captured = []
+
+    import mtdata.services.options_service as options_service
+
+    def fake_chain(**kwargs):
+        captured.append(kwargs["limit"])
+        return {"success": True, "options": [], "count": 0}
+
+    monkeypatch.setattr(options_service, "get_options_chain", fake_chain)
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+
+    compact = raw_chain(symbol="AAPL")
+    full = raw_chain(symbol="AAPL", detail="full")
+
+    assert captured == [20, 200]
+    assert compact["limit"] == 20
+    assert compact["limit_source"] == "compact_default"
+    assert full["limit"] == 200
+    assert full["limit_source"] == "full_default"
 
 
 def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):

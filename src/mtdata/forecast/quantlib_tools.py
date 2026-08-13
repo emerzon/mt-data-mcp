@@ -599,11 +599,6 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     maturity_calendar_days = int((expiry_date - valuation_day).days)
     maturity = ql.Period(maturity_calendar_days, ql.Days)
     for row in rows:
-        helper_option_type = (
-            ql.Option.Put
-            if str(row.get("side") or "").strip().lower() == "put"
-            else ql.Option.Call
-        )
         helper = ql.HestonModelHelper(
             maturity,
             calendar_obj,
@@ -613,7 +608,6 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
             rf_ts,
             div_ts,
             ql.BlackCalibrationHelper.ImpliedVolError,
-            helper_option_type,
         )
         helper.setPricingEngine(engine)
         helpers.append(helper)

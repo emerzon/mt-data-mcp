@@ -183,11 +183,10 @@ def _make_fake_quantlib():  # noqa: C901
     class _HestonModelHelper:
         created = []
 
-        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type, option_type="call"):
+        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type):
             self.spot = float(spot)
             self.strike = float(strike)
             self.iv = float(iv_handle.quote.value)
-            self.option_type = option_type
             type(self).created.append(self)
 
         def setPricingEngine(self, _engine):
@@ -375,7 +374,7 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["calibration_error_rmse"] is not None
 
 
-def test_calibrate_heston_uses_contract_option_side(monkeypatch):
+def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch):
     fake = _make_fake_quantlib()
     monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
     monkeypatch.setattr(
@@ -398,10 +397,7 @@ def test_calibrate_heston_uses_contract_option_side(monkeypatch):
     )
 
     assert out["success"] is True
-    assert {helper.option_type for helper in fake.HestonModelHelper.created} == {
-        fake.Option.Call,
-        fake.Option.Put,
-    }
+    assert len(fake.HestonModelHelper.created) == 5
 
 
 def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monkeypatch):

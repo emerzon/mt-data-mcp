@@ -51,7 +51,8 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["chain_provider_ready"] is False
     assert out["chain_data_ready"] is False
     assert out["chain_request_supported"] is True
-    assert out["live_chain_requests_expected_to_work"] is False
+    assert out["live_chain_requests_expected_to_work"] is True
+    assert out["live_chain_expectation_basis"] == "best_effort_anonymous_provider"
     assert out["degraded"] is True
     assert out["provider_mode"] == "best_effort"
     assert out["action_required"] == "configure_options_provider"
@@ -71,6 +72,7 @@ def test_provider_status_does_not_mark_yahoo_chain_configuration_ready(monkeypat
     assert out["configured_provider_ready"] is False
     assert out["chain_provider_ready"] is False
     assert out["chain_data_ready"] is False
+    assert out["live_chain_requests_expected_to_work"] is True
     assert out["action_required"] == "configure_options_provider"
 
 

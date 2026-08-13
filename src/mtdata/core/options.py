@@ -185,7 +185,14 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "chain_provider_ready": chain_provider_ready,
         "chain_data_ready": chain_data_ready,
         "chain_request_supported": chain_request_supported,
-        "live_chain_requests_expected_to_work": chain_data_ready,
+        "live_chain_requests_expected_to_work": chain_request_supported,
+        "live_chain_expectation_basis": (
+            "authenticated_provider"
+            if chain_provider_ready
+            else "best_effort_anonymous_provider"
+            if chain_request_supported
+            else "unsupported_provider"
+        ),
         "degraded": bool(provider_mode == "best_effort"),
         "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
@@ -325,6 +332,8 @@ def _apply_options_detail(
                 "count",
                 "calls_count",
                 "puts_count",
+                "limit",
+                "limit_source",
                 "warnings",
                 "detail",
             )
@@ -470,7 +479,7 @@ def options_chain(
     option_type: Literal["call", "put", "both"] = "both",  # type: ignore
     min_open_interest: Annotated[int, Field(ge=0)] = 0,
     min_volume: Annotated[int, Field(ge=0)] = 0,
-    limit: Annotated[int, Field(ge=1)] = 200,
+    limit: Annotated[Optional[int], Field(ge=1)] = None,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots using the configured chain provider.
@@ -481,6 +490,10 @@ def options_chain(
     reliable options-chain data, configure Tradier with
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
     tokens: https://documentation.tradier.com/.
+
+    Compact output defaults to the 20 contracts nearest the underlying price,
+    balanced across calls and puts. Full detail defaults to 200 contracts.
+    Pass ``limit`` explicitly to override either default.
     """
     from ..services.options_service import get_options_chain as _impl
 
@@ -501,6 +514,14 @@ def options_chain(
             detail=detail,
             func=lambda: expiration_error,
         )
+    detail_mode = _options_detail_mode(detail)
+    effective_limit = (
+        int(limit)
+        if limit is not None
+        else 200
+        if detail_mode == "full"
+        else 20
+    )
     input_error = next(
         (
             error
@@ -509,7 +530,7 @@ def options_chain(
                     "min_open_interest", min_open_interest, minimum=0
                 ),
                 _validate_options_integer("min_volume", min_volume, minimum=0),
-                _validate_options_integer("limit", limit, minimum=1),
+                _validate_options_integer("limit", effective_limit, minimum=1),
             )
             if error is not None
         ),
@@ -530,7 +551,7 @@ def options_chain(
             symbol=symbol_value,
             expiration=expiration_value,
             option_type=option_type,
-            limit=limit,
+            limit=effective_limit,
             detail=detail,
             func=lambda: gate,
         )
@@ -540,17 +561,23 @@ def options_chain(
         symbol=symbol_value,
         expiration=expiration_value,
         option_type=option_type,
-        limit=limit,
+        limit=effective_limit,
         detail=detail,
         func=lambda: _apply_options_detail(
-            _impl(
-                symbol=symbol_value,
-                expiration=expiration_value,
-                option_type=option_type,
-                min_open_interest=int(min_open_interest),
-                min_volume=int(min_volume),
-                limit=int(limit),
-            ),
+            {
+                **_impl(
+                    symbol=symbol_value,
+                    expiration=expiration_value,
+                    option_type=option_type,
+                    min_open_interest=int(min_open_interest),
+                    min_volume=int(min_volume),
+                    limit=effective_limit,
+                ),
+                "limit": effective_limit,
+                "limit_source": (
+                    "request" if limit is not None else f"{detail_mode}_default"
+                ),
+            },
             detail=detail,
             kind="chain",
         ),
