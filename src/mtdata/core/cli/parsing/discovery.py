@@ -37,7 +37,16 @@ _HIDDEN_OPTIONAL_POSITIONAL_FLAGS: set[tuple[str, str]] = {
 # Choice discovery comes from the same Literal/Pydantic annotations used to
 # build public MCP schemas. Keep this map only for exceptional transport-only
 # compatibility cases.
-_COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {}
+_COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
+    ("temporal_analyze", "group_by"): [
+        "dow",
+        "day_of_week",
+        "hour",
+        "month",
+        "session",
+        "all",
+    ],
+}
 
 _POSITIONAL_ONLY_OPTIONAL_PARAMS: set[tuple[str, str]] = set()
 
@@ -955,6 +964,15 @@ def resolve_param_kwargs(
         kwargs["choices"] = choices
         kwargs["type"] = _case_insensitive_choice_parser(choices)
 
+    if choice_override_key == ("temporal_analyze", "group_by"):
+        parse_group_by = kwargs["type"]
+
+        def _parse_temporal_group(value: Any) -> str:
+            parsed = parse_group_by(value)
+            return "dow" if parsed == "day_of_week" else parsed
+
+        kwargs["type"] = _parse_temporal_group
+
     if choice_override_key == ("trade_place", "order_type") and kwargs.get("choices"):
         parse_choice = _case_insensitive_choice_parser(kwargs["choices"])
 
@@ -995,6 +1013,15 @@ def add_dynamic_arguments(  # noqa: C901
             extras.append("--search-term")
         elif cmd_name_value in _SEARCH_ALIAS_COMMANDS and param_name == "search_term":
             extras.append("--search")
+        if cmd_name_value == "temporal_analyze" and param_name == "group_by":
+            extras.append("--by")
+        if cmd_name_value in {
+            "causal_discover_signals",
+            "cointegration_test",
+            "correlation_matrix",
+            "cross_correlation",
+        } and param_name == "window_bars":
+            extras.append("--lookback")
         return tuple(extras)
 
     for param in param_info["params"]:

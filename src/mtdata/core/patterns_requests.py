@@ -26,7 +26,10 @@ class PatternsDetectRequest(BaseModel):
     @field_validator("mode", mode="before")
     @classmethod
     def _normalize_mode(cls, value: Any) -> Any:
-        return value.strip().lower() if isinstance(value, str) else value
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip().lower().replace("-", "_")
+        return "elliott" if normalized == "elliott_wave" else normalized
 
     start: Optional[str] = Field(
         None,

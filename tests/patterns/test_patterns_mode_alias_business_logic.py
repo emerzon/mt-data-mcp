@@ -41,6 +41,13 @@ def test_patterns_detect_rejects_removed_chart_alias() -> None:
         PatternsDetectRequest(symbol="EURUSD", mode="chart", timeframe="H1")
 
 
+@pytest.mark.parametrize("alias", ["elliott_wave", "elliott-wave"])
+def test_patterns_detect_accepts_elliott_wave_alias(alias: str) -> None:
+    request = PatternsDetectRequest(symbol="EURUSD", mode=alias, timeframe="H1")
+
+    assert request.mode == "elliott"
+
+
 def test_patterns_detect_rejects_engine_for_non_classic_mode() -> None:
     out = _call_patterns_detect(
         symbol="EURUSD",

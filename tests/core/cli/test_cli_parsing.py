@@ -750,6 +750,32 @@ class TestAddDynamicArguments:
         assert args.symbol == "AAPL"
         assert args.limit == 5
 
+    def test_temporal_and_research_window_aliases(self):
+        temporal = argparse.ArgumentParser()
+        add_dynamic_arguments(
+            temporal,
+            {
+                "params": [
+                    {"name": "group_by", "type": Literal["dow", "hour", "month", "session", "all"], "required": False, "default": "dow"},
+                ]
+            },
+            cmd_name="temporal_analyze",
+        )
+        assert temporal.parse_args(["--by", "hour"]).group_by == "hour"
+        assert temporal.parse_args(["--group-by", "day_of_week"]).group_by == "dow"
+
+        research = argparse.ArgumentParser()
+        add_dynamic_arguments(
+            research,
+            {
+                "params": [
+                    {"name": "window_bars", "type": int, "required": False, "default": 500},
+                ]
+            },
+            cmd_name="cointegration_test",
+        )
+        assert research.parse_args(["--lookback", "200"]).window_bars == 200
+
     def test_news_accepts_optional_positional_symbol(self):
         parser = argparse.ArgumentParser()
         func_info = {
