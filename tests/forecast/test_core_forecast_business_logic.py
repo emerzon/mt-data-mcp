@@ -3459,6 +3459,63 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
     assert out["same_bar_policy"] == "random"
 
 
+def test_forecast_barrier_prob_compact_keeps_neutral_outcome_partition():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "same_bar_policy": "neutral",
+        "prob_tp_first": 0.088,
+        "prob_sl_first": 0.165,
+        "prob_no_hit": 0.0,
+        "prob_same_bar": 0.747,
+        "prob_unresolved": 0.747,
+        "prob_resolve": 0.253,
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="compact",
+            same_bar_policy="neutral",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "ticks",
+                "take_profit": 20,
+                "stop_loss": 10,
+            },
+        ),
+    )
+
+    assert out["prob_same_bar"] == 0.747
+    assert out["prob_unresolved"] == 0.747
+    assert out["prob_resolve"] == 0.253
+    assert sum(out[key] for key in (
+        "prob_tp_first", "prob_sl_first", "prob_no_hit", "prob_same_bar"
+    )) == pytest.approx(1.0)
+
+
+def test_compact_barrier_candidate_keeps_neutral_outcome_partition():
+    from mtdata.forecast.barriers_optimization import _compact_barrier_candidate
+
+    out = _compact_barrier_candidate(
+        {
+            "tp": 20,
+            "sl": 10,
+            "prob_tp_first": 0.088,
+            "prob_sl_first": 0.165,
+            "prob_no_hit": 0.0,
+            "prob_same_bar": 0.747,
+            "prob_unresolved": 0.747,
+            "prob_resolve": 0.253,
+        }
+    )
+
+    assert out["prob_same_bar"] == 0.747
+    assert out["prob_unresolved"] == 0.747
+    assert out["prob_resolve"] == 0.253
+
+
 def test_forecast_barrier_prob_compact_uses_reference_price_context():
     payload = {
         "success": True,
