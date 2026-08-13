@@ -461,7 +461,8 @@ class TestFetchTicks(unittest.TestCase):
         ticks[1].update({"bid": 1.1001, "ask": 1.1001, "flags": 2})
         mock_ticks.return_value = ticks
 
-        result = fetch_ticks('EURUSD', limit=2, format='full_rows')
+        with patch(f'{_DS}.time.time', return_value=_NOW_TS + 1.0):
+            result = fetch_ticks('EURUSD', limit=2, format='full_rows')
 
         self.assertTrue(result['usable_for_live_trading'])
         self.assertEqual(
