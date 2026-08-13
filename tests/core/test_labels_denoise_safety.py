@@ -84,7 +84,7 @@ def test_zero_phase_override_is_prominent_and_machine_readable() -> None:
     assert result["lookahead_bias"] is True
     assert result["suitable_for_backtest"] is False
     assert result["labeling_spec"]["entry_price_source"] == "denoised_close"
-    assert result["labeling_spec"]["entry_price_column"] == "close"
+    assert result["labeling_spec"]["entry_price_column"] == "close_dn"
     provenance = result["preprocessing"]["denoise"]
     assert provenance == {
         "applied": True,
@@ -92,8 +92,8 @@ def test_zero_phase_override_is_prominent_and_machine_readable() -> None:
         "causality": "zero_phase",
         "params": {"span": 4},
         "requested_columns": ["close"],
-        "effective_entry_column": "close",
-        "source_column_overwritten": True,
+        "effective_entry_column": "close_dn",
+        "source_column_overwritten": False,
     }
     assert any("LOOK-AHEAD BIAS" in warning for warning in result["warnings"])
 

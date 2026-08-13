@@ -51,7 +51,8 @@ Tip: `GET /api/denoise/methods` (see [WEB_API.md](WEB_API.md)) reports availabil
 ## When to Apply: Pre vs Post Indicators
 
 ### Pre-Indicator (`when=pre_ti`)
-Apply denoising to raw price, then calculate indicators on smoothed data.
+Add a suffixed denoised price series, then calculate indicators on the smoothed
+values while retaining broker OHLC in the canonical columns.
 
 **Use when:** You want smoother inputs for trend estimation.
 
@@ -200,7 +201,7 @@ Split into components and reconstruct smoother parts.
 | `columns` | Which columns to denoise | `close` |
 | `when` | `pre_ti` or `post_ti` | `pre_ti` |
 | `causality` | `causal` or explicitly opted-in `zero_phase` | `causal` |
-| `keep_original` | Keep original column (adds `_dn` suffix) | `false` |
+| `keep_original` | Keep original column and add an `_dn` suffix; set `false` to overwrite explicitly | `true` |
 | `alpha` | Optional smoothing factor (EMA; overrides `span`) | — |
 | `window` | Window size (filters) | method-specific |
 
@@ -243,7 +244,7 @@ retrospective analysis, not backtesting or live trading.
 ### Smooth Closing Prices
 ```bash
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
-  --denoise ema --denoise-params "alpha=0.2,keep_original=true"
+  --denoise ema --denoise-params "alpha=0.2"
 ```
 
 ### Remove Price Spikes
@@ -274,7 +275,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
 | Basic EMA smoothing | `--denoise ema --denoise-params "alpha=0.2"` |
 | Spike removal | `--denoise median --denoise-params "window=5"` |
 | Adaptive filter | `--denoise kalman` |
-| Keep original column | `--denoise-params "keep_original=true"` |
+| Overwrite the source column explicitly | `--denoise-params "keep_original=false"` |
 | Post-indicator smoothing | `--denoise-params "when=post_ti"` |
 
 ---

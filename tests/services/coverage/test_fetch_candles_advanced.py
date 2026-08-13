@@ -8,6 +8,9 @@ Covers:
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+
+from mtdata.services import data_service
 from mtdata.services.data_service import fetch_candles
 
 from ._helpers import (
@@ -154,6 +157,56 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
         mock_norm_dn.return_value = {'method': 'ema', 'when': 'pre_ti', 'params': {}}
         result = fetch_candles('EURUSD', limit=5, denoise={'method': 'ema', 'when': 'pre_ti'})
         self.assertTrue(result.get('success'))
+
+    @patch(_MT5_CONFIG)
+    @patch(_SIMPLIFY_EXT, side_effect=lambda df, h, s: (df, None))
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_default_denoise_preserves_broker_close(
+        self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp, mock_cfg
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(10)
+        mock_from.return_value = rates
+
+        result = fetch_candles("EURUSD", limit=5, denoise={"method": "sma"})
+
+        self.assertTrue(result.get("success"))
+        latest = result["data"][-1]
+        # The fixture's final bar is still forming and is omitted by default.
+        self.assertAlmostEqual(latest["close"], rates[-2]["close"])
+        self.assertIn("close_dn", latest)
+        self.assertNotAlmostEqual(latest["close_dn"], latest["close"])
+        application = result["denoise"]["applications"][0]
+        self.assertTrue(application["keep_original"])
+        self.assertEqual(application["overwrote_columns"], [])
+
+    def test_pre_ti_indicators_use_denoised_values_and_restore_raw_close(self):
+        df = pd.DataFrame(
+            {"close": [1.0, 2.0, 3.0], "close_dn": [10.0, 20.0, 30.0]}
+        )
+        observed = {}
+
+        def apply_indicator(frame, _spec):
+            observed["close"] = frame["close"].tolist()
+            frame["TEST"] = frame["close"] * 2
+            return ["TEST"]
+
+        with patch(f"{_DS}._apply_ta_indicators", side_effect=apply_indicator):
+            columns = data_service._apply_indicator_stage(
+                df,
+                [],
+                "test",
+                {"method": "sma", "when": "pre_ti"},
+            )
+
+        self.assertEqual(observed["close"], [10.0, 20.0, 30.0])
+        self.assertEqual(df["close"].tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(df["test"].tolist(), [20.0, 40.0, 60.0])
+        self.assertEqual(columns, ["test"])
 
     @patch(_MT5_CONFIG)
     @patch(f'{_DS}._normalize_denoise_spec')

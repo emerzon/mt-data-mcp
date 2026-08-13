@@ -95,7 +95,7 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "wavelet"
         assert out["params"]["wavelet"] == "db4"
         assert out["causality"] == "zero_phase"
-        assert out["keep_original"] is False
+        assert out["keep_original"] is True
 
     def test_string_sma(self):
         out = normalize_denoise_spec("sma")
@@ -277,8 +277,8 @@ class TestNormalizeDenoiseSec:
         assert out["params"][canonical_key] == value
         assert "lambda" not in out["params"]
 
-    def test_pre_ti_overwrites_by_default_and_post_ti_keeps_original(self):
-        assert normalize_denoise_spec("ema")["keep_original"] is False
+    def test_all_stages_preserve_original_by_default(self):
+        assert normalize_denoise_spec("ema")["keep_original"] is True
         assert normalize_denoise_spec("ema", default_when="post_ti")["keep_original"] is True
 
     def test_nested_filter_params_override_top_level_values(self):
@@ -684,15 +684,16 @@ class TestApplyDenoise:
         assert "close_dn" in df.columns
         assert len(df["close_dn"]) == N
 
-    def test_default_pre_ti_spec_overwrites_canonical_close(self):
+    def test_default_pre_ti_spec_preserves_canonical_close(self):
         df = self._make_df()
         original_close = df["close"].copy()
 
         added = apply_denoise(df, normalize_denoise_spec("ema"))
 
-        assert added == []
-        assert "close_dn" not in df.columns
-        assert not np.allclose(df["close"], original_close)
+        assert added == ["close_dn"]
+        assert "close_dn" in df.columns
+        assert np.allclose(df["close"], original_close)
+        assert not np.allclose(df["close_dn"], original_close)
 
     def test_ema_overwrite(self):
         df = self._make_df()

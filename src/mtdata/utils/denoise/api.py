@@ -424,9 +424,12 @@ def apply_denoise(
         else:
             parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
             cols = parts if parts else ['close']
-    when = str(spec.get('when') or default_when)
     causality = str(spec.get('causality') or 'causal')
-    keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
+    keep_original = (
+        bool(spec.get("keep_original"))
+        if "keep_original" in spec
+        else bool(_DENOISE_BASE_DEFAULTS["keep_original"])
+    )
     suffix = str(spec.get('suffix') or '_dn')
     handler = _resolve_denoise_handler(method)
     causality = _normalize_denoise_causality(method, causality)
@@ -541,7 +544,6 @@ def _denoise_base_defaults(default_when: str = "pre_ti") -> Dict[str, Any]:
     """Get base defaults for denoise spec."""
     base = deepcopy(_DENOISE_BASE_DEFAULTS)
     base["when"] = default_when
-    base["keep_original"] = default_when != "pre_ti"
     return base
 
 

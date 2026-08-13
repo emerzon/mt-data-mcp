@@ -1693,8 +1693,28 @@ def _apply_indicator_stage(
     if not ti_spec:
         return ti_cols
 
-    columns_before = {str(column) for column in df.columns}
-    reported_columns = [str(column) for column in _apply_ta_indicators(df, ti_spec)]
+    # A pre-TI denoise now preserves canonical broker OHLC by default. Feed
+    # indicators the suffixed denoised series without allowing the indicator
+    # implementation to mistake the raw columns for its intended inputs.
+    suffix = str((denoise or {}).get("suffix") or "_dn")
+    denoised_sources = {
+        column: df[f"{column}{suffix}"].copy()
+        for column in ("open", "high", "low", "close", "volume", "tick_volume")
+        if column in df.columns and f"{column}{suffix}" in df.columns
+    }
+    original_sources = {
+        column: df[column].copy() for column in denoised_sources
+    }
+    try:
+        for column, values in denoised_sources.items():
+            df[column] = values
+        columns_before = {str(column) for column in df.columns}
+        reported_columns = [
+            str(column) for column in _apply_ta_indicators(df, ti_spec)
+        ]
+    finally:
+        for column, values in original_sources.items():
+            df[column] = values
     created_columns = [
         str(column) for column in df.columns if str(column) not in columns_before
     ]
