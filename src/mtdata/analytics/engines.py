@@ -32,7 +32,12 @@ from ..utils.freshness import (
     standard_weekend_window,
 )
 from ..utils.market_metadata import build_tick_freshness_context
-from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
+from ..utils.quote import (
+    enforce_quote_execution_readiness,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import bar_close_epoch, format_datetime_utc, format_epoch_utc
@@ -2599,6 +2604,13 @@ def _relative_strength_history_window(
 def _relative_strength_quote_status(quote_quality: Dict[str, Any]) -> str:
     if quote_quality.get("usable_for_live_trading") is True:
         return "live_ready"
+    spread_quality = quote_quality.get("spread_quality")
+    if spread_quality == "locked":
+        return "locked_quote"
+    if spread_quality not in (None, "two_sided"):
+        return "invalid_quote"
+    if isinstance(quote_quality.get("quote_source_conflict"), dict):
+        return "conflicting_quote_sources"
     return str(
         quote_quality.get("freshness_state")
         or quote_quality.get("freshness_reason")
@@ -2761,16 +2773,105 @@ def rank_relative_strength(  # noqa: C901
         }
     if len(candidate_histories) < 2:
         return {"error": "At least two symbols with sufficient history are required.", "error_code": "insufficient_data", "skipped": skipped}
+    quote_excluded_symbols: List[str] = []
+    quote_contexts: Dict[str, Dict[str, Any]] = {}
+    scoring_histories: Dict[str, pd.DataFrame] = {}
+    for symbol, bars in candidate_histories.items():
+        latest = bars.iloc[-1]
+        try:
+            raw_tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            raw_tick = None
+        quote_query_epoch = datetime.now(timezone.utc).timestamp()
+        tick, quote_source = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=quote_query_epoch,
+        )
+        quote_quality = build_tick_freshness_context(
+            symbol,
+            tick_epoch=tick_epoch(tick),
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        )
+        quote_quality.update(quote_source)
+        try:
+            bid = float(tick_value(tick, "bid") or 0.0)
+            ask = float(tick_value(tick, "ask") or 0.0)
+        except (TypeError, ValueError):
+            bid = ask = 0.0
+        spread_pct = (
+            (ask - bid) / ((ask + bid) / 2.0) * 100.0
+            if ask > bid > 0.0
+            else None
+        )
+        enforce_quote_execution_readiness(
+            quote_quality,
+            bid=bid,
+            ask=ask,
+            quote_source_conflict=quote_quality.get("quote_source_conflict"),
+        )
+        symbol_window = history_windows[symbol]
+        if quote_quality.get("usable_for_live_trading") is not True:
+            quote_excluded_symbols.append(symbol)
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "quote not live-ready",
+                    "quote_status": _relative_strength_quote_status(quote_quality),
+                    "quote_quality": quote_quality,
+                    "data_window": symbol_window,
+                }
+            )
+            continue
+        if request.max_spread_pct is not None and (
+            spread_pct is None or spread_pct > request.max_spread_pct
+        ):
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": (
+                        "spread unavailable" if spread_pct is None else "spread filter"
+                    ),
+                    "quote_quality": quote_quality,
+                    "data_window": symbol_window,
+                }
+            )
+            continue
+        tick_volume = int(latest.get("tick_volume") or 0)
+        if request.min_tick_volume is not None and tick_volume < request.min_tick_volume:
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "tick-volume filter",
+                    "data_window": symbol_window,
+                }
+            )
+            continue
+        quote_contexts[symbol] = {
+            "quote_quality": quote_quality,
+            "spread_pct": spread_pct,
+            "tick_volume": tick_volume,
+        }
+        scoring_histories[symbol] = bars
+
+    factor_histories = dict(scoring_histories)
+    if benchmark_symbol and benchmark_symbol in histories:
+        factor_histories[benchmark_symbol] = histories[benchmark_symbol]
     return_frames = []
-    for symbol, bars in histories.items():
+    for symbol, bars in factor_histories.items():
         return_frames.append(pd.Series(np.log(bars["close"]).diff().to_numpy(), index=bars["time"].to_numpy(), name=symbol))
-    returns = pd.concat(return_frames, axis=1, join="outer")
+    returns = (
+        pd.concat(return_frames, axis=1, join="outer")
+        if return_frames
+        else pd.DataFrame()
+    )
     explicit_factor = returns[request.benchmark.upper()] if request.benchmark and request.benchmark.upper() in returns else None
     rows = []
     aligned_epoch_windows: Dict[str, tuple[float, float]] = {}
     score_parts: Dict[int, Dict[str, float]] = {h: {} for h in request.horizons}
     stability_parts: Dict[int, Dict[int, Dict[str, float]]] = {offset: {h: {} for h in request.horizons} for offset in (0, 5, 10)}
-    for symbol, bars in candidate_histories.items():
+    for symbol, bars in scoring_histories.items():
         own = pd.Series(np.log(bars["close"]).diff().to_numpy(), index=bars["time"].to_numpy()).dropna()
         factor = explicit_factor if explicit_factor is not None else returns.drop(columns=[symbol], errors="ignore").mean(axis=1, skipna=True)
         aligned = pd.concat([own.rename("own"), factor.rename("factor")], axis=1, join="inner").dropna()
@@ -2813,64 +2914,10 @@ def rank_relative_strength(  # noqa: C901
                 if len(residual) >= horizon + offset:
                     stability_parts[offset][horizon][symbol] = float(residual.iloc[: len(residual) - offset].tail(horizon).sum()) / max(vol * math.sqrt(horizon), 1e-12)
         latest = bars.iloc[-1]
-        try:
-            raw_tick = gateway.symbol_info_tick(symbol)
-        except Exception:
-            raw_tick = None
-        quote_query_epoch = datetime.now(timezone.utc).timestamp()
-        tick, quote_source = resolve_quote_tick(
-            gateway,
-            symbol,
-            raw_tick,
-            now_epoch=quote_query_epoch,
-        )
-        quote_epoch = tick_epoch(tick)
-        quote_quality = build_tick_freshness_context(
-            symbol,
-            tick_epoch=quote_epoch,
-            now_epoch=datetime.now(timezone.utc).timestamp(),
-        )
-        quote_quality.update(quote_source)
-        try:
-            bid = float(tick_value(tick, "bid") or 0.0)
-            ask = float(tick_value(tick, "ask") or 0.0)
-        except (TypeError, ValueError):
-            bid = ask = 0.0
-        spread_pct = (
-            (ask - bid) / ((ask + bid) / 2.0) * 100.0
-            if ask > bid > 0.0
-            else None
-        )
-        if spread_pct is None:
-            quote_quality["usable_for_live_trading"] = False
-            quote_quality["freshness_state"] = "unusable_quote"
-            quote_quality["freshness_reason"] = (
-                "locked_quote" if ask == bid and bid > 0.0 else "invalid_quote"
-            )
-        tick_volume = int(latest.get("tick_volume") or 0)
-        if request.max_spread_pct is not None and (
-            spread_pct is None or spread_pct > request.max_spread_pct
-        ):
-            skipped.append(
-                {
-                    "symbol": symbol,
-                    "reason": (
-                        "spread unavailable" if spread_pct is None else "spread filter"
-                    ),
-                    "quote_quality": quote_quality,
-                    "data_window": symbol_window,
-                }
-            )
-            continue
-        if request.min_tick_volume is not None and tick_volume < request.min_tick_volume:
-            skipped.append(
-                {
-                    "symbol": symbol,
-                    "reason": "tick-volume filter",
-                    "data_window": symbol_window,
-                }
-            )
-            continue
+        quote_context = quote_contexts[symbol]
+        quote_quality = quote_context["quote_quality"]
+        spread_pct = quote_context["spread_pct"]
+        tick_volume = quote_context["tick_volume"]
         rows.append(
             {
                 "symbol": symbol,
@@ -3090,12 +3137,7 @@ def rank_relative_strength(  # noqa: C901
             else None,
             "minimum_history_coverage": 0.90,
             "endpoint_alignment": endpoint_alignment,
-            "quote_not_live_ready_symbols": sorted(
-                row["symbol"]
-                for row in ordered
-                if isinstance(row.get("quote_quality"), dict)
-                and row["quote_quality"].get("usable_for_live_trading") is not True
-            ),
+            "quote_not_live_ready_symbols": sorted(set(quote_excluded_symbols)),
             **(
                 {"symbol_windows": history_windows}
                 if request.detail == "full"
@@ -3114,8 +3156,9 @@ def rank_relative_strength(  # noqa: C901
     quote_not_live = result["data_quality"]["quote_not_live_ready_symbols"]
     if quote_not_live:
         result_warnings.append(
-            "Candidate histories include symbols whose current quotes are not "
-            "live-ready: " + ", ".join(quote_not_live) + "."
+            "Excluded symbols whose current quotes are not live-ready: "
+            + ", ".join(quote_not_live)
+            + "."
         )
     if result_warnings:
         result["warnings"] = result_warnings

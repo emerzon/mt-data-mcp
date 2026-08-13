@@ -1959,15 +1959,24 @@ def test_relative_strength_uses_reconciled_quote_for_spread_filter() -> None:
     assert all(row["spread_pct"] < 0.005 for row in result["rankings"])
 
 
-def test_relative_strength_retains_locked_quotes_as_quality_metadata() -> None:
+def test_relative_strength_excludes_locked_quotes_from_rankings() -> None:
     gateway = FakeGateway()
     now = _now()
-    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
-        bid=1.1,
-        ask=1.1,
-        time=now,
-    )
-    gateway.copy_ticks_range = lambda *_args: []
+    original_tick = gateway.symbol_info_tick
+    original_copy_ticks = gateway.copy_ticks_range
+
+    def symbol_info_tick(symbol: str):
+        if symbol == "USDJPY":
+            return SimpleNamespace(bid=1.1, ask=1.1, time=now)
+        return original_tick(symbol)
+
+    def copy_ticks_range(symbol, start, end, flags):
+        if symbol == "USDJPY":
+            return []
+        return original_copy_ticks(symbol, start, end, flags)
+
+    gateway.symbol_info_tick = symbol_info_tick
+    gateway.copy_ticks_range = copy_ticks_range
 
     result = rank_relative_strength(
         MarketRelativeStrengthRequest(
@@ -1979,21 +1988,48 @@ def test_relative_strength_retains_locked_quotes_as_quality_metadata() -> None:
         ),
         gateway,
     )
+    live_only_result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=3,
+        ),
+        gateway,
+    )
 
     assert result["status"] == "ranked"
-    assert result["returned_count"] == 3
-    assert {
-        row["quote_status"] for row in [*result["leaders"], *result["laggards"]]
-    } == {"unusable_quote"}
-    assert result["data_quality"]["quote_not_live_ready_symbols"] == [
-        "EURUSD",
-        "GBPUSD",
-        "USDJPY",
-    ]
+    assert result["universe_size"] == 2
+    assert result["returned_count"] == 2
+    ranked_symbols = {
+        row["symbol"] for row in [*result["leaders"], *result["laggards"]]
+    }
+    assert ranked_symbols == {"EURUSD", "GBPUSD"}
+    assert result["data_quality"]["quote_not_live_ready_symbols"] == ["USDJPY"]
+    skipped = next(
+        row
+        for row in result["data_quality"]["skipped"]
+        if row["symbol"] == "USDJPY"
+    )
+    assert skipped["reason"] == "quote not live-ready"
+    assert skipped["quote_status"] == "locked_quote"
+    scores = {
+        row["symbol"]: row["score"]
+        for row in [*result["leaders"], *result["laggards"]]
+    }
+    live_only_scores = {
+        row["symbol"]: row["score"]
+        for row in [
+            *live_only_result["leaders"],
+            *live_only_result["laggards"],
+        ]
+    }
+    assert scores == pytest.approx(live_only_scores)
     assert any("not live-ready" in warning for warning in result["warnings"])
 
 
-def test_relative_strength_retains_stale_quote_with_fresh_history() -> None:
+def test_relative_strength_excludes_stale_quote_with_fresh_history() -> None:
     gateway = FakeGateway()
     gateway.bar_rows["XAUUSD"] = [
         {**row, "time": row["time"] + 3_600}
@@ -2028,10 +2064,20 @@ def test_relative_strength_retains_stale_quote_with_fresh_history() -> None:
         gateway,
     )
 
-    assert result["universe_size"] == 4
-    xau = next(row for row in result["rankings"] if row["symbol"] == "XAUUSD")
+    assert result["universe_size"] == 3
+    assert {row["symbol"] for row in result["rankings"]} == {
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",
+    }
+    xau = next(
+        row
+        for row in result["data_quality"]["skipped"]
+        if row["symbol"] == "XAUUSD"
+    )
     assert xau["data_window"]["freshness"] == "fresh"
     assert xau["quote_quality"]["usable_for_live_trading"] is False
+    assert xau["quote_status"] == "stale"
     assert result["data_quality"]["quote_not_live_ready_symbols"] == ["XAUUSD"]
 
 
