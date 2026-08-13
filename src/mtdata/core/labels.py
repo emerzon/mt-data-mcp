@@ -371,6 +371,8 @@ def labels_triple_barrier(  # noqa: C901
     is conservative SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
+    Compact and standard `data` contain the most recent labeled rows, including
+    neutral outcomes; full detail returns the complete labeled series.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -999,45 +1001,16 @@ def labels_triple_barrier(  # noqa: C901
                     ]
 
                 if output_mode == "compact":
-                    outcome_indices = [
-                        len(labels) - len(lab_tail) + idx
-                        for idx, value in enumerate(lab_tail)
-                        if value != 0
-                    ]
-                    if outcome_indices:
-                        compact_sample_limit = min(sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
-                        sample_indices = outcome_indices[-compact_sample_limit:]
-                        payload["sample_basis"] = "outcomes"
-                    else:
-                        sample_n = min(n, sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
-                        sample_indices = list(
-                            range(max(0, len(labels) - sample_n), len(labels))
-                        )
-                        payload["sample_basis"] = "recent"
+                    sample_n = min(n, sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
+                    sample_indices = list(
+                        range(max(0, len(labels) - sample_n), len(labels))
+                    )
+                    payload["sample_basis"] = "recent"
                     payload["sample_size"] = int(len(sample_indices))
-                    non_neutral_count = int(counts["tp"] + counts["sl"])
-                    if (
-                        n > 0
-                        and non_neutral_count > 0
-                        and non_neutral_count / n < 0.10
-                    ):
-                        neutral_pct = (float(counts["neutral"]) / float(n)) * 100.0
-                        payload["sample_context"] = {
-                            "neutral": int(counts["neutral"]),
-                            "total": int(n),
-                            "neutral_pct": round(neutral_pct, 2),
-                            "non_neutral": non_neutral_count,
-                            "tp": int(counts["tp"]),
-                            "sl": int(counts["sl"]),
-                            "note": (
-                                f"{counts['neutral']} of {n} labels are neutral; "
-                                f"showing {len(sample_indices)} non-neutral rows."
-                            ),
-                        }
                     if len(sample_indices) < n:
-                        payload["sample_note"] = (
-                            "data rows show non-neutral outcomes in the lookback window when present; "
-                            f"otherwise the most recent {len(sample_indices)} observations."
+                        payload["data_note"] = (
+                            f"data rows cover the most recent {len(sample_indices)} "
+                            "labels, including neutral outcomes."
                         )
                     payload["data"] = _sample_rows(sample_indices)
                     for key in (

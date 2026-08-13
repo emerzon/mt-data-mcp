@@ -479,8 +479,8 @@ class TestLabelsTripleBarrier:
         assert result["sample_size"] == 10
         assert len(result["data"]) == 10
         assert result["sample_basis"] == "recent"
-        assert "sample_note" in result
-        assert "data rows show non-neutral outcomes" in result["sample_note"]
+        assert "data_note" in result
+        assert "including neutral outcomes" in result["data_note"]
         assert "label_legend" not in result
         assert result["label_key"] == {"1": "tp_first", "-1": "sl_first", "0": "hold"}
 
@@ -536,7 +536,9 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
-    def test_output_compact_prefers_outcome_sample(self, mock_hist, mock_den, mock_pip):
+    def test_output_compact_returns_recent_labels_including_neutral(
+        self, mock_hist, mock_den, mock_pip
+    ):
         mock_hist.return_value = _make_df(80)
         result = _get_raw_fn()(
             "EURUSD",
@@ -546,12 +548,19 @@ class TestLabelsTripleBarrier:
             detail="compact",
             lookback=25,
         )
+        full = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=0.05,
+            sl_pct=0.5,
+            horizon=5,
+            detail="full",
+            lookback=25,
+        )
 
         assert result["success"] is True
         assert result["summary"]["counts"]["tp"] > 0
-        assert result["sample_basis"] == "outcomes"
-        assert all(row["label"] != 0 for row in result["data"])
-        assert {row["outcome"] for row in result["data"]} <= {"tp", "sl"}
+        assert result["sample_basis"] == "recent"
+        assert [row["label"] for row in result["data"]] == full["labels"][-10:]
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")

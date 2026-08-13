@@ -57,8 +57,8 @@ from mtdata.core.cli.api import (
     _normalize_cli_list_value,
     _parse_kv_string,
     _parse_set_overrides,
-    _resolve_raw_cli_command,
     _resolve_param_kwargs,
+    _resolve_raw_cli_command,
     add_dynamic_arguments,
     get_function_info,
 )
@@ -1506,7 +1506,8 @@ class TestResolveParamKwargs:
             cmd_name="labels_triple_barrier",
         )
 
-        assert "sampled rows" in limit_kwargs["help"]
+        assert "most-recent labeled rows" in limit_kwargs["help"]
+        assert "includes neutral outcomes" in limit_kwargs["help"]
         assert "full returns the complete labeled series" in limit_kwargs["help"]
         assert "labeled entries to calculate" in lookback_kwargs["help"]
         assert "lookback plus horizon" in lookback_kwargs["help"]
