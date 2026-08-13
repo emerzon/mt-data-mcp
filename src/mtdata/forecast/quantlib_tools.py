@@ -162,6 +162,7 @@ def price_barrier_option_quantlib(
     calendar_name = _normalize_quantlib_calendar_name(calendar)
     if valuation_date is None:
         valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
+        valuation_date_source = "default_utc_date"
     else:
         try:
             valuation_day = _dt.datetime.strptime(
@@ -174,6 +175,7 @@ def price_barrier_option_quantlib(
                     f"Invalid valuation_date: {valuation_date}. Use YYYY-MM-DD."
                 )
             }
+        valuation_date_source = "explicit"
 
     geometry_error = _barrier_option_geometry_error(
         barrier_type=barrier_type_norm,
@@ -320,6 +322,8 @@ def price_barrier_option_quantlib(
         "success": True,
         "price": float(npv),
         "valuation_date": valuation_day.isoformat(),
+        "valuation_timezone": "UTC",
+        "valuation_date_source": valuation_date_source,
         "maturity_date": maturity_day.isoformat(),
         "time_to_maturity_years": time_to_maturity_years,
         "delta": float(delta) if delta is not None and math.isfinite(delta) else None,
@@ -527,6 +531,7 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         return {"error": f"Invalid expiration format: {expiry_text}"}
     if valuation_date is None:
         valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
+        valuation_date_source = "default_utc_date"
     else:
         try:
             valuation_day = _dt.datetime.strptime(
@@ -540,6 +545,7 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
                     "Use YYYY-MM-DD."
                 )
             }
+        valuation_date_source = "explicit"
     if valuation_day >= expiry_date:
         return {
             "error": (
@@ -627,6 +633,8 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "symbol": str(symbol).upper().strip(),
         "expiration": expiry_text,
         "valuation_date": valuation_day.isoformat(),
+        "valuation_timezone": "UTC",
+        "valuation_date_source": valuation_date_source,
         "days_to_expiry": int(days_to_expiry),
         "contracts_used": int(len(rows)),
         "option_type": side,

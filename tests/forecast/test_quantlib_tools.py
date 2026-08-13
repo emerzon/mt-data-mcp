@@ -251,6 +251,8 @@ def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     assert out["params_used"]["barrier_type"] == "up_out"
     assert out["greeks_status"] == "complete"
     assert out["greeks_spot_step"] == 0.01
+    assert out["valuation_timezone"] == "UTC"
+    assert out["valuation_date_source"] == "default_utc_date"
 
 
 def test_price_barrier_option_quantlib_uses_safe_step_near_barrier(monkeypatch):
@@ -306,6 +308,8 @@ def test_price_barrier_option_quantlib_exposes_calendar_overrides(monkeypatch):
     assert out["params_used"]["calendar"] == "NullCalendar"
     assert out["params_used"]["maturity_basis"] == "business_days"
     assert out["valuation_date"] == "2026-07-03"
+    assert out["valuation_timezone"] == "UTC"
+    assert out["valuation_date_source"] == "explicit"
     assert out["maturity_date"] == "2026-08-02"
     assert out["time_to_maturity_years"] == 30 / 365
     assert out["params_used"]["valuation_date"] == "2026-07-03"
@@ -435,6 +439,8 @@ def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monk
     assert out["pricing_assumptions"]["maturity_convention"] == "calendar_days_to_contract_expiry"
     assert out["pricing_assumptions"]["days_to_expiry_basis"] == "business_days"
     assert "maturity_basis" not in out["pricing_assumptions"]
+    assert out["valuation_timezone"] == "UTC"
+    assert out["valuation_date_source"] == "explicit"
 
 
 def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):

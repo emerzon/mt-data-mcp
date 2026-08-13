@@ -77,6 +77,10 @@ mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 Price a barrier option using QuantLib's numerical engine.
 
 By default, QuantLib pricing assumes the `UnitedStates.NYSE` calendar and interprets `maturity_days` as calendar days. Override `--calendar` and `--maturity-basis` for non-US or non-equity workflows.
+When `--valuation-date` is omitted, mtdata intentionally uses the current UTC
+date. Responses expose `valuation_timezone: UTC` and
+`valuation_date_source: default_utc_date`; pass an explicit date when a market
+or portfolio-local accounting date is required.
 
 ```bash
 # Down-and-out call (knock-out if price falls to barrier)
@@ -102,6 +106,7 @@ mtdata-cli options_barrier_price \
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
 | `--volatility` | 0.2 | Implied volatility (decimal, e.g., 0.2 = 20%) |
 | `--rebate` | 0.0 | Rebate paid at barrier touch |
+| `--valuation-date` | current UTC date | Valuation date in `YYYY-MM-DD` format |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name (for example `UnitedStates.NYSE` or `NullCalendar`) |
 | `--maturity-basis` | `calendar_days` | Interpret `--maturity-days` as `calendar_days` or `business_days` in the selected calendar |
 
@@ -143,7 +148,7 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--option-type` | `call` | `call`, `put`, or `both` |
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
-| `--valuation-date` | today | Valuation date in `YYYY-MM-DD` format |
+| `--valuation-date` | current UTC date | Valuation date in `YYYY-MM-DD` format |
 | `--min-open-interest` | 0 | Min open interest for contract selection; must be at least 0 |
 | `--min-volume` | 0 | Min volume for contract selection; must be at least 0 |
 | `--max-contracts` | 25 | Max contracts used in calibration; must be at least 5 |
