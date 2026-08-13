@@ -1,5 +1,7 @@
 # Report generation
 
+**Audience:** User
+
 `report_generate` packages several read-only analysis steps into one structured
 market summary. Use it when you want a repeatable overview rather than calling
 context, forecast, level, pattern, barrier, and regime tools separately.

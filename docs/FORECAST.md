@@ -1,6 +1,10 @@
 # Forecasting guide
 
-Predict **where price might go**, **how wide the range is**, and **how much it might move** — then validate before you act. mtdata covers classical baselines, ML, foundation models, simulation methods, and async training with a model cache.
+**Audience:** User
+
+Predict **where price might go**, **how wide the range is**, and **how much it might move** — then check the idea on recent history before you act.
+
+A **forecast** here is an estimate for the next few candles (bars), not a promise. Start with method `theta`. Heavier models and training jobs come later on this page.
 
 Forecasts are **estimates**, not guarantees. Pair point forecasts with uncertainty, barriers, and backtests.
 
@@ -390,6 +394,7 @@ formats remain responsible for their own compatibility checks.
 mtdata-cli forecast_models_list --json
 mtdata-cli forecast_models_list --limit 50 --json  # Larger explicit page
 mtdata-cli forecast_models_delete --model-id "nhits/EURUSD_H1/abc123"
+mtdata-cli forecast_models_cleanup --json          # preview stale/expired
 ```
 
 The compact listing defaults to ten models and reports total pagination plus

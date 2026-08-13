@@ -1,6 +1,10 @@
 # Time-series diagnostics
 
-**Read-only** checks on recent MT5 bars *before* you forecast or size risk: stationarity, seasonality, outliers, and related health metrics. Think of this as a pre-flight panel for your series.
+**Audience:** User
+
+**Read-only** health checks on recent candles *before* you forecast or size risk.
+
+Plain idea: is this series stable enough to model, does it repeat on a clock, and are there wild bars you should know about? You do not need the test names to run the first command — each section says what to do with the answer.
 
 **Dense terms:** [Stationarity](GLOSSARY.md#stationarity) · [ADF / KPSS / PP](GLOSSARY.md#stationarity-tests-adf-kpss-phillipsperron) · [Log return](GLOSSARY.md#log-return) · [Seasonality](GLOSSARY.md#autocorrelation--seasonality-periodogram) · [Outliers (MAD/IQR)](GLOSSARY.md#outlier-scores-mad-iqr-z-score) · [Volatility](GLOSSARY.md#volatility)
 

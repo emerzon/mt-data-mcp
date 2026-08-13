@@ -1,6 +1,9 @@
 # Web UI tool coverage inventory
 
-Every backend MCP/bootstrap tool classified for the SPA.
+**Audience:** Contributor
+
+Every backend MCP/bootstrap tool classified for the SPA. User tour:
+[WEBUI.md](WEBUI.md).
 
 | Tool | Category | Surface | Frontend path | Confirm | Notes |
 |---|---|---|---|---|---|

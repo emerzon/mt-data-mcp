@@ -1,5 +1,7 @@
 # Finviz fundamentals
 
+**Audience:** User
+
 Pull **US equity fundamentals**, screens, news, insider activity, and macro snapshots (forex, crypto, futures, economic calendars) via [Finviz](https://finviz.com) — useful when your MT5 workflow also needs equity or calendar context.
 
 These tools complement MT5; they do not replace the terminal for live FX/CFD quotes.
@@ -361,6 +363,7 @@ mtdata-cli finviz_earnings --period next-week --json
 
 ## See Also
 
+- [NEWS.md](NEWS.md) — Unified ranked news + calendar (preferred everyday feed)
 - [CLI.md](CLI.md) — Command usage
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
 - [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Trade analysis workflow

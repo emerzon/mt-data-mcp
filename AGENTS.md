@@ -25,6 +25,14 @@ Pytest files and functions use the `test_*.py` / `test_*` pattern. Frontend test
 
 Follow the history's concise imperative format, preferably Conventional Commits such as `fix(cli): clarify output contract` or `refactor: extract shared helpers`. Keep each commit scoped. Pull requests should summarize behavior changes, list verification commands, link relevant issues, and include screenshots for UI changes. Call out new dependencies, configuration changes, and any MT5 or broker-facing risk.
 
+## Documentation
+
+User-facing docs live in `docs/` and the root `README.md`. Follow
+[docs/STYLE.md](docs/STYLE.md): helpful, friendly, jargon-aware, progressive
+disclosure, calm safety. Tag pages **User**, **Operator**, or **Contributor**.
+New tools need a User-page link, not only a CLI table row. Keep Web API trading
+claims aligned with the Tools invoke path and [docs/TRADING_SAFETY.md](docs/TRADING_SAFETY.md).
+
 ## Security & Configuration
 
 Copy settings from `.env.example`; never commit credentials, API tokens, or account details. Use an MT5 demo account for development and keep trading operations in `--dry-run true` unless live execution is explicitly intended.

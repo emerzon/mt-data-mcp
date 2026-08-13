@@ -1,41 +1,53 @@
 # CLI Guide
 
-The CLI is the one-shot interface for scripts and occasional exploration. Every
-tool is one command:
+**Audience:** User
+
+Type one command, get one result. That is the whole idea:
 
 ```bash
 mtdata-cli <command> [options]
 ```
 
-Use it for scripts, exploration, and copy-paste workflows. Each one-shot
-invocation starts Python and discovers the requested command family. For repeated
-local exploration, run `mtdata-cli shell` and enter ordinary command lines
-without the `mtdata-cli` prefix; imports remain warm until `exit` or `quit`.
-The shell also accepts newline-delimited commands on stdin for non-interactive
-batches, ignores blank lines and `#` comments, and exits nonzero if any command
-fails. Batch output is NDJSON: each executable input line produces one compact
-JSON envelope with `line`, `command`, `success`, and `status`. Parsed child JSON
-is nested under `result`; non-JSON output and diagnostics use `output` and
-`stderr`. Shared options may follow `shell`, for example
-`mtdata-cli shell --json --timeframe H4`. A shell timeframe is applied only to
-child commands that accept one, so timeframe-free commands remain usable in the
-same session.
-Repeated agent or application calls should keep a process alive with
-`mtdata-stdio`, `mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
-available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API
-exposes a focused subset with the same canonical payload semantics for
-operations shared across interfaces. Default text presentation is
-[TOON](GLOSSARY.md#toon); use `--json` for machines.
+Try this first (read-only — it only *lists* markets):
 
-Background training is rejected by one-shot CLI processes because their workers
-would be terminated as soon as the command returned. Stdin shell batches are
-also rejected because the batch process exits at end-of-input. Run
-`forecast_train` or `forecast_generate --async-mode true` inside an interactive
-`mtdata-cli shell`, through MCP, or through the Web API.
+```bash
+mtdata-cli --help
+mtdata-cli symbols_list --limit 5
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 20
+```
 
-Stuck on an acronym in output (BOCPD, Kelly, CVaR, …)? See the [glossary quick find](GLOSSARY.md#quick-find).
+Add `--json` when you want a structured result for a script or an assistant.
+The default text layout is compact and human-readable ([TOON](GLOSSARY.md#toon)
+— think “a small table with a header”). Stuck on an acronym (BOCPD, Kelly,
+CVaR, …)? See the [glossary quick find](GLOSSARY.md#quick-find).
 
-**Related:** [README](../README.md) · [Setup](SETUP.md) · [Glossary](GLOSSARY.md) · [Output contract](OUTPUT.md)
+Prefer a website or a chat assistant? [WEBUI.md](WEBUI.md) · [MCP.md](MCP.md).
+
+**Related:** [README](../README.md) · [Setup](SETUP.md) · [Glossary](GLOSSARY.md) · [Market discovery](MARKET.md) · [Output contract](OUTPUT.md) (Operator)
+
+---
+
+## Deeper detail: shell, batches, and long jobs
+
+Each one-shot `mtdata-cli` start loads Python, runs one command family, and
+exits. For a warmer loop, run `mtdata-cli shell` and type commands without the
+`mtdata-cli` prefix until `exit` or `quit`.
+
+The shell also accepts newline-delimited commands on stdin. Blank lines and
+`#` comments are ignored. The process exits nonzero if any command fails.
+Batch output is [NDJSON](GLOSSARY.md#ndjson): one JSON object per input line,
+with `line`, `command`, `success`, and `status`. Parsed child JSON sits under
+`result`; leftover text uses `output` / `stderr`. Shared options may follow
+`shell`, for example `mtdata-cli shell --json --timeframe H4`. A shell
+timeframe applies only to child commands that accept one.
+
+Keep a long-lived process for agents and apps: `mtdata-stdio`,
+`mtdata-streamable-http`, or `mtdata-webapi`.
+
+Background training is rejected by one-shot CLI processes (workers would die
+when the command returned). Stdin batches are rejected for the same reason.
+Run `forecast_train` or `forecast_generate --async-mode true` inside an
+interactive `mtdata-cli shell`, through MCP, or through the Web API.
 
 ---
 
@@ -276,7 +288,7 @@ order from the start bound (first-N). Omit `--start` for latest-N retrieval.
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
 | `market_status` | Show the major-equity exchange calendar without a symbol or by emitted venue id, or MT5 tradability for a broker symbol |
-| `wait_event` | **Blocking:** wait for a clock, single-symbol, or basket event using exactly one stopping mode: the next `timeframe` boundary or `max_wait_seconds` duration |
+| `wait_event` | **Blocking:** wait for a candle close or a timed event — see [WAIT_EVENT.md](WAIT_EVENT.md) |
 
 ### Forecasting
 | Command | Description |
@@ -411,7 +423,7 @@ they are not normalized to a consistent stake or unit of risk.
 ### News
 | Command | Description |
 |---------|-------------|
-| `news` | Unified, ranked news feed (general + symbol-relevant + economic calendar). Pass `--symbol` to focus the feed on an instrument. |
+| `news` | Ranked headlines + calendar — see [NEWS.md](NEWS.md) |
 
 ### Advanced MT5-native analytics
 
@@ -481,6 +493,9 @@ See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) for detailed examples.
 ## Examples by Task
 
 ### Explore Available Symbols
+
+Longer tour: [MARKET.md](MARKET.md). News tour: [NEWS.md](NEWS.md). Waits:
+[WAIT_EVENT.md](WAIT_EVENT.md).
 ```bash
 # List forex pairs
 mtdata-cli symbols_list --limit 20
@@ -615,6 +630,15 @@ mtdata-cli trade_session_context EURUSD --json
 In symbol mode, `is_tradable` reflects the broker trade mode (including
 close-only symbols), while `can_open_new_positions` additionally requires a
 live-ready quote and an active session.
+
+### Wait for a candle close
+
+Do not run long waits from the Web UI. See [WAIT_EVENT.md](WAIT_EVENT.md).
+
+```bash
+mtdata-cli wait_event EURUSD --timeframe H1 --json
+mtdata-cli wait_event EURUSD --max-wait-seconds 30 --json
+```
 
 ### Place Orders
 `trade_place` requires `symbol`, `volume`, and `order_type`.

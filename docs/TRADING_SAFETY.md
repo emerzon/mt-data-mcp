@@ -1,5 +1,7 @@
 # Trading safety runbook
 
+**Audience:** User
+
 If you only skim one trading doc, make it this one. The `trade_*` tools send **real requests** to the MT5 account currently logged into the terminal. This runbook covers previewing orders, validation, account guardrails, and broker quirks for `trade_place`, `trade_modify`, and `trade_close`.
 
 > **These tools default to preview mode.** `dry_run` defaults to **`true`**. A request reaches MT5 only when you explicitly set `--dry-run false`. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode.
@@ -232,10 +234,50 @@ Because these depend on **live** broker state, they are only fully enforced on a
 
 ---
 
+## Account and journal (read-only)
+
+Look at the account **without** placing an order. None of these send
+`trade_place` / `trade_modify` / `trade_close`.
+
+| Question | Tool |
+|----------|------|
+| Which account is logged in? Balance, equity, margin? | `trade_account_info` |
+| What is open right now? | `trade_get_open` |
+| What is waiting as a pending order? | `trade_get_pending` |
+| What filled recently? | `trade_history` |
+| How did closed trades perform? | `trade_journal_analyze` |
+| Session + quote + exposure in one bundle | `trade_session_context` |
+
+```bash
+mtdata-cli trade_account_info --json
+mtdata-cli trade_get_open --json
+mtdata-cli trade_get_pending --json
+mtdata-cli trade_history --history-kind deals --minutes-back 10080 --json
+mtdata-cli trade_journal_analyze --minutes-back 10080 --json
+mtdata-cli trade_session_context EURUSD --json
+```
+
+`trade_history` and `trade_journal_analyze` default to the last 7 days when you
+omit a window.
+
+**History vs journal:** history is the raw deal/order tape. The journal
+summarizes *exit* deals (wins, losses, averages) for review.
+
+**Do not paste journal averages into Kelly sizing.**
+`trade_journal_analyze` reports profit and loss in account currency per exit.
+[Kelly](GLOSSARY.md#kelly-criterion) needs a win rate and average win/loss that
+are normalized to a consistent stake (for example R-multiples). Build those
+inputs on purpose; see [TRADING_RISK.md](TRADING_RISK.md).
+
+**Dense terms:** [Balance / equity / free margin](GLOSSARY.md#balance-equity-and-free-margin) · [Margin](GLOSSARY.md#margin-and-leverage) · [Magic number](GLOSSARY.md#magic-number)
+
+---
+
 ## See Also
 
 - [CLI.md § Trading](CLI.md#trading) — Command list and execution controls
 - [ENV_VARS.md § Trade Guardrails](ENV_VARS.md#trade-guardrails) — Full guardrail variable reference
 - [TRADING_RISK.md](TRADING_RISK.md) — Position sizing, VaR/CVaR, and stress tests
 - [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — An end-to-end analysis-to-execution workflow
+- [Account terms](GLOSSARY.md#balance-equity-and-free-margin)
 - [OUTPUT.md](OUTPUT.md) — Response envelope and error codes

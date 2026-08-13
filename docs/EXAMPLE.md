@@ -1,5 +1,7 @@
 # End-to-end research loop
 
+**Audience:** User
+
 A compact **command recipe** for the full mtdata research loop: discover methods → fetch data → add context → forecast → size risk → validate. Prefer this when you already know the CLI; if you want narrative “why each step,” start with [SAMPLE-TRADE.md](SAMPLE-TRADE.md).
 
 **Related:** [Setup](SETUP.md) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Forecasting](FORECAST.md)

@@ -1,10 +1,14 @@
 # Running mtdata as a local service
 
-Keep the MCP server or Web API running in the background on Windows so agents and apps can reach mtdata without a terminal open. For one-off foreground runs, use [SETUP.md](SETUP.md#running-mtdata) instead.
+**Audience:** Operator
+
+Keep the assistant plug or the website running in the background on Windows so
+you do not have to start it by hand every time. For a one-off foreground run,
+use [SETUP.md](SETUP.md#running-mtdata). User tours: [MCP.md](MCP.md) · [WEBUI.md](WEBUI.md).
 
 **Related:** [Setup (run modes)](SETUP.md#running-mtdata) · [Env vars](ENV_VARS.md#mcp-server) · [Web API](WEB_API.md) · [Trading safety](TRADING_SAFETY.md)
 
-> **Safety:** An MCP service exposes the full CLI tool surface, including `trade_*` on the MT5 account that is logged in. The focused Web API currently has no trading routes, but it still exposes account-connected market workflows. Bind either service to loopback, require an auth token, and prefer a demo account until you trust the setup. See [Security hardening](#security-hardening).
+> **Safety:** An MCP service exposes the full CLI tool surface, including `trade_*` on the MT5 account that is logged in. The Web API’s dedicated chart routes stay research-oriented, but `POST /api/v1/tools/{name}/invoke` can run the same catalog — including `trade_place`, `trade_modify`, and `trade_close` — when the client sends `confirm=true`. Those tools still default to dry-run preview. Bind either service to loopback, require an auth token, prefer a demo account, and read [TRADING_SAFETY.md](TRADING_SAFETY.md). See [Security hardening](#security-hardening).
 
 ---
 

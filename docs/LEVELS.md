@@ -1,5 +1,7 @@
 # Price levels
 
+**Audience:** User
+
 Find **prices the market may care about** — formula pivots, retested support/resistance, multi-method confluence, and volume-profile value areas. All of these tools are **read-only** and exploratory: they map structure, they do not issue trade signals.
 
 **Dense terms:** [Pivot points](GLOSSARY.md#pivot-points) · [Support and resistance](GLOSSARY.md#support-and-resistance) · [Confluence](GLOSSARY.md#confluence) · [Volume profile (POC/VAH/VAL)](GLOSSARY.md#volume-profile-poc-vah-val)

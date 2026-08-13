@@ -1,5 +1,7 @@
 # `forecast_generate` reference
 
+**Audience:** Operator
+
 Deep dive into the main price-path command: next **N bars**, many methods, optional indicators/denoise, and quantity modes. Start with [FORECAST.md](../FORECAST.md) for the big picture; use this page for flags and pipeline detail.
 
 **Related:** [Forecasting](../FORECAST.md) · [Methods](METHODS.md) · [Indicators](../TECHNICAL_INDICATORS.md) · [Denoising](../DENOISING.md) · [Barriers](../BARRIER_FUNCTIONS.md)

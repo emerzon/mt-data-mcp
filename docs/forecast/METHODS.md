@@ -1,5 +1,7 @@
 # Forecast methods reference
 
+**Audience:** Operator
+
 Catalog of `--method` keys for `forecast_generate` (and related tune/backtest tools): categories, libraries, default `--params`, and dependencies.
 
 Plain-language method families: [Theta](../GLOSSARY.md#theta-method) · [ARIMA](../GLOSSARY.md#arima-autoregressive-integrated-moving-average) · [ETS](../GLOSSARY.md#ets-error-trend-seasonality) · [Monte Carlo / GBM](../GLOSSARY.md#monte-carlo-simulation) · [Foundation models](../GLOSSARY.md#chronos--foundation-models) · [Ensemble](../GLOSSARY.md#ensemble-forecast).

@@ -1,6 +1,9 @@
 # Web UI ↔ Web API coverage matrix
 
-**Source of truth for route parity** with the chart workspace (`webui/`).  
+**Audience:** Contributor
+
+**Source of truth for route parity** with the chart workspace (`webui/`).
+User tour: [WEBUI.md](WEBUI.md).  
 Routes are those mounted under `/api` and `/api/v1` in `src/mtdata/core/web_api.py`.  
 Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 

@@ -1,8 +1,8 @@
 # Web UI Development Goal
 
 **Status:** Active goal  
-**Audience:** Contributors working on `webui/` and the supporting Web API surface  
-**Related:** [WEB_API.md](WEB_API.md) · [SETUP.md](SETUP.md) · `webui/AGENTS.md`
+**Audience:** Contributor  
+**Related:** [WEBUI.md](WEBUI.md) (User tour) · [WEB_API.md](WEB_API.md) · [SETUP.md](SETUP.md) · [STYLE.md](STYLE.md) · `webui/AGENTS.md`
 
 ---
 
@@ -53,13 +53,22 @@ Living matrix: **[WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md)** (route × used
 | `GET /models` | Used — `ModelsBrowser` in forecast advanced options |
 | `POST /forecast/price`, `/forecast/volatility`, `/backtest` | Used |
 
-### Explicit non-parity (by design today)
+### Explicit non-parity (historical note, then current boundary)
 
-Full MCP/CLI includes trading execution, regime detection, patterns, reports, indicators catalogue, Finviz, options, news, causal tools, wait-events, etc. Those are **out of Web API** today. The goal is not “91 tools in the browser on day one.” It is:
+**Then (dedicated chart routes only):** trading, regimes, patterns, reports, Finviz, options, news, causal tools, and wait-events lived only on CLI/MCP.
+
+**Now:** `GET/POST /api/v1/tools*` plus the SPA **Tools** runner expose almost the full catalog. Dedicated chart widgets remain the comfortable path for candles, levels, denoise, forecast, volatility, and backtest. Two deliberate omissions:
+
+- `forecast_tune_optuna` / `forecast_tune_genetic` — no HTTP progress or cancel contract (run via CLI/MCP).
+- Long `wait_event` blocks — the browser is the wrong place; see [WAIT_EVENT.md](WAIT_EVENT.md).
+
+Live `trade_*` mutations from the SPA still require an explicit confirm gate, dry-run defaults, and the [trading safety](TRADING_SAFETY.md) rules. That is the safety design; it is not “trading is out of the Web API.”
+
+The goal is not “rebuild every tool as a custom widget on day one.” It is:
 
 1. **Parity with every Web API route and its useful parameters**
 2. **Deliberate Web API + UI expansion** for the highest-value research features
-3. **Never** expose unsafe live trading from the SPA without a separate, explicit safety design
+3. **Never** expose unsafe live trading from the SPA without confirmations, dry-run defaults, and env guardrails — aligned with [TRADING_SAFETY.md](TRADING_SAFETY.md)
 
 ---
 

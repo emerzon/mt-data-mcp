@@ -1,11 +1,15 @@
 # Response and output contract
 
+**Audience:** Operator
+
+**Plain English:** every tool answers with a small wrapper that says whether it
+worked (`success`) plus the payload. This page is the contract for that wrapper
+— useful when you write a script or an agent. Day-to-day CLI use only needs
+`--json` and the [CLI guide](CLI.md).
+
 CLI and [MCP](GLOSSARY.md#mcp-model-context-protocol) expose the canonical tool
-payloads described here. The Web API preserves the same domain semantics for
-the endpoints it exposes, but is a focused, UI-oriented subset and may return
-a more compact representation; see [WEB_API.md](WEB_API.md). This page is the
-reference for the canonical model — success/error envelope, `detail`,
-`output_fields`, and pagination.
+payloads described here. Dedicated Web API chart routes may be more compact;
+the Tools invoke path uses the same domain semantics. See [WEB_API.md](WEB_API.md).
 
 Presentation flags and exit codes: [CLI.md](CLI.md#output-contract).
 

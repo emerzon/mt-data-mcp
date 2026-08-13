@@ -1,13 +1,16 @@
 # Sample trade workflow
 
+**Audience:** User
+
 A friendly, step-by-step research walkthrough for **short-term EURUSD analysis** using mtdata. Each step shows **which tool**, **why those inputs**, and **how to read the output** — no quant background required.
 
 This is a **research example**, not financial advice. Numbers below are illustrative of one historical session; re-run the commands on live data for current levels.
 
-**Terms used:** [EMA / RSI / MACD](GLOSSARY.md#moving-average) · [Pivot points](GLOSSARY.md#pivot-points) · [EWMA vol](GLOSSARY.md#ewma-exponentially-weighted-moving-average) · [Theta](GLOSSARY.md#theta-method) · [Edge](GLOSSARY.md#edge) · [Monte Carlo barriers](GLOSSARY.md#monte-carlo-simulation) — full [glossary quick find](GLOSSARY.md#quick-find).
+**Terms used:** [EMA / RSI / MACD](GLOSSARY.md#moving-average) · [Pivot points](GLOSSARY.md#pivot-points) · [EWMA vol](GLOSSARY.md#ewma-exponentially-weighted-moving-average) · [Theta](GLOSSARY.md#theta-method) · [Barrier](GLOSSARY.md#barrier) — full [glossary quick find](GLOSSARY.md#quick-find).
 
-**Related:** [Glossary](GLOSSARY.md) · [CLI](CLI.md) · [Advanced playbook](SAMPLE-TRADE-ADVANCED.md)
+**Related:** [Glossary](GLOSSARY.md) · [CLI](CLI.md) · [Same flow in the Web UI](SAMPLE-TRADE-WEBUI.md) · [Advanced playbook](SAMPLE-TRADE-ADVANCED.md)
 
+Prefer clicking to typing? Use [SAMPLE-TRADE-WEBUI.md](SAMPLE-TRADE-WEBUI.md).
 When you are comfortable with this flow, continue to [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) for regimes, HAR-RV, conformal intervals, Monte Carlo barriers, and tighter risk gates.
 
 ---
@@ -59,12 +62,22 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-## 6. Find the statistically‑optimal TP/SL (Take‑Profit / Stop‑Loss) levels
+## 6. Odds for one take-profit / stop-loss pair
+
+A **take-profit** is the price where you would bank a win. A **stop-loss** is
+the price where you would cut a loss. This step does **not** search a huge
+grid. It asks a simpler question: *if I pick one pair of levels, how often
+would a random-looking path hit the win first, the loss first, or neither?*
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
-| **`forecast_barrier_optimize`** | `symbol=EURUSD`, `timeframe=H1`, `horizon=12`, `method=hmm_mc`, `mode=pct`, `grid_style=volatility`, `params={refine:true,tp_min:0.25,tp_max:1.5,tp_steps:7,sl_min:0.25,sl_max:2.5,sl_steps:9}`, `objective=edge` | <ul><li>**Monte-Carlo barrier analysis** simulates many possible price paths (here using a **Gaussian HMM** - a regime-switching model that captures changing volatility).</li><li>The volatility-scaled grid spans compact scalps (~0.25%) through swing targets (~1.5%) and lets stops widen automatically (up to ~2.5 multiples), so both defensive and aggressive reward/risk profiles are explored without hand-tuning.</li><li>With `refine=true` the optimizer performs a second, tighter sweep around the initial best combo.</li><li>The **objective "edge"** = *P(TP first) - P(SL first)*, i.e., the net probability of a winning trade.</li></ul> |
-| **Result** | JSON with a 7x9 grid (63 combos). Each candidate includes TP/SL hit probabilities, resolve probability, edge, Kelly, EV (plus conditional and per-bar variants), and median time-to-hit stats. | **Interpretation** <br>- Use `objective=edge` for setups where TP-first odds are the priority; switch to `kelly`, `ev`, `ev_cond`, or `ev_per_bar` when payoff asymmetry or time-to-resolution matters more. <br>- Wider stops now show up in the default grid, so you can choose conservative ratios without redefining the search space. |
+| **`forecast_barrier_prob`** | `symbol=EURUSD`, `timeframe=H1`, `horizon=12`, `direction=long`, `barrier={kind:tp_sl, unit:pct, take_profit:0.40, stop_loss:0.60}` | <ul><li>One modest pair: target about 0.40% up, stop about 0.60% down, over the next 12 hours.</li><li>The tool simulates many paths and reports three probabilities: hit TP first, hit SL first, hit neither.</li><li>Leave method at the default unless you already know you want a different simulator.</li></ul> |
+| **Result** | JSON with `prob_tp_first`, `prob_sl_first`, and `prob_no_hit`. | **Interpretation** <br>- High `prob_no_hit` means the levels may be too far (or the horizon too short) for this window. <br>- This is a sketch of *path odds*, not a promise. Searching a full TP/SL grid (HMM paths, refine, Kelly / EV objectives) is in [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md). |
+
+```bash
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --direction long --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.40,"stop_loss":0.60}' --json
+```
 
 ---
 
@@ -73,10 +86,10 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 | Step | How the previous outputs shaped the idea |
 |------|------------------------------------------|
 | **Current market picture** (Step 1 & 3) | Price is above the 20‑EMA, below R1, and near the daily pivot → likely to **pull back** to the pivot before trying to break R1. |
-| **Volatility check** (Step 4) | 12‑hour σ ≈ 20 pips → a 0.20 % TP (≈ 23 pips) is roughly **one‑sigma** away, a realistic target; a 1 % SL (≈ 118 pips) is far beyond normal moves, making the stop unlikely to be hit. |
+| **Volatility check** (Step 4) | 12‑hour σ ≈ 20 pips → a 0.40 % target is in the same neighborhood as a couple of typical hours of movement; a 0.60 % stop is wider than one typical hour but not “across the weekly range.” Re-check these distances if today’s volatility print is very different. |
 | **Forecast** (Step 5) | The Theta forecast expects the price to settle around **1.1753**, i.e., near the pivot, confirming a short‑term pull‑back. |
-| **Barrier optimisation** (Step 6) | Quantifies the **edge** of each TP/SL pair, giving us the **statistically‑best** setups (0.20 %/1 % and 0.40 %/0.80 %). |
-| **Resulting trade plan** | • **Primary long**: Enter near the pivot (≈ 1.1750), TP = 0.20 % (≈ 1.1785), SL = 1.00 % (≈ 1.1658). <br>• **Secondary long** (more balanced): TP = 0.40 % (≈ 1.1795), SL = 0.80 % (≈ 1.1680). <br>• **Short‑term counter‑trend**: If price cleanly closes above R1, consider a short with TP back to the pivot and a modest SL. |
+| **Barrier odds** (Step 6) | One 0.40% / 0.60% pair shows how often a simulated path would hit the target first, the stop first, or neither. Use that to *sanity-check* distance, not to crown a “best” grid. |
+| **Resulting research plan** | • **Primary long idea**: watch a pull-back toward the pivot (≈ 1.1750), with a nearby target under R1 and a stop beyond S1 — then **re-run** `forecast_barrier_prob` on *your* distances. <br>• **If price closes above R1**: the “test-and-break” picture is stale; do not keep the old pair. <br>• Full grid search, Kelly, and EV ranking stay in the [advanced playbook](SAMPLE-TRADE-ADVANCED.md). |
 
 ---
 
@@ -86,8 +99,8 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 2. **Daily high/low/close → pivot levels** so you know nearby support and resistance.
 3. **Volatility** (how far price usually travels over the next half-day).
 4. **A forecast** for the next 12 hours (here: a modest pull-back toward the pivot).
-5. **Barrier simulation** to score many TP/SL pairs and highlight statistical edge.
-6. **Combine** structure, vol, forecast, and barriers into concrete setups with entry, target, and stop.
+5. **Barrier odds** for *one* take-profit / stop-loss pair (hit target, hit stop, or neither).
+6. **Combine** structure, vol, forecast, and those odds into a hypothesis you can stress-test further.
 
 That is the full path from raw candles to research ideas you can stress-test further. It is **not** a guaranteed trade.
 
@@ -95,6 +108,7 @@ That is the full path from raw candles to research ideas you can stress-test fur
 
 ## Next steps
 
+- [SAMPLE-TRADE-WEBUI.md](SAMPLE-TRADE-WEBUI.md) — Same questions in the chart workspace
 - [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Regimes, conformal intervals, HAR-RV, tighter gates
 - [FORECAST.md](FORECAST.md) — Methods and research stages
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier deep dive

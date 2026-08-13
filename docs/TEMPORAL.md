@@ -1,5 +1,7 @@
 # Temporal analysis
 
+**Audience:** User
+
 Does this market behave differently on **Monday vs Friday**, at the **London open**, or in **certain months**? `temporal_analyze` groups returns, volatility, and volume by calendar bucket so you can spot session effects and seasonality before you lock a strategy.
 
 **Related:** [CLI](CLI.md) · [Glossary](GLOSSARY.md) · [Volatility](forecast/VOLATILITY.md) · [Diagnostics](TIME_SERIES_DIAGNOSTICS.md)

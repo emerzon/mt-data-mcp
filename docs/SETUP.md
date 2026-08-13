@@ -1,10 +1,20 @@
 # Setup & Configuration
 
-Get mtdata installed, talking to MetaTrader 5, and through a **safe first workflow** — all before you enable any trading.
+**Audience:** User
 
-You do not need every optional dependency on day one. Start lean, confirm candles work, then add forecasting or web extras as you need them.
+Get mtdata installed, talking to MetaTrader 5, and through a **safe first
+workflow** — all before you enable any trading.
 
-**Related:** [README](../README.md) · [Dependency migration](DEPENDENCY_MIGRATION.md) · [Env vars](ENV_VARS.md) · [CLI](CLI.md) · [Troubleshooting](TROUBLESHOOTING.md)
+You do not need every optional package on day one. Install the lean core,
+confirm candles work, then add extras.
+
+**First hour:** the requirements table, recommended first run, lean/full
+install, MetaTrader 5 login, a tiny `.env`, and [Verifying Installation](#verifying-installation).
+
+**Later on this page:** optional extras, compiler notes, broker-clock
+timezones, website and assistant entry points.
+
+**Related:** [README](../README.md) · [Web UI](WEBUI.md) · [AI assistant](MCP.md) · [CLI](CLI.md) · [Env vars](ENV_VARS.md) (Operator) · [Troubleshooting](TROUBLESHOOTING.md)
 
 ---
 
@@ -72,6 +82,10 @@ pip install -r requirements.txt
 
 This path intentionally stays on package-index releases. TimesFM 2.0.2 is now included from PyPI; Git/manual add-ons such as `stock-pattern` and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
 NeuralForecast-based models are also kept out of this default path: on Windows Python 3.14, `neuralforecast` cannot resolve because its required `ray` dependency does not publish Windows wheels for 3.14 (Ray has cp314 wheels for Linux/macOS only). Treat `nhits`, `tft`, `patchtst`, and `nbeatsx` as manual/nonstandard setup.
+
+## Deeper detail: optional extras
+
+Skip this block until candles and a simple Theta forecast already work.
 
 ### 4. Optional Dependencies
 
@@ -215,7 +229,9 @@ If you don't see symbols (or you get a connection error):
 
 > **Full reference:** [ENV_VARS.md](ENV_VARS.md) documents the full environment-variable surface (MCP server, Web API, news embeddings, Finviz, GPU, market depth, CLI debug, and more) with a starter `.env` template.
 
-Create a `.env` file in the project root for configuration:
+Create a `.env` file in the project root for configuration. For the first
+session, `CLIENT_TZ=UTC` is enough so timestamps look the same every time.
+Credentials are only required for unattended login.
 
 ```ini
 # MT5 Credentials (optional - for unattended login)
@@ -238,7 +254,11 @@ MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY=1.5
 
 For the full guardrail surface, including blocklists, wallet-risk limits, and pending-order modification behavior, see [ENV_VARS.md](ENV_VARS.md#trade-guardrails).
 
-### Timezone Configuration
+### Deeper detail: timezone configuration
+
+Day-one rule: set `CLIENT_TZ=UTC`. Broker-clock and daylight-saving details
+are in [TIMESTAMPS.md](TIMESTAMPS.md). The notes below are for operators who
+must align session boundaries with a specific broker.
 
 MT5 documents UTC request datetimes and returned epochs. Most terminals follow
 that contract; mtdata also detects terminals that expose broker server-clock
@@ -271,7 +291,8 @@ epochs; inspect `timestamp_mode` in metadata when diagnosing a clock offset.
 
 ## Running mtdata
 
-Same toolkit, three surfaces — pick what fits the job.
+Same toolkit, three surfaces — pick what fits the job. User tours:
+[Web UI](WEBUI.md) · [AI assistant](MCP.md) · [CLI](CLI.md).
 
 ### CLI
 
@@ -486,10 +507,10 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
 Once candles list and a simple forecast run:
 
-1. [CLI.md](CLI.md) — Commands, help, and output formats
+1. [WEBUI.md](WEBUI.md) or [CLI.md](CLI.md) or [MCP.md](MCP.md) — pick a surface
 2. [GLOSSARY.md](GLOSSARY.md) — Terms used across the docs
-3. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided research workflow
-4. [EXAMPLE.md](EXAMPLE.md) — Compact end-to-end research loop
+3. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) / [SAMPLE-TRADE-WEBUI.md](SAMPLE-TRADE-WEBUI.md)
+4. [MARKET.md](MARKET.md) · [NEWS.md](NEWS.md)
 5. [LIMITATIONS.md](LIMITATIONS.md) — Caveats before deep integrations
 
 Also useful later: [FINVIZ.md](FINVIZ.md) · [TEMPORAL.md](TEMPORAL.md) · [FORECAST.md](FORECAST.md)

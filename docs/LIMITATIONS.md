@@ -1,8 +1,10 @@
 # Known limitations
 
+**Audience:** User / Operator
+
 Practical caveats that are easy to miss when you are new. Read this before deep integrations so you pick the right path and avoid surprises.
 
-**Related:** [Setup](SETUP.md) · [Forecast methods](forecast/METHODS.md) · [Timestamps](TIMESTAMPS.md) · [Trading safety](TRADING_SAFETY.md)
+**Related:** [Setup](SETUP.md) · [Web UI](WEBUI.md) · [Forecast methods](forecast/METHODS.md) · [Timestamps](TIMESTAMPS.md) · [Trading safety](TRADING_SAFETY.md)
 
 ## Operational limits
 
@@ -10,7 +12,7 @@ Practical caveats that are easy to miss when you are new. Read this before deep 
 |------|--------------|----------------------|
 | MT5 platform | The MetaTrader 5 Python package is Windows-only. | Run mtdata on Windows, or connect to a Windows host from another machine. |
 | Live trading | `trade_*` commands operate on the MT5 account currently logged into the terminal. | Use a demo account first and preview supported actions with `--dry-run true`. |
-| Web API coverage | The Web API exposes a focused subset of the CLI/MCP tools. | Use `mtdata-cli` or MCP for tools not listed in [WEB_API.md](WEB_API.md). |
+| Web API coverage | Dedicated chart routes (`/history`, `/forecast/price`, …) are a focused research subset. The Tools invoke path (`POST /api/v1/tools/{name}/invoke`) can run almost the full CLI/MCP catalog, including preview-default `trade_*` when `confirm=true`. Long-running tune tools stay omitted. | Use the [Web UI guide](WEBUI.md) for the chart; [WEB_API.md](WEB_API.md) for routes; CLI or MCP for `wait_event` and Optuna/genetic tuning. |
 | Market depth | `market_depth_fetch` is disabled unless explicitly enabled and requires broker DOM data. | Set `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` only when your broker supports it. |
 | Options chains | Yahoo Finance options endpoints may reject unauthenticated requests. mtdata can retry Yahoo when Tradier is unavailable, but the fallback is still best-effort only. | Prefer Tradier via `MTDATA_OPTIONS_PROVIDER=tradier` and `MTDATA_OPTIONS_API_KEY`, then use `options_provider_status` to confirm the effective provider. Use `options_barrier_price` for local QuantLib pricing when live chains are unavailable. |
 | Forecast methods | Method availability depends on installed optional dependencies. Defaults can differ by method. | Check `forecast_list_methods --json`; unavailable methods remain visible with their missing requirements. See [forecast/METHODS.md](forecast/METHODS.md), and set important `--params` explicitly. |

@@ -1,6 +1,10 @@
 # Environment variables
 
-Full reference for settings mtdata reads from the environment or a project-root `.env` file. Start with MT5 login + timezone; add MCP/Web API, guardrails, and provider keys only when you need them.
+**Audience:** Operator
+
+**Plain English:** a `.env` file in the project root is a list of settings
+(login, timezone, optional safety caps). You do not need most of them on day
+one — [SETUP.md](SETUP.md) shows the short starter. This page is the full list.
 
 **Related:** [Setup](SETUP.md) · [Web API](WEB_API.md) · [Timestamps](TIMESTAMPS.md) · [Trading safety](TRADING_SAFETY.md) · [Troubleshooting](TROUBLESHOOTING.md)
 

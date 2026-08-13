@@ -2,7 +2,7 @@
 
 **Turn MetaTrader 5 into a research lab you can script, query from AI agents, or browse in a local web UI.**
 
-mtdata is a Windows-first toolkit that sits on top of a running MT5 terminal. It gives you **90+ tools** for market data, forecasting, regime detection, patterns, risk, and trading through the CLI and MCP, plus a focused FastAPI Web API for selected workflows.
+mtdata is a Windows-first toolkit that sits on top of a running MT5 terminal. It gives you **90+ tools** for market data, forecasting, regime detection, patterns, risk, and trading through the command line and an optional AI-assistant plug ([MCP](docs/MCP.md)), plus a local website and HTTP API.
 
 It is a **toolkit for exploration and automation**, not a trading strategy or financial advice.
 
@@ -109,7 +109,13 @@ All three are first-class delivery surfaces. Pick CLI, MCP, or Web UI for the sa
 
 ## Quick start
 
-**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo recommended). Install Visual Studio Build Tools 2022 with **Desktop development with C++** because Python 3.14 currently source-builds `hmmlearn`; the full stack also source-builds `hnswlib`.
+**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running
+(**demo account recommended**). That is enough for the first candle fetch.
+
+> Optional compiler note (you can skip this on day one): the full research
+> stack may need Visual Studio Build Tools 2022 with **Desktop development
+> with C++** because some packages source-build on Python 3.14. Details live
+> in [Setup](docs/SETUP.md).
 
 ```bash
 # Optional: isolate the environment
@@ -119,21 +125,18 @@ conda activate mtdata
 # Lean core (data, indicators, core analysis)
 pip install -e .
 
-# Or full validated research + web stack
-pip install -r requirements.txt
-
-# Confirm MT5 sees your terminal
+# Confirm MetaTrader 5 sees your terminal (read-only)
 mtdata-cli symbols_list --limit 5
 
-# Rank markets from the current watchlist
-mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1
-
-# Pull candles
+# Pull candles (one bar per hour, last 50 hours)
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
 
-# Baseline forecast
+# A simple baseline forecast — an estimate, not a guarantee
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
+
+Prefer a website? Jump to [Web UI](#web-ui-chart-workspace). Prefer an assistant?
+See [MCP.md](docs/MCP.md).
 
 ### Web UI (chart workspace)
 
@@ -151,7 +154,7 @@ mtdata-webapi
 # → open http://127.0.0.1:8000/app/
 ```
 
-If `webui/dist` is missing, the API still starts and `/app` returns a clear enablement page (build steps above). Live UI development: `cd webui && npm run dev` (proxies `/api` to `:8000`). Details: [Web API](docs/WEB_API.md) · [Setup](docs/SETUP.md).
+If `webui/dist` is missing, the API still starts and `/app` returns a clear enablement page (build steps above). Live UI development: `cd webui && npm run dev` (proxies `/api` to `:8000`). User tour: [Web UI](docs/WEBUI.md). HTTP reference: [Web API](docs/WEB_API.md) · [Setup](docs/SETUP.md).
 
 Keep the first session **read-only** unless you are on a demo account and intentionally testing trading.
 
@@ -172,17 +175,19 @@ Dependency caveats (NeuralForecast optional installs, Python 3.14 exclusions, op
 ## Documentation
 
 **Suggested path:**
-[Setup](docs/SETUP.md) → [Glossary](docs/GLOSSARY.md) → [CLI](docs/CLI.md) → [Sample trade](docs/SAMPLE-TRADE.md) → deeper topics as needed.
+[Setup](docs/SETUP.md) → [Glossary](docs/GLOSSARY.md) → pick a surface
+([Web UI](docs/WEBUI.md) · [CLI](docs/CLI.md) · [AI assistant](docs/MCP.md)) →
+[Sample trade](docs/SAMPLE-TRADE.md) or [the same flow in the UI](docs/SAMPLE-TRADE-WEBUI.md).
 
 | Start here | Then explore |
 |------------|--------------|
-| [Setup & configuration](docs/SETUP.md) | [Troubleshooting](docs/TROUBLESHOOTING.md), [Env vars](docs/ENV_VARS.md) |
-| [CLI guide](docs/CLI.md) · [Glossary (BOCPD, Kelly, …)](docs/GLOSSARY.md#quick-find) | [Output contract](docs/OUTPUT.md), [Timestamps](docs/TIMESTAMPS.md) |
-| [Sample trade](docs/SAMPLE-TRADE.md) | [Advanced playbook](docs/SAMPLE-TRADE-ADVANCED.md), [End-to-end example](docs/EXAMPLE.md) |
+| [Setup](docs/SETUP.md) | [Troubleshooting](docs/TROUBLESHOOTING.md), [Env vars](docs/ENV_VARS.md) |
+| [Web UI](docs/WEBUI.md) · [AI assistant (MCP)](docs/MCP.md) · [CLI](docs/CLI.md) | [Glossary](docs/GLOSSARY.md#quick-find), [Market discovery](docs/MARKET.md), [News](docs/NEWS.md) |
+| [Sample trade](docs/SAMPLE-TRADE.md) · [Sample trade (UI)](docs/SAMPLE-TRADE-WEBUI.md) | [Advanced playbook](docs/SAMPLE-TRADE-ADVANCED.md), [Example loop](docs/EXAMPLE.md) |
 | [Forecasting](docs/FORECAST.md) | [Methods](docs/forecast/METHODS.md), [Backtesting](docs/forecast/BACKTESTING.md), [Uncertainty](docs/forecast/UNCERTAINTY.md) |
 | [Regimes](docs/forecast/REGIMES.md) · [Barriers](docs/BARRIER_FUNCTIONS.md) · [Patterns](docs/forecast/PATTERN_SEARCH.md) | [Indicators](docs/TECHNICAL_INDICATORS.md), [Levels](docs/LEVELS.md), [Denoising](docs/DENOISING.md) |
-| [Trading safety](docs/TRADING_SAFETY.md) · [Risk analytics](docs/TRADING_RISK.md) | [Web API](docs/WEB_API.md), [Deployment](docs/DEPLOYMENT.md) |
-| [Docs index](docs/README.md) | Full map of every guide |
+| [Trading safety](docs/TRADING_SAFETY.md) · [Risk analytics](docs/TRADING_RISK.md) | [Wait for events](docs/WAIT_EVENT.md), [Web API](docs/WEB_API.md), [Deployment](docs/DEPLOYMENT.md) |
+| [Docs index](docs/README.md) | Full map, tagged User / Operator / Contributor |
 
 ---
 

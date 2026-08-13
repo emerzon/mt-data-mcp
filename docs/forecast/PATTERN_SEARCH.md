@@ -1,5 +1,7 @@
 # Pattern detection and similarity search
 
+**Audience:** User
+
 Two related ideas:
 
 1. **Pattern detection** — flag known candlestick and chart shapes

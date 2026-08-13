@@ -1,6 +1,8 @@
 # Technical indicators
 
-Turn raw OHLCV into **trend, momentum, volatility, and volume** context. mtdata ships **194** indicators you can attach when fetching candles or explore via the catalog tools.
+**Audience:** User
+
+Turn raw candles into **trend, momentum, volatility, and volume** context. mtdata ships **194** indicators you can attach when fetching candles or explore via the catalog tools.
 
 Indicators are decision support — combine them with structure, volatility, and risk tools rather than treating any single reading as a trade by itself.
 

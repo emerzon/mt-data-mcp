@@ -1,5 +1,12 @@
 # Timestamps and timezones
 
+**Audience:** Operator
+
+**Plain English for everyone else:** set `CLIENT_TZ=UTC` in `.env` so saved
+results look the same tomorrow. That is enough for the first week. The rest of
+this page explains how MetaTrader 5 clocks are normalized when a broker does
+not follow the usual UTC contract.
+
 MetaTrader5 documents UTC request datetimes and UTC Unix epochs. Most terminals
 follow that contract, but some broker terminals expose Unix-shaped values on
 their server-clock axis. When a broker offset is configured, mtdata verifies

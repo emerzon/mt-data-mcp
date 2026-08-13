@@ -1,5 +1,7 @@
 # Uncertainty and confidence intervals
 
+**Audience:** User
+
 A point forecast without a range invites overconfidence. This page covers **model intervals** and **conformal intervals** so you can size risk and set levels with eyes open.
 
 **Dense terms:** [Confidence interval](../GLOSSARY.md#confidence-interval) · [Conformal intervals](../GLOSSARY.md#conformal-intervals) · [CI alpha](../GLOSSARY.md#ci-alpha) · [Horizon](../GLOSSARY.md#horizon)

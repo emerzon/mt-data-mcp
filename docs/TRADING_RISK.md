@@ -1,5 +1,7 @@
 # Trading risk analytics
 
+**Audience:** User
+
 **Read-only** tools for sizing, tail risk, and stress tests. They inspect the account and open positions — they **never** place, modify, or close orders. Pair them with [TRADING_SAFETY.md](TRADING_SAFETY.md) when you move from analysis to execution.
 
 | Tool | Answers |

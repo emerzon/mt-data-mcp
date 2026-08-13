@@ -1,5 +1,7 @@
 # Granger predictive-link discovery
 
+**Audience:** User
+
 Explore **who might lead whom** across symbols with pairwise Granger-style tests on recent MT5 closes. This is **exploratory feature discovery** for watchlists — not a claim of true economic causality.
 
 | If you want… | Prefer | Concept |

@@ -1,5 +1,7 @@
 # Glossary
 
+**Audience:** User
+
 Plain-language definitions for the trading and forecasting terms you will see in mtdata docs and tool output. Each entry aims for **enough to follow the examples**, not a textbook — plus **where it shows up in mtdata**.
 
 **Tip:** Skim [Basic trading concepts](#basic-trading-concepts-start-here) if you are new. Use the [quick find](#quick-find) table when a command or doc drops an acronym (BOCPD, Kelly, ADF, …).
@@ -27,6 +29,9 @@ Jump straight to dense concepts that show up in tools and docs:
 | **POC / VAH / VAL** | Volume-by-price fair value | [Volume profile](#volume-profile-poc-vah-val) |
 | **LTTB** | Downsample a series while keeping shape | [LTTB](#lttb-largest-triangle-three-buckets) |
 | **Dry-run / guardrails** | Preview orders; cap symbols, size, and risk | [Dry-run](#dry-run) · [Guardrails](#trade-guardrails) |
+| **Margin / leverage** | Collateral vs borrowed size | [Margin](#margin-and-leverage) |
+| **Pending vs market** | Wait for a price vs trade now | [Market vs pending](#market-vs-pending-orders) |
+| **Point vs pip** | Broker tick vs FX convention | [Point vs pip](#point-vs-pip) |
 | **TOON / MCP** | Default CLI presentation; agent tool protocol | [TOON](#toon) · [MCP](#mcp-model-context-protocol) |
 | **Heston / QuantLib** | Stochastic vol & option pricing | [Heston](#heston-model) · [QuantLib](#quantlib) |
 
@@ -59,6 +64,50 @@ If you are new to trading, this section is enough to follow the walkthroughs in 
 
 ### Lot Size
 Forex position sizes are often expressed in **lots** (see: [Lot Size](#lot-size)).
+
+### Margin and leverage
+- **Margin** is collateral set aside so you can hold a position larger than your cash.
+- **Leverage** is how large that position can be relative to margin (for example 1:30).
+- Higher leverage makes both gains and losses faster. Demo first.
+
+See also: [Balance, equity, free margin](#balance-equity-and-free-margin).
+
+### Balance, equity, and free margin
+- **Balance**: cash result of *closed* trades.
+- **Equity**: balance plus the floating profit or loss on *open* trades.
+- **Free margin**: equity minus margin already in use — room for new positions.
+
+Risk tools that say “% of equity” use the equity number, not the balance.
+
+### Market vs pending orders
+- **Market** (`BUY` / `SELL`): trade as soon as possible at the current bid or ask.
+- **Pending**: wait until price reaches a level you chose.
+  - **Limit**: buy cheaper than now, or sell richer than now.
+  - **Stop**: buy if price breaks up, or sell if it breaks down.
+
+### Point vs pip
+A **point** is the broker’s smallest price increment (`symbols_describe` → `point`).
+A **pip** is a *convention* (often 10 points on 5-digit FX quotes). Deviation and
+many MT5 distances are in **points**. When a doc says “pips,” it is the human
+unit; when a flag says points, it is the broker unit.
+
+### Magic number
+An integer stamp you put on orders so you can filter “this strategy’s trades”
+later (`--magic`). It is a label, not a luck charm.
+
+### Deviation (slippage tolerance)
+On a market order, how many **points** the fill may differ from the quote you
+saw. Larger deviation → more likely to fill in a fast market; smaller → more
+likely to be rejected.
+
+### GTC vs expiration
+- **GTC** (“good till cancelled”): a pending order stays until you cancel it or
+  it fills.
+- **Expiration**: the pending order dies at a time you set.
+
+### Commission vs spread
+The **spread** is the bid/ask gap — a cost you pay on every round trip.
+A **commission** is an extra broker fee on top. Both matter for small targets.
 
 ---
 
@@ -693,6 +742,8 @@ A statistical property where mean and variance don't change over time. Many fore
 **Solution:** Often model **returns** (or other transforms) instead of raw price.
 
 ### Stationarity tests (ADF, KPSS, Phillips–Perron)
+**Plain idea:** three homework-style tests that ask “is this series stable enough to model, or is it still wandering?”
+
 Three classical checks for whether a series looks stationary enough to model:
 
 | Test | Null hypothesis (plain English) | Rule of thumb |
@@ -923,6 +974,18 @@ A standard way for AI assistants (and other clients) to call tools on a server. 
 ### TOON
 mtdata’s default **human-readable compact** CLI presentation (tabular-ish text with a schema hint). Use `--json` for scripts and agents.
 
+### NDJSON
+**Newline-delimited JSON** — one JSON object per line. The `mtdata-cli shell` batch mode prints this so a script can read each command’s result separately.
+
+### SAX / PAA
+Ways to squash a long series into a short *symbolic* or averaged sketch (used by some `--simplify` modes). They are for compact comparison, not for pricing an order. See [SIMPLIFICATION.md](SIMPLIFICATION.md).
+
+### Markout
+How price moved *after* your fill, at a few delays (1s, 5s, …). Positive markout usually means the fill aged well; it is a research metric, not a broker fee.
+
+### Implementation shortfall
+The gap between the price when you *decided* and the price you *got*. Related to [slippage](#slippage), with more timing context. See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md).
+
 **In mtdata:** [CLI.md](CLI.md) · [OUTPUT.md](OUTPUT.md).
 
 ### Microstructure
@@ -950,11 +1013,15 @@ A financial visualization platform providing fundamental data, stock screening, 
 **In mtdata:** The `finviz_*` commands fetch data from Finviz. See [FINVIZ.md](FINVIZ.md).
 
 ### QuantLib
+**Plain idea:** a calculator library for option-style prices. mtdata uses it locally; you do not need a live options feed for `options_barrier_price`.
+
 An open-source C++ library (with Python bindings) for quantitative finance, providing pricing engines for exotic options, yield curves, and calibration routines.
 
 **In mtdata:** Used for barrier option pricing (`options_barrier_price`) and Heston model calibration (`options_heston_calibrate`). See [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md).
 
 ### Heston Model
+**Plain idea:** volatility itself wanders (it is not a fixed number), which matters for option-style prices.
+
 A stochastic volatility model where the asset price and its variance follow correlated stochastic processes. Characterized by five parameters: v0 (initial variance), kappa (mean reversion speed), theta (long-run variance), sigma (vol of vol), and rho (correlation).
 
 **When to use:** Pricing barrier options and exotic derivatives where constant-volatility (Black-Scholes) assumptions are inadequate.

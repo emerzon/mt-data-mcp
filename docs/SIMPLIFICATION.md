@@ -1,6 +1,8 @@
 # Data simplification (downsampling)
 
-Return **fewer points** from candles or ticks so charts, dashboards, and exports stay manageable. Enable via the `simplify` option on tools like `data_fetch_candles` and tick paths in `data_fetch_ticks`.
+**Audience:** User
+
+Return **fewer points** so a chart or export stays light. This drops rows (or sketches the shape). It does **not** change your broker history, and it is the wrong input for a serious backtest — use full-resolution candles there.
 
 | Approach | What it changes |
 |----------|-----------------|
@@ -128,8 +130,9 @@ mtdata-cli data_fetch_candles EURUSD --limit 5000 --simplify apca \
 
 `mode=encode` with `schema=delta` derives its scale from the median non-zero
 change unless `scale` is supplied explicitly, and reports the resolved scale in
-metadata. `mode=symbolic` implements SAX with PAA, optional z-normalization, and
-fixed standard-normal breakpoints, so encodings are comparable across series.
+metadata. `mode=symbolic` implements [SAX / PAA](GLOSSARY.md#sax--paa) with
+optional z-normalization and fixed standard-normal breakpoints, so encodings
+are comparable across series.
 
 ---
 

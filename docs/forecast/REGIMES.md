@@ -1,10 +1,14 @@
 # Regime detection
 
-Markets switch **behavior modes** — trending, ranging, high-vol stress. Strategies that work in one regime often fail in another. `regime_detect` labels the current state so you can **filter** or **resize** before forecasting or trading.
+**Audience:** User
+
+Markets switch **behavior modes** — trending, ranging, or stressed. A tactic that works in one mode often fails in another. `regime_detect` tries to label the current mode so you can **wait**, **shrink size**, or **pick a different tool** — not so it can place an order for you.
+
+The method names below look dense. Each one has a one-line “plain idea” in the [glossary](../GLOSSARY.md#regime). Start with `hmm` (two quiet/loud states) or `bocpd` (“did something just change?”).
 
 **Dense terms (friendly defs):** [Regime](../GLOSSARY.md#regime) · [HMM](../GLOSSARY.md#hidden-markov-model-hmm) · [BOCPD](../GLOSSARY.md#change-point-detection-bocpd) · [PELT](../GLOSSARY.md#pelt-change-point-detection) · [MS-AR](../GLOSSARY.md#markov-switching-ar-ms-ar) · [GMM](../GLOSSARY.md#gaussian-mixture-gmm) · [Filtered vs smoothed](../GLOSSARY.md#filtered-vs-smoothed-inference)
 
-**Related:** [Glossary](../GLOSSARY.md) · [Forecasting](../FORECAST.md) · [Advanced playbook](../SAMPLE-TRADE-ADVANCED.md)
+**Related:** [Glossary](../GLOSSARY.md) · [Forecasting](../FORECAST.md) · [Advanced playbook](../SAMPLE-TRADE-ADVANCED.md) · [Sample trade](../SAMPLE-TRADE.md)
 
 ---
 

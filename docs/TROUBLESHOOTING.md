@@ -1,8 +1,10 @@
 # Troubleshooting
 
-Something broken? Start with a **small read-only snapshot** — it usually tells you whether the problem is install, MT5 connection, symbol visibility, or history. Then jump to the matching section below.
+**Audience:** User
 
-**Related:** [Setup](SETUP.md) · [CLI](CLI.md) · [Limitations](LIMITATIONS.md) · [Timestamps](TIMESTAMPS.md)
+Something broken? Start with a **small read-only snapshot** — it usually tells you whether the problem is install, MetaTrader 5 connection, symbol visibility, or history. Then jump to the matching section below.
+
+**Related:** [Setup](SETUP.md) · [Web UI](WEBUI.md) · [CLI](CLI.md) · [Limitations](LIMITATIONS.md) · [Timestamps](TIMESTAMPS.md) (Operator)
 
 ---
 
@@ -32,6 +34,22 @@ Keep the first troubleshooting pass read-only. Do not use `trade_place`, `trade_
 
 ---
 
+## Web UI
+
+User tour: [WEBUI.md](WEBUI.md).
+
+| What you see | What to try |
+|--------------|-------------|
+| Enablement page / “build the UI” instead of a chart | In `webui/`: `npm install && npm run build`, then restart `mtdata-webapi`. |
+| Chart opens but stays empty | Pick a symbol that exists in MetaTrader 5 Market Watch, then reload. |
+| Connection chip is not ready | MetaTrader 5 must be running and logged in. Check `http://127.0.0.1:8000/api/v1/ready`. |
+| Overlay or forecast banner error | The rest of the chart can still work. Retry after `/ready` is healthy. |
+| Auth control / 401 | Enter the same token as `WEBAPI_AUTH_TOKEN`. It lives only in this tab. |
+| Tools run of `wait_event` hangs | Cancel and use the [CLI wait guide](WAIT_EVENT.md) instead. |
+| Tools confirm box for `trade_place` | That can send a **real** order if dry-run is off. Demo account; see [TRADING_SAFETY.md](TRADING_SAFETY.md). |
+
+---
+
 ## Connection Issues
 
 ### "Could not connect to MT5" or Empty Data
@@ -56,7 +74,8 @@ If this works but candles fail:
 - MT5 requires periodic reconnection
 - Internet stability issues
 
-**Solution:** The library auto-reconnects, but long-running scripts may need error handling:
+**Solution:** The library auto-reconnects. For a long-running **Operator** script, catch the error and retry:
+
 ```python
 try:
     result = tool_function(...)
@@ -163,7 +182,8 @@ mtdata-cli symbols_describe EURUSD --json
 mtdata-cli forecast_generate EURUSD --horizon 12 --json
 ```
 
-Pipe to `jq` for processing:
+**Operator:** pipe to `jq` if you already use it:
+
 ```bash
 mtdata-cli forecast_generate EURUSD --json | jq '.forecast'
 ```

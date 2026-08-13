@@ -1,5 +1,7 @@
 # Dependency Migration Status
 
+**Audience:** Contributor
+
 **Audited:** 2026-08-10
 **Runtime:** Windows x86-64, CPython 3.14.3, pip 26.x
 

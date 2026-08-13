@@ -1,8 +1,10 @@
 # MT5-native advanced analytics
 
-Five **read-only** tools that go beyond basic candles and scans: tick microstructure, execution quality, robust strategy evidence, portfolio tail risk, and relative strength — all from the connected MetaTrader 5 terminal (no external market-data vendor required for these).
+**Audience:** User
 
-Use them when you already have a research loop and want **execution-aware** or **portfolio-level** depth.
+Five **read-only** tools for when the basic chart is not enough: how tight the quote is, how your fills behaved, whether a rule held up out of sample, how portfolio risk splits, and which names led.
+
+You do not need a second data vendor — these read the connected MetaTrader 5 terminal. Skip this page until [SAMPLE-TRADE.md](SAMPLE-TRADE.md) feels comfortable.
 
 **Dense terms:** [Microstructure](GLOSSARY.md#microstructure) · [Execution quality](GLOSSARY.md#execution-quality) · [Relative strength](GLOSSARY.md#relative-strength) · [VaR / CVaR](GLOSSARY.md#var-value-at-risk) · [Spread](GLOSSARY.md#spread)
 

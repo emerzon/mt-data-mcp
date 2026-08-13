@@ -1,8 +1,12 @@
 # Barrier functions
 
-Answer the trader’s question: **“How likely is my take-profit to hit before my stop-loss within this horizon?”**
+**Audience:** User
 
-mtdata simulates many price paths (or uses richer models), scores TP/SL pairs, and can search a grid of levels for better [edge](GLOSSARY.md#edge), [Kelly](GLOSSARY.md#kelly-criterion), or [expected value](GLOSSARY.md#ev-expected-value) objectives. Use barriers after you have a market view and a volatility sense — not as a standalone signal.
+Answer a simple question: **“If I pick a profit target and a stop, how often would a simulated path hit the target first?”**
+
+A **barrier** is just a price line that ends the story when touched — take-profit (bank a win) or stop-loss (cut a loss). mtdata walks many imaginary paths and counts the outcomes. Use this *after* you have a market picture and a sense of typical movement — not as a standalone “buy” signal.
+
+Beginner walkthrough: [SAMPLE-TRADE.md](SAMPLE-TRADE.md) (one pair). Grid search lives in [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md).
 
 **Dense terms:** [Barrier](GLOSSARY.md#barrier) · [Monte Carlo](GLOSSARY.md#monte-carlo-simulation) · [GBM](GLOSSARY.md#gbm-geometric-brownian-motion) · [Edge](GLOSSARY.md#edge) · [Kelly](GLOSSARY.md#kelly-criterion) · [prob_tp_first](GLOSSARY.md#prob_tp_first) · [grid_style](GLOSSARY.md#grid_style)
 
@@ -38,6 +42,22 @@ undercount warning.
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility --objective edge --json
 ```
+
+---
+
+## What these numbers mean
+
+You will see three probabilities on a take-profit / stop-loss query:
+
+| Field | Plain idea |
+|-------|------------|
+| `prob_tp_first` | Share of paths that touched the **win** line first. |
+| `prob_sl_first` | Share of paths that touched the **loss** line first. |
+| `prob_no_hit` | Share of paths that hit **neither** before time ran out. |
+
+They should add up to about 1. A large `prob_no_hit` usually means the lines are far away or the horizon is short. These are simulation counts, not a broker guarantee.
+
+**Deeper detail** (methods, grids, Kelly / EV objectives) starts below.
 
 ---
 

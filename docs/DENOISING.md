@@ -1,5 +1,7 @@
 # Denoising and smoothing
 
+**Audience:** User
+
 Prices are a mix of **structure** and **noise** (microstructure bounce, spreads, short bursts). Denoising smooths series so trends and indicators are easier to read — optionally as a preprocess step for forecasts.
 
 **Trade-off:** more smoothing → clearer trend, more **lag**. Prefer light filters first.

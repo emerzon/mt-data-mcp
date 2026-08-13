@@ -1,6 +1,12 @@
 # Advanced forecast-to-trade playbook
 
-Builds on the [basic sample trade](SAMPLE-TRADE.md) with **regime filters**, **conformal intervals**, **HAR-RV volatility**, **Monte Carlo barriers**, and **disciplined risk/execution gates**. Modular by design: run each block, inspect the output, and only continue when your own thresholds (calibrated via backtests) say so.
+**Audience:** User
+
+Builds on the [basic sample trade](SAMPLE-TRADE.md) (one barrier pair via
+`forecast_barrier_prob`) with **regime filters**, **conformal intervals**,
+**HAR-RV volatility**, **Monte Carlo barrier grids**, and **disciplined
+risk/execution gates**. Modular by design: run each block, inspect the output,
+and only continue when your own thresholds (calibrated via backtests) say so.
 
 **Not financial advice.** Use a demo account for any execution steps. See [TRADING_SAFETY.md](TRADING_SAFETY.md).
 

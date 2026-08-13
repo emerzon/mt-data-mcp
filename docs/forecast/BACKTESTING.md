@@ -1,5 +1,7 @@
 # Backtesting
 
+**Audience:** User
+
 Ask “**did this method work historically on this symbol and timeframe?**” before you trust a live forecast. Covers rolling-origin evaluation, metrics, and parameter search.
 
 **Dense terms:** [MAE](../GLOSSARY.md#mae-mean-absolute-error) · [RMSE](../GLOSSARY.md#rmse-root-mean-squared-error) · [Directional accuracy](../GLOSSARY.md#directional-accuracy) · [Horizon](../GLOSSARY.md#horizon) · [Lookback](../GLOSSARY.md#lookback) · [Sharpe](../GLOSSARY.md#sharpe-ratio)

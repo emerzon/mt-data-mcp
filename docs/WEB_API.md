@@ -1,6 +1,12 @@
 # Web API
 
-Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and the **bundled chart workspace** served at `/app`. Peer delivery surface to CLI and MCP (same research stack; **smaller HTTP surface** than full CLI/MCP — if a tool is missing here, use those instead).
+**Audience:** Operator
+
+Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and the **bundled chart workspace** served at `/app`.
+
+If you want to *use* the website, start at [WEBUI.md](WEBUI.md). This page is the route reference.
+
+Dedicated chart routes (`/history`, `/forecast/price`, …) are a focused research subset. The Tools invoke path (`POST /api/v1/tools/{name}/invoke`) can run almost the full CLI/MCP catalog. Tune jobs stay CLI/MCP-only; treat `trade_*` as live-capable once confirm + `--dry-run false` are set.
 
 **Base URL:** `http://localhost:8000` (default)
 
@@ -10,7 +16,7 @@ Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and
 | New integrations | Prefer `/api/v1` |
 | Examples on this page | Use `/api` for brevity |
 
-**Related:** [Setup](SETUP.md) · [Deployment](DEPLOYMENT.md) · [Env vars](ENV_VARS.md) · [Output contract](OUTPUT.md)
+**Related:** [Web UI (User)](WEBUI.md) · [Setup](SETUP.md) · [Deployment](DEPLOYMENT.md) · [Env vars](ENV_VARS.md) · [Output contract](OUTPUT.md) · [Trading safety](TRADING_SAFETY.md)
 
 ## Quick start
 

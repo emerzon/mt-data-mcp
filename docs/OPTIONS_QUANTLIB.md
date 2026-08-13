@@ -1,6 +1,10 @@
 # Options and QuantLib
 
-Fetch **US equity options chains** and price **barrier / exotic** structures with [QuantLib](https://www.quantlib.org/). Chains default to Yahoo Finance (Tradier optional). Pure QuantLib pricing does not need a live chain provider.
+**Audience:** User
+
+Look up **US stock option chains** (lists of puts and calls) and, separately, **price a barrier-style option on your machine**.
+
+A chain is “what strikes and expiries exist.” Local pricing is a calculator: you type spot, strike, barrier, and volatility. You do not need MetaTrader 5 for the calculator. For *FX take-profit / stop-loss odds* on MetaTrader 5 paths, use [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) instead — related idea, different tool.
 
 For *MT5 path* TP/SL hit probabilities on underlyings, see [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — related idea, different stack.
 
