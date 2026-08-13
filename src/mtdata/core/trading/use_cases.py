@@ -5502,7 +5502,17 @@ def run_trade_stress_test(
     if currency:
         result["currency"] = currency
     if not positions:
-        result.update({"empty": True, "message": "No open positions found."})
+        result.update(
+            {
+                "empty": True,
+                "status": "no_open_positions",
+                "portfolio_status": "no_open_positions",
+                "actionability": "informational_no_exposure",
+                "message": (
+                    "No open positions found; stress metrics reflect zero exposure."
+                ),
+            }
+        )
     elif not rows:
         result.update(
             {
@@ -5784,6 +5794,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "success": True,
                 "message": message,
                 "empty": True,
+                "status": "no_open_positions",
+                "portfolio_status": "no_open_positions",
+                "actionability": "informational_no_exposure",
                 "summary": summary,
                 "symbol_exposures": [],
                 "positions": [],
@@ -5794,6 +5807,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "success": True,
                 "empty": True,
                 "status": "no_open_positions",
+                "portfolio_status": "no_open_positions",
+                "actionability": "informational_no_exposure",
                 "message": message,
                 "positions": 0,
                 "history_policy": history_policy,

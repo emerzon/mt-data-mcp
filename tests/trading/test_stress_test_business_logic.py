@@ -116,6 +116,10 @@ def test_trade_stress_test_flat_account_has_no_live_quote_gate():
 
     assert result["success"] is True
     assert result["empty"] is True
+    assert result["status"] == "no_open_positions"
+    assert result["portfolio_status"] == "no_open_positions"
+    assert result["actionability"] == "informational_no_exposure"
+    assert result["positions_evaluated"] == 0
     assert result["mark_freshness_status"] == "not_applicable"
     assert "usable_for_live_trading" not in result
 
