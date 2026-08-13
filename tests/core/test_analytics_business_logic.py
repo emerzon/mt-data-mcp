@@ -2155,15 +2155,17 @@ def test_relative_strength_reports_mixed_bar_endpoints_and_alignment_windows() -
     assert alignment["status"] == "incomparable"
     assert alignment["comparable"] is False
     assert alignment["lagging_symbols"] == ["GBPUSD"]
+    assert result["status"] == "incomparable"
+    assert result["rank_quality"] == "incomparable_endpoints"
+    assert result["returned_count"] == 0
+    assert result["leaders"] == []
+    assert result["laggards"] == []
+    assert result["rankings"] == []
+    assert result["breadth"]["status"] == "withheld_incomparable_endpoints"
+    assert result["data_quality"]["ranked_symbols"] == 0
+    assert result["data_quality"]["scored_symbols"] == 3
     assert result["warnings"]
-    for row in result["rankings"]:
-        assert row["data_window"]["latest_bar_close"].endswith("Z")
-        assert row["data_window"]["aligned_end"].endswith("Z")
-        assert row["data_window"]["freshness"] in {
-            "fresh",
-            "stale",
-            "closed_session_snapshot",
-        }
+    assert "no ranking was returned" in result["warnings"][0]
 
 
 def test_relative_strength_rejects_one_symbol_before_fetching_history() -> None:

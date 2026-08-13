@@ -3012,10 +3012,30 @@ def rank_relative_strength(  # noqa: C901
             }
         )
 
+    ranking_withheld = bool(ordered) and endpoint_alignment.get("comparable") is False
+    published_leaders = [] if ranking_withheld else output_leaders
+    published_laggards = [] if ranking_withheld else output_laggards
+    published_rankings = [] if ranking_withheld else selected_rankings
+    published_breadth: Dict[str, Any] = (
+        {
+            "status": "withheld_incomparable_endpoints",
+            "reason": (
+                "Cross-sectional breadth requires latest completed bars within "
+                "the endpoint-alignment tolerance."
+            ),
+        }
+        if ranking_withheld
+        else breadth
+    )
+
     analysis_as_of = format_datetime_utc(datetime.now(timezone.utc), timespec="auto")
     result = {
         "success": True,
-        "status": "ranked" if ordered else "no_matches",
+        "status": (
+            "incomparable"
+            if ranking_withheld
+            else "ranked" if ordered else "no_matches"
+        ),
         "timeframe": request.timeframe,
         "analysis_as_of": analysis_as_of,
         "data_window": {
@@ -3028,16 +3048,22 @@ def rank_relative_strength(  # noqa: C901
             "endpoint_alignment": endpoint_alignment,
         },
         "universe_size": len(ordered),
-        "returned_count": len(selected_rankings),
+        "returned_count": len(published_rankings),
         "applied_limit": int(request.limit),
         "ranking_selection": {
-            "method": "strongest_and_weakest_tails",
-            "leader_count": len(leader_rows),
-            "laggard_count": len(laggard_rows),
+            "method": (
+                "withheld_incomparable_endpoints"
+                if ranking_withheld
+                else "strongest_and_weakest_tails"
+            ),
+            "leader_count": len(published_leaders),
+            "laggard_count": len(published_laggards),
             "rankings_order": "strongest_to_weakest",
         },
         "rank_quality": (
-            "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
+            "incomparable_endpoints"
+            if ranking_withheld
+            else "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
         ),
         "score_definition": {
             "method": "weighted_robust_z_of_volatility_scaled_residual_momentum",
@@ -3045,9 +3071,9 @@ def rank_relative_strength(  # noqa: C901
             "weights": list(request.weights),
             "higher_is_stronger": True,
         },
-        "leaders": output_leaders,
-        "laggards": output_laggards,
-        "breadth": breadth,
+        "leaders": published_leaders,
+        "laggards": published_laggards,
+        "breadth": published_breadth,
         "factor": {
             "source": benchmark_symbol or "equal_weight_universe",
             "requested_source": benchmark_symbol,
@@ -3055,7 +3081,8 @@ def rank_relative_strength(  # noqa: C901
         "data_quality": {
             "selected_symbols": len(candidate_symbols),
             "data_symbols_fetched": len(histories),
-            "ranked_symbols": len(ordered),
+            "ranked_symbols": len(published_rankings),
+            "scored_symbols": len(ordered),
             "skipped": skipped,
             "missing_symbols": missing_explicit,
             "benchmark_excluded_from_ranking": benchmark_symbol
@@ -3076,18 +3103,18 @@ def rank_relative_strength(  # noqa: C901
             ),
         },
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
-        **({"rankings": selected_rankings} if request.detail == "full" else {}),
+        **({"rankings": published_rankings} if request.detail == "full" else {}),
     }
     result_warnings: List[str] = []
     if endpoint_alignment.get("comparable") is False:
         result_warnings.append(
-            "Ranked symbols do not share comparable latest-bar endpoints within "
-            f"the {alignment_tolerance_seconds}s tolerance."
+            "Candidate symbols do not share comparable latest-bar endpoints within "
+            f"the {alignment_tolerance_seconds}s tolerance; no ranking was returned."
         )
     quote_not_live = result["data_quality"]["quote_not_live_ready_symbols"]
     if quote_not_live:
         result_warnings.append(
-            "Historical ranking includes symbols whose current quotes are not "
+            "Candidate histories include symbols whose current quotes are not "
             "live-ready: " + ", ".join(quote_not_live) + "."
         )
     if result_warnings:

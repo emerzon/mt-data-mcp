@@ -120,7 +120,9 @@ weakest tails; odd limits assign the extra row to leaders. Full detail exposes
 the same bounded selection as `rankings`, not an unbounded universe dump.
 Ranking membership is based on completed-bar history; a stale or closed-session
 quote is retained as quality metadata unless an explicit spread filter cannot
-be evaluated.
+be evaluated. If candidate latest-bar endpoints exceed one timeframe of
+separation, the tool returns `status=incomparable` and withholds ranks and
+breadth instead of publishing a misleading cross-section.
 
 ```bash
 mtdata-cli market_relative_strength --group "Forex\\Majors" --timeframe H1 \
@@ -132,9 +134,10 @@ different trading sessions can produce less comparable cross-sectional ranks.
 Omitting both `symbols` and `group` intentionally ranks the bounded visible
 Market Watch universe, which may mix asset classes; use `--group` or explicit
 symbols when that mixed-universe behavior is not desired.
-Inspect `data_window.endpoint_alignment` and each row's `data_window` before
-comparing mixed-session instruments. Those nested diagnostics are available in
-full detail; compact and summary rows expose concise quote/history status fields.
+Inspect `data_window.endpoint_alignment` before comparing mixed-session
+instruments. Per-symbol windows are available in full-detail data-quality
+diagnostics; compact and summary ranked rows expose concise quote/history status
+fields when the endpoints are comparable.
 
 ## Data caveats
 
