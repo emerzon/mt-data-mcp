@@ -266,9 +266,10 @@ def fit_gaussian_hmm_1d(
 ) -> Dict[str, Any]:
     """Fit a 1D GaussianHMM and expose filtered and smoothed posteriors.
 
-    If the fitted model has ghost/collapsed states (detected via
-    ``_is_hmm_degenerate``), the function silently re-fits with fewer
-    components until a non-degenerate fit is found (minimum K=1).
+    Observations are standardized before fitting so hmmlearn's covariance
+    floors remain meaningful for FX-scale returns. Non-degenerate candidate
+    state counts are compared by BIC, allowing unsupported extra states to
+    fall back without making the result depend on the raw return units.
 
     The filtered posterior is computed with a scaled forward recursion. The
     smoothed posterior comes from hmmlearn and is retrospective.
@@ -282,9 +283,14 @@ def fit_gaussian_hmm_1d(
     if N < max(4, requested_K + 1):
         raise ValueError("Not enough returns for GaussianHMM calibration")
 
-    x2 = x.reshape(-1, 1)
+    observation_scale = max(float(np.std(x, ddof=0)), np.finfo(float).eps)
+    model_x = x / observation_scale
+    x2 = model_x.reshape(-1, 1)
+    candidate_models = []
 
-    # Try from requested K down to 1; stop at first non-degenerate fit.
+    # Fit each supported state count. BIC distinguishes a genuine multi-state
+    # process from an overfit mixture while the degeneracy guard rejects ghost
+    # states before selection.
     for K in range(requested_K, 0, -1):
         # Exclude 'm' from init_params so hmmlearn respects our pre-set
         # means and skips its KMeans initialization step.  KMeans blocks
@@ -297,21 +303,34 @@ def fit_gaussian_hmm_1d(
             tol=float(tol),
             random_state=seed,
             init_params='stc',
+            min_covar=1e-6,
         )
         quantiles = np.linspace(0.0, 1.0, K + 2, dtype=float)[1:-1]
-        model.means_ = np.quantile(x, quantiles).reshape(K, 1)
+        model.means_ = np.quantile(model_x, quantiles).reshape(K, 1)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             model.fit(x2)
 
-        if K == 1 or not _is_hmm_degenerate(model, x2, K, N):
-            break
+        if K > 1 and _is_hmm_degenerate(model, x2, K, N):
+            continue
+        parameter_count = K * K + 2 * K - 1
+        model_log_likelihood = float(model.score(x2))
+        bic = -2.0 * model_log_likelihood + parameter_count * np.log(N)
+        candidate_models.append((float(bic), K, model, model_log_likelihood))
+
+    _, K, model, model_log_likelihood = min(
+        candidate_models,
+        key=lambda item: (item[0], item[1]),
+    )
 
     # Extract parameters from the accepted fit.
     gamma = np.asarray(model.predict_proba(x2), dtype=float)
-    mu = np.asarray(model.means_, dtype=float).reshape(-1)
+    mu = np.asarray(model.means_, dtype=float).reshape(-1) * observation_scale
     covars = np.asarray(model.covars_, dtype=float)
-    sigma = np.sqrt(np.clip(covars.reshape(K, -1)[:, 0], 1e-12, None))
+    sigma = (
+        np.sqrt(np.clip(covars.reshape(K, -1)[:, 0], 1e-12, None))
+        * observation_scale
+    )
     A = _normalize_transition_matrix(np.asarray(model.transmat_, dtype=float))
     start_prob = _normalize_probability_vector(
         np.asarray(model.startprob_, dtype=float)
@@ -350,10 +369,14 @@ def fit_gaussian_hmm_1d(
         "smoothed_probabilities": gamma,
         "last_filtered_probabilities": _normalize_probability_vector(filtered[-1]),
         "state_occupancy": np.mean(gamma, axis=0),
-        "log_likelihood": float(model.score(x2)),
+        "log_likelihood": float(
+            model_log_likelihood - N * np.log(observation_scale)
+        ),
         "converged": bool(getattr(getattr(model, "monitor_", None), "converged", False)),
         "requested_n_states": int(requested_K),
         "fitted_n_states": int(K),
+        "observation_scale": float(observation_scale),
+        "state_count_selection": "bic_non_degenerate",
     }
 
 

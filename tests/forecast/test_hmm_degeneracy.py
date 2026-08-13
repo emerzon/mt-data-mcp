@@ -158,6 +158,30 @@ class TestFitHmmFallback:
         ratio = max(sigma) / min(sigma)
         assert ratio > 2, f"Sigma ratio {ratio} too low for distinct regimes"
 
+    def test_fx_scale_returns_keep_identifiable_states(self):
+        """Small FX return units must not collapse covariance estimation."""
+        rng = np.random.RandomState(42)
+        rets = np.concatenate(
+            [
+                rng.normal(-0.00015, 0.00006, 300),
+                rng.normal(0.00022, 0.00008, 300),
+            ]
+        )
+
+        fit = fit_gaussian_hmm_1d(
+            rets,
+            n_states=2,
+            max_iter=200,
+            seed=42,
+        )
+
+        assert fit["fitted_n_states"] == 2
+        assert fit["state_count_selection"] == "bic_non_degenerate"
+        assert fit["observation_scale"] < 0.001
+        assert np.all(np.isfinite(fit["sigma"]))
+        assert max(fit["sigma"]) < 0.001
+        assert fit["mu"][0] < 0.0 < fit["mu"][1]
+
     def test_k3_downgrades_on_iid_data(self):
         """Requesting K=3 on IID data should fall back to K=1."""
         prices = _iid_normal_prices(400, seed=30)
