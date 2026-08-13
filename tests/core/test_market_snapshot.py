@@ -744,7 +744,8 @@ def test_snapshot_patterns_section_requests_recent_candlestick_triggers(monkeypa
 
     assert result == {"success": True, "highlights": []}
     assert captured["func_name"] == "patterns_detect"
-    assert captured["kwargs"]["limit"] == 150
+    assert captured["kwargs"]["lookback"] == 150
+    assert "limit" not in captured["kwargs"]
     assert captured["kwargs"]["top_k"] == 3
     assert captured["kwargs"]["last_n_bars"] == 3
     assert captured["kwargs"]["detail"] == "summary"

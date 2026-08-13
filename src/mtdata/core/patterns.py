@@ -1365,7 +1365,7 @@ def patterns_detect(
         patterns to detect (e.g., "doji,hammer,engulfing").
     
     top_k : int, optional (default=3)
-        Result preview budget. `limit` controls the scanned bar window;
+        Result preview budget. `lookback` controls the scanned bar window;
         `top_k` controls how many `top_patterns` rows compact output returns
         and is reported as `patterns_shown`.
 
