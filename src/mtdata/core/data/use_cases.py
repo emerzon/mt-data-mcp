@@ -529,7 +529,10 @@ def _apply_range_limit_cap(
     available = len(data)
     provider_bounded = bool(query.get("provider_bounded"))
     if available <= limit_value and not provider_bounded:
-        result["range_complete"] = True
+        spacing_mismatch = bool(result.get("timeframe_spacing_mismatch"))
+        result["range_complete"] = not spacing_mismatch
+        if spacing_mismatch:
+            result["range_incomplete_reason"] = "timeframe_spacing_mismatch"
         return
 
     retained = (

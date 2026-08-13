@@ -974,7 +974,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     ):
         mock_cfg.get_time_offset_seconds.return_value = 0
         base = datetime(1990, 1, 4, 22, tzinfo=_UTC).timestamp()
-        mock_range.return_value = _make_rates(4, base_ts=base, step=86_400)
+        mock_range.return_value = _make_rates(2, base_ts=base, step=86_400)
 
         result = fetch_candles(
             'EURUSD',
@@ -987,8 +987,35 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertTrue(result['timeframe_spacing_mismatch'])
         self.assertFalse(result['bar_spacing']['spacing_matches_timeframe'])
+        self.assertEqual(result['bar_spacing']['intervals_checked'], 1)
         self.assertEqual(result['bar_spacing']['observed_median_bar_seconds'], 86_400)
         self.assertTrue(any('does not match' in warning for warning in result['warnings']))
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_single_candle_reports_insufficient_spacing_sample(
+        self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        base = datetime(1990, 1, 4, 22, tzinfo=_UTC).timestamp()
+        mock_range.return_value = _make_rates(1, base_ts=base, step=86_400)
+
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='M15',
+            limit=10,
+            start='1990-01-04',
+            end='1990-01-04',
+        )
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['bar_spacing']['status'], 'insufficient_sample')
+        self.assertEqual(result['bar_spacing']['intervals_checked'], 0)
+        self.assertNotIn('timeframe_spacing_mismatch', result)
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_RANGE)

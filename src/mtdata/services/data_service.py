@@ -1815,13 +1815,20 @@ def _candle_spacing_quality(
 ) -> Optional[Dict[str, Any]]:
     """Describe whether the dominant spacing resembles the requested timeframe."""
     expected = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
-    if expected <= 0 or "__epoch" not in df.columns or len(df) < 4:
+    if expected <= 0 or "__epoch" not in df.columns or df.empty:
         return None
     epochs = pd.to_numeric(df["__epoch"], errors="coerce")
     diffs = epochs.diff().dropna()
     diffs = diffs[diffs > 0]
-    if len(diffs) < 3:
-        return None
+    if diffs.empty:
+        return {
+            "requested_bar_seconds": expected,
+            "observed_median_bar_seconds": None,
+            "intervals_checked": 0,
+            "matching_interval_pct": None,
+            "spacing_matches_timeframe": None,
+            "status": "insufficient_sample",
+        }
     median_seconds = float(diffs.median())
     matching = diffs.between(expected * 0.75, expected * 1.5)
     matching_pct = round(float(matching.mean()) * 100.0, 2)
@@ -2483,7 +2490,7 @@ def fetch_candles(  # noqa: C901
         })
         if spacing_quality is not None:
             payload["bar_spacing"] = spacing_quality
-            if not bool(spacing_quality.get("spacing_matches_timeframe")):
+            if spacing_quality.get("spacing_matches_timeframe") is False:
                 payload["timeframe_spacing_mismatch"] = True
                 payload.setdefault("warnings", []).append(
                     "Observed candle spacing does not match the requested "

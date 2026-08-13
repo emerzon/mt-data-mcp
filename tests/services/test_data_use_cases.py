@@ -704,6 +704,29 @@ def test_run_data_fetch_candles_range_does_not_use_latest_default_limit():
     assert "requested_limit" not in result
 
 
+def test_run_data_fetch_candles_range_is_incomplete_on_spacing_mismatch():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        start="1990-01-01",
+        end="1990-01-02",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "data": [{"time": "t0"}, {"time": "t1"}],
+            "timeframe_spacing_mismatch": True,
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+        },
+    )
+
+    assert result["range_complete"] is False
+    assert result["range_incomplete_reason"] == "timeframe_spacing_mismatch"
+
+
 def test_run_data_fetch_candles_normalizes_count_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
