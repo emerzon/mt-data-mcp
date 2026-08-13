@@ -58,6 +58,8 @@ def test_stressed_margin_reports_triggering_thresholds() -> None:
     )
 
     assert result["status"] == "stressed"
+    assert result["margin_level_pct"] == 140.0
+    assert result["margin_level_status"] == "applicable"
     assert result["reasons"] == [
         "margin_level_at_or_below_150_pct",
         "margin_utilization_at_or_above_75_pct",
@@ -78,6 +80,23 @@ def test_nonpositive_equity_is_critical(equity: float) -> None:
 
     assert result["status"] == "critical"
     assert result["reasons"] == ["equity_at_or_below_zero"]
+
+
+def test_flat_account_marks_margin_level_not_applicable() -> None:
+    result = assess_margin_stress(
+        SimpleNamespace(
+            equity=1000.0,
+            margin=0.0,
+            margin_free=1000.0,
+            margin_level=0.0,
+        )
+    )
+
+    assert result["status"] == "healthy"
+    assert result["margin_level_pct"] is None
+    assert result["margin_level_status"] == "not_applicable"
+    assert result["margin_utilization_pct"] == 0.0
+    assert result["free_margin_pct_of_equity"] == 100.0
 
 
 # ---------------------------------------------------------------------------

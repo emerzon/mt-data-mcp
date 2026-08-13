@@ -133,9 +133,17 @@ def assess_margin_stress(account: Any) -> Dict[str, Any]:
         status = "healthy"
     else:
         status = "unknown"
+    margin_level_applicable = not (margin is not None and margin <= 0)
     return {
         "status": status,
-        "margin_level_pct": round(margin_level, 2) if margin_level is not None else None,
+        "margin_level_pct": (
+            round(margin_level, 2)
+            if margin_level is not None and margin_level_applicable
+            else None
+        ),
+        "margin_level_status": (
+            "applicable" if margin_level_applicable else "not_applicable"
+        ),
         "margin_utilization_pct": round(utilization, 2) if utilization is not None else None,
         "free_margin_pct_of_equity": round(free_ratio, 2) if free_ratio is not None else None,
         "reasons": reasons,
