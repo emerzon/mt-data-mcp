@@ -1005,10 +1005,14 @@ def get_earnings_calendar(
             page=page,
         )
         if elapsed_filter_applied and not source_complete:
+            requested_end = safe_limit * safe_page
             pagination_meta = {
                 "total": None,
                 "pages": None,
-                "has_more": True,
+                # The provider prefix may be truncated, but every CLI page is
+                # drawn from this same filtered prefix. Do not advertise a page
+                # that the caller cannot actually retrieve.
+                "has_more": requested_end < total,
                 "total_lower_bound": total,
                 "truncated": True,
             }

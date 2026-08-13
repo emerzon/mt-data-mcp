@@ -1,5 +1,6 @@
 import sys
 import types
+from datetime import date
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -304,13 +305,47 @@ def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypat
     assert result.get("page") == 3
     assert result.get("pages") is None
     assert result.get("total") is None
-    assert result.get("has_more") is True
+    assert result.get("has_more") is False
     assert result.get("total_lower_bound") == 120
     assert result.get("truncated") is True
     assert FakeFinancial.last_filters == {"Earnings Date": "This Week"}
     assert FakeFinancial.last_kwargs is not None
     assert int(FakeFinancial.last_kwargs.get("limit")) == 120
     assert FakeFinancial.last_kwargs.get("order") == "Earnings Date"
+
+
+def test_earnings_empty_filtered_prefix_does_not_claim_another_page(monkeypatch):
+    class FakeFinancial:
+        def set_filter(self, filters_dict=None, **kwargs):
+            return None
+
+        def screener_view(self, **kwargs):
+            return pd.DataFrame(
+                {
+                    "Ticker": [f"E{i}" for i in range(120)],
+                    "Earnings": ["Aug 10/b"] * 120,
+                }
+            )
+
+    financial_mod = types.ModuleType("finvizfinance.screener.financial")
+    financial_mod.Financial = FakeFinancial
+    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
+    monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+    monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
+    monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
+    monkeypatch.setattr(
+        svc,
+        "_finviz_market_date",
+        lambda: date(2026, 8, 13),
+    )
+
+    result = svc.get_earnings_calendar(period="This Week", limit=5, page=1)
+
+    assert result["success"] is True
+    assert result["count"] == 0
+    assert result["earnings"] == []
+    assert result["has_more"] is False
+    assert result["total_lower_bound"] == 0
 
 
 # ---------------------------------------------------------------------------
