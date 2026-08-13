@@ -369,9 +369,12 @@ def _trade_read_error_output(
     message: str,
     *,
     source: Optional[Dict[str, Any]] = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build an error-only envelope without success-path collection fields."""
-    out: Dict[str, Any] = {"success": False, "error": str(message)}
+    """Build an error envelope, retaining only explicitly requested context."""
+    out: Dict[str, Any] = dict(context or {})
+    out["success"] = False
+    out["error"] = str(message)
     if source is not None:
         _preserve_trade_error_metadata(out, source)
     return out
@@ -507,7 +510,11 @@ def _normalize_trade_read_output(
     if isinstance(rows, dict):
         error_text = str(rows.get("error", "")).strip()
         if error_text:
-            return _trade_read_error_output(error_text, source=rows)
+            return _trade_read_error_output(
+                error_text,
+                source=rows,
+                context=out if kind == "trade_history" else None,
+            )
 
         items = rows.get("items")
         if isinstance(items, list):
@@ -554,7 +561,11 @@ def _normalize_trade_read_output(
         first = rows[0]
         error_text = str(first.get("error", "")).strip()
         if error_text:
-            return _trade_read_error_output(error_text, source=first)
+            return _trade_read_error_output(
+                error_text,
+                source=first,
+                context=out if kind == "trade_history" else None,
+            )
         message_text = str(first.get("message", "")).strip()
         if message_text:
             out["message"] = message_text
@@ -563,7 +574,8 @@ def _normalize_trade_read_output(
 
     if not isinstance(rows, list):
         return _trade_read_error_output(
-            f"Unexpected {kind} payload type: {type(rows).__name__}"
+            f"Unexpected {kind} payload type: {type(rows).__name__}",
+            context=out if kind == "trade_history" else None,
         )
 
     normalized_items = [
