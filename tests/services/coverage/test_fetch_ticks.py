@@ -656,8 +656,12 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_ticks_empty(self, mock_ctz, mock_info, mock_ticks):
         result = fetch_ticks('EURUSD', limit=5)
-        self.assertIn('error', result)
-        self.assertIn('No tick data', result['error'])
+        self.assertTrue(result["success"])
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["tick_count"], 0)
+        self.assertEqual(result["data"], [])
+        self.assertTrue(result["empty"])
+        self.assertEqual(result["empty_reason"], "no_ticks_in_range")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())

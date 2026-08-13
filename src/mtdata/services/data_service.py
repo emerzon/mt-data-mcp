@@ -3209,7 +3209,17 @@ def fetch_ticks(  # noqa: C901
         
         # Generate tabular format with dynamic column filtering
         if len(ticks) == 0:
-            return {"error": "No tick data available"}
+            return {
+                "success": True,
+                "symbol": symbol,
+                "count": 0,
+                "tick_count": 0,
+                "data": [],
+                "empty": True,
+                "empty_reason": "no_ticks_in_range",
+                "timezone": "UTC",
+                "query_applied": {"start": start, "end": end},
+            }
 
         if output_mode not in ("summary", "stats", "rows", "full_rows"):
             return {

@@ -1984,12 +1984,6 @@ def test_run_data_fetch_ticks_compact_retains_clock_skew_safety_fields():
             "2099-01-01T01:00:00Z",
             "data_fetch_ticks_future_date_range",
         ),
-        (
-            "No tick data available",
-            "2026-07-11T12:00:00Z",
-            "2026-07-11T13:00:00Z",
-            "data_fetch_ticks_no_data",
-        ),
     ],
 )
 def test_run_data_fetch_ticks_classifies_query_errors(
@@ -2012,6 +2006,28 @@ def test_run_data_fetch_ticks_classifies_query_errors(
         "start": start,
         "end": end,
     }
+
+
+def test_run_data_fetch_ticks_maps_empty_historical_window_to_success() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD",
+            start="2026-07-11T12:00:00Z",
+            end="2026-07-11T13:00:00Z",
+            detail="compact",
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {"error": "No tick data available"},
+    )
+
+    assert result["success"] is True
+    assert result["count"] == 0
+    assert result["data"] == []
+    assert result["empty"] is True
+    assert result["empty_reason"] == "no_ticks_in_range"
+    assert result["requested_limit"] == 20
+    assert result["limit_reached"] is False
+    assert "error_code" not in result
 
 
 def test_run_data_fetch_ticks_classifies_unknown_symbol() -> None:

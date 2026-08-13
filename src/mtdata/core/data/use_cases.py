@@ -61,6 +61,8 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "quote_update_count",
     "feed_tier",
     "data",
+    "empty",
+    "empty_reason",
     "last_quote",
     "execution_quote",
     "timezone",
@@ -1409,11 +1411,21 @@ def _normalize_tick_query_error(
             )
             remediation = "Use a start and end timestamp at or before the current time."
         else:
-            error_code = "data_fetch_ticks_no_data"
-            remediation = (
-                "Check the requested market session and symbol history; an empty "
-                "historical interval is not a provider failure."
-            )
+            empty: Dict[str, Any] = {
+                "success": True,
+                "symbol": request.symbol,
+                "count": 0,
+                "tick_count": 0,
+                "data": [],
+                "empty": True,
+                "empty_reason": "no_ticks_in_range",
+                "timezone": "UTC",
+            }
+            if request.start is not None:
+                empty["start"] = str(request.start)
+            if request.end is not None:
+                empty["end"] = str(request.end)
+            return empty
 
     details: Dict[str, Any] = {
         "symbol": request.symbol,
@@ -1481,7 +1493,8 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     compact = {
         key: payload[key]
         for key in _COMPACT_TICK_TOP_LEVEL_FIELDS
-        if key in payload and payload[key] not in (None, "", [], {})
+        if key in payload
+        and (key == "data" or payload[key] not in (None, "", [], {}))
     }
     rows = compact.get("data")
     if isinstance(rows, list):
