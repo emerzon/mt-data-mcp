@@ -469,7 +469,7 @@ def test_forecast_volatility_compact_includes_input_window(monkeypatch):
         "bars": 12,
         "step_seconds": 3600,
         "forecast_start_gap_bars": 1.0,
-        "calendar_policy": "forex_weekend_skipped",
+        "calendar_treatment": "forex_weekend_skipped",
     }
     assert out["data_stale"] is True
     assert out["freshness"].startswith("stale, data ")
@@ -495,7 +495,7 @@ def test_volatility_forecast_window_skips_closed_fx_weekend() -> None:
         "bars": 12,
         "step_seconds": 3600,
         "forecast_start_gap_bars": 1.0,
-        "calendar_policy": "forex_weekend_skipped",
+        "calendar_treatment": "forex_weekend_skipped",
     }
 
 
