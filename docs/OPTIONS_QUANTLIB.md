@@ -14,13 +14,13 @@ For *MT5 path* TP/SL hit probabilities on underlyings, see [BARRIER_FUNCTIONS.md
 
 ---
 
-> **Dependencies:** Options chain data uses Yahoo Finance by default and may fail with unauthenticated 401/429 responses. When `MTDATA_OPTIONS_PROVIDER=tradier` or `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured, but reliable chain data still requires `MTDATA_OPTIONS_API_KEY`. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and chain-provider access.
+> **Dependencies:** Options chain data uses anonymous Yahoo cookie/crumb negotiation by default and may still fail with 401/429 responses. When `MTDATA_OPTIONS_PROVIDER=tradier` or `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured, but reliable chain data still requires `MTDATA_OPTIONS_API_KEY`. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and chain-provider access.
 
 ---
 
 ## Options Data
 
-The options data tools are external-data helpers. Yahoo Finance is the default, but it is an **unauthenticated fallback** that can reject requests (401/429). If you select `tradier` (or `auto` with a Tradier token), mtdata retries Yahoo once when Tradier is unavailable or misconfigured. To use reliable authenticated chains, add these values to `.env`:
+The options data tools are external-data helpers. Yahoo Finance is the default; mtdata negotiates an anonymous cookie and crumb, but this **best-effort fallback** can still reject requests (401/429). If you select `tradier` (or `auto` with a Tradier token), mtdata retries Yahoo once when Tradier is unavailable or misconfigured. To use reliable authenticated chains, add these values to `.env`:
 
 ```bash
 MTDATA_OPTIONS_PROVIDER=tradier

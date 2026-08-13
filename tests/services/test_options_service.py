@@ -512,9 +512,11 @@ def test_build_yahoo_session_returns_fresh_session():
 def test_reset_yahoo_session_clears_singleton(monkeypatch):
     sentinel = osvc._build_yahoo_session()
     monkeypatch.setattr(osvc, "_YAHOO_SESSION", sentinel)
+    monkeypatch.setattr(osvc, "_YAHOO_CRUMB", "stale-crumb")
 
     osvc._reset_yahoo_session()
     assert osvc._YAHOO_SESSION is None
+    assert osvc._YAHOO_CRUMB is None
 
 
 def test_reset_yahoo_session_tolerates_already_none():
@@ -546,6 +548,46 @@ def test_get_yahoo_session_delegates_to_builder(monkeypatch):
     assert first is second
     assert calls["built"] == 1
     assert isinstance(first, FakeSession)
+
+
+def test_fetch_yahoo_options_payload_negotiates_crumb_after_401(monkeypatch):
+    unauthorized = MagicMock(status_code=401, headers={})
+    cookie_response = MagicMock(status_code=404, headers={})
+    crumb_response = MagicMock(status_code=200, headers={}, text="crumb-token")
+    ok_response = MagicMock(status_code=200, headers={})
+    ok_response.raise_for_status.return_value = None
+    ok_response.json.return_value = {
+        "optionChain": {
+            "result": [
+                {
+                    "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+                    "expirationDates": [],
+                }
+            ]
+        }
+    }
+    session = MagicMock()
+    session.get.side_effect = [
+        unauthorized,
+        cookie_response,
+        crumb_response,
+        ok_response,
+    ]
+
+    monkeypatch.setattr(osvc, "_YAHOO_CRUMB", None)
+    monkeypatch.setattr(osvc, "_get_yahoo_session", lambda: session)
+    monkeypatch.setattr(osvc, "_throttle_yahoo_request", lambda: None)
+
+    out = osvc._fetch_yahoo_options_payload("AAPL")
+
+    assert out["quote"]["regularMarketPrice"] == 100.5
+    assert session.get.call_count == 4
+    final_call = session.get.call_args_list[-1]
+    assert final_call.kwargs["params"] == {"crumb": "crumb-token"}
+    assert osvc._YAHOO_CRUMB == "crumb-token"
+    unauthorized.close.assert_called_once_with()
+    cookie_response.close.assert_called_once_with()
+    crumb_response.close.assert_called_once_with()
 
 
 def test_fetch_yahoo_options_payload_sanitizes_401_errors(monkeypatch):

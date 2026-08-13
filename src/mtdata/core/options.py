@@ -148,7 +148,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
         action_required = "configure_options_provider"
         remediation = (
             "Configured Tradier mode is missing MTDATA_OPTIONS_API_KEY. mtdata will "
-            "retry unauthenticated Yahoo as a best-effort fallback, but reliable "
+            "retry anonymous Yahoo cookie/crumb access as a best-effort fallback, but reliable "
             "options chains still require Tradier credentials."
         )
     else:
@@ -162,7 +162,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
             None if configured_provider_ready else "configure_options_provider"
         )
         remediation = (
-            "Yahoo options data is unauthenticated best-effort data and may return "
+            "Yahoo options data uses anonymous cookie/crumb access and may still return "
             "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
             "MTDATA_OPTIONS_API_KEY."
         ) if effective_provider == "yahoo" else None
@@ -173,7 +173,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
     warnings = []
     if provider_mode == "best_effort":
         warnings.append(
-            "Options chain access is using unauthenticated Yahoo fallback; "
+            "Options chain access is using anonymous Yahoo cookie/crumb fallback; "
             "it is best-effort and may return 401/429."
         )
     out = {
@@ -408,7 +408,7 @@ def options_provider_status(
         payload["next_steps"] = [
             "Set MTDATA_OPTIONS_PROVIDER=tradier.",
             "Set MTDATA_OPTIONS_API_KEY to a Tradier API token, then restart mtdata.",
-            "Yahoo fallback is best-effort only and may still return 401/429.",
+            "Yahoo cookie/crumb fallback is best-effort and may still return 401/429.",
         ]
         payload.pop("remediation", None)
     return _run_options_operation(
@@ -425,8 +425,8 @@ def options_expirations(
 ) -> Dict[str, Any]:
     """Fetch option expirations using the configured options-chain provider.
 
-    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. When provider mode is `tradier` or
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance uses anonymous
+    cookie/crumb negotiation and may still return 401 responses. When provider mode is `tradier` or
     `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
     reliable options-chain data, configure Tradier with
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
@@ -475,8 +475,8 @@ def options_chain(
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots using the configured chain provider.
 
-    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. When provider mode is `tradier` or
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance uses anonymous
+    cookie/crumb negotiation and may still return 401 responses. When provider mode is `tradier` or
     `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
     reliable options-chain data, configure Tradier with
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
@@ -648,8 +648,8 @@ def options_heston_calibrate(
 ) -> Dict[str, Any]:
     """Calibrate Heston from the configured options-chain provider.
 
-    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. When provider mode is `tradier` or
+    Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance uses anonymous
+    cookie/crumb negotiation and may still return 401 responses. When provider mode is `tradier` or
     `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
     reliable options-chain data, configure Tradier with
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API

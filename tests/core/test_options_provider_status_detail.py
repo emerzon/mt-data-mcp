@@ -28,7 +28,7 @@ def test_compact_provider_status_keeps_actionable_setup_steps():
         assert out["next_steps"] == [
             "Set MTDATA_OPTIONS_PROVIDER=tradier.",
             "Set MTDATA_OPTIONS_API_KEY to a Tradier API token, then restart mtdata.",
-            "Yahoo fallback is best-effort only and may still return 401/429.",
+            "Yahoo cookie/crumb fallback is best-effort and may still return 401/429.",
         ]
 
 
@@ -55,9 +55,9 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["degraded"] is True
     assert out["provider_mode"] == "best_effort"
     assert out["action_required"] == "configure_options_provider"
-    assert "retry unauthenticated Yahoo as a best-effort fallback" in out["remediation"]
+    assert "retry anonymous Yahoo cookie/crumb access" in out["remediation"]
     assert out["warnings"] == [
-        "Options chain access is using unauthenticated Yahoo fallback; "
+        "Options chain access is using anonymous Yahoo cookie/crumb fallback; "
         "it is best-effort and may return 401/429."
     ]
 

@@ -154,7 +154,7 @@ Provider configuration for the options-chain tools (`options_expirations`, `opti
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MTDATA_OPTIONS_PROVIDER` | `yahoo` | Options-chain provider: `tradier`, `yahoo`, or `auto`. Yahoo is an unauthenticated fallback that may return 401/429. When `tradier` or `auto` is selected, mtdata retries Yahoo if Tradier is unavailable or misconfigured, but reliable chain access still requires a Tradier API key. |
+| `MTDATA_OPTIONS_PROVIDER` | `yahoo` | Options-chain provider: `tradier`, `yahoo`, or `auto`. Yahoo negotiates an anonymous cookie/crumb but remains a best-effort fallback that may return 401/429. When `tradier` or `auto` is selected, mtdata retries Yahoo if Tradier is unavailable or misconfigured, but reliable chain access still requires a Tradier API key. |
 | `MTDATA_OPTIONS_API_KEY` | — | Tradier API token (required for `tradier`). `TRADIER_TOKEN` and `TRADIER_API_KEY` are also accepted. |
 | `MTDATA_OPTIONS_BASE_URL` | `https://api.tradier.com/v1` | Tradier API base URL. |
 

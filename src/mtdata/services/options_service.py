@@ -17,6 +17,8 @@ from ..bootstrap.settings import options_data_config
 logger = logging.getLogger(__name__)
 
 _YAHOO_OPTIONS_URL = "https://query2.finance.yahoo.com/v7/finance/options/{symbol}"
+_YAHOO_COOKIE_URL = "https://fc.yahoo.com"
+_YAHOO_CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
 _HTTP_TIMEOUT = 15.0
 _YAHOO_HEADERS = {
     "User-Agent": (
@@ -31,7 +33,7 @@ _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
     "Run options_provider_status for configuration details. Yahoo options is "
-    "unauthenticated and may reject requests; for reliable chains set "
+    "anonymous best-effort data and may reject requests; for reliable chains set "
     "MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
 )
 _TRADIER_AUTH_REMEDIATION = (
@@ -40,7 +42,9 @@ _TRADIER_AUTH_REMEDIATION = (
     "MTDATA_OPTIONS_PROVIDER=yahoo for the unauthenticated fallback."
 )
 _YAHOO_SESSION: Optional[requests.Session] = None
+_YAHOO_CRUMB: Optional[str] = None
 _YAHOO_SESSION_LOCK = _threading.Lock()
+_YAHOO_AUTH_LOCK = _threading.Lock()
 _YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
 _YAHOO_LAST_REQUEST_MONOTONIC = 0.0
 
@@ -140,10 +144,12 @@ def _build_yahoo_session() -> requests.Session:
 
 def _reset_yahoo_session() -> None:
     """Close and discard the shared Yahoo session so the next request rebuilds it."""
-    global _YAHOO_SESSION
+    global _YAHOO_CRUMB, _YAHOO_SESSION
     with _YAHOO_SESSION_LOCK:
         old = _YAHOO_SESSION
         _YAHOO_SESSION = None
+    with _YAHOO_AUTH_LOCK:
+        _YAHOO_CRUMB = None
     if old is not None:
         try:
             old.close()
@@ -402,13 +408,70 @@ def _throttle_yahoo_request() -> None:
         _YAHOO_LAST_REQUEST_MONOTONIC = now
 
 
+def _refresh_yahoo_auth(session: requests.Session) -> Optional[str]:
+    """Negotiate Yahoo's anonymous cookie and crumb for option-chain requests."""
+    global _YAHOO_CRUMB
+    with _YAHOO_AUTH_LOCK:
+        _YAHOO_CRUMB = None
+        cookie_response: Optional[requests.Response] = None
+        crumb_response: Optional[requests.Response] = None
+        try:
+            cookie_response = session.get(
+                _YAHOO_COOKIE_URL,
+                headers=dict(_YAHOO_HEADERS),
+                timeout=_HTTP_TIMEOUT,
+            )
+            cookie_response.close()
+            cookie_response = None
+            crumb_response = session.get(
+                _YAHOO_CRUMB_URL,
+                headers=dict(_YAHOO_HEADERS),
+                timeout=_HTTP_TIMEOUT,
+            )
+            crumb_response.raise_for_status()
+            crumb = str(crumb_response.text or "").strip()
+            if not crumb or len(crumb) > 256 or crumb.startswith("<"):
+                return None
+            _YAHOO_CRUMB = crumb
+            return crumb
+        except Exception as exc:
+            logger.debug("Yahoo anonymous cookie/crumb negotiation failed: %s", exc)
+            return None
+        finally:
+            if cookie_response is not None:
+                cookie_response.close()
+            if crumb_response is not None:
+                crumb_response.close()
+
+
 def _yahoo_http_get(url: str, *, params: Dict[str, Any], headers: Dict[str, str]) -> requests.Response:
     session = _get_yahoo_session()
     backoff_seconds = _YAHOO_BACKOFF_SECONDS
     response: Optional[requests.Response] = None
+    request_params = dict(params)
+    if _YAHOO_CRUMB:
+        request_params["crumb"] = _YAHOO_CRUMB
+    auth_attempted = False
     for attempt in range(_YAHOO_MAX_ATTEMPTS):
         _throttle_yahoo_request()
-        response = session.get(url, params=params, headers=headers, timeout=_HTTP_TIMEOUT)
+        response = session.get(
+            url,
+            params=request_params,
+            headers=headers,
+            timeout=_HTTP_TIMEOUT,
+        )
+        if (
+            response.status_code == 401
+            and not auth_attempted
+            and attempt + 1 < _YAHOO_MAX_ATTEMPTS
+        ):
+            auth_attempted = True
+            response.close()
+            crumb = _refresh_yahoo_auth(session)
+            if crumb:
+                request_params["crumb"] = crumb
+                continue
+            return response
         if response.status_code not in _YAHOO_RETRY_STATUS_CODES or attempt + 1 >= _YAHOO_MAX_ATTEMPTS:
             return response
         response.close()
