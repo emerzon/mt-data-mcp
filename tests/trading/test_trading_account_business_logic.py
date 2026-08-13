@@ -1194,7 +1194,7 @@ def test_open_position_quote_context_accepts_mapping_ticks_and_prefers_milliseco
     assert row["usable_for_live_trading"] is True
 
 
-def test_open_position_quote_context_reconciles_cached_and_stream_ticks() -> None:
+def test_open_position_quote_context_keeps_valid_quote_within_skew_tolerance() -> None:
     now_epoch = 1_700_000_100.0
     payload = {"items": [{"symbol": "EURUSD", "side": "BUY"}]}
     gateway = SimpleNamespace(
@@ -1221,9 +1221,9 @@ def test_open_position_quote_context_reconciles_cached_and_stream_ticks() -> Non
     )
 
     row = payload["items"][0]
-    assert row["quote_source"] == "mt5.copy_ticks_range"
-    assert row["quote_source_state"] == "refreshed_from_tick_stream"
-    assert row["data_age_seconds"] == 1.0
+    assert row["quote_source"] == "mt5.symbol_info_tick"
+    assert row["quote_source_state"] == "current"
+    assert row["data_age_seconds"] == 0.0
     assert row["usable_for_live_trading"] is True
 
 
