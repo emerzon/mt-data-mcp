@@ -572,7 +572,7 @@ def build_level_confluence_payload(
         },
         "units": {
             "score": "unbounded_heuristic_points",
-            "distance_pct": "percentage_points (1.0 = 1%)",
+            "distance_pct": "percent (1.0 = 1%)",
         },
         "levels": top_clusters,
     }
@@ -618,7 +618,7 @@ def build_level_confluence_payload(
         out["detail"] = detail_value
         out["units"].update({
             "tolerance.price": "price",
-            "tolerance.pct_points": "percentage_points (1.0 = 1%)",
+            "tolerance.pct_points": "percent (1.0 = 1%)",
             "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
             "tolerance.points": "broker_points",
         })

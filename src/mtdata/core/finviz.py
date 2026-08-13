@@ -652,7 +652,7 @@ def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
         if value not in (None, "")
     }
     units = {
-        key: "percentage_points (1.0 = 1%)"
+        key: "percent (1.0 = 1%)"
         for key in seen_fields
         if key in _FINVIZ_SCREEN_PERCENT_FIELDS or str(key).endswith("_pct")
     }
@@ -793,7 +793,7 @@ def _normalize_finviz_market_payload(  # noqa: C901
         _attach_finviz_delayed_root_metadata(out)
         _append_finviz_warning(out, _FINVIZ_FUTURES_DELAYED_WARNING)
     if rows_key in {"pairs", "coins", "futures"}:
-        out["performance_format"] = "percentage_points"
+        out["performance_format"] = "percent"
     units = _finviz_screen_units_for_rows(output_rows)
     if units:
         out["units"] = units
@@ -2078,7 +2078,7 @@ def _finviz_fundamental_units(fundamentals: Dict[str, Any]) -> Dict[str, str]:
     units: Dict[str, str] = {}
     for key in fundamentals:
         if key.endswith("_pct") or key in _FINVIZ_PERCENT_FUNDAMENTAL_KEYS:
-            units[key] = "percentage_points (1.0 = 1%)"
+            units[key] = "percent (1.0 = 1%)"
     return units
 
 
@@ -2784,7 +2784,7 @@ def _normalize_finviz_calendar_payload(
             "dividend_amount": "listing_currency_per_share",
             "ordinary_amount": "listing_currency_per_share",
             "special_amount": "listing_currency_per_share",
-            "yield_pct": "percentage_points (1.0 = 1%)",
+            "yield_pct": "percent (1.0 = 1%)",
         }
     if str(calendar_type or "economic").strip().lower() == "earnings":
         out["currency_basis"] = "listing_currency"

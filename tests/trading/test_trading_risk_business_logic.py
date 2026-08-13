@@ -517,11 +517,11 @@ def test_trade_risk_analyze_evaluates_trade_levels_without_desired_risk_pct() ->
         "reward_risk_ratio": 2.5,
         "units": {
             "sl_distance_price": "price",
-            "sl_distance_pct": "percentage_points",
+            "sl_distance_pct": "percent",
             "sl_distance_ticks": "ticks",
             "risk_per_lot": "account_currency_per_lot",
             "tp_distance_price": "price",
-            "tp_distance_pct": "percentage_points",
+            "tp_distance_pct": "percent",
             "tp_distance_ticks": "ticks",
             "reward_risk_ratio": "scalar",
         },

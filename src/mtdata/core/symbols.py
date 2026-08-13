@@ -1754,7 +1754,7 @@ def symbols_describe(  # noqa: C901
                     price_change_value,
                     digits=6,
                 )
-                symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+                symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
                 symbol_data["price_change_basis"] = "broker_symbol_info_price_change"
             elif quote_timestamp_available is not False:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
@@ -1768,7 +1768,7 @@ def symbols_describe(  # noqa: C901
                         ((session_close - session_open) / abs(session_open)) * 100.0,
                         digits=6,
                     )
-                    symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+                    symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
                     symbol_data["price_change_basis"] = "session_open_to_session_close"
             symbol_data.pop("price_change", None)
 
@@ -2317,16 +2317,16 @@ _MARKET_SCAN_UNITS = {
     "mid": "price",
     "close": "price",
     "previous_close": "price",
-    "price_change_pct": "percentage_points (1.0 = 1%)",
-    "gap_pct": "percentage_points (1.0 = 1%)",
+    "price_change_pct": "percent (1.0 = 1%)",
+    "gap_pct": "percent (1.0 = 1%)",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
     "spread_points": "broker_points",
     "spread_pips": "pips",
-    "spread_pct": "percentage_points (1.0 = 1%)",
+    "spread_pct": "percent (1.0 = 1%)",
     "spread_cost_per_lot": "currency_per_lot_estimate",
     "rsi": "0_100",
-    "sma_distance_pct": "percentage_points (1.0 = 1%)",
+    "sma_distance_pct": "percent (1.0 = 1%)",
     "price_point": "broker_price_increment",
     "data_age_seconds": "seconds",
     "data_freshness_seconds": "seconds",

@@ -365,7 +365,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert out["trust_level"] == "adequate"
     assert "trust_blockers" not in out
     assert out["units"]["forecast_vs_last_price.*_delta_pct"] == (
-        "percentage_points (1.0 = 1%)"
+        "percent (1.0 = 1%)"
     )
     assert "forecast_time" not in out
     assert "forecast_price" not in out

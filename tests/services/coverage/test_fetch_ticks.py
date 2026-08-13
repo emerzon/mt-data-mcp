@@ -103,7 +103,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(full_rows["data"][-1]["spread_pct"], 0.018149)
         self.assertEqual(full_rows["units"]["spread_points"], "broker_points")
         self.assertEqual(full_rows["units"]["spread_pips"], "pips")
-        self.assertEqual(full_rows["units"]["spread_pct"], "percentage_points (1.0 = 1%)")
+        self.assertEqual(full_rows["units"]["spread_pct"], "percent (1.0 = 1%)")
 
     @patch(_TICKS_RANGE)
     @patch(

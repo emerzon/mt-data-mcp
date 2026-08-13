@@ -782,7 +782,7 @@ def volatility_term_structure(
                 "current_volatility": "decimal_return_fraction",
                 "per_bar_volatility": "per_bar_decimal_return_fraction",
                 "cone": "decimal_return_fraction",
-                "percentile_rank": "percentage_points (0-100)",
+                "percentile_rank": "percentile_rank (0=lowest, 100=highest)",
             },
             "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution; short horizons are sampling-noisy and this is not an options implied-volatility term structure",
             "items": rows,

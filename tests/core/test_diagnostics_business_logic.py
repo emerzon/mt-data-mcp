@@ -255,7 +255,9 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     assert "0.01 means 1%" in result["unit_note"]
     assert result["units"]["current_volatility"] == "decimal_return_fraction"
     assert result["units"]["cone"] == "decimal_return_fraction"
-    assert result["units"]["percentile_rank"] == "percentage_points (0-100)"
+    assert result["units"]["percentile_rank"] == (
+        "percentile_rank (0=lowest, 100=highest)"
+    )
     assert result["bars_per_year"] == 6048.0
     assert result["bars_per_session"] == 24.0
     assert result["annualization_basis"] == "observed_median_bars_per_utc_session_x_252_sessions"

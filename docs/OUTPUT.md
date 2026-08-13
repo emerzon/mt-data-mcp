@@ -156,6 +156,16 @@ mtdata-cli tools_list --category forecast --limit 20 --offset 20 --json
 
 ---
 
+## Percentage units
+
+Fields whose names end in `_pct` are scaled percent values: `1.0` means `1%`.
+Their unit is reported as `percent`, not `percentage_points`. The latter term is
+reserved for an actual difference between two percentages, such as a change in
+win rate from 52% to 55% (`3 percentage points`). Decimal-return fields without
+the `_pct` suffix use fractions, where `0.01` means `1%`.
+
+---
+
 ## Error envelope
 
 Failures return a **structured** payload (not just a string) so callers can react programmatically:

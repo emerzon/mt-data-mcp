@@ -147,8 +147,8 @@ def test_market_rows_keep_canonical_price_and_performance_fields_in_full_detail(
     assert full["items"][0]["perf_5min_pct"] == 0.02
     assert "delayed_price" not in compact["items"][0]
     assert "perf_day" not in full["items"][0]
-    assert full["performance_format"] == "percentage_points"
-    assert full["units"]["perf_day_pct"] == "percentage_points (1.0 = 1%)"
+    assert full["performance_format"] == "percent"
+    assert full["units"]["perf_day_pct"] == "percent (1.0 = 1%)"
 
 
 class TestFinvizEarningsOutputContract:

@@ -227,8 +227,8 @@ class TestConsolidatePayload:
         ]
         assert result["regimes"][0]["state_label_native"] == "bullish_segment"
         assert result["regimes"][0]["state_label_canonical"] == "trending_up"
-        assert result["units"]["regime_context.return_pct"] == "percentage_points"
-        assert result["units"]["scale_note"] == "1.0 percentage point = 1%."
+        assert result["units"]["regime_context.return_pct"] == "percent"
+        assert result["units"]["scale_note"] == "Percent values use 1.0 = 1%."
         assert result["params_used"]["relabeled"] is True
         assert result["params_used"]["label_mapping"] == {"0": 1, "1": 0}
 

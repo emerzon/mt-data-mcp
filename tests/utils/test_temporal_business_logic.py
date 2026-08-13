@@ -56,7 +56,7 @@ def test_compact_temporal_payload_best_keeps_group_key() -> None:
             "timeframe": "H1",
             "group_by": "hour",
             "return_mode": "pct",
-            "units": {"returns": "percentage_points (1.0 = 1%)"},
+            "units": {"returns": "percent (1.0 = 1%)"},
             "timezone": "UTC",
             "lookback": 100,
             "lookback_source": "request",

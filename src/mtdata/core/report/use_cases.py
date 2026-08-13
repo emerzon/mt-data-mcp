@@ -1616,8 +1616,8 @@ def run_report_generate(  # noqa: C901
 
                 def _barrier_metric_basis(best_row: Dict[str, Any]) -> Dict[str, Any]:
                     return {
-                        "tp_pct": "percentage_points",
-                        "sl_pct": "percentage_points",
+                        "tp_pct": "percent",
+                        "sl_pct": "percent",
                         "ev": {
                             "unit": str(best_row.get("distance_unit") or "price"),
                             "definition": (

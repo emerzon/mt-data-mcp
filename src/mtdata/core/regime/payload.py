@@ -1169,9 +1169,9 @@ def _consolidate_payload(  # noqa: C901
                 new_payload.setdefault(
                     "units",
                     {
-                        "regime_context.return_pct": "percentage_points",
-                        "regime_context.volatility_pct": "percentage_points",
-                        "scale_note": "1.0 percentage point = 1%.",
+                        "regime_context.return_pct": "percent",
+                        "regime_context.volatility_pct": "percent",
+                        "scale_note": "Percent values use 1.0 = 1%.",
                     },
                 )
 

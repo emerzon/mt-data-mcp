@@ -159,7 +159,7 @@ _TICK_ROW_UNITS = {
     "spread": "absolute_price",
     "spread_points": "broker_points",
     "spread_pips": "pips",
-    "spread_pct": "percentage_points (1.0 = 1%)",
+    "spread_pct": "percent (1.0 = 1%)",
     "tick_gap_ms": "milliseconds",
     "volume": "last_trade_volume",
     "volume_real": "last_trade_volume_real",

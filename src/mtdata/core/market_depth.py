@@ -62,7 +62,7 @@ _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
 _MARKET_DEPTH_SPREAD_UNITS = {
     "spread": "absolute_price",
     "spread_points": "broker_points",
-    "spread_pct": "percentage_points (1.0 = 1%)",
+    "spread_pct": "percent (1.0 = 1%)",
     "spread_cost_per_lot": "account_currency_per_broker_lot_estimate",
 }
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
@@ -846,7 +846,7 @@ def market_ticker(  # noqa: C901
                     "point": "price_increment",
                     "spread": "absolute_price",
                     "spread_points": "broker_points",
-                    "spread_pct": "percentage_points (1.0 = 1%)",
+                    "spread_pct": "percent (1.0 = 1%)",
                     "spread_cost_per_lot": "currency_per_lot_estimate",
                 },
             }

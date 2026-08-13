@@ -117,8 +117,8 @@ Each group includes these statistics:
 | `group_key` | Numeric group identifier |
 | `bars` | Number of bars in group |
 | `returns` | Count of return observations |
-| `avg_return_pct` | Average return in percentage points (1.0 = 1%) |
-| `median_return_pct` | Median return in percentage points (1.0 = 1%) |
+| `avg_return_pct` | Average return in percent (1.0 = 1%) |
+| `median_return_pct` | Median return in percent (1.0 = 1%) |
 | `volatility` | Standard deviation of returns |
 | `avg_abs_return_pct` | Average absolute return in percentage points |
 | `volatility_pct` | Per-bar return standard deviation in percentage points |

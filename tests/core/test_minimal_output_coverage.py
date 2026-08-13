@@ -275,7 +275,7 @@ class TestNormalizeForecastPayload:
             "path_flat": True,
             "path_range": 0.00001,
             "units": {
-                "forecast_vs_last_price.*_delta_pct": "percentage_points (1.0 = 1%)"
+                "forecast_vs_last_price.*_delta_pct": "percent (1.0 = 1%)"
             },
         }
         result = _normalize_forecast_payload(payload, verbose=False)
@@ -291,7 +291,7 @@ class TestNormalizeForecastPayload:
         assert result["path_flat"] is True
         assert result["path_range"] == 0.00001
         assert result["units"]["forecast_vs_last_price.*_delta_pct"] == (
-            "percentage_points (1.0 = 1%)"
+            "percent (1.0 = 1%)"
         )
 
     def test_non_verbose_discloses_unrequested_uncertainty(self):

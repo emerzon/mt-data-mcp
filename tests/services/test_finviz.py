@@ -31,7 +31,7 @@ def test_finviz_fundamental_percent_units_are_explicit() -> None:
     from mtdata.core.finviz import _finviz_fundamental_units
 
     assert _finviz_fundamental_units({"change_pct": 1.2}) == {
-        "change_pct": "percentage_points (1.0 = 1%)"
+        "change_pct": "percent (1.0 = 1%)"
     }
 
 
@@ -948,7 +948,7 @@ class TestFinvizTools:
 
         assert "coins" not in result
         assert result["detail"] == "compact"
-        assert result["performance_format"] == "percentage_points"
+        assert result["performance_format"] == "percent"
         assert result["data_limitations"] == {"performance_periods": ["day"]}
         assert result["price_currency"] == "USD"
         assert result["price_source"] == "finviz_delayed"
@@ -971,7 +971,7 @@ class TestFinvizTools:
         ]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
-    def test_finviz_crypto_numeric_fraction_perf_pct_is_percentage_points(
+    def test_finviz_crypto_numeric_fraction_perf_pct_is_percent(
         self,
         mock_get_crypto,
     ):
@@ -1105,7 +1105,7 @@ class TestFinvizTools:
         ]
 
     @patch("mtdata.core.finviz.get_futures_performance")
-    def test_finviz_futures_numeric_perf_is_already_percentage_points(
+    def test_finviz_futures_numeric_perf_is_already_percent(
         self,
         mock_get_futures,
     ):
@@ -1148,9 +1148,9 @@ class TestFinvizTools:
                 "series_basis": "provider_generic_root_unknown",
             }
         ]
-        assert result["performance_format"] == "percentage_points"
+        assert result["performance_format"] == "percent"
         assert result["units"] == {
-            "perf_day_pct": "percentage_points (1.0 = 1%)"
+            "perf_day_pct": "percent (1.0 = 1%)"
         }
         assert result["meta"]["tool"] == "finviz_futures"
         assert "request" not in result["meta"]
@@ -1851,10 +1851,10 @@ class TestFinvizTools:
         assert item["operating_margin"] == -304.0
         assert item["profit_margin"] == -367.0
         assert result["units"]["return_on_assets"] == (
-            "percentage_points (1.0 = 1%)"
+            "percent (1.0 = 1%)"
         )
         assert result["units"]["operating_margin"] == (
-            "percentage_points (1.0 = 1%)"
+            "percent (1.0 = 1%)"
         )
         assert "curr_r" not in item
 
@@ -2187,7 +2187,7 @@ class TestFinvizTools:
         ]
 
     @patch('mtdata.core.finviz.screen_stocks')
-    def test_finviz_screen_numeric_sma_fractions_become_percentage_points(
+    def test_finviz_screen_numeric_sma_fractions_become_percent(
         self, mock_screen
     ):
         from mtdata.core.finviz import finviz_screen
@@ -2218,7 +2218,7 @@ class TestFinvizTools:
         assert result["items"][0]["sma50_distance_pct"] == -1.99
         assert result["items"][0]["sma200_distance_pct"] == 10.25
         assert result["units"]["sma200_distance_pct"] == (
-            "percentage_points (1.0 = 1%)"
+            "percent (1.0 = 1%)"
         )
 
     def test_finviz_screen_normalizes_roic_and_declares_units(self):
@@ -2238,7 +2238,7 @@ class TestFinvizTools:
         assert fraction_row["return_on_invested_capital"] == 77.17
         assert _finviz_screen_units_for_rows([string_row])[
             "return_on_invested_capital"
-        ] == "percentage_points (1.0 = 1%)"
+        ] == "percent (1.0 = 1%)"
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_compact_uses_valuation_fields(self, mock_screen):
@@ -2599,7 +2599,7 @@ class TestFinvizTools:
         assert result["items"][0]["yield_pct"] == 2.878
         assert "yield" not in result["items"][0]
         assert result["currency_basis"] == "listing_currency"
-        assert result["units"]["yield_pct"] == "percentage_points (1.0 = 1%)"
+        assert result["units"]["yield_pct"] == "percent (1.0 = 1%)"
 
     def test_finviz_calendar_rejects_removed_date_aliases(self):
         from mtdata.core.finviz import finviz_calendar

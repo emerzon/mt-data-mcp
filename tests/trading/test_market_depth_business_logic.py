@@ -292,7 +292,7 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
     assert out["capabilities"]["spread_overlay_applied"] is True
     assert out["units"]["spread"] == "absolute_price"
     assert out["units"]["spread_points"] == "broker_points"
-    assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
+    assert out["units"]["spread_pct"] == "percent (1.0 = 1%)"
     assert out["units"]["spread_cost_per_lot"] == (
         "account_currency_per_broker_lot_estimate"
     )
@@ -401,7 +401,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
         "ask": "absolute_price",
         "spread": "absolute_price",
         "spread_points": "broker_points",
-        "spread_pct": "percentage_points (1.0 = 1%)",
+        "spread_pct": "percent (1.0 = 1%)",
     }
     assert "contract_size" not in out
     assert "lot_definition" not in out
@@ -510,7 +510,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert "market_state" not in out
     assert out["units"]["spread"] == "absolute_price"
     assert out["units"]["spread_points"] == "broker_points"
-    assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
+    assert out["units"]["spread_pct"] == "percent (1.0 = 1%)"
     assert "contract_size" not in out
     assert out["freshness"].startswith("stale, tick ")
     assert "spread_display" not in out

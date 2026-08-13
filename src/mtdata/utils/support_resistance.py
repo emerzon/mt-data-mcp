@@ -2331,7 +2331,7 @@ def merge_support_resistance_results(  # noqa: C901
         },
         "units": {
             "distance_pct": (
-                "signed_percentage_points (negative=below_reference, "
+                "signed_percent (negative=below_reference, "
                 "positive=above_reference, 1.0=1%)"
             )
         },
@@ -2832,7 +2832,7 @@ def compute_support_resistance_levels(
         },
         "units": {
             "distance_pct": (
-                "signed_percentage_points (negative=below_reference, "
+                "signed_percent (negative=below_reference, "
                 "positive=above_reference, 1.0=1%)"
             )
         },

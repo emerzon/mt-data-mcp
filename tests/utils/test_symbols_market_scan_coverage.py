@@ -1511,7 +1511,7 @@ class TestMarketScan:
         assert result["stale_rows"] in {0, 1}
         assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]
-        assert result["units"]["price_change_pct"] == "percentage_points (1.0 = 1%)"
+        assert result["units"]["price_change_pct"] == "percent (1.0 = 1%)"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["spread_points"] == "broker_points"
         assert result["units"]["spread_pips"] == "pips"

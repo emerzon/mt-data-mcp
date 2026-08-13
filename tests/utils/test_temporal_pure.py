@@ -651,11 +651,11 @@ class TestTemporalAnalyze:
         assert "best" in r
         assert "group" in r["best"]
         assert r["units"] == {
-            "avg_return_pct": "percentage_points (1.0 = 1%)",
-            "median_return_pct": "percentage_points (1.0 = 1%)",
-            "avg_abs_return_pct": "percentage_points (1.0 = 1%)",
-            "win_rate_pct": "percentage_points (1.0 = 1%)",
-            "avg_range_pct": "percentage_points (1.0 = 1%)",
+            "avg_return_pct": "percent (1.0 = 1%)",
+            "median_return_pct": "percent (1.0 = 1%)",
+            "avg_abs_return_pct": "percent (1.0 = 1%)",
+            "win_rate_pct": "percent (1.0 = 1%)",
+            "avg_range_pct": "percent (1.0 = 1%)",
             "volatility_pct": "percentage_point_return_stddev_per_bar",
         }
 
@@ -1077,14 +1077,14 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, return_mode="log")
         assert r.get("success") is True
         assert r["return_mode"] == "log"
-        assert r["units"]["avg_return_pct"] == "percentage_points (1.0 = 1%)"
+        assert r["units"]["avg_return_pct"] == "percent (1.0 = 1%)"
 
     @_apply_analyze_patches
     def test_return_mode_pct(self, mock_fetch, *_):
         r = self._call(mock_fetch, return_mode="pct")
         assert r.get("success") is True
         assert r["return_mode"] == "pct"
-        assert r["units"]["avg_return_pct"] == "percentage_points (1.0 = 1%)"
+        assert r["units"]["avg_return_pct"] == "percent (1.0 = 1%)"
         assert r["units"]["volatility_pct"] == "percentage_point_return_stddev_per_bar"
 
     @_apply_analyze_patches

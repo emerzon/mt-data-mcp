@@ -75,7 +75,7 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
 )
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "win_rate": "fraction",
-    "win_rate_pct": "percentage_points",
+    "win_rate_pct": "percent",
     "net_pnl": "account_currency",
     "gross_profit": "account_currency",
     "gross_loss": "account_currency",

@@ -469,8 +469,8 @@ class TestFormatResultForCli:
                 "prob_sl_first": 0.48,
                 "units": {
                     "horizon": "bars",
-                    "tp_pct": "percentage_points",
-                    "sl_pct": "percentage_points",
+                    "tp_pct": "percent",
+                    "sl_pct": "percent",
                     "prob_tp_first": "probability_fraction",
                     "prob_sl_first": "probability_fraction",
                 },

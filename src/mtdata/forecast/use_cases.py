@@ -714,11 +714,11 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
         units = dict(out.get("units") or {})
         units.setdefault(
             "forecast_vs_last_price.*_delta_pct",
-            "percentage_points (1.0 = 1%)",
+            "percent (1.0 = 1%)",
         )
         units.setdefault(
             "forecast_vs_last_price.direction_threshold_pct",
-            "percentage_points (1.0 = 1%)",
+            "percent (1.0 = 1%)",
         )
         out["units"] = units
     if path_flatness:
@@ -1755,7 +1755,7 @@ def _barrier_prob_units(payload: Dict[str, Any]) -> Dict[str, str]:
             units[key] = "price"
     for key in ("tp_pct", "sl_pct"):
         if payload.get(key) not in (None, "", [], {}):
-            units[key] = "percentage_points"
+            units[key] = "percent"
     for key in ("tp_ticks", "sl_ticks"):
         if payload.get(key) not in (None, "", [], {}):
             units[key] = "ticks"
