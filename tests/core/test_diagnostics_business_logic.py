@@ -232,6 +232,32 @@ def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
     assert any(row.get("volume") == 5000.0 for row in result["items"])
 
 
+def test_outliers_detect_compact_default_returns_top_ten(monkeypatch):
+    close = np.linspace(100.0, 101.0, 120)
+    volume = np.arange(1.0, 121.0) ** 3
+    frame = _bars(close, volume=volume)
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.outliers_detect)(
+        symbol="TEST",
+        score_fields="volume",
+        threshold=1.0,
+    )
+
+    assert result["outliers_total"] > 10
+    assert result["count"] == 10
+    assert result["truncated"] is True
+    assert [row["score"] for row in result["items"]] == sorted(
+        (row["score"] for row in result["items"]),
+        reverse=True,
+    )
+
+
 def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     rng = np.random.default_rng(11)
     close = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, 400)))

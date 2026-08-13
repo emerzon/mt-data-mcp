@@ -520,7 +520,7 @@ def outliers_detect(
     score_fields: str = "return,volume,range",
     method: Literal["mad", "iqr", "zscore"] = "mad",
     threshold: float = 3.5,
-    limit: int = 50,
+    limit: int = 10,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
