@@ -438,6 +438,13 @@ class TradeRiskAnalyzeRequest(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
 
+    @field_validator("sizing", mode="before")
+    @classmethod
+    def _default_fixed_fraction_sizing(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "method" not in value and "risk_pct" in value:
+            return {"method": "fixed_fraction", **value}
+        return value
+
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:

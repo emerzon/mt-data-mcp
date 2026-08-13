@@ -338,6 +338,29 @@ def test_trade_risk_analyze_kelly_requires_complete_sizing_inputs() -> None:
         )
 
 
+def test_trade_risk_request_defaults_risk_pct_shorthand_to_fixed_fraction() -> None:
+    request = TradeRiskAnalyzeRequest(
+        symbol="EURUSD",
+        sizing={"risk_pct": 1.0},
+        entry=100.0,
+        stop_loss=92.0,
+    )
+
+    assert request.sizing is not None
+    assert request.sizing.method == "fixed_fraction"
+    assert request.sizing.risk_pct == 1.0
+
+
+def test_trade_risk_request_does_not_guess_ambiguous_sizing_method() -> None:
+    with pytest.raises(ValidationError, match="discriminator 'method'"):
+        TradeRiskAnalyzeRequest(
+            symbol="EURUSD",
+            sizing={"win_rate": 0.55, "avg_win": 0.02, "avg_loss": 0.01},
+            entry=100.0,
+            stop_loss=92.0,
+        )
+
+
 @pytest.mark.parametrize("risk_pct", [0.0, -1.0, 100.0001, 101.0, float("inf"), float("nan")])
 def test_trade_risk_analyze_rejects_invalid_fixed_fraction_risk(risk_pct: float) -> None:
     with pytest.raises(ValidationError, match="risk_pct"):
