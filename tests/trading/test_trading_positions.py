@@ -85,6 +85,39 @@ def test_normalize_trade_read_output_open_positions_includes_as_of():
     assert isinstance(out.get("as_of"), str) and out["as_of"].endswith("Z")
 
 
+def test_normalize_trade_read_output_error_omits_success_collection_fields():
+    out = positions._normalize_trade_read_output(
+        {
+            "error": "Failed to get open positions",
+            "error_code": "mt5_connection_error",
+            "remediation": "Reconnect MT5.",
+        },
+        request=SimpleNamespace(symbol="EURUSD", detail="full"),
+        kind="open_positions",
+    )
+
+    assert out == {
+        "success": False,
+        "error": "Failed to get open positions",
+        "error_code": "mt5_connection_error",
+        "remediation": "Reconnect MT5.",
+    }
+    assert not {"kind", "scope", "count", "items", "as_of", "symbol"} & set(out)
+
+
+def test_normalize_trade_read_output_unexpected_type_is_error_only():
+    out = positions._normalize_trade_read_output(
+        None,
+        request=SimpleNamespace(detail="compact"),
+        kind="open_positions",
+    )
+
+    assert out == {
+        "success": False,
+        "error": "Unexpected open_positions payload type: NoneType",
+    }
+
+
 def test_open_position_protection_summary_surfaces_missing_levels():
     out = {
         "success": True,

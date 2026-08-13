@@ -365,6 +365,18 @@ def _preserve_trade_error_metadata(out: Dict[str, Any], source: Dict[str, Any]) 
         out[key] = value
 
 
+def _trade_read_error_output(
+    message: str,
+    *,
+    source: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build an error-only envelope without success-path collection fields."""
+    out: Dict[str, Any] = {"success": False, "error": str(message)}
+    if source is not None:
+        _preserve_trade_error_metadata(out, source)
+    return out
+
+
 def _include_trade_read_request_metadata(request: Any) -> bool:
     contract = resolve_output_contract(request, default_detail="full")
     return contract.shape_detail == "full"
@@ -495,10 +507,7 @@ def _normalize_trade_read_output(
     if isinstance(rows, dict):
         error_text = str(rows.get("error", "")).strip()
         if error_text:
-            out["success"] = False
-            out["error"] = error_text
-            _preserve_trade_error_metadata(out, rows)
-            return out
+            return _trade_read_error_output(error_text, source=rows)
 
         items = rows.get("items")
         if isinstance(items, list):
@@ -545,10 +554,7 @@ def _normalize_trade_read_output(
         first = rows[0]
         error_text = str(first.get("error", "")).strip()
         if error_text:
-            out["success"] = False
-            out["error"] = error_text
-            _preserve_trade_error_metadata(out, first)
-            return out
+            return _trade_read_error_output(error_text, source=first)
         message_text = str(first.get("message", "")).strip()
         if message_text:
             out["message"] = message_text
@@ -556,9 +562,9 @@ def _normalize_trade_read_output(
             return _compact_trade_read_output(out, request=request)
 
     if not isinstance(rows, list):
-        out["success"] = False
-        out["error"] = f"Unexpected {kind} payload type: {type(rows).__name__}"
-        return out
+        return _trade_read_error_output(
+            f"Unexpected {kind} payload type: {type(rows).__name__}"
+        )
 
     normalized_items = [
         _round_trade_money_fields(row) if isinstance(row, dict) else row for row in rows
