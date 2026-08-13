@@ -261,6 +261,38 @@ class TestSymbolsListNoSearch:
         assert result["currency_filter_basis"] == "broker_reported_currency"
         assert result["trust"] == "verify_broker_metadata"
 
+    @patch(_NORM_LIMIT, return_value=1)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_list_scopes_currency_anomalies_to_returned_page(
+        self,
+        mock_get,
+        mock_tbl,
+        mock_lim,
+    ):
+        btc = _make_symbol("BTCUSD", path="Crypto", description="Bitcoin (USD)")
+        btc.currency_base = "USD"
+        btc.currency_profit = "USD"
+        eurusd = _make_symbol("EURUSD", path="Forex\\Majors")
+        eurusd.currency_base = "EUR"
+        eurusd.currency_profit = "USD"
+        mock_get.return_value = [btc, eurusd]
+
+        with patch(_GROUP_PATH, side_effect=lambda symbol: symbol.path):
+            first_page = _get_symbols_list()(limit=1)
+            btc_page = _get_symbols_list()(
+                search_term="BTCUSD",
+                search_mode="exact",
+                limit=1,
+            )
+
+        assert first_page["data"][0][0] == "EURUSD"
+        assert "currency_metadata_anomalies" not in first_page
+        assert "trust" not in first_page
+        assert btc_page["currency_metadata_anomaly_count"] == 1
+        assert btc_page["currency_metadata_anomalies"][0]["symbol"] == "BTCUSD"
+        assert btc_page["trust"] == "verify_broker_metadata"
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
@@ -1125,7 +1157,7 @@ class TestSymbolsDescribe:
     @patch(f"{_MT5}.copy_ticks_range")
     @patch(f"{_MT5}.symbol_info_tick")
     @patch(f"{_MT5}.symbol_info")
-    def test_describe_reconciles_cached_quote_with_tick_stream(
+    def test_describe_keeps_newer_two_sided_quote_within_clock_skew_tolerance(
         self,
         mock_info,
         mock_tick,
@@ -1158,17 +1190,17 @@ class TestSymbolsDescribe:
         result = _get_symbols_describe()("EURUSD")
 
         details = result["details"]
-        assert details["quote_source"] == "mt5.copy_ticks_range"
-        assert details["quote_source_state"] == "refreshed_from_tick_stream"
-        assert details["data_age_seconds"] == 1.0
+        assert details["quote_source"] == "mt5.symbol_info_tick"
+        assert details["quote_source_state"] == "current"
+        assert details["data_age_seconds"] == 0.0
         assert details["freshness_state"] == "live"
         assert details["usable_for_live_trading"] is True
-        assert details["bid"] == 1.10004
-        assert details["ask"] == 1.10005
+        assert details["bid"] == 1.1
+        assert details["ask"] == 1.10009
         assert details["mid"] == 1.100045
-        assert details["spread"] == 0.00001
-        assert details["spread_points"] == 1.0
-        assert details["spread_pips"] == 0.1
+        assert details["spread"] == 0.00009
+        assert details["spread_points"] == 9.0
+        assert details["spread_pips"] == 0.9
         assert details["spread_valid"] is True
         assert details["spread_quality"] == "two_sided"
 

@@ -1171,6 +1171,16 @@ def symbols_list(  # noqa: C901
                 symbol_list = symbol_list[offset_value:]
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
+            returned_symbol_names = {
+                str(row.get("symbol"))
+                for row in symbol_list
+                if row.get("symbol") is not None
+            }
+            currency_anomalies = [
+                anomaly
+                for anomaly in currency_anomalies
+                if str(anomaly.get("symbol")) in returned_symbol_names
+            ]
             if detail_mode == "summary":
                 out = {
                     "success": True,

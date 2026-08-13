@@ -180,6 +180,9 @@ def test_data_fetch_symbol_errors_use_canonical_structured_suggestions() -> None
     assert candles["details"]["did_you_mean"] == expected
     assert ticks["details"]["did_you_mean"] == expected
     assert "Closest broker symbols" not in candles["error"]
+    assert candles["related_tools"] == ["symbols_list"]
+    assert "symbols_list(search_term='AAPL')" in candles["remediation"]
+    assert "market_ticker" not in candles["remediation"]
 
 
 def test_stale_candle_error_names_live_extended_session_sibling(monkeypatch) -> None:

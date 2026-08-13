@@ -355,8 +355,8 @@ def _normalize_candle_query_error(
         error_code = "symbol_not_found"
         message = f"Symbol '{request.symbol}' was not found in MT5."
         remediation = (
-            "Use the broker's exact MT5 symbol name; call market_ticker for symbol "
-            "discovery when the broker uses suffixes or aliases."
+            f"Use symbols_list(search_term='{request.symbol}') to find the broker's "
+            "exact MT5 symbol name, including any suffixes or aliases."
         )
     elif "could not parse date" in normalized or "invalid date" in normalized:
         error_code = "data_fetch_candles_invalid_date"
