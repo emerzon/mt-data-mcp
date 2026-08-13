@@ -863,6 +863,21 @@ class TestMain:
         assert json.loads(out.out)["ok"] is True
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_invalid_env_output_format_fails_before_discovery(
+        self, mock_discover, monkeypatch, capsys
+    ):
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "jsoon")
+
+        with patch("sys.argv", ["cli.py", "tools_list"]):
+            result = main()
+
+        assert result == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "cli_invalid_output_format"
+        assert payload["operation"] == "cli"
+        mock_discover.assert_not_called()
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_json_output_suppresses_stream_noise_and_third_party_logs(
         self, mock_discover, capsys
     ):

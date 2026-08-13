@@ -108,7 +108,8 @@ mtdata-cli symbols_list --limit 5 --json
 
 For scripts that always require JSON, set `MTDATA_OUTPUT_FORMAT=json` in the
 environment or `.env` file. Accepted values are `json` and `toon`; an explicit
-`--json` flag always selects JSON.
+`--json` flag always selects JSON. A nonblank unsupported environment value is
+a configuration error and exits with status 2 instead of changing formats.
 
 JSON output always keeps numeric values unminimized. Text output uses
 `--precision auto`, which compacts most tools while preserving full precision

@@ -48,6 +48,12 @@ from .formatting import (
     _json_default,
     _resolve_cli_formatter,
 )
+from .output_format import (
+    CLI_FORMAT_JSON,
+    CLI_OUTPUT_FORMAT_CHOICES,
+    CLI_OUTPUT_FORMAT_ENV,
+    resolve_cli_output_format_env,
+)
 from .parsing.discovery import (
     _COMMAND_PARAM_CHOICE_OVERRIDES,
     _COMMAND_PARAM_HELP_OVERRIDES,
@@ -589,7 +595,37 @@ def _render_cli_result_status(result: Any, *, args: Any, cmd_name: str) -> int:
 def _json_parse_errors_requested() -> bool:
     if "--json" in sys.argv[1:]:
         return True
-    return str(os.getenv("MTDATA_OUTPUT_FORMAT") or "").strip().lower() == "json"
+    try:
+        return resolve_cli_output_format_env() == CLI_FORMAT_JSON
+    except ValueError:
+        return True
+
+
+def _invalid_output_format_status() -> Optional[int]:
+    try:
+        resolve_cli_output_format_env()
+    except ValueError as exc:
+        _write_cli_text(
+            json.dumps(
+                build_error_payload(
+                    str(exc),
+                    code="cli_invalid_output_format",
+                    operation="cli",
+                    remediation=(
+                        f"Set {CLI_OUTPUT_FORMAT_ENV} to "
+                        f"{' or '.join(CLI_OUTPUT_FORMAT_CHOICES)}, or unset it."
+                    ),
+                    valid_values={
+                        CLI_OUTPUT_FORMAT_ENV: list(CLI_OUTPUT_FORMAT_CHOICES)
+                    },
+                    documentation="docs/ENV_VARS.md",
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 2
+    return None
 
 
 class _CLIArgumentParser(argparse.ArgumentParser):
@@ -1846,6 +1882,9 @@ def main():  # noqa: C901
         return 0
 
     load_environment()
+    invalid_format_status = _invalid_output_format_status()
+    if invalid_format_status is not None:
+        return invalid_format_status
     # Discover only the requested command family for one-shot execution. Root
     # help, search, tools_list, and unknown commands retain full discovery.
     _DISCOVERY_ERRORS.clear()

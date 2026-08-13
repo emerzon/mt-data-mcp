@@ -1,13 +1,18 @@
 """Lightweight command-line entry point."""
 
 import json
-import os
 import sys
 from difflib import get_close_matches
 from typing import Optional, Sequence
 
 from ..error_envelope import build_error_payload
 from .catalog import format_root_help, known_command_names
+from .output_format import (
+    CLI_FORMAT_JSON,
+    CLI_OUTPUT_FORMAT_CHOICES,
+    CLI_OUTPUT_FORMAT_ENV,
+    resolve_cli_output_format_env,
+)
 from .version import cli_version
 
 _GLOBAL_OPTIONS_WITH_VALUES = frozenset(
@@ -20,7 +25,32 @@ def _json_output_requested(argv: Sequence[str]) -> bool:
     """Resolve the lightweight entry point's output mode without loading tools."""
     if "--json" in argv:
         return True
-    return str(os.getenv("MTDATA_OUTPUT_FORMAT") or "").strip().lower() == "json"
+    return resolve_cli_output_format_env() == CLI_FORMAT_JSON
+
+
+def _invalid_output_format_status() -> Optional[int]:
+    try:
+        resolve_cli_output_format_env()
+    except ValueError as exc:
+        print(
+            json.dumps(
+                build_error_payload(
+                    str(exc),
+                    code="cli_invalid_output_format",
+                    operation="cli",
+                    remediation=(
+                        f"Set {CLI_OUTPUT_FORMAT_ENV} to "
+                        f"{' or '.join(CLI_OUTPUT_FORMAT_CHOICES)}, or unset it."
+                    ),
+                    valid_values={
+                        CLI_OUTPUT_FORMAT_ENV: list(CLI_OUTPUT_FORMAT_CHOICES)
+                    },
+                    documentation="docs/ENV_VARS.md",
+                )
+            )
+        )
+        return 2
+    return None
 
 
 def _leading_command_token(argv: Sequence[str]) -> Optional[str]:
@@ -53,6 +83,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not effective_argv:
         print(format_root_help(program))
         return 1
+
+    invalid_format_status = _invalid_output_format_status()
+    if invalid_format_status is not None:
+        return invalid_format_status
 
     raw_command = _leading_command_token(effective_argv)
     if raw_command is None:

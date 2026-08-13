@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Any, Callable, Dict, Optional
 
 from ...shared.output_precision import resolve_output_precision
@@ -16,9 +15,12 @@ from ..output_serialization import sanitize_json as _sanitize_json
 from ..trading.context import (
     _compact_trade_session_items as _shared_compact_trade_session_items,
 )
-
-CLI_FORMAT_TOON = "toon"
-CLI_FORMAT_JSON = "json"
+from .output_format import (
+    CLI_FORMAT_JSON,
+    CLI_FORMAT_TOON,
+    normalize_cli_output_format,
+    resolve_cli_output_format_env,
+)
 
 
 def _format_result_minimal(result: Any, verbose: bool = True) -> str:
@@ -29,19 +31,13 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
 
 
 def _normalize_cli_formatter(fmt: Any) -> str:
-    raw = str(fmt or CLI_FORMAT_TOON).strip().lower()
-    if raw == CLI_FORMAT_JSON:
-        return CLI_FORMAT_JSON
-    return CLI_FORMAT_TOON
+    return normalize_cli_output_format(fmt)
 
 
 def _resolve_cli_formatter(args: Any) -> str:
     if bool(getattr(args, "json", False)):
         return CLI_FORMAT_JSON
-    env_format = os.environ.get("MTDATA_OUTPUT_FORMAT")
-    if env_format is not None:
-        return _normalize_cli_formatter(env_format)
-    return CLI_FORMAT_TOON
+    return resolve_cli_output_format_env()
 
 
 def _format_result_for_cli(

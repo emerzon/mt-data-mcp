@@ -253,6 +253,32 @@ class TestFormatResultForCli:
 
         assert _resolve_cli_formatter(argparse.Namespace(json=False)) == "json"
 
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            (None, "toon"),
+            ("", "toon"),
+            ("  ", "toon"),
+            (" JSON ", "json"),
+            ("ToOn", "toon"),
+        ],
+    )
+    def test_env_output_format_normalizes_supported_values(
+        self, monkeypatch, configured, expected
+    ):
+        if configured is None:
+            monkeypatch.delenv("MTDATA_OUTPUT_FORMAT", raising=False)
+        else:
+            monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", configured)
+
+        assert _resolve_cli_formatter(argparse.Namespace(json=False)) == expected
+
+    def test_env_output_format_rejects_unsupported_value(self, monkeypatch):
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "jsoon")
+
+        with pytest.raises(ValueError, match="MTDATA_OUTPUT_FORMAT"):
+            _resolve_cli_formatter(argparse.Namespace(json=False))
+
     def test_json_flag_overrides_env_output_format(self, monkeypatch):
         monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "toon")
 
