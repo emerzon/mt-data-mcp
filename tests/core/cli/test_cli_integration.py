@@ -1591,6 +1591,30 @@ class TestMain:
 
 class TestForecastGenerateIntegration:
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_help_documents_canonical_model_id(
+        self, mock_discover, capsys
+    ):
+        mock_fn = MagicMock()
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            }
+        }
+
+        with patch("sys.argv", ["cli.py", "forecast_generate", "--help"]), pytest.raises(
+            SystemExit, match="0"
+        ):
+            main()
+
+        output = capsys.readouterr().out
+        assert "canonical model_id" in output
+        assert "method/data_scope/params_hash" in output
+        assert "trained-model params_hash" not in output
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_basic(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"

@@ -1187,7 +1187,10 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         dest="model_id",
         type=str,
         default=None,
-        help="Use a trained-model params_hash from the model store.",
+        help=(
+            "Use the canonical model_id returned by forecast_train or "
+            "forecast_models_list (method/data_scope/params_hash)."
+        ),
     )
     group_exec.add_argument(
         "--model-cache",
