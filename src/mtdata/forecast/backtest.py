@@ -1715,6 +1715,14 @@ def strategy_backtest(  # noqa: C901
             if costed_trade_count
             else None
         )
+        historical_spread_trade_coverage_pct = (
+            round(
+                historical_spread_trade_count / costed_trade_count * 100.0,
+                2,
+            )
+            if costed_trade_count
+            else None
+        )
         known_cost_return_available = bool(
             cost_model_complete or priced_trade_count > 0
         )
@@ -1832,9 +1840,9 @@ def strategy_backtest(  # noqa: C901
             },
         }
         if cost_model_value in {"auto", "historical_bar_spread"}:
-            result["cost_model"]["historical_spread_coverage_pct"] = round(
-                float(priced_trade_coverage_pct), 2
-            ) if priced_trade_coverage_pct is not None else None
+            result["cost_model"]["historical_spread_coverage_pct"] = (
+                historical_spread_trade_coverage_pct
+            )
             result["cost_model"]["historical_bar_spread_coverage_pct"] = round(
                 historical_spread_coverage * 100.0, 2
             )

@@ -193,6 +193,8 @@ def test_strategy_backtest_auto_falls_back_to_current_spread_proxy(monkeypatch):
     assert out["cost_model"]["type"] == "current_spread_proxy"
     assert out["cost_model"]["spread_source"] == "mt5_current_spread_proxy"
     assert out["cost_model"]["proxy_priced_trades"] == 1
+    assert out["cost_model"]["priced_trade_coverage_pct"] == 100.0
+    assert out["cost_model"]["historical_spread_coverage_pct"] == 0.0
     assert out["cost_model"]["complete"] is True
     assert out["cost_model"]["fallback"]["trades_priced"] == 1
     assert out["trades"][0]["spread_cost_source"] == "mt5_current_spread_proxy"
