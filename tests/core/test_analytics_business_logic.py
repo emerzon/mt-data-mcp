@@ -1444,6 +1444,53 @@ def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> No
     assert result["validation"]["forecast_signal_anchor_limit"] == 200
 
 
+def test_forecast_strategy_consumes_canonical_price_forecast(monkeypatch) -> None:
+    gateway = FakeGateway()
+
+    def fake_execute_forecast(**kwargs):
+        anchor = float(kwargs["prefetched_df"]["close"].iloc[-1])
+        direction = 1.0 if len(kwargs["prefetched_df"]) % 2 else -1.0
+        return {
+            "success": True,
+            "forecast_price": [anchor * (1.0 + direction * 0.01)],
+        }
+
+    monkeypatch.setattr(
+        "mtdata.forecast.forecast.execute_forecast",
+        fake_execute_forecast,
+    )
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "forecast",
+                "type": "forecast_threshold",
+                "method": "naive",
+                "params": {"lookback": 20},
+                "horizon": 1,
+                "long_above": 0.0,
+                "short_below": 0.0,
+            }
+        ],
+        barrier={"horizon": 1, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=2,
+        cost_model="fixed",
+        spread_bps=1.0,
+        bootstrap_samples=100,
+        detail="full",
+    )
+
+    result = validate_strategies(request, gateway)
+    candidate = result["rankings"][0]
+
+    assert candidate["evaluation_status"] == "complete"
+    assert candidate["signal_coverage"]["anchors_computed"] == 200
+    assert candidate["signal_counts"]["long"] == 100
+    assert candidate["signal_counts"]["short"] == 100
+    assert candidate["trades"] > 0
+
+
 def test_forecast_strategy_insufficient_data_explains_threshold_coverage(
     monkeypatch,
 ) -> None:

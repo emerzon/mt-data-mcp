@@ -1519,7 +1519,12 @@ def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str
             )
             expected = result.get("expected_return")
             if expected is None:
-                values = result.get("forecast") or result.get("values") or result.get("predictions")
+                values = (
+                    result.get("forecast_price")
+                    or result.get("forecast")
+                    or result.get("values")
+                    or result.get("predictions")
+                )
                 if isinstance(values, list) and values:
                     expected = (float(values[-1]) - float(history["close"].iloc[-1])) / float(history["close"].iloc[-1])
             if expected is not None:
@@ -1923,6 +1928,7 @@ def validate_strategies(  # noqa: C901
             "folds_evaluated": folds_evaluated,
             "fold_coverage": fold_coverage,
             "signal_coverage": signal_coverage,
+            "signal_counts": signal_counts,
             "skipped_folds": skipped_folds,
             "same_bar_policy": same_bar_policy,
             "direction_base_rate_stability": base_rate_stability,
