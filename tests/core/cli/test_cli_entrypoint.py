@@ -19,6 +19,9 @@ def test_cli_module_execution_shows_root_help(module):
     assert completed.returncode == 0, completed.stderr
     assert "usage:" in completed.stdout.lower()
     assert "forecast_generate" in completed.stdout
+    if module == "mtdata":
+        assert "usage: python -m mtdata" in completed.stdout
+        assert "__main__.py" not in completed.stdout
     assert completed.stderr == ""
 
 
@@ -126,6 +129,20 @@ def test_unknown_command_json_uses_standard_error_envelope(capsys):
     assert payload["request_id"]
     assert payload["remediation"]
     assert payload["documentation"] == "docs/CLI.md"
+
+
+def test_module_unknown_command_uses_invocable_remediation():
+    completed = subprocess.run(
+        [sys.executable, "-m", "mtdata", "no-such-command", "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert completed.returncode == 2
+    assert payload["remediation"] == "Run 'python -m mtdata --help' to list commands."
+    assert "__main__.py" not in completed.stdout
 
 
 def test_unknown_command_honors_json_output_environment(monkeypatch, capsys):
@@ -262,12 +279,19 @@ def test_shell_removes_syntactic_quotes_and_preserves_windows_paths(monkeypatch)
 def test_shell_continues_after_argparse_system_exit(monkeypatch):
     from mtdata.core.cli import api
 
-    commands = iter(["market_ticker EURUSD", "bad --flag", "market_ticker GBPUSD", "quit"])
+    commands = iter(
+        [
+            "market_ticker EURUSD",
+            "market_ticker BAD --flag",
+            "market_ticker GBPUSD",
+            "quit",
+        ]
+    )
     observed = []
 
     def _main():
         observed.append(list(api.sys.argv))
-        if api.sys.argv[1] == "bad":
+        if "--flag" in api.sys.argv:
             raise SystemExit(2)
         return 0
 
@@ -277,7 +301,7 @@ def test_shell_continues_after_argparse_system_exit(monkeypatch):
     assert api.run_shell() == 0
     assert [argv[1:] for argv in observed] == [
         ["market_ticker", "EURUSD"],
-        ["bad", "--flag"],
+        ["market_ticker", "BAD", "--flag"],
         ["market_ticker", "GBPUSD"],
     ]
 
@@ -285,12 +309,15 @@ def test_shell_continues_after_argparse_system_exit(monkeypatch):
 def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, capsys):
     from mtdata.core.cli import api
 
-    batch = "# warm batch\nmarket_ticker EURUSD\n\nbad --flag\nmarket_ticker GBPUSD\n"
+    batch = (
+        "# warm batch\nmarket_ticker EURUSD\n\n"
+        "market_ticker BAD --flag\nmarket_ticker GBPUSD\n"
+    )
     observed = []
 
     def _main():
         observed.append(list(api.sys.argv[1:]))
-        if api.sys.argv[1] == "bad":
+        if "--flag" in api.sys.argv:
             raise SystemExit(2)
         return 0
 
@@ -300,7 +327,7 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
     assert api.run_shell(interactive=False) == 2
     assert observed == [
         ["market_ticker", "EURUSD"],
-        ["bad", "--flag"],
+        ["market_ticker", "BAD", "--flag"],
         ["market_ticker", "GBPUSD"],
     ]
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -313,7 +340,7 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
         },
         {
             "line": 4,
-            "command": "bad --flag",
+            "command": "market_ticker BAD --flag",
             "success": False,
             "status": 2,
         },
@@ -324,6 +351,27 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
             "status": 0,
         },
     ]
+
+
+def test_noninteractive_shell_unknown_command_is_short_and_actionable(
+    monkeypatch, capsys
+):
+    from mtdata.core.cli import api
+
+    monkeypatch.setattr(api.sys, "stdin", io.StringIO("echo\n"))
+    monkeypatch.setattr(
+        api,
+        "main",
+        lambda: pytest.fail("unknown shell commands must not reach argparse"),
+    )
+
+    assert api.run_shell(interactive=False) == 2
+    record = json.loads(capsys.readouterr().out)
+    payload = record["result"]
+    assert payload["error_code"] == "cli_unknown_command"
+    assert "choose from" not in payload["error"]
+    assert "echo --help" not in payload["remediation"]
+    assert payload["remediation"].endswith("--help' to list commands.")
 
 
 def test_noninteractive_shell_frames_pretty_json_as_ndjson(monkeypatch, capsys):

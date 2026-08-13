@@ -157,6 +157,14 @@ def known_command_names() -> tuple[str, ...]:
     return tuple(sorted((*CLI_COMMAND_NAMES, *_OPTIONAL_COMMAND_ENV)))
 
 
+def display_program_name(argv0: object) -> str:
+    """Return a copy-pasteable CLI program name for help and recovery text."""
+    basename = os.path.basename(str(argv0 or ""))
+    if basename == "__main__.py":
+        return "python -m mtdata"
+    return basename or "mtdata-cli"
+
+
 def _matches_prefix(name: str, prefixes: Iterable[str]) -> bool:
     return any(name == prefix or name.startswith(prefix) for prefix in prefixes)
 

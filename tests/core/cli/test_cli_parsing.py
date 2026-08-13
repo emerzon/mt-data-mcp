@@ -1414,6 +1414,21 @@ class TestResolveParamKwargs:
 
         assert expected in kwargs["help"]
 
+    def test_forecast_train_wait_help_explains_context_defaults(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": "wait",
+                "type": bool,
+                "required": False,
+                "default": False,
+            },
+            None,
+            cmd_name="forecast_train",
+        )
+
+        assert "One-shot CLI and stdin shell batches wait by default" in kwargs["help"]
+        assert "interactive shell, MCP, and Web API" in kwargs["help"]
+
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "expected"),
         [

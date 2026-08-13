@@ -107,6 +107,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Train a price-level or return target. Volatility uses "
         "forecast_volatility_estimate and is not separately trainable."
     ),
+    ("forecast_train", "wait"): (
+        "Wait for training to finish. One-shot CLI and stdin shell batches wait "
+        "by default; interactive shell, MCP, and Web API calls submit in the "
+        "background unless wait is true."
+    ),
     ("data_fetch_candles", "timestamp_format"): (
         "Format each candle's `time` value: iso for the UTC bar-open timestamp "
         "or epoch for UTC epoch seconds."

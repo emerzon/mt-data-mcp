@@ -109,12 +109,12 @@ mtdata-cli symbols_list --limit 5
 
 TOON includes a quick schema hint:
 ```
-data[5]{name,group,description}:
-    EURUSD,Forex\Majors,Euro vs US Dollar
+data[5]{symbol,group,description,currency_base,currency_profit,digits,spread_is_floating}:
+    EURUSD,Forex\Majors,Euro vs US Dollar,EUR,USD,5,true
     ...
 ```
 - `data[5]` is the number of rows returned
-- `{name,group,description}` are the columns/keys in each row
+- `{symbol,...,spread_is_floating}` lists the columns/keys in each row
 
 ### JSON
 Structured output for programmatic use:

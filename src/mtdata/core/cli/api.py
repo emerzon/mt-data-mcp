@@ -42,6 +42,7 @@ from ..error_envelope import build_error_payload
 from ..execution_logging import infer_result_success
 from ..output_contract import resolve_output_contract
 from ..request_context import ensure_request_id_scope
+from .catalog import display_program_name, known_command_names
 from .formatting import (
     _attach_cli_meta,
     _format_result_for_cli,
@@ -1529,7 +1530,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "labels_triple_barrier": (
         f'{CLI_PROGRAM} labels_triple_barrier EURUSD --barriers '
-        '"unit=pct take_profit=0.5 stop_loss=0.5"',
+        '"unit=pct take_profit=0.1 stop_loss=0.1"',
         None,
     ),
     "forecast_train": (
@@ -1952,8 +1953,7 @@ def main():  # noqa: C901
         _print_extended_help(functions, help_query)
         return 0
 
-    argv0 = os.path.basename(str(sys.argv[0] or ""))
-    parser_prog = "python -m mtdata" if argv0 == "__main__.py" else argv0 or CLI_PROGRAM
+    parser_prog = display_program_name(sys.argv[0])
 
     parser = _CLIArgumentParser(
         prog=parser_prog,
@@ -2022,6 +2022,7 @@ def main():  # noqa: C901
             interactive=sys.stdin.isatty(),
             inherited_argv=_shell_inherited_argv(shell_args),
             timeframe_commands=_shell_timeframe_commands(functions),
+            command_names=set(functions),
         )
     )
 
@@ -2485,6 +2486,7 @@ def run_shell(
     interactive: bool = True,
     inherited_argv: Optional[Sequence[str]] = None,
     timeframe_commands: Optional[set[str]] = None,
+    command_names: Optional[set[str]] = None,
 ) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
     global _INTERACTIVE_SHELL_SESSION_DEPTH, _SHELL_SESSION_DEPTH
@@ -2558,6 +2560,48 @@ def run_shell(
                             "error": message,
                         }
                     )
+                continue
+            raw_command = _resolve_raw_cli_command(effective_command_argv)
+            normalized_command = raw_command.replace("-", "_")
+            shell_commands = {
+                *(command_names if command_names is not None else known_command_names()),
+                "shell",
+            }
+            if raw_command and normalized_command not in shell_commands:
+                message = f"Unknown command: {raw_command}"
+                suggestions = difflib.get_close_matches(
+                    normalized_command,
+                    sorted(shell_commands),
+                    n=3,
+                )
+                if suggestions:
+                    message += f". Did you mean: {', '.join(suggestions)}?"
+                payload = build_error_payload(
+                    message,
+                    code="cli_unknown_command",
+                    operation="cli",
+                    remediation=(
+                        f"Run '{display_program_name(original_argv[0])} --help' "
+                        "to list commands."
+                    ),
+                    documentation="docs/CLI.md",
+                )
+                if not interactive:
+                    overall_status = 2
+                    _write_shell_batch_record(
+                        {
+                            "line": line_number,
+                            "command": stripped,
+                            "success": False,
+                            "status": 2,
+                            "result": payload,
+                        }
+                    )
+                elif "--json" in effective_command_argv:
+                    _write_cli_text(json.dumps(payload, ensure_ascii=False))
+                else:
+                    print(message, file=sys.stderr)
+                    print(payload["remediation"], file=sys.stderr)
                 continue
             if not interactive:
                 record, status = _shell_batch_record(

@@ -6,7 +6,7 @@ from difflib import get_close_matches
 from typing import Optional, Sequence
 
 from ..error_envelope import build_error_payload
-from .catalog import format_root_help, known_command_names
+from .catalog import display_program_name, format_root_help, known_command_names
 from .output_format import (
     CLI_FORMAT_JSON,
     CLI_OUTPUT_FORMAT_CHOICES,
@@ -76,7 +76,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"mtdata-cli {cli_version()}")
         return 0
 
-    program = str(sys.argv[0] or "mtdata-cli").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    program = display_program_name(sys.argv[0])
     if effective_argv in (["--help"], ["-h"]):
         print(format_root_help(program))
         return 0
