@@ -419,6 +419,14 @@ See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) for data requirements, exampl
 | `temporal_analyze` | Analyze returns, volatility, and volume by time period (day of week, hour, month) |
 
 ### Fundamental Data (Finviz)
+
+Finviz commands use exchange tickers such as `AAPL`; MT5 commands use the
+connected broker's symbol identifiers, which may be suffixed (for example
+`AAPL.NAS` or `AAPL.NAS-24`). These namespaces are intentionally not
+auto-resolved because multiple broker contracts can match one ticker. Pass the
+Finviz ticker to `market_ticker` or another MT5 tool and use the structured
+`details.did_you_mean` candidates if the broker requires disambiguation.
+
 | Command | Description |
 |---------|-------------|
 | `finviz_fundamentals` | Get company fundamental metrics (P/E, EPS, market cap, etc.) |
