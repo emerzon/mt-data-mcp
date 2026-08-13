@@ -596,15 +596,33 @@ class _CLIArgumentParser(argparse.ArgumentParser):
     """Emit parse failures in the selected CLI transport format."""
 
     def error(self, message: str) -> None:
+        message_text = str(message)
+        missing_required = message_text.lower().startswith(
+            "the following arguments are required:"
+        )
+        missing_arguments: List[str] = []
+        if missing_required:
+            missing_text = message_text.split(":", 1)[1]
+            missing_arguments = [
+                item.strip().lstrip("-").replace("-", "_")
+                for item in missing_text.split(",")
+                if item.strip().lstrip("-")
+            ]
+            if missing_arguments:
+                message_text = (
+                    "Missing required argument(s): "
+                    + ", ".join(missing_arguments)
+                    + "."
+                )
         market_depth_disabled = (
-            "market_depth_fetch" in str(message)
+            "market_depth_fetch" in message_text
             and str(os.getenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH") or "")
             .strip()
             .lower()
             not in {"1", "true", "yes", "on"}
         )
         if market_depth_disabled:
-            message = (
+            message_text = (
                 "market_depth_fetch is disabled; set "
                 "MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 before starting the CLI. "
                 "The broker must also provide Level 2/DOM data."
@@ -613,17 +631,26 @@ class _CLIArgumentParser(argparse.ArgumentParser):
             program_parts = str(self.prog or "").split()
             operation = program_parts[-1] if len(program_parts) > 1 else "cli"
             payload = build_error_payload(
-                str(message),
+                message_text,
                 code=(
                     "feature_disabled"
                     if market_depth_disabled
+                    else "cli_missing_required"
+                    if missing_required
                     else "cli_invalid_arguments"
                 ),
                 operation=operation,
                 remediation=(
                     "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
                     if market_depth_disabled
+                    else "Provide: " + ", ".join(missing_arguments) + "."
+                    if missing_required and missing_arguments
                     else f"Run '{self.prog} --help' to inspect valid arguments."
+                ),
+                details=(
+                    {"missing_arguments": missing_arguments}
+                    if missing_required and missing_arguments
+                    else None
                 ),
             )
             if market_depth_disabled:
@@ -634,7 +661,7 @@ class _CLIArgumentParser(argparse.ArgumentParser):
                 }
             _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
             self.exit(2)
-        super().error(message)
+        super().error(message_text)
 
 
 def _resolve_cli_output_contract_or_error(parser: argparse.ArgumentParser, args: Any):

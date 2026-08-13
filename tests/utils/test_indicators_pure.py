@@ -836,7 +836,12 @@ Values above 70 often indicate overbought conditions.
         assert "usage_examples" not in out["indicator"]
 
         missing = raw_describe("bb")
-        assert missing.get("error") == "Indicator 'bb' not found"
+        assert missing["success"] is False
+        assert missing["error"] == "Indicator 'bb' not found"
+        assert missing["error_code"] == "indicator_not_found"
+        assert missing["details"] == {"name": "bb"}
+        assert missing["related_tools"] == ["indicators_list"]
+        assert "canonical indicator names" in missing["remediation"]
 
 
 # ===================================================================

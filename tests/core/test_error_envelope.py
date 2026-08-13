@@ -150,6 +150,20 @@ def test_normalize_error_payload_classifies_generic_code_from_warnings():
     assert out["related_tools"] == ["symbols_list"]
 
 
+def test_normalize_error_payload_classifies_forecast_symbol_failure():
+    out = normalize_error_payload(
+        {
+            "error": "Symbol 'NOTAREALSYM' not found in MT5 terminal.",
+            "error_code": "forecast_generate_error",
+        },
+        operation="forecast_generate",
+    )
+
+    assert out["error_code"] == "symbol_not_found"
+    assert out["remediation"].startswith("Use symbols_list")
+    assert out["related_tools"] == ["symbols_list"]
+
+
 def test_normalize_error_payload_does_not_override_dependency_code():
     out = normalize_error_payload(
         build_error_payload(

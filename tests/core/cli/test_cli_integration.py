@@ -62,6 +62,26 @@ from mtdata.core.cli.api import (
 
 
 class TestMain:
+    def test_standard_parser_classifies_missing_required_arguments(self, capsys):
+        from mtdata.core.cli.api import _CLIArgumentParser
+
+        parser = _CLIArgumentParser(prog="mtdata-cli indicators_describe")
+        parser.add_argument("name")
+
+        with (
+            patch("sys.argv", ["cli.py", "indicators_describe", "--json"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            parser.parse_args([])
+
+        assert exc_info.value.code == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "cli_missing_required"
+        assert payload["operation"] == "indicators_describe"
+        assert payload["error"] == "Missing required argument(s): name."
+        assert payload["details"] == {"missing_arguments": ["name"]}
+        assert payload["remediation"] == "Provide: name."
+
     @patch("mtdata.core.cli.api.discover_tools")
     def test_version_flag_exits_without_tool_discovery(self, mock_discover, capsys):
         with (

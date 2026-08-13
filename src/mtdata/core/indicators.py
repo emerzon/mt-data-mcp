@@ -14,6 +14,7 @@ from ..utils.indicators import clean_help_text as _clean_help_text
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import build_pagination_meta, normalize_output_detail
 
@@ -710,7 +711,12 @@ def indicators_describe(
                 None,
             )
             if not target:
-                return {"error": f"Indicator '{name}' not found"}
+                return build_error_payload(
+                    f"Indicator '{name}' not found",
+                    code="indicator_not_found",
+                    operation="indicators_describe",
+                    details={"name": str(name)},
+                )
             indicator = dict(target)
             docs = _build_indicator_documentation(indicator)
             description = docs.get("description") or indicator.get("description") or ""

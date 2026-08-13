@@ -50,6 +50,13 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
         "remediation": "Use forecast_models_list to inspect stored forecast models.",
         "related_tools": ["forecast_models_list"],
     },
+    "indicator_not_found": {
+        "remediation": (
+            "Use indicators_list to inspect canonical indicator names, then retry "
+            "indicators_describe with an exact name."
+        ),
+        "related_tools": ["indicators_list"],
+    },
 }
 
 _CANONICAL_DATE_RANGE_MESSAGE = "start must be before or equal to end."
@@ -66,6 +73,7 @@ _GENERIC_ERROR_CODES = {
     "internal_error",
     "tool_error",
     "unknown_error",
+    "forecast_generate_error",
 }
 _METHOD_ERROR_CODES = frozenset(
     {"invalid_method", "unsupported_method", "method_unavailable"}
