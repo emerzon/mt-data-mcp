@@ -7,6 +7,21 @@ from unittest.mock import patch
 import pytest
 
 
+@pytest.mark.parametrize("module", ["mtdata", "mtdata.core.cli"])
+def test_cli_module_execution_shows_root_help(module):
+    completed = subprocess.run(
+        [sys.executable, "-m", module, "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "usage:" in completed.stdout.lower()
+    assert "forecast_generate" in completed.stdout
+    assert completed.stderr == ""
+
+
 def test_cli_runtime_import_does_not_register_data_tool_family():
     probe = (
         "import sys; import mtdata.core.cli.runtime.commands; "
