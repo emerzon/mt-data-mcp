@@ -27,7 +27,7 @@ def test_temporal_rejects_future_range_before_gateway_creation() -> None:
 def test_parse_weekday_numeric_modes_and_aliases() -> None:
     assert _parse_weekday("0") == 0
     assert _parse_weekday("6") == 6
-    assert _parse_weekday("7") == 6
+    assert _parse_weekday("7") is None
     assert _parse_weekday("1") == 1
     assert _parse_weekday("Mon") == 0
 
