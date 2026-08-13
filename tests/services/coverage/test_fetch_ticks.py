@@ -663,6 +663,18 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_future_natural_language_start_is_rejected_before_fetch(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
+        result = fetch_ticks("EURUSD", start="tomorrow", end="tomorrow")
+
+        self.assertIn("in the future", result["error"])
+        mock_ticks.assert_not_called()
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_invalid_output_mode(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(5)
         result = fetch_ticks('EURUSD', limit=5, format='BADMODE')

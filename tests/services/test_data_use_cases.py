@@ -1822,6 +1822,21 @@ def test_run_data_fetch_ticks_classifies_unknown_symbol() -> None:
     assert result["related_tools"] == ["symbols_list"]
 
 
+def test_run_data_fetch_ticks_names_future_window_in_error_message() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD",
+            start="2099-01-01T00:00:00Z",
+            end="2099-01-01T01:00:00Z",
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {"error": "No tick data available"},
+    )
+
+    assert result["error_code"] == "data_fetch_ticks_future_date_range"
+    assert "in the future" in result["error"]
+
+
 def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warnings():
     result = run_data_fetch_ticks(
         DataFetchTicksRequest(symbol="EURUSD", limit=5, detail="compact"),

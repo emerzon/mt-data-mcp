@@ -3143,6 +3143,9 @@ def fetch_ticks(  # noqa: C901
                 from_date = _parse_start_datetime(start)
                 if not from_date:
                     return {"error": f"Could not parse start date {start!r}. {_DATE_FORMAT_HINT}"}
+                future_error = _future_start_error(start, from_date, 0)
+                if future_error:
+                    return {"error": future_error}
                 if end:
                     to_date = _parse_end_datetime(end)
                     if not to_date:

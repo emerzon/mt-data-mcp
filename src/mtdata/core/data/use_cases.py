@@ -1263,9 +1263,16 @@ def _normalize_tick_query_error(
     elif "start must be before or equal to end" in normalized:
         error_code = "data_fetch_ticks_invalid_date_range"
         remediation = "Set start to a timestamp earlier than or equal to end."
+    elif "start datetime" in normalized and "in the future" in normalized:
+        error_code = "data_fetch_ticks_future_date_range"
+        remediation = "Use a start timestamp at or before the current time."
     elif "no tick data" in normalized:
         if _tick_request_is_future_only(request):
             error_code = "data_fetch_ticks_future_date_range"
+            message = (
+                f"start datetime {request.start or request.end} is in the future; "
+                "no historical tick data is available for future dates."
+            )
             remediation = "Use a start and end timestamp at or before the current time."
         else:
             error_code = "data_fetch_ticks_no_data"
