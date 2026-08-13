@@ -1,4 +1,3 @@
-import traceback
 import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
@@ -866,6 +865,8 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "prob_tp_first",
     "prob_sl_first",
     "prob_no_hit",
+    "prob_same_bar",
+    "prob_unresolved",
     "prob_resolve",
     "breakeven_win_rate",
     "breakeven_win_rate_net",
@@ -2413,7 +2414,6 @@ def forecast_barrier_optimize(  # noqa: C901
             return {
                 "error": f"Simulation failed ({method_name}): {e}",
                 "error_type": "simulation_failure",
-                "traceback_summary": traceback.format_exc()[-500:],
             }
 
         S, H = paths.shape
@@ -2857,7 +2857,6 @@ def forecast_barrier_optimize(  # noqa: C901
                     return {
                         "error": f"Optuna optimization failed (pareto): {e}",
                         "error_type": "optuna_failure",
-                        "traceback_summary": traceback.format_exc()[-500:],
                     }
                 front: List[Dict[str, Any]] = []
                 for trial in study.best_trials:
@@ -2946,7 +2945,6 @@ def forecast_barrier_optimize(  # noqa: C901
                     return {
                         "error": f"Optuna optimization failed: {e}",
                         "error_type": "optuna_failure",
-                        "traceback_summary": traceback.format_exc()[-500:],
                     }
 
             dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
@@ -3821,7 +3819,5 @@ def forecast_barrier_optimize(  # noqa: C901
     except Exception as e:
         return {
             "error": f"Error optimizing barriers: {str(e)}",
-            "error_type": type(e).__name__,
-            "traceback_summary": traceback.format_exc()[-500:],
         }
 

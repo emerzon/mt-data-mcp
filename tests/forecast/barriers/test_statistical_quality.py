@@ -107,7 +107,7 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
         self.assertIn("error", result)
         self.assertIn("simulation_failure", result.get("error_type", ""))
         self.assertIn("mc_gbm", result["error"])
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_simulation_runtime_error_returns_structured_error(self):
         with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=RuntimeError("singular matrix")):
@@ -142,8 +142,7 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
                     sl_min=0.5, sl_max=0.5, sl_steps=1,
                 )
 
-    def test_outer_except_includes_error_type_and_traceback(self):
-        """Non-programming exceptions caught by outer handler include error_type."""
+    def test_outer_except_omits_internal_error_details(self):
         with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=OSError("disk full")):
             result = forecast_barrier_optimize(
                 symbol="EURUSD", timeframe="H1", horizon=10,
@@ -152,8 +151,8 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
                 sl_min=0.5, sl_max=0.5, sl_steps=1,
             )
         self.assertIn("error", result)
-        self.assertEqual(result.get("error_type"), "OSError")
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("error_type", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_optimize_bad_seed_type_returns_structured_error(self):
         result = forecast_barrier_optimize(
@@ -164,8 +163,8 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
             params={"seed": [1]},
         )
         self.assertIn("error", result)
-        self.assertEqual(result.get("error_type"), "TypeError")
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("error_type", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_probabilities_simulation_error_returns_structured(self):
         """barriers_probabilities: simulation ValueError → structured error."""
@@ -177,10 +176,9 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
             )
         self.assertIn("error", result)
         self.assertIn("simulation_failure", result.get("error_type", ""))
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("traceback_summary", result)
 
-    def test_probabilities_outer_except_structured(self):
-        """barriers_probabilities: outer handler includes error_type and traceback."""
+    def test_probabilities_outer_except_omits_internal_details(self):
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=OSError("network")):
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD", timeframe="H1", horizon=10,
@@ -188,8 +186,8 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
                 tp_pct=0.5, sl_pct=0.5,
             )
         self.assertIn("error", result)
-        self.assertIn("error_type", result)
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("error_type", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_closed_form_uses_shared_unsupported_timeframe_error(self):
         with patch.dict(f"{_BARRIER_PROB_ROOT}.TIMEFRAME_SECONDS", {"H1": 0}, clear=False):
@@ -236,8 +234,8 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
             params={"seed": [1]},
         )
         self.assertIn("error", result)
-        self.assertEqual(result.get("error_type"), "TypeError")
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("error_type", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_closed_form_bad_mu_type_returns_structured_error(self):
         result = forecast_barrier_closed_form(
@@ -250,8 +248,8 @@ class TestBarrierStructuredErrorHandling(_BarrierModulePatchMixin, unittest.Test
             sigma=0.2,
         )
         self.assertIn("error", result)
-        self.assertEqual(result.get("error_type"), "TypeError")
-        self.assertIn("traceback_summary", result)
+        self.assertNotIn("error_type", result)
+        self.assertNotIn("traceback_summary", result)
 
     def test_probabilities_programming_error_propagates(self):
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=KeyError("missing_key")):

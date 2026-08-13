@@ -1,4 +1,3 @@
-import traceback
 from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
@@ -340,7 +339,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             return {
                 "error": f"Simulation failed ({method_key}): {e}",
                 "error_type": "simulation_failure",
-                "traceback_summary": traceback.format_exc()[-500:],
             }
 
         price_paths = np.asarray(sim['price_paths'], dtype=float)
@@ -596,8 +594,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     except Exception as e:
         return {
             "error": f"Error computing barrier probabilities: {str(e)}",
-            "error_type": type(e).__name__,
-            "traceback_summary": traceback.format_exc()[-500:],
         }
 
 def forecast_barrier_closed_form(
@@ -746,7 +742,5 @@ def forecast_barrier_closed_form(
     except Exception as e:
         return {
             "error": f"Error computing closed-form barrier probability: {str(e)}",
-            "error_type": type(e).__name__,
-            "traceback_summary": traceback.format_exc()[-500:],
         }
 
