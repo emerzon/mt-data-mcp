@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import mtdata.core.market_snapshot as snapshot_mod
 
 
@@ -304,6 +306,8 @@ def test_market_snapshot_marks_partial_section_failure(monkeypatch):
             "remediation": "Request a shorter lookback.",
         }
     }
+    assert "nearest_support" not in result["snapshot"]
+    assert "nearest_resistance" not in result["snapshot"]
     assert "error" not in result
     assert result["summary"] == "EURUSD snapshot; mid=1.1; failed=levels."
 
@@ -345,6 +349,8 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
         "spread_pips": 2.0,
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
+        "support_count": 1,
+        "resistance_count": 1,
         "pattern_count": 2,
         "pattern_window_bars": 3,
         "pattern_scan_note": (
@@ -419,6 +425,8 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         },
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
+        "support_count": 1,
+        "resistance_count": 1,
         "pattern_count": 2,
         "pattern_window_bars": 3,
         "pattern_scan_note": (
@@ -528,6 +536,50 @@ def test_market_snapshot_nearest_levels_respect_quote_side(monkeypatch):
 
     assert result["snapshot"]["nearest_support"] == 1.0999
     assert result["snapshot"]["nearest_resistance"] == 1.1004
+    assert result["snapshot"]["support_count"] == 2
+    assert result["snapshot"]["resistance_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("supports", "resistances", "nearest_support", "nearest_resistance"),
+    [
+        ([{"value": 1.09}], [{"value": 1.11}], 1.09, 1.11),
+        ([{"value": 1.09}], [], 1.09, None),
+        ([], [{"value": 1.11}], None, 1.11),
+        ([], [], None, None),
+    ],
+)
+def test_market_snapshot_compact_has_stable_level_side_schema(
+    monkeypatch,
+    supports,
+    resistances,
+    nearest_support,
+    nearest_resistance,
+):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "quote":
+            return {"success": True, "symbol": symbol, "mid": 1.1}
+        if name == "levels":
+            return {
+                "success": True,
+                "supports": supports,
+                "resistances": resistances,
+                "level_counts": {
+                    "support": len(supports),
+                    "resistance": len(resistances),
+                },
+            }
+        return {"success": True, "n_patterns": 0, "highlights": []}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+    snapshot = result["snapshot"]
+
+    assert snapshot["nearest_support"] == nearest_support
+    assert snapshot["nearest_resistance"] == nearest_resistance
+    assert snapshot["support_count"] == len(supports)
+    assert snapshot["resistance_count"] == len(resistances)
 
 
 def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):

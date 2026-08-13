@@ -625,12 +625,28 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
         if bid is not None and ask is not None:
             reference_price = (bid + ask) / 2.0
 
-    support = _nearest_level_value(levels, "support", reference_price=reference_price)
-    if support is not None:
+    if isinstance(levels, dict) and not _section_failed(levels):
+        support = _nearest_level_value(
+            levels, "support", reference_price=reference_price
+        )
+        resistance = _nearest_level_value(
+            levels, "resistance", reference_price=reference_price
+        )
         out["nearest_support"] = support
-    resistance = _nearest_level_value(levels, "resistance", reference_price=reference_price)
-    if resistance is not None:
         out["nearest_resistance"] = resistance
+        counts = levels.get("level_counts")
+        support_count = counts.get("support") if isinstance(counts, dict) else None
+        resistance_count = (
+            counts.get("resistance") if isinstance(counts, dict) else None
+        )
+        if support_count is None:
+            supports = levels.get("supports")
+            support_count = len(supports) if isinstance(supports, list) else 0
+        if resistance_count is None:
+            resistances = levels.get("resistances")
+            resistance_count = len(resistances) if isinstance(resistances, list) else 0
+        out["support_count"] = int(support_count)
+        out["resistance_count"] = int(resistance_count)
 
     pattern_bias = _pattern_bias(patterns)
     if pattern_bias:
