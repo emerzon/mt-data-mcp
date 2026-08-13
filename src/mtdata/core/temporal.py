@@ -536,6 +536,8 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "return_mode",
             "units",
             "timezone",
+            "timing_convention",
+            "hour_span",
             "session_calendar",
             "session_calendar_source",
             "session_definition",
@@ -647,6 +649,8 @@ def _summary_temporal_payload(
             "return_mode",
             "units",
             "timezone",
+            "timing_convention",
+            "hour_span",
             "lookback",
             "lookback_source",
             "lookback_note",
@@ -1416,6 +1420,16 @@ def temporal_analyze(  # noqa: C901
                 payload["analysis_status"] = "insufficient_group_samples"
                 payload["message"] = (
                     "No temporal group met the requested minimum bar count."
+                )
+            if group_norm in {"hour", "all"}:
+                payload["timing_convention"] = (
+                    "candle_open_utc"
+                    if tz_name == "UTC"
+                    else "candle_open_analysis_timezone"
+                )
+                payload["hour_span"] = (
+                    "Each HH:00 bucket covers candle opens from HH:00 inclusive "
+                    f"to the next hour exclusive in {tz_name}."
                 )
             if lookback_defaulted:
                 payload["lookback_note"] = (

@@ -870,6 +870,11 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, group_by="hour")
         assert r.get("success") is True
         assert r["group_by"] == "hour"
+        assert r["timing_convention"] == "candle_open_utc"
+        assert r["hour_span"] == (
+            "Each HH:00 bucket covers candle opens from HH:00 inclusive "
+            "to the next hour exclusive in UTC."
+        )
         assert len(r["groups"]) > 0
         assert isinstance(r["groups"][0]["group"], int)
         assert r["groups"][0]["group_label"].endswith(":00")
