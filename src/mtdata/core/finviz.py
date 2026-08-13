@@ -371,6 +371,8 @@ _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
         "change_pct",
         "volume",
         "rsi_14",
+        "high_52w_distance_pct",
+        "low_52w_distance_pct",
         "sma20_distance_pct",
         "sma50_distance_pct",
         "sma200_distance_pct",
@@ -397,6 +399,8 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "performance_half_year",
         "performance_year",
         "performance_ytd",
+        "high_52w_distance_pct",
+        "low_52w_distance_pct",
         "sma20_distance_pct",
         "sma50_distance_pct",
         "sma200_distance_pct",
@@ -845,6 +849,15 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
         out["perf_pct"] = out.pop("perf")
     if "change" in out and "change_pct" not in out:
         out["change_pct"] = out.pop("change")
+    for source_key, distance_key in (
+        ("high_52w", "high_52w_distance_pct"),
+        ("low_52w", "low_52w_distance_pct"),
+    ):
+        if source_key not in out:
+            continue
+        if distance_key not in out:
+            out[distance_key] = out[source_key]
+        del out[source_key]
     change_pct = _finviz_percent_value(out.get("change_pct"))
     if change_pct is not None:
         out["change_pct"] = change_pct

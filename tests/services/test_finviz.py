@@ -2243,6 +2243,8 @@ class TestFinvizTools:
             "stocks": [
                 {
                     "Ticker": "AAPL",
+                    "52W High": -0.1228,
+                    "52W Low": 0.3507,
                     "SMA20": -0.0558,
                     "SMA50": -0.0199,
                     "SMA200": 0.1025,
@@ -2262,7 +2264,13 @@ class TestFinvizTools:
         assert result["items"][0]["sma20_distance_pct"] == -5.58
         assert result["items"][0]["sma50_distance_pct"] == -1.99
         assert result["items"][0]["sma200_distance_pct"] == 10.25
+        assert result["items"][0]["high_52w_distance_pct"] == -12.28
+        assert result["items"][0]["low_52w_distance_pct"] == 35.07
+        assert "high_52w" not in result["items"][0]
         assert result["units"]["sma200_distance_pct"] == (
+            "percent (1.0 = 1%)"
+        )
+        assert result["units"]["high_52w_distance_pct"] == (
             "percent (1.0 = 1%)"
         )
 
