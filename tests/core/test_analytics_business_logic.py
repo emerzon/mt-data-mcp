@@ -2009,7 +2009,7 @@ def test_relative_strength_uses_reconciled_quote_for_spread_filter() -> None:
     gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
         bid=1.10000,
         ask=1.10009,
-        time=now + 8,
+        time=now + 12,
     )
     gateway.copy_ticks_range = lambda *_args: [
         {

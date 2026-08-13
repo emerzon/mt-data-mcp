@@ -7,7 +7,10 @@ from numbers import Real
 from typing import Any, Dict, Optional
 
 from .freshness import QUOTE_STALE_SECONDS, standard_weekend_window
-from .market_metadata import build_tick_freshness_context
+from .market_metadata import (
+    TICK_FUTURE_TOLERANCE_SECONDS,
+    build_tick_freshness_context,
+)
 
 QUOTE_EXECUTION_READINESS_BASIS = (
     "quote_age_market_session_and_positive_spread"
@@ -376,19 +379,22 @@ def resolve_quote_tick(
         equal_timestamp_one_sided_update or within_point
     )
     quote_conflict = same_epoch and pairs_differ and not benign_reconciliation
-    use_stream_for_conflict = quote_conflict and (
-        _quote_pair_quality_rank(stream_tick) >= _quote_pair_quality_rank(raw_tick)
-    )
+    raw_rank = _quote_pair_quality_rank(raw_tick)
+    stream_rank = _quote_pair_quality_rank(stream_tick)
+    use_stream_for_conflict = quote_conflict and stream_rank >= raw_rank
     raw_ahead_of_observation = (
-        raw_epoch is not None and raw_epoch > float(now_epoch)
+        raw_epoch is not None
+        and raw_epoch > float(now_epoch) + TICK_FUTURE_TOLERANCE_SECONDS
     )
-    stream_not_ahead_of_observation = stream_epoch <= float(now_epoch)
-    reject_newer_one_sided_stream = (
+    stream_not_ahead_of_observation = (
+        stream_epoch <= float(now_epoch) + TICK_FUTURE_TOLERANCE_SECONDS
+    )
+    reject_lower_quality_stream = (
         raw_tick is not None
         and raw_epoch is not None
         and stream_epoch > raw_epoch + 0.001
-        and one_sided_stream_update
-        and _quote_pair_quality_rank(raw_tick) > _quote_pair_quality_rank(stream_tick)
+        and raw_live_ready
+        and raw_rank > stream_rank
     )
     use_stream = (
         raw_tick is None
@@ -401,20 +407,20 @@ def resolve_quote_tick(
         or (
             raw_epoch is not None
             and stream_epoch > raw_epoch + 0.001
-            and not reject_newer_one_sided_stream
+            and not reject_lower_quality_stream
         )
         or (
             not raw_live_ready
             and stream_live_ready
-            and not reject_newer_one_sided_stream
+            and not reject_lower_quality_stream
         )
     )
     if not use_stream:
         metadata["quote_source_state"] = (
             "reconciled_equal_timestamp_conflict"
             if quote_conflict
-            else "reconciled_newer_one_sided_update"
-            if reject_newer_one_sided_stream
+            else "reconciled_lower_quality_stream_update"
+            if reject_lower_quality_stream
             else "reconciled_one_sided_update"
             if one_sided_stream_update and pairs_differ
             else "reconciled_within_point"

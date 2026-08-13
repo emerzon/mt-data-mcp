@@ -26,6 +26,23 @@ from .safety import assess_margin_stress
 logger = logging.getLogger(__name__)
 
 
+def _quote_readiness_blocker(quote: Dict[str, Any]) -> str:
+    if quote.get("data_stale") is True or quote.get("freshness_state") == "stale":
+        return "quote_stale"
+    spread_quality = str(quote.get("spread_quality") or "").strip().lower()
+    if spread_quality == "locked":
+        return "quote_locked"
+    if spread_quality and spread_quality != "two_sided":
+        return "quote_spread_not_executable"
+    if isinstance(quote.get("quote_source_conflict"), dict):
+        return "quote_source_conflict"
+    return (
+        "quote_not_live"
+        if quote.get("usable_for_live_trading") is False
+        else "quote_readiness_unknown"
+    )
+
+
 def _sanitize_trade_session_section_error(
     section: Any,
     *,
@@ -191,11 +208,7 @@ def _build_trade_ready(
     if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
         blockers.append("quote_unavailable")
     elif quote.get("usable_for_live_trading") is not True:
-        blockers.append(
-            "quote_not_live"
-            if quote.get("usable_for_live_trading") is False
-            else "quote_readiness_unknown"
-        )
+        blockers.append(_quote_readiness_blocker(quote))
     elif quote.get("data_stale") is True:
         blockers.append("quote_stale")
     elif quote.get("data_stale") is not False:
@@ -290,10 +303,14 @@ def _build_quote_quality(quote: Any) -> Dict[str, Any]:
     age_seconds = quote.get("data_age_seconds")
     stale = bool(quote.get("data_stale"))
     execution_usable = quote.get("usable_for_live_trading") is True
-    status = "stale" if stale else "live" if execution_usable else "recent"
+    freshness_state = str(quote.get("freshness_state") or "").strip().lower()
+    freshness_live = freshness_state == "live" or (
+        not freshness_state and execution_usable
+    )
+    status = "stale" if stale else "live" if freshness_live else "recent"
     out: Dict[str, Any] = {
         "status": status,
-        "is_live": execution_usable,
+        "is_live": freshness_live,
         "data_stale": stale,
     }
     if age_seconds not in (None, ""):
@@ -301,7 +318,10 @@ def _build_quote_quality(quote: Any) -> Dict[str, Any]:
     for key in (
         "freshness",
         "freshness_state",
+        "spread_quality",
+        "spread_valid",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "live_max_age_seconds",
         "timestamp_ahead_of_wall_clock",
         "timestamp_in_future",

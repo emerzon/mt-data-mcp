@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-from mtdata.core.trading.context import _build_trade_ready, trade_session_context
+from mtdata.core.trading.context import (
+    _build_quote_quality,
+    _build_trade_ready,
+    trade_session_context,
+)
 from mtdata.core.trading.requests import TradeSessionContextRequest
 
 
@@ -79,6 +83,32 @@ def test_trade_ready_fails_closed_when_quote_or_market_status_is_unknown() -> No
     assert readiness["readiness_status"] == "unknown"
     assert "quote_readiness_unknown" in readiness["blockers"]
     assert "market_opening_status_unknown" in readiness["blockers"]
+
+
+def test_trade_ready_names_fresh_locked_quote_blocker() -> None:
+    quote = {
+        "freshness_state": "live",
+        "data_stale": False,
+        "spread_quality": "locked",
+        "usable_for_live_trading": False,
+    }
+
+    readiness = _build_trade_ready(
+        {
+            "execution_ready": True,
+            "equity": 1000.0,
+            "margin": 0.0,
+            "margin_free": 1000.0,
+        },
+        quote,
+        {"can_open_new_positions": True},
+    )
+    quality = _build_quote_quality(quote)
+
+    assert readiness["blockers"] == ["quote_locked"]
+    assert quality["is_live"] is True
+    assert quality["usable_for_live_trading"] is False
+    assert quality["spread_quality"] == "locked"
 
 
 @pytest.mark.parametrize(
