@@ -16,6 +16,7 @@ from mtdata.forecast.barriers_probabilities import (
     forecast_barrier_closed_form,
     forecast_barrier_hit_probabilities,
 )
+from mtdata.forecast.barriers_shared import _live_reference_time_context
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
 from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
@@ -59,6 +60,32 @@ def test_barrier_history_age_uses_completed_bar_end():
     assert result["data_as_of_epoch"] == bar_open + 3600
     assert result["data_freshness_seconds"] == 25 * 60
     assert result["data_stale"] is False
+
+
+def test_barrier_reference_prefers_live_stream_over_future_cached_tick():
+    now = datetime(2026, 8, 13, 12, 56, tzinfo=timezone.utc).timestamp()
+    cached = {
+        "time_msc": int((now + 20.0) * 1000),
+        "bid": 1.15380,
+        "ask": 1.15382,
+    }
+    streamed = {
+        "time_msc": int((now + 3.0) * 1000),
+        "bid": 1.15316,
+        "ask": 1.15318,
+    }
+
+    with (
+        patch("mtdata.utils.mt5.mt5.symbol_info_tick", return_value=cached),
+        patch("mtdata.utils.mt5.mt5.copy_ticks_range", return_value=[streamed]),
+    ):
+        result = _live_reference_time_context("EURUSD", "H1", now_epoch=now)
+
+    assert result["reference_quote_source"] == "mt5.copy_ticks_range"
+    assert result["reference_price_time_epoch"] == now + 3.0
+    assert result["reference_freshness_state"] == "live"
+    assert result["reference_usable_for_live"] is True
+    assert result["reference_spread_quality"] == "two_sided"
 
 
 def test_barrier_optimize_rejects_removed_profile_alias():

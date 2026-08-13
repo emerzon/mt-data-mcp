@@ -9,6 +9,66 @@ from typing import Any, Dict, Optional
 from .freshness import QUOTE_STALE_SECONDS, standard_weekend_window
 from .market_metadata import build_tick_freshness_context
 
+QUOTE_EXECUTION_READINESS_BASIS = (
+    "quote_age_market_session_and_positive_spread"
+)
+QUOTE_EXECUTION_SOURCE_AGREEMENT_BASIS = (
+    "quote_age_market_session_spread_and_source_agreement"
+)
+
+
+def enforce_quote_execution_readiness(
+    context: Dict[str, Any],
+    *,
+    bid: Any,
+    ask: Any,
+    quote_source_conflict: Any = None,
+) -> Dict[str, Any]:
+    """Apply the canonical executable-quote gate to a freshness context.
+
+    Tick freshness alone only establishes that a quote is current and the
+    market session is active. Live execution additionally requires a positive
+    two-sided spread and agreement between reconciled quote sources.
+    """
+    spread = compute_spread_metrics(bid, ask)
+    spread_quality = str(spread["spread_quality"])
+    source_conflict = isinstance(quote_source_conflict, dict)
+    context["spread_valid"] = bool(spread["spread_valid"])
+    context["spread_quality"] = spread_quality
+    spread_is_executable = spread["spread_valid"] is True and not source_conflict
+    freshness_available = "usable_for_live_trading" in context
+    if not spread_is_executable:
+        context["usable_for_live_trading"] = False
+    elif freshness_available:
+        context["usable_for_live_trading"] = (
+            context.get("usable_for_live_trading") is True
+        )
+    if "usable_for_live_trading" in context:
+        context["usable_for_live_trading_basis"] = (
+            QUOTE_EXECUTION_SOURCE_AGREEMENT_BASIS
+            if source_conflict
+            else QUOTE_EXECUTION_READINESS_BASIS
+        )
+
+    warnings: list[str] = []
+    if spread_quality == "locked":
+        warnings.append(
+            "Locked quote (bid equals ask) is not usable for live trading."
+        )
+    elif spread_quality != "two_sided":
+        warnings.append("Quote is not a valid positive two-sided market.")
+    if source_conflict:
+        warnings.append(
+            "Cached and streamed quotes disagree at the same timestamp; "
+            "review quote_source_conflict before trading."
+        )
+    if warnings:
+        existing = str(context.get("warning") or "").strip()
+        context["warning"] = " ".join(
+            part for part in (existing, *warnings) if part
+        )
+    return context
+
 
 def tick_value(tick: Any, field: str) -> Any:
     if isinstance(tick, dict):

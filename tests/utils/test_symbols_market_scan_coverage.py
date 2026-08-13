@@ -249,6 +249,19 @@ def test_market_scan_ranks_locked_quotes_after_valid_spreads(
     assert include_unsafe["unsafe_quote_rows"] == 1
 
     with patch("mtdata.core.symbols.time.time", return_value=now):
+        compact = _get_market_scan()(
+            timeframe="H1",
+            lookback=3,
+            limit=2,
+        )
+
+    compact_locked = next(
+        row for row in compact["data"] if row["symbol"] == "LOCKED"
+    )
+    assert compact_locked["spread_quality"] == "locked"
+    assert compact_locked["quote_usable_for_live_trading"] is False
+
+    with patch("mtdata.core.symbols.time.time", return_value=now):
         tight_only = _get_market_scan()(
             rank_by="spread",
             timeframe="H1",
@@ -1540,6 +1553,7 @@ class TestMarketScan:
             "close",
             "bid",
             "ask",
+            "spread_quality",
             "price_change_pct",
             "spread_pct",
             "spread_pips",

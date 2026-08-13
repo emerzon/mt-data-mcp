@@ -41,6 +41,7 @@ from ..utils.mt5 import (
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
 from ..utils.quote import (
     compute_spread_metrics,
+    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
     tick_value,
@@ -1799,11 +1800,12 @@ def symbols_describe(  # noqa: C901
                         symbol_data[field] = _market_scan_round(value, digits=precision)
                 symbol_data["spread_valid"] = bool(spread_metrics["spread_valid"])
                 symbol_data["spread_quality"] = spread_metrics["spread_quality"]
-                if isinstance(symbol_data.get("quote_source_conflict"), dict):
-                    symbol_data["usable_for_live_trading"] = False
-                    symbol_data["usable_for_live_trading_basis"] = (
-                        "quote_age_market_session_spread_and_source_agreement"
-                    )
+                enforce_quote_execution_readiness(
+                    symbol_data,
+                    bid=bid,
+                    ask=ask,
+                    quote_source_conflict=symbol_data.get("quote_source_conflict"),
+                )
 
             price_change_value = (
                 _market_scan_float(symbol_data.get("price_change"))
@@ -2151,18 +2153,12 @@ def _build_market_scan_spread_row(
         tick_time,
         symbol=symbol.name,
     )
-    if not spread_valid:
-        quality_warning = "Locked quote (bid equals ask) is not usable for live trading."
-        existing_warning = quote_freshness.get("warning")
-        quote_freshness["warning"] = (
-            f"{existing_warning} {quality_warning}"
-            if existing_warning
-            else quality_warning
-        )
-        quote_freshness["usable_for_live_trading"] = False
-        quote_freshness["usable_for_live_trading_basis"] = (
-            "quote_age_market_session_and_positive_spread"
-        )
+    enforce_quote_execution_readiness(
+        quote_freshness,
+        bid=bid,
+        ask=ask,
+        quote_source_conflict=quote_source.get("quote_source_conflict"),
+    )
 
     row = _market_scan_base_row(symbol)
     row.update(
@@ -2185,11 +2181,6 @@ def _build_market_scan_spread_row(
             "pricing_basis": pricing_basis,
         }
     )
-    if isinstance(row.get("quote_source_conflict"), dict):
-        row["usable_for_live_trading"] = False
-        row["usable_for_live_trading_basis"] = (
-            "quote_age_market_session_spread_and_source_agreement"
-        )
     if spread_cost_per_lot is not None and spread_cost_currency:
         row["spread_cost_currency"] = spread_cost_currency
     return row, None
@@ -4619,6 +4610,8 @@ def market_scan(  # noqa: C901
                 "close",
                 "bid",
                 "ask",
+                "spread_quality",
+                "quote_usable_for_live_trading",
                 "price_change_pct",
                 "spread_pips",
                 "spread_pct",

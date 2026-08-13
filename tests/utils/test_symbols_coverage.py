@@ -1172,6 +1172,40 @@ class TestSymbolsDescribe:
         assert details["spread_valid"] is True
         assert details["spread_quality"] == "two_sided"
 
+    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
+    @patch("mtdata.core.symbols.time.time", return_value=1_700_000_100.0)
+    @patch(f"{_MT5}.copy_ticks_range", return_value=[])
+    @patch(f"{_MT5}.symbol_info_tick")
+    @patch(f"{_MT5}.symbol_info")
+    def test_describe_marks_locked_quote_not_live_ready(
+        self,
+        mock_info,
+        mock_tick,
+        mock_copy_ticks,
+        mock_time,
+        mock_tz,
+    ):
+        del mock_copy_ticks, mock_time, mock_tz
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "digits", "point"]
+        info.name = "EURUSD"
+        info.time = 1_700_000_099.0
+        info.digits = 5
+        info.point = 0.00001
+        mock_info.return_value = info
+        mock_tick.return_value = SimpleNamespace(
+            time=1_700_000_099.0,
+            bid=1.1,
+            ask=1.1,
+        )
+
+        result = _get_symbols_describe()("EURUSD")
+
+        details = result["details"]
+        assert details["spread_quality"] == "locked"
+        assert details["usable_for_live_trading"] is False
+        assert "Locked quote" in details["warning"]
+
     # Sunday 20:00 UTC is still within standard weekend closure; 21:00 is market open.
     @patch("mtdata.core.symbols.time.time", return_value=1779652800.0)
     @patch(f"{_MT5}.symbol_info")

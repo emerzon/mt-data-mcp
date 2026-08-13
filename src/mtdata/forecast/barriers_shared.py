@@ -26,6 +26,12 @@ from ..utils.freshness import (
     format_freshness_label,
 )
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.quote import (
+    enforce_quote_execution_readiness,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -877,26 +883,37 @@ def _live_reference_time_context(
     except Exception:
         return {"reference_usable_for_live": False}
     try:
-        tick = _mt5.symbol_info_tick(symbol)
+        raw_tick = _mt5.symbol_info_tick(symbol)
     except Exception:
-        tick = None
+        raw_tick = None
+    if now_epoch is None:
+        now_epoch = datetime.now(timezone.utc).timestamp()
+    tick, quote_source = resolve_quote_tick(
+        _mt5,
+        symbol,
+        raw_tick,
+        now_epoch=now_epoch,
+    )
     if tick is None:
         return {"reference_usable_for_live": False}
 
-    epoch = _coerce_epoch(getattr(tick, "time_msc", None))
-    if epoch is None:
-        epoch = _coerce_epoch(getattr(tick, "time", None))
+    epoch = tick_epoch(tick)
     if epoch is None:
         return {"reference_usable_for_live": False}
 
-    if now_epoch is None:
-        now_epoch = datetime.now(timezone.utc).timestamp()
     freshness = build_tick_freshness_context(
         symbol,
         tick_epoch=epoch,
         now_epoch=now_epoch,
         item="reference price",
         age_rounder=lambda value: max(0, int(round(value))),
+    )
+    freshness.update(quote_source)
+    enforce_quote_execution_readiness(
+        freshness,
+        bid=tick_value(tick, "bid"),
+        ask=tick_value(tick, "ask"),
+        quote_source_conflict=freshness.get("quote_source_conflict"),
     )
     age_seconds = freshness.get("data_age_seconds")
     out = {
@@ -908,7 +925,18 @@ def _live_reference_time_context(
         "reference_freshness_state": freshness.get("freshness_state"),
         "reference_live_max_age_seconds": freshness.get("live_max_age_seconds"),
         "reference_usable_for_live": freshness.get("usable_for_live_trading"),
+        "reference_spread_quality": freshness.get("spread_quality"),
+        "reference_quote_source": freshness.get("quote_source"),
+        "reference_quote_source_state": freshness.get("quote_source_state"),
     }
+    for source_key, output_key in (
+        ("symbol_info_tick_time_epoch", "reference_symbol_info_tick_time_epoch"),
+        ("stream_tick_time_epoch", "reference_stream_tick_time_epoch"),
+        ("quote_source_conflict", "reference_quote_source_conflict"),
+        ("warning", "reference_quote_warning"),
+    ):
+        if freshness.get(source_key) is not None:
+            out[output_key] = freshness[source_key]
     for key in (
         "market_status",
         "market_status_reason",
@@ -999,10 +1027,17 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
     except Exception:
         return None, None
 
+    now_epoch = datetime.now(timezone.utc).timestamp()
     try:
-        tick = _mt5.symbol_info_tick(symbol)
+        raw_tick = _mt5.symbol_info_tick(symbol)
     except Exception:
-        tick = None
+        raw_tick = None
+    tick, _quote_source = resolve_quote_tick(
+        _mt5,
+        symbol,
+        raw_tick,
+        now_epoch=now_epoch,
+    )
     if tick is None:
         return None, None
 

@@ -22,7 +22,12 @@ from ..utils.mt5 import (
     resolve_broker_symbol_name,
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
-from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
+from ..utils.quote import (
+    enforce_quote_execution_readiness,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ..utils.time import format_datetime_utc, format_epoch_utc
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -834,6 +839,12 @@ def _symbol_tick_snapshot(
         value = tick_value(tick, field)
         if value is not None:
             out[field] = value
+    enforce_quote_execution_readiness(
+        out,
+        bid=tick_value(tick, "bid"),
+        ask=tick_value(tick, "ask"),
+        quote_source_conflict=out.get("quote_source_conflict"),
+    )
     return out
 
 
@@ -1183,6 +1194,10 @@ def _check_symbol_market_status(
             "last_tick_age_seconds",
             "data_stale",
             "usable_for_live_trading",
+            "usable_for_live_trading_basis",
+            "spread_valid",
+            "spread_quality",
+            "warning",
             "freshness_reason",
             "timestamp_ahead_of_wall_clock",
             "timestamp_in_future",

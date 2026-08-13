@@ -111,6 +111,24 @@ def test_market_snapshot_summary_surfaces_locked_quote_warning() -> None:
     assert "WARNING: Locked quote" in summary
 
 
+def test_snapshot_execution_cannot_open_when_quote_is_not_live_ready() -> None:
+    result = snapshot_mod._snapshot_summary_payload(
+        {
+            "quote": {
+                "usable_for_live_trading": False,
+                "spread_quality": "locked",
+            },
+            "status": {
+                "status": "probably_open",
+                "can_open_new_positions": True,
+            },
+        }
+    )
+
+    assert result["execution"]["usable_for_live_trading"] is False
+    assert result["execution"]["can_open_new_positions"] is False
+
+
 def test_market_snapshot_summary_explains_non_live_quote_age() -> None:
     summary = snapshot_mod._snapshot_summary(
         "EURUSD",

@@ -219,8 +219,12 @@ from the human-readable error string.
 `usable_for_live_trading` is reserved for execution-oriented quote and session
 outputs and is accompanied by `usable_for_live_trading_basis`:
 
-- `quote_age_and_market_session` is an execution-quote check. Its default age
-  threshold is 30 seconds, matching pre-trade validation.
+- `quote_age_market_session_and_positive_spread` is the executable-quote
+  check used by ticker, symbol status, symbol description, snapshots, and
+  trading previews. Its default age threshold is 30 seconds and it also
+  requires a positive two-sided bid/ask. `quote_age_and_market_session` is the
+  lower-level freshness result before quote quality is applied; do not treat it
+  as sufficient execution evidence.
 - Historical bars, forecasts, volatility estimates, and research backtests do
   not publish this execution-sounding boolean. Use `history_policy_ok`,
   `signal_status`, and `usage` for their respective contracts, then obtain a

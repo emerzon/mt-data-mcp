@@ -267,6 +267,25 @@ def test_symbol_tick_snapshot_prefers_millisecond_timestamp() -> None:
     assert result["tick_freshness"] == "live"
 
 
+def test_symbol_tick_snapshot_marks_locked_quote_not_live_ready() -> None:
+    now_utc = datetime.fromtimestamp(1_001.0, tz=timezone.utc)
+
+    result = market_status_mod._symbol_tick_snapshot(
+        "EURUSD",
+        {
+            "time": 1_000.0,
+            "bid": 1.1,
+            "ask": 1.1,
+        },
+        now_utc=now_utc,
+    )
+
+    assert result["tick_freshness"] == "live"
+    assert result["spread_quality"] == "locked"
+    assert result["usable_for_live_trading"] is False
+    assert "Locked quote" in result["warning"]
+
+
 def test_market_status_blocks_new_entries_when_tick_timestamp_is_unsafe(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)

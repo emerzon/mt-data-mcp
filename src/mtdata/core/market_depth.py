@@ -30,6 +30,7 @@ from ..utils.mt5 import (
 )
 from ..utils.quote import (
     compute_spread_metrics,
+    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
     tick_value,
@@ -928,37 +929,12 @@ def market_ticker(  # noqa: C901
                     out["data_age"] = age_display
                 if out["data_stale"]:
                     out["warning"] = _market_ticker_stale_warning(out, tick_time)
-            if not spread_valid:
-                out["usable_for_live_trading"] = False
-                out["usable_for_live_trading_basis"] = (
-                    "quote_age_market_session_and_positive_spread"
-                )
-                quality_warning = (
-                    "Locked quote (bid equals ask) is not usable for live trading."
-                    if spread_quality == "locked"
-                    else "Quote is not a valid positive two-sided market."
-                )
-                existing_warning = out.get("warning")
-                out["warning"] = (
-                    f"{existing_warning} {quality_warning}"
-                    if existing_warning
-                    else quality_warning
-                )
-            if isinstance(out.get("quote_source_conflict"), dict):
-                out["usable_for_live_trading"] = False
-                out["usable_for_live_trading_basis"] = (
-                    "quote_age_market_session_spread_and_source_agreement"
-                )
-                conflict_warning = (
-                    "Cached and streamed quotes disagree at the same timestamp; "
-                    "review quote_source_conflict before trading."
-                )
-                existing_warning = out.get("warning")
-                out["warning"] = (
-                    f"{existing_warning} {conflict_warning}"
-                    if existing_warning
-                    else conflict_warning
-                )
+            enforce_quote_execution_readiness(
+                out,
+                bid=bid,
+                ask=ask,
+                quote_source_conflict=out.get("quote_source_conflict"),
+            )
             diagnostics = {
                 "source": out.get("quote_source", "mt5.symbol_info_tick"),
                 "cache_used": False,

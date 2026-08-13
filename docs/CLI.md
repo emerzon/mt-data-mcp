@@ -503,7 +503,10 @@ rows expose `bid`, `ask`, `mid`, and `quote_as_of`; use those fields for a live
 mark and the bar fields for ranking and indicator context. Spread-ranked scans
 and the `tight_spread` preset exclude quotes that are not usable for live
 trading before pagination; pass `--quote-usable-only false` only when inspecting
-stale or otherwise non-executable snapshots intentionally.
+stale or otherwise non-executable snapshots intentionally. Other rankings keep
+such rows by default because their scores use completed bars; compact rows
+therefore include `spread_quality` and `quote_usable_for_live_trading` so a
+locked or otherwise unsafe live quote cannot look executable.
 
 Price-change rankings compare the previous completed close with the latest
 completed close over exactly one requested `timeframe` bar. Responses expose

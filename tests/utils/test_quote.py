@@ -7,10 +7,38 @@ from mtdata.utils.mt5 import account_currency_from_gateway
 from mtdata.utils.quote import (
     canonical_quote_midpoint,
     compute_spread_metrics,
+    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
     tick_value,
 )
+
+
+def test_quote_execution_readiness_requires_positive_two_sided_spread() -> None:
+    live = {
+        "usable_for_live_trading": True,
+        "usable_for_live_trading_basis": "quote_age_and_market_session",
+    }
+
+    result = enforce_quote_execution_readiness(live, bid=1.1, ask=1.1)
+
+    assert result["spread_quality"] == "locked"
+    assert result["spread_valid"] is False
+    assert result["usable_for_live_trading"] is False
+    assert result["usable_for_live_trading_basis"] == (
+        "quote_age_market_session_and_positive_spread"
+    )
+    assert "Locked quote" in result["warning"]
+
+
+def test_quote_execution_readiness_preserves_fresh_two_sided_quote() -> None:
+    live = {"usable_for_live_trading": True}
+
+    result = enforce_quote_execution_readiness(live, bid=1.1, ask=1.1002)
+
+    assert result["spread_quality"] == "two_sided"
+    assert result["spread_valid"] is True
+    assert result["usable_for_live_trading"] is True
 
 
 class _IndexedTick:

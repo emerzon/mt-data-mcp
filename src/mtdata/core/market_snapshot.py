@@ -615,6 +615,8 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
         ):
             if status.get(key) is not None:
                 execution[key] = status[key]
+    if execution.get("usable_for_live_trading") is False:
+        execution["can_open_new_positions"] = False
     if execution:
         out["execution"] = execution
 
