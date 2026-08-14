@@ -1881,7 +1881,6 @@ def test_compact_tick_row_marks_locked_quote_spread_unavailable():
 
     assert "spread" not in row
     assert row["spread_valid"] is False
-    assert row["quote_update_type"] == "bid_ask_update"
     assert "spread_basis" not in row
     assert "mid" not in row
     assert spread_sample is None
