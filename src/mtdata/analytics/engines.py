@@ -1731,47 +1731,69 @@ def _barrier_returns(
     return np.asarray(indices, dtype=int), np.asarray(outcomes, dtype=float)
 
 
+_MIN_HISTORICAL_SPREAD_COVERAGE = 0.9
+
+
 def _observed_spread_bps(
     request: StrategyValidateRequest,
     gateway: Any,
+    frame: pd.DataFrame,
 ) -> Tuple[Optional[float], str, bool, Dict[str, Any]]:
-    if request.spread_bps is not None:
+    if request.cost_model == "fixed":
         return (
             float(request.spread_bps),
             "explicit",
             True,
             {"basis": "request"},
         )
-    now = datetime.now(timezone.utc)
-    to_dt = _parse_time(request.end, now)
-    from_dt = _parse_time(request.start, to_dt - timedelta(hours=1))
-    if request.start and not request.end:
-        to_dt = from_dt + timedelta(hours=1)
-    ticks, _ = _tick_frame(gateway, request.symbol, from_dt, to_dt, 10_000)
-    valid = ticks[np.isfinite(ticks["mid"]) & (ticks["mid"] > 0)]
-    if len(valid):
-        source = "mt5_tick_median_historical_window" if request.start or request.end else "mt5_tick_median_recent"
+    spread_points = _finite(frame.get("spread", pd.Series(dtype=float)))
+    close = _finite(frame.get("close", pd.Series(dtype=float)))
+    try:
+        point = float(getattr(gateway.symbol_info(request.symbol), "point", 0.0) or 0.0)
+    except Exception:
+        point = 0.0
+    valid_mask = (
+        np.isfinite(spread_points)
+        & (spread_points > 0.0)
+        & np.isfinite(close)
+        & (close > 0.0)
+    )
+    observations = int(valid_mask.sum())
+    total_bars = int(len(frame))
+    coverage = float(observations / total_bars) if total_bars else 0.0
+    window = {
+        "basis": "historical_bar_spread",
+        "start": (
+            format_epoch_utc(float(frame["time"].iloc[0]))
+            if total_bars and "time" in frame
+            else None
+        ),
+        "end": (
+            format_epoch_utc(float(frame["time"].iloc[-1]))
+            if total_bars and "time" in frame
+            else None
+        ),
+        "observations": observations,
+        "bars": total_bars,
+        "coverage_pct": round(coverage * 100.0, 2),
+        "minimum_complete_coverage_pct": round(
+            _MIN_HISTORICAL_SPREAD_COVERAGE * 100.0,
+            2,
+        ),
+    }
+    if observations and math.isfinite(point) and point > 0.0:
+        spread_values = spread_points[valid_mask] * point / close[valid_mask] * 10_000.0
         return (
-            float(np.median(valid["spread"] / valid["mid"] * 10_000.0)),
-            source,
-            True,
-            {
-                "basis": "tick_window",
-                "start": format_datetime_utc(from_dt, timespec="auto"),
-                "end": format_datetime_utc(to_dt, timespec="auto"),
-                "observations": int(len(valid)),
-            },
+            float(np.median(spread_values)),
+            "mt5_historical_bar_spread_median",
+            coverage >= _MIN_HISTORICAL_SPREAD_COVERAGE,
+            window,
         )
     return (
         None,
         "unavailable",
         False,
-        {
-            "basis": "tick_window",
-            "start": format_datetime_utc(from_dt, timespec="auto"),
-            "end": format_datetime_utc(to_dt, timespec="auto"),
-            "observations": 0,
-        },
+        window,
     )
 
 
@@ -1810,13 +1832,18 @@ def validate_strategies(  # noqa: C901
     )
     if len(df) < 200:
         return {"error": "At least 200 completed bars are required.", "error_code": "insufficient_data"}
-    spread_bps, spread_source, complete, spread_window = _observed_spread_bps(request, gateway)
+    spread_bps, spread_source, complete, spread_window = _observed_spread_bps(
+        request,
+        gateway,
+        df,
+    )
     if spread_bps is None:
         return {
             "success": False,
             "error": (
                 "Transaction-cost spread is unavailable for the requested evaluation window. "
-                "Provide spread_bps with cost_model='fixed' or use a window with tick history."
+                "Provide spread_bps with cost_model='fixed' or use a window whose "
+                "completed bars include historical spread observations."
             ),
             "error_code": "cost_model_unavailable",
             "cost_model": {
@@ -2100,14 +2127,13 @@ def validate_strategies(  # noqa: C901
             "minimum_positive_fold_share": float(request.min_positive_fold_share),
         }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
-    warnings_out = (
-        [
-            "Transaction costs use a tick-window spread proxy; commission and "
-            "slippage remain the explicit request values."
-        ]
-        if spread_source.startswith("mt5_tick_median")
-        else []
-    )
+    warnings_out: List[str] = []
+    if not complete:
+        warnings_out.append(
+            "Historical spread coverage is below 90%; positive classification "
+            "is disabled. Use cost_model='fixed' with an explicit spread_bps for "
+            "a controlled complete-cost comparison."
+        )
     for item in results:
         folds_evaluated = int(item.get("folds_evaluated") or 0)
         if item.get("evaluation_status") == "partial":

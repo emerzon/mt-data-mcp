@@ -1114,41 +1114,6 @@ def _historical_trade_spread_bps(
     return (spread_price / execution_price) * 10000.0
 
 
-def _current_spread_proxy_bps(symbol: str) -> Tuple[Optional[float], Dict[str, Any]]:
-    """Return a disclosed current two-sided spread proxy in basis points."""
-    try:
-        tick = mt5.symbol_info_tick(symbol)
-        bid = float(getattr(tick, "bid", 0.0) or 0.0)
-        ask = float(getattr(tick, "ask", 0.0) or 0.0)
-        tick_time = getattr(tick, "time", None)
-    except Exception:
-        tick = None
-        bid = 0.0
-        ask = 0.0
-        tick_time = None
-    mid = (bid + ask) / 2.0
-    if (
-        tick is None
-        or not math.isfinite(bid)
-        or not math.isfinite(ask)
-        or ask <= bid
-        or mid <= 0.0
-    ):
-        return None, {
-            "source": "mt5_symbol_info_tick",
-            "status": "unavailable",
-            "reason": "current_two_sided_quote_unavailable",
-        }
-    return float((ask - bid) / mid * 10000.0), {
-        "source": "mt5_symbol_info_tick",
-        "status": "available",
-        "bid": bid,
-        "ask": ask,
-        "time_epoch": float(tick_time) if tick_time is not None else None,
-        "application": "constant_proxy_for_missing_historical_spreads",
-    }
-
-
 def _drawdown_episodes(
     equity_curve: List[Dict[str, Any]],
     *,
@@ -1236,7 +1201,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    cost_model: Literal["auto", "historical_bar_spread", "fixed"] = "auto",
+    cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread",
     spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
@@ -1275,12 +1240,12 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
-        cost_model_value = str(cost_model or "auto").strip().lower()
-        if cost_model_value not in {"auto", "historical_bar_spread", "fixed"}:
+        cost_model_value = str(cost_model or "historical_bar_spread").strip().lower()
+        if cost_model_value not in {"historical_bar_spread", "fixed"}:
             return {
-                "error": "cost_model must be 'auto', 'historical_bar_spread', or 'fixed'"
+                "error": "cost_model must be 'historical_bar_spread' or 'fixed'"
             }
-        if cost_model_value in {"auto", "historical_bar_spread"} and spread_bps is not None:
+        if cost_model_value == "historical_bar_spread" and spread_bps is not None:
             return {
                 "error": "spread_bps is only valid with cost_model='fixed'"
             }
@@ -1378,15 +1343,9 @@ def strategy_backtest(  # noqa: C901
 
         historical_spread_prices: Optional[np.ndarray] = None
         historical_spread_coverage = 0.0
-        current_spread_proxy_bps: Optional[float] = None
-        current_spread_proxy: Dict[str, Any] = {}
-        if cost_model_value in {"auto", "historical_bar_spread"}:
+        if cost_model_value == "historical_bar_spread":
             historical_spread_prices, historical_spread_coverage = (
                 _historical_bar_spread_prices(symbol, df)
-            )
-        if cost_model_value == "auto" and historical_spread_coverage < 1.0:
-            current_spread_proxy_bps, current_spread_proxy = (
-                _current_spread_proxy_bps(symbol)
             )
 
         signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
@@ -1421,7 +1380,6 @@ def strategy_backtest(  # noqa: C901
         observed_spread_costs: List[float] = []
         missing_spread_costs = 0
         historical_spread_trade_count = 0
-        proxy_spread_trade_count = 0
         current_direction = 0
         max_hold_reentry_block = 0
         entry_idx = None
@@ -1436,7 +1394,7 @@ def strategy_backtest(  # noqa: C901
             trade_entry_price: float,
             trade_exit_price: float,
         ) -> Tuple[Optional[float], str]:
-            nonlocal historical_spread_trade_count, proxy_spread_trade_count
+            nonlocal historical_spread_trade_count
             if cost_model_value == "fixed" and spread_bps is not None:
                 return fixed_spread_bps, "explicit_fixed"
             historical_cost = _historical_trade_spread_bps(
@@ -1450,9 +1408,6 @@ def strategy_backtest(  # noqa: C901
             if historical_cost is not None:
                 historical_spread_trade_count += 1
                 return historical_cost, "mt5_historical_bar_spread"
-            if cost_model_value == "auto" and current_spread_proxy_bps is not None:
-                proxy_spread_trade_count += 1
-                return current_spread_proxy_bps, "mt5_current_spread_proxy"
             return None, "unavailable"
 
         def _execution_price(bar_idx: int) -> Optional[float]:
@@ -1681,7 +1636,6 @@ def strategy_backtest(  # noqa: C901
         cost_input_available = bool(
             (cost_model_value == "fixed" and spread_bps is not None)
             or historical_spread_prices is not None
-            or (cost_model_value == "auto" and current_spread_proxy_bps is not None)
         )
         cost_model_complete = bool(
             cost_input_available and missing_spread_costs == 0
@@ -1689,14 +1643,6 @@ def strategy_backtest(  # noqa: C901
         if cost_model_value == "fixed":
             spread_source = "explicit"
             effective_cost_model = "fixed"
-        elif proxy_spread_trade_count and historical_spread_trade_count:
-            spread_source = "mt5_historical_bars_with_current_quote_fallback"
-            effective_cost_model = "historical_bar_spread_with_current_spread_proxy"
-        elif proxy_spread_trade_count or (
-            not trades and current_spread_proxy_bps is not None
-        ):
-            spread_source = "mt5_current_spread_proxy"
-            effective_cost_model = "current_spread_proxy"
         elif historical_spread_trade_count or historical_spread_prices is not None:
             spread_source = "mt5_historical_bar_spread"
             effective_cost_model = "historical_bar_spread"
@@ -1786,7 +1732,6 @@ def strategy_backtest(  # noqa: C901
                 "spread_source": spread_source,
                 "spread_observations": priced_trade_count,
                 "historical_priced_trades": historical_spread_trade_count,
-                "proxy_priced_trades": proxy_spread_trade_count,
                 "unpriced_trades": int(missing_spread_costs),
                 "priced_trade_coverage_pct": priced_trade_coverage_pct,
                 "slippage_bps_per_side": float(slippage_bps),
@@ -1839,7 +1784,7 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
-        if cost_model_value in {"auto", "historical_bar_spread"}:
+        if cost_model_value == "historical_bar_spread":
             result["cost_model"]["historical_spread_coverage_pct"] = (
                 historical_spread_trade_coverage_pct
             )
@@ -1850,23 +1795,11 @@ def strategy_backtest(  # noqa: C901
                 result["cost_model"]["historical_spread_status"] = (
                     "unavailable_zero_or_missing_samples"
                 )
-        if proxy_spread_trade_count or (
-            cost_model_value == "auto" and current_spread_proxy_bps is not None
-        ):
-            result["cost_model"]["fallback"] = {
-                **current_spread_proxy,
-                "spread_bps_round_trip": current_spread_proxy_bps,
-                "trades_priced": proxy_spread_trade_count,
-            }
-            result.setdefault("warnings", []).append(
-                "Historical spread was unavailable for one or more trades; the "
-                "disclosed current two-sided quote spread was applied as a constant proxy."
-            )
         if not cost_model_complete:
             spread_warning = (
                 " Historical zero spread samples are treated as unavailable, not as "
                 "frictionless execution."
-                if cost_model_value in {"auto", "historical_bar_spread"}
+                if cost_model_value == "historical_bar_spread"
                 and historical_spread_prices is None
                 else ""
             )
@@ -1888,20 +1821,6 @@ def strategy_backtest(  # noqa: C901
             result["summary"]["metrics_reliability_reasons"] = [
                 "incomplete_transaction_costs"
             ]
-            if cost_model_value == "auto" and trades and not known_cost_return_available:
-                result.update(
-                    {
-                        "success": False,
-                        "error_code": "strategy_backtest_cost_model_unavailable",
-                        "error": (
-                            "Neither historical bar spreads nor a current two-sided "
-                            "spread proxy could price the simulated trades."
-                        ),
-                        "remediation": (
-                            "Retry with cost_model='fixed' and an explicit spread_bps value."
-                        ),
-                    }
-                )
         sample_notice = metrics.get("sample_notice") if isinstance(metrics, dict) else None
         if isinstance(sample_notice, dict):
             trades_observed = sample_notice.get("trades_observed")

@@ -137,12 +137,11 @@ class StrategyValidateRequest(BaseModel):
     barrier: BarrierSpec = Field(default_factory=BarrierSpec)
     purge_bars: Optional[int] = Field(None, ge=0)
     embargo_bars: Optional[int] = Field(None, ge=0)
-    cost_model: Literal["current_spread_proxy", "fixed"] = Field(
-        "current_spread_proxy",
+    cost_model: Literal["historical_bar_spread", "fixed"] = Field(
+        "historical_bar_spread",
         description=(
-            "Transaction-cost spread source. A successfully observed tick-window "
-            "proxy is a complete priced-spread assumption; fixed requires an "
-            "explicit spread_bps."
+            "Transaction-cost spread source. Historical bar spread uses the completed "
+            "bars in the validation window; fixed requires an explicit spread_bps."
         ),
     )
     spread_bps: Optional[float] = Field(
@@ -165,6 +164,8 @@ class StrategyValidateRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "StrategyValidateRequest":
         validate_complete_time_window(self.start, self.end)
+        if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
+            raise ValueError("spread_bps is only valid with cost_model='fixed'")
         if self.cost_model == "fixed" and self.spread_bps is None:
             raise ValueError("spread_bps is required with cost_model='fixed'")
         return self

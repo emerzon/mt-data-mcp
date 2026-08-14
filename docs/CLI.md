@@ -593,15 +593,14 @@ mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy sma_cross \
 mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
   --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only --json
 
-# Auto uses historical MT5 bar spreads and falls back to the current quote proxy.
-# For a controlled constant:
+# Historical MT5 bar spreads are the default. For a controlled constant:
 mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
-The default `auto` model prices from historical spreads where available and
-uses a disclosed current two-sided quote as a constant fallback for missing
-samples. Select `historical_bar_spread` for strict historical-only pricing or
-`fixed` with an explicit spread for controlled comparisons. Annualized strategy
+The default `historical_bar_spread` model uses only spreads stored with the
+evaluation bars. Missing execution-bar spreads make the result explicitly
+incomplete; select `fixed` with an explicit spread for controlled comparisons.
+Annualized strategy
 metrics use the full evaluation duration, require at least 30 trades, and return
 compact `sample_guidance` when the lookback produces too few trades. Full-detail
 `drawdown_periods` are consolidated peak-to-recovery episodes rather than one

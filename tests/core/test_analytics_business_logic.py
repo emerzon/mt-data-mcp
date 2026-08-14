@@ -1392,7 +1392,7 @@ def test_strategy_validation_marks_skipped_requested_folds_partial(
     assert any("evaluated 1 of 2 requested folds" in item for item in result["warnings"])
 
 
-def test_strategy_validation_priced_proxy_can_receive_positive_classification(
+def test_strategy_validation_historical_spread_can_receive_positive_classification(
     monkeypatch,
 ) -> None:
     gateway = FakeGateway()
@@ -1432,6 +1432,11 @@ def test_strategy_validation_priced_proxy_can_receive_positive_classification(
     evidence = result["rankings"][0]["evidence"]
 
     assert result["cost_model"]["complete"] is True
+    assert result["cost_model"]["source"] == (
+        "mt5_historical_bar_spread_median"
+    )
+    assert result["cost_model"]["window"]["basis"] == "historical_bar_spread"
+    assert result["cost_model"]["window"]["coverage_pct"] == 100.0
     assert evidence["criteria"]["cost_model_complete"] is True
     assert evidence["provisional_positive_before_complete_costs"] is False
     assert evidence["classification"] == "positive"
@@ -1452,7 +1457,22 @@ def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
         )
 
 
-def test_strategy_validation_explicit_spread_is_complete_under_proxy_selector() -> None:
+def test_strategy_validation_historical_model_rejects_explicit_spread() -> None:
+    with pytest.raises(ValueError, match="spread_bps is only valid"):
+        StrategyValidateRequest(
+            symbol="EURUSD",
+            candidates=[
+                {
+                    "id": "cross",
+                    "type": "builtin_strategy",
+                    "strategy": "sma_cross",
+                }
+            ],
+            spread_bps=1.25,
+        )
+
+
+def test_strategy_validation_explicit_fixed_spread_is_complete() -> None:
     request = StrategyValidateRequest(
         symbol="EURUSD",
         candidates=[
@@ -1462,15 +1482,48 @@ def test_strategy_validation_explicit_spread_is_complete_under_proxy_selector() 
                 "strategy": "sma_cross",
             }
         ],
+        cost_model="fixed",
         spread_bps=1.25,
     )
 
-    spread, source, complete, window = _observed_spread_bps(request, FakeGateway())
+    spread, source, complete, window = _observed_spread_bps(
+        request,
+        FakeGateway(),
+        pd.DataFrame(),
+    )
 
     assert spread == 1.25
     assert source == "explicit"
     assert complete is True
     assert window == {"basis": "request"}
+
+
+def test_strategy_validation_marks_sparse_historical_spreads_incomplete() -> None:
+    gateway = FakeGateway()
+    frame = pd.DataFrame(_bars(20))
+    frame.loc[frame.index[:3], "spread"] = 0.0
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+            }
+        ],
+    )
+
+    spread, source, complete, window = _observed_spread_bps(
+        request,
+        gateway,
+        frame,
+    )
+
+    assert spread is not None
+    assert source == "mt5_historical_bar_spread_median"
+    assert complete is False
+    assert window["observations"] == 17
+    assert window["coverage_pct"] == 85.0
 
 
 def test_strategy_barrier_entry_uses_next_bar_open_after_gap() -> None:
@@ -1521,7 +1574,9 @@ def test_strategy_barrier_returns_do_not_overlap_persistent_signals() -> None:
 
 def test_strategy_validation_fails_when_cost_spread_is_unavailable() -> None:
     gateway = FakeGateway()
-    gateway.copy_ticks_range = lambda *_args, **_kwargs: []
+    gateway.bar_rows["EURUSD"] = [
+        {**row, "spread": 0.0} for row in gateway.bar_rows["EURUSD"]
+    ]
     request = StrategyValidateRequest(
         symbol="EURUSD",
         lookback=400,

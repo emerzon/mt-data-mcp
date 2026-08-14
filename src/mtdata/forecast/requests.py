@@ -300,12 +300,12 @@ class StrategyBacktestRequest(_PublicForecastRequest):
     oversold: float = Field(30.0, gt=0.0, lt=100.0)
     overbought: float = Field(70.0, gt=0.0, lt=100.0)
     max_hold_bars: Optional[int] = Field(None, ge=1)
-    cost_model: Literal["auto", "historical_bar_spread", "fixed"] = Field(
-        "auto",
+    cost_model: Literal["historical_bar_spread", "fixed"] = Field(
+        "historical_bar_spread",
         description=(
-            "Transaction-cost spread source. Auto uses historical bar spreads and "
-            "falls back to the disclosed current two-sided quote proxy. Historical "
-            "bar spread is strict; fixed requires an explicit spread_bps."
+            "Transaction-cost spread source. Historical bar spread uses only the "
+            "evaluation data and marks incomplete coverage explicitly; fixed requires "
+            "an explicit spread_bps."
         ),
     )
     spread_bps: Optional[float] = Field(
@@ -321,7 +321,7 @@ class StrategyBacktestRequest(_PublicForecastRequest):
             raise ValueError("fast_period must be less than slow_period")
         if self.oversold >= self.overbought:
             raise ValueError("oversold must be less than overbought")
-        if self.cost_model in {"auto", "historical_bar_spread"} and self.spread_bps is not None:
+        if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
             raise ValueError("spread_bps is only valid with cost_model='fixed'")
         if self.cost_model == "fixed" and self.spread_bps is None:
             raise ValueError("spread_bps is required with cost_model='fixed'")

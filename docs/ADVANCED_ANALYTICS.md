@@ -86,10 +86,11 @@ coverage uses `evaluation_status=partial` and cannot receive a positive evidence
 classification. `evaluation_status=complete` is reserved for candidates that
 evaluate every requested fold.
 
-The default `current_spread_proxy` is complete when its tick window contains a
-valid priced spread; `cost_model.complete` describes cost availability, not
-whether the source was fixed. The cost block retains the proxy source and
-observation window. An insufficient forecast-threshold candidate reports the
+The default `historical_bar_spread` model estimates costs from spread values in
+the completed-bar validation window. Coverage below 90% is disclosed as
+incomplete and prevents a positive evidence classification. Use `fixed` with an
+explicit `spread_bps` for a controlled constant-cost comparison. An insufficient
+forecast-threshold candidate reports the
 required trade count, computed-anchor coverage, long/short/neutral counts, and
 a reason distinguishing unavailable forecasts from an uncrossed threshold.
 
