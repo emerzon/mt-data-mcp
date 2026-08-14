@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import math
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
@@ -12,6 +13,11 @@ from ..services.options_service import get_options_chain
 
 _DEFAULT_QUANTLIB_CALENDAR = "UnitedStates.NYSE"
 _DEFAULT_MATURITY_BASIS = "calendar_days"
+_QUANTLIB_CALENDAR_TIMEZONES = {
+    "NullCalendar": "UTC",
+    "TARGET": "Europe/Brussels",
+    "UnitedStates.NYSE": "America/New_York",
+}
 
 
 def _quantlib_pricing_assumptions(
@@ -43,6 +49,21 @@ def _normalize_maturity_basis(maturity_basis: Any) -> str:
             "Use calendar_days|business_days."
         )
     return value
+
+
+def _valuation_timezone_for_calendar(calendar_name: Any) -> str:
+    normalized_name = _normalize_quantlib_calendar_name(calendar_name)
+    return _QUANTLIB_CALENDAR_TIMEZONES.get(normalized_name, "UTC")
+
+
+def _default_valuation_date(
+    calendar_name: Any,
+    *,
+    now_utc: Optional[_dt.datetime] = None,
+) -> tuple[_dt.date, str]:
+    timezone_name = _valuation_timezone_for_calendar(calendar_name)
+    current_utc = now_utc or _dt.datetime.now(_dt.timezone.utc)
+    return current_utc.astimezone(ZoneInfo(timezone_name)).date(), timezone_name
 
 
 def _resolve_quantlib_calendar(ql: Any, calendar_name: Any) -> tuple[Any, str]:
@@ -160,9 +181,10 @@ def price_barrier_option_quantlib(
     except ValueError as ex:
         return {"error": str(ex)}
     calendar_name = _normalize_quantlib_calendar_name(calendar)
+    valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
     if valuation_date is None:
-        valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
-        valuation_date_source = "default_utc_date"
+        valuation_day, valuation_timezone = _default_valuation_date(calendar_name)
+        valuation_date_source = "default_calendar_local_date"
     else:
         try:
             valuation_day = _dt.datetime.strptime(
@@ -322,7 +344,7 @@ def price_barrier_option_quantlib(
         "success": True,
         "price": float(npv),
         "valuation_date": valuation_day.isoformat(),
-        "valuation_timezone": "UTC",
+        "valuation_timezone": valuation_timezone,
         "valuation_date_source": valuation_date_source,
         "maturity_date": maturity_day.isoformat(),
         "time_to_maturity_years": time_to_maturity_years,
@@ -529,9 +551,10 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         expiry_date = _dt.datetime.strptime(expiry_text, "%Y-%m-%d").date()
     except Exception:
         return {"error": f"Invalid expiration format: {expiry_text}"}
+    valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
     if valuation_date is None:
-        valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
-        valuation_date_source = "default_utc_date"
+        valuation_day, valuation_timezone = _default_valuation_date(calendar_name)
+        valuation_date_source = "default_calendar_local_date"
     else:
         try:
             valuation_day = _dt.datetime.strptime(
@@ -594,14 +617,16 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     model = ql.HestonModel(process)
     engine = ql.AnalyticHestonEngine(model)
     helpers: List[Any] = []
-    # HestonModelHelper Period(Days) is calendar-based. Anchor it to the
-    # contract's actual expiry date even when diagnostics use business days.
+    # HestonModelHelper advances Period(Days) through the supplied calendar.
+    # A calendar-day delta therefore requires NullCalendar to preserve the
+    # contract's actual expiry date instead of skipping weekends and holidays.
     maturity_calendar_days = int((expiry_date - valuation_day).days)
     maturity = ql.Period(maturity_calendar_days, ql.Days)
+    maturity_calendar = ql.NullCalendar()
     for row in rows:
         helper = ql.HestonModelHelper(
             maturity,
-            calendar_obj,
+            maturity_calendar,
             float(spot_val),
             float(row["strike"]),
             ql.QuoteHandle(ql.SimpleQuote(float(row["iv"]))),
@@ -627,7 +652,7 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "symbol": str(symbol).upper().strip(),
         "expiration": expiry_text,
         "valuation_date": valuation_day.isoformat(),
-        "valuation_timezone": "UTC",
+        "valuation_timezone": valuation_timezone,
         "valuation_date_source": valuation_date_source,
         "days_to_expiry": int(days_to_expiry),
         "contracts_used": int(len(rows)),

@@ -30,6 +30,7 @@ _YAHOO_RETRY_STATUS_CODES = {429, 503}
 _YAHOO_MAX_ATTEMPTS = 3
 _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_OPTIONS_QUOTE_STALE_AFTER_SECONDS = 900.0
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
     "Run options_provider_status for configuration details. Yahoo options is "
@@ -78,6 +79,7 @@ def _options_quote_metadata(
     metadata: Dict[str, Any] = {
         "provider": provider,
         "cached": False,
+        "stale_after_seconds": _OPTIONS_QUOTE_STALE_AFTER_SECONDS,
         "underlying_price_source": price_source,
         "underlying_price_session": price_session,
     }
@@ -86,6 +88,7 @@ def _options_quote_metadata(
             {
                 "as_of": None,
                 "data_age_seconds": None,
+                "data_stale": None,
                 "freshness": "unknown",
                 "freshness_reason": "provider_quote_timestamp_unavailable",
             }
@@ -94,19 +97,31 @@ def _options_quote_metadata(
 
     now_epoch = float(_time.time())
     raw_age = now_epoch - float(timestamp_epoch)
+    timestamp_in_future = raw_age < -1.0
     metadata.update(
         {
             "as_of": _dt.datetime.fromtimestamp(
                 float(timestamp_epoch), tz=_dt.timezone.utc
             ).isoformat().replace("+00:00", "Z"),
             "data_age_seconds": round(max(0.0, raw_age), 3),
+            "data_stale": (
+                True
+                if timestamp_in_future
+                else raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS
+            ),
             "freshness": (
-                "clock_skew" if raw_age < -1.0 else "provider_timestamped"
+                "clock_skew"
+                if timestamp_in_future
+                else "stale"
+                if raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS
+                else "provider_timestamped"
             ),
         }
     )
-    if raw_age < -1.0:
+    if timestamp_in_future:
         metadata["freshness_reason"] = "provider_quote_timestamp_in_future"
+    elif raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS:
+        metadata["freshness_reason"] = "provider_quote_age_exceeds_live_threshold"
     return metadata
 
 

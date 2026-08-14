@@ -183,7 +183,9 @@ def _make_fake_quantlib():  # noqa: C901
     class _HestonModelHelper:
         created = []
 
-        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type):
+        def __init__(self, maturity, calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type):
+            self.maturity = maturity
+            self.calendar = calendar
             self.spot = float(spot)
             self.strike = float(strike)
             self.iv = float(iv_handle.quote.value)
@@ -250,8 +252,18 @@ def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     assert out["params_used"]["barrier_type"] == "up_out"
     assert out["greeks_status"] == "complete"
     assert out["greeks_spot_step"] == 0.01
-    assert out["valuation_timezone"] == "UTC"
-    assert out["valuation_date_source"] == "default_utc_date"
+    assert out["valuation_timezone"] == "America/New_York"
+    assert out["valuation_date_source"] == "default_calendar_local_date"
+
+
+def test_default_valuation_date_uses_selected_calendar_timezone():
+    valuation_day, timezone_name = qtools._default_valuation_date(
+        "UnitedStates.NYSE",
+        now_utc=_dt.datetime(2026, 8, 14, 1, 10, tzinfo=_dt.timezone.utc),
+    )
+
+    assert valuation_day == _dt.date(2026, 8, 13)
+    assert timezone_name == "America/New_York"
 
 
 def test_price_barrier_option_quantlib_uses_safe_step_near_barrier(monkeypatch):
@@ -398,6 +410,11 @@ def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch)
 
     assert out["success"] is True
     assert len(fake.HestonModelHelper.created) == 5
+    assert all(
+        isinstance(helper.calendar, fake.NullCalendar)
+        for helper in fake.HestonModelHelper.created
+    )
+    assert {helper.maturity.length for helper in fake.HestonModelHelper.created} == {18}
 
 
 def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monkeypatch):

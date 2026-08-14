@@ -97,6 +97,8 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
             "provider_effective": "yahoo",
             "cached": False,
             "data_age_seconds": None,
+            "data_stale": None,
+            "stale_after_seconds": 900.0,
             "as_of": None,
             "freshness": "unknown",
             "freshness_reason": "provider_quote_timestamp_unavailable",
@@ -118,6 +120,8 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
     assert out["configured_provider"] == "tradier"
     assert out["provider_effective"] == "yahoo"
     assert out["data_age_seconds"] is None
+    assert out["data_stale"] is None
+    assert out["stale_after_seconds"] == 900.0
     assert out["freshness"] == "unknown"
     assert out["underlying_price_source"] == "yahoo_regular_market_price"
     assert out["underlying_price_session"] == "regular_market"

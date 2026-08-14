@@ -283,10 +283,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("options_chain", "limit"): "Max option contracts to return.",
     ("options_heston_calibrate", "valuation_date"): (
-        "Valuation date in YYYY-MM-DD format; omit for the current UTC date."
+        "Valuation date in YYYY-MM-DD format; omit for the selected calendar's local date."
     ),
     ("options_barrier_price", "valuation_date"): (
-        "Valuation date in YYYY-MM-DD format; omit for the current UTC date."
+        "Valuation date in YYYY-MM-DD format; omit for the selected calendar's local date."
     ),
     ("volume_profile_levels", "lookback"): (
         "Historical bar count for a timeframe-based profile; requires --timeframe."
