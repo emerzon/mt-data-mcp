@@ -47,7 +47,7 @@ def test_compute_volume_profile_uses_mid_and_tick_count_fallback():
         VolumeProfileConfig(
             price_source="mid",
             bucket_size=0.0001,
-            value_area_pct=0.70,
+            value_area_fraction=0.70,
             price_digits=5,
         ),
     )
@@ -85,7 +85,7 @@ def test_compute_volume_profile_expands_value_area_ties_deterministically():
         VolumeProfileConfig(
             price_source="last",
             bucket_size=1.0,
-            value_area_pct=0.70,
+            value_area_fraction=0.70,
             price_digits=0,
             reference_price=12.0,
         ),
@@ -111,7 +111,7 @@ def test_compute_volume_profile_expands_across_empty_price_buckets():
         VolumeProfileConfig(
             price_source="last",
             bucket_size=1.0,
-            value_area_pct=0.90,
+            value_area_fraction=0.90,
             price_digits=0,
             reference_price=10.0,
         ),
@@ -176,6 +176,7 @@ def test_compute_volume_profile_counts_snapshot_volume_only_on_trade_events():
     )
 
     assert result["success"] is True
+    assert result["value_area_pct"] == 70.0
     assert result["volume_kind"] == "volume"
     assert result["total_volume"] == 5.0
 

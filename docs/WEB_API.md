@@ -158,7 +158,7 @@ Identify support and resistance levels, plus Fibonacci retracement/extension lev
   - `symbol` (string, required).
   - `timeframe` (string): Default `"H1"`. Pass `auto` to merge levels from `M15`, `H1`, `H4`, and `D1`.
   - `lookback` (int): History depth to analyze (default `200`, matching the support/resistance tool).
-  - `tolerance_pct` (float): Clustering tolerance (0.0015 = 0.15%).
+  - `tolerance_pct` (float): Clustering tolerance in percentage points (default `0.15`, meaning 0.15%).
   - `min_touches` (int): Minimum touches per level (default 2).
   - `max_levels` (int): Max levels per side (default 4).
   - `max_distance_pct` (float, optional): Percentage distance cap from current price (default `5.0`).

@@ -704,7 +704,7 @@ def run_patterns_detect(  # noqa: C901
                 volume_source="auto",
                 bucket_count=80,
                 max_buckets=120,
-                value_area_pct=0.70,
+                value_area_pct=70.0,
                 reference_price=None,
                 max_tick_window_days=_config_int(
                     request.config, "volume_profile_max_tick_window_days", 1

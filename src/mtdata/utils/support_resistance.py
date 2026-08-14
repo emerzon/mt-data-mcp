@@ -254,42 +254,46 @@ def _resolve_adaptive_settings(
     closes: np.ndarray,
     atr: np.ndarray,
     *,
-    base_tolerance_pct: float,
+    base_tolerance_fraction: float,
     base_reaction_bars: int,
 ) -> Dict[str, Any]:
-    atr_pct_values: List[float] = []
+    atr_fraction_values: List[float] = []
     for close_value, atr_value in zip(closes, atr):
         close_float = abs(float(close_value))
         atr_float = float(atr_value)
         if close_float <= 1e-9 or not math.isfinite(close_float) or not math.isfinite(atr_float) or atr_float <= 0.0:
             continue
-        atr_pct_values.append(atr_float / close_float)
+        atr_fraction_values.append(atr_float / close_float)
 
-    if not atr_pct_values:
+    if not atr_fraction_values:
         return {
             "adaptive_mode": "atr_regime",
-            "effective_tolerance_pct": float(base_tolerance_pct),
+            "effective_tolerance_fraction": float(base_tolerance_fraction),
             "effective_reaction_bars": int(base_reaction_bars),
-            "current_atr_pct": None,
-            "baseline_atr_pct": None,
+            "current_atr_fraction": None,
+            "baseline_atr_fraction": None,
             "volatility_ratio": 1.0,
         }
 
-    atr_pct_array = np.asarray(atr_pct_values, dtype=float)
-    recent_window = max(3, min(_DEFAULT_ADAPTIVE_RECENT_WINDOW, len(atr_pct_array)))
-    current_slice = atr_pct_array[-recent_window:]
-    baseline_slice = atr_pct_array[:-recent_window]
+    atr_fraction_array = np.asarray(atr_fraction_values, dtype=float)
+    recent_window = max(3, min(_DEFAULT_ADAPTIVE_RECENT_WINDOW, len(atr_fraction_array)))
+    current_slice = atr_fraction_array[-recent_window:]
+    baseline_slice = atr_fraction_array[:-recent_window]
     if baseline_slice.size == 0:
-        baseline_slice = atr_pct_array
+        baseline_slice = atr_fraction_array
 
-    baseline_atr_pct = float(np.nanmedian(baseline_slice))
-    current_atr_pct = float(np.nanmedian(current_slice))
-    if not math.isfinite(baseline_atr_pct) or baseline_atr_pct <= 0.0:
-        baseline_atr_pct = current_atr_pct if math.isfinite(current_atr_pct) and current_atr_pct > 0.0 else 0.0
+    baseline_atr_fraction = float(np.nanmedian(baseline_slice))
+    current_atr_fraction = float(np.nanmedian(current_slice))
+    if not math.isfinite(baseline_atr_fraction) or baseline_atr_fraction <= 0.0:
+        baseline_atr_fraction = (
+            current_atr_fraction
+            if math.isfinite(current_atr_fraction) and current_atr_fraction > 0.0
+            else 0.0
+        )
 
     volatility_ratio = 1.0
-    if baseline_atr_pct > 0.0 and math.isfinite(current_atr_pct):
-        volatility_ratio = current_atr_pct / baseline_atr_pct
+    if baseline_atr_fraction > 0.0 and math.isfinite(current_atr_fraction):
+        volatility_ratio = current_atr_fraction / baseline_atr_fraction
     if not math.isfinite(volatility_ratio) or volatility_ratio <= 0.0:
         volatility_ratio = 1.0
 
@@ -302,25 +306,36 @@ def _resolve_adaptive_settings(
         max(1.0 / math.sqrt(clipped_ratio), _DEFAULT_ADAPTIVE_REACTION_MIN_SCALE),
         _DEFAULT_ADAPTIVE_REACTION_MAX_SCALE,
     )
-    atr_anchor = max(0.0, current_atr_pct * _DEFAULT_ADAPTIVE_TOLERANCE_ATR_MULT)
-    base_tolerance_value = max(0.0, float(base_tolerance_pct))
+    atr_anchor = max(
+        0.0,
+        current_atr_fraction * _DEFAULT_ADAPTIVE_TOLERANCE_ATR_MULT,
+    )
+    base_tolerance_value = max(0.0, float(base_tolerance_fraction))
     scaled_tolerance = base_tolerance_value * tolerance_scale
     if volatility_ratio >= 1.0:
-        effective_tolerance_pct = max(scaled_tolerance, atr_anchor)
+        effective_tolerance_fraction = max(scaled_tolerance, atr_anchor)
     else:
         # In compressed regimes keep the ATR floor informative, but never let it widen
         # the zone beyond the caller's base tolerance.
         compressed_anchor = atr_anchor * clipped_ratio
-        effective_tolerance_pct = min(base_tolerance_value, max(scaled_tolerance, compressed_anchor))
-    effective_tolerance_pct = min(0.05, max(0.0, effective_tolerance_pct))
+        effective_tolerance_fraction = min(base_tolerance_value, max(scaled_tolerance, compressed_anchor))
+    effective_tolerance_fraction = min(0.05, max(0.0, effective_tolerance_fraction))
     effective_reaction_bars = max(1, int(round(float(base_reaction_bars) * reaction_scale)))
 
     return {
         "adaptive_mode": "atr_regime",
-        "effective_tolerance_pct": float(effective_tolerance_pct),
+        "effective_tolerance_fraction": float(effective_tolerance_fraction),
         "effective_reaction_bars": int(effective_reaction_bars),
-        "current_atr_pct": float(current_atr_pct) if math.isfinite(current_atr_pct) else None,
-        "baseline_atr_pct": float(baseline_atr_pct) if math.isfinite(baseline_atr_pct) and baseline_atr_pct > 0.0 else None,
+        "current_atr_fraction": (
+            float(current_atr_fraction)
+            if math.isfinite(current_atr_fraction)
+            else None
+        ),
+        "baseline_atr_fraction": (
+            float(baseline_atr_fraction)
+            if math.isfinite(baseline_atr_fraction) and baseline_atr_fraction > 0.0
+            else None
+        ),
         "volatility_ratio": float(volatility_ratio),
     }
 
@@ -537,7 +552,7 @@ def _collect_tests(
     return tests
 
 
-def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List[Dict[str, Any]]:
+def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_fraction: float) -> List[Dict[str, Any]]:
     clusters: List[Dict[str, Any]] = []
     for test in sorted(tests, key=lambda item: float(item["value"])):
         value = float(test["value"])
@@ -545,7 +560,7 @@ def _cluster_tests(tests: List[Dict[str, Any]], *, tolerance_pct: float) -> List
         best_delta: Optional[float] = None
         for cluster in clusters:
             ref = float(cluster["value"])
-            threshold = max(abs(ref), abs(value), 1e-9) * float(tolerance_pct)
+            threshold = max(abs(ref), abs(value), 1e-9) * float(tolerance_fraction)
             delta = abs(ref - value)
             if delta <= threshold and (best_delta is None or delta < best_delta):
                 best_cluster = cluster
@@ -763,7 +778,7 @@ def _cluster_atr_avg(cluster: Dict[str, Any]) -> Optional[float]:
 def _resolve_zone(
     cluster: Dict[str, Any],
     *,
-    tolerance_pct: float,
+    tolerance_fraction: float,
 ) -> Dict[str, Any]:
     raw_value = cluster.get("value")
     if raw_value is None:
@@ -817,8 +832,10 @@ def _resolve_zone(
     variance = max(0.0, (value_sq_sum / weight_sum) - (value * value))
     weighted_std = math.sqrt(variance)
     atr_avg = _cluster_atr_avg(cluster)
-    tol_pad = max(abs(value), 1e-9) * max(float(tolerance_pct), 0.0) * 0.5
-    atr_pad = (atr_avg or max(abs(value), 1e-9) * max(float(tolerance_pct), 0.0)) * _DEFAULT_ZONE_ATR_MULT
+    tol_pad = max(abs(value), 1e-9) * max(float(tolerance_fraction), 0.0) * 0.5
+    atr_pad = (
+        atr_avg or max(abs(value), 1e-9) * max(float(tolerance_fraction), 0.0)
+    ) * _DEFAULT_ZONE_ATR_MULT
     dispersion_pad = weighted_std * _DEFAULT_ZONE_STD_MULT
     half_width = max(tol_pad, atr_pad, dispersion_pad, 1e-9)
     touch_min = float(cluster.get("touch_min", value))
@@ -833,10 +850,10 @@ def _analyze_cluster_state(
     *,
     closes: np.ndarray,
     epochs: List[Optional[float]],
-    tolerance_pct: float,
+    tolerance_fraction: float,
 ) -> None:
     dominant_source = _dominant_source(cluster)
-    zone = _resolve_zone(cluster, tolerance_pct=tolerance_pct)
+    zone = _resolve_zone(cluster, tolerance_fraction=tolerance_fraction)
     cluster["zone_low"] = zone["zone_low"]
     cluster["zone_high"] = zone["zone_high"]
     cluster["zone_width"] = zone["zone_width"]
@@ -868,7 +885,7 @@ def _analyze_cluster_state(
     zone_mid = 0.5 * (float(zone_low) + float(zone_high))
     buffer = max(
         (atr_avg or 0.0) * _DEFAULT_BREAKOUT_BUFFER_ATR_MULT,
-        max(abs(zone_mid), 1e-9) * max(float(tolerance_pct), 0.0) * 0.25,
+        max(abs(zone_mid), 1e-9) * max(float(tolerance_fraction), 0.0) * 0.25,
         1e-9,
     )
     analysis_start = min(int(test["index"]) for test in cluster.get("tests", []) or [{"index": 0}])
@@ -945,9 +962,14 @@ def _analyze_cluster_state(
     cluster["score"] = max(0.0, base_score - breakout_penalty + role_reversal_bonus)
 
 
-def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], tolerance_pct: float) -> Dict[str, Any]:
+def _format_level(
+    cluster: Dict[str, Any],
+    *,
+    current_price: Optional[float],
+    tolerance_fraction: float,
+) -> Dict[str, Any]:
     value = float(cluster["value"])
-    zone = _resolve_zone(cluster, tolerance_pct=tolerance_pct)
+    zone = _resolve_zone(cluster, tolerance_fraction=tolerance_fraction)
     dominant_source = _dominant_source(cluster)
     level_type = dominant_source if dominant_source in {"support", "resistance"} else "support"
     distance = None
@@ -1921,7 +1943,7 @@ def merge_support_resistance_results(  # noqa: C901
     symbol: Optional[str] = None,
     timeframe: str = "auto",
     limit: Optional[int] = None,
-    tolerance_pct: float = 0.0015,
+    tolerance_fraction: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
     reaction_bars: int = _DEFAULT_REACTION_BARS,
@@ -1949,12 +1971,12 @@ def merge_support_resistance_results(  # noqa: C901
         volume_source = str(payload.get("volume_source") or "").strip()
         if volume_source:
             volume_sources_seen.add(volume_source)
-        for key, bucket in (
-            ("effective_tolerance_pct", adaptive_tolerance_pairs),
-            ("effective_reaction_bars", adaptive_reaction_pairs),
-            ("volatility_ratio", volatility_ratio_pairs),
-            ("current_atr_pct", current_atr_pairs),
-            ("baseline_atr_pct", baseline_atr_pairs),
+        for key, bucket, scale in (
+            ("effective_tolerance_pct", adaptive_tolerance_pairs, 0.01),
+            ("effective_reaction_bars", adaptive_reaction_pairs, 1.0),
+            ("volatility_ratio", volatility_ratio_pairs, 1.0),
+            ("current_atr_pct", current_atr_pairs, 0.01),
+            ("baseline_atr_pct", baseline_atr_pairs, 0.01),
         ):
             try:
                 value = payload.get(key)
@@ -1962,21 +1984,21 @@ def merge_support_resistance_results(  # noqa: C901
                     continue
                 numeric = float(value)
                 if math.isfinite(numeric):
-                    bucket.append((tf_weight, numeric))
+                    bucket.append((tf_weight, numeric * scale))
             except Exception:
                 continue
 
     merge_tolerance_value = _weighted_average(adaptive_tolerance_pairs)
     if merge_tolerance_value is None:
-        merge_tolerance_value = float(tolerance_pct)
+        merge_tolerance_value = float(tolerance_fraction)
     merge_reaction_value = _weighted_average(adaptive_reaction_pairs)
     if merge_reaction_value is None:
         merge_reaction_value = float(reaction_bars)
     merge_volatility_ratio = _weighted_average(volatility_ratio_pairs)
     if merge_volatility_ratio is None:
         merge_volatility_ratio = 1.0
-    merge_current_atr_pct = _weighted_average(current_atr_pairs)
-    merge_baseline_atr_pct = _weighted_average(baseline_atr_pairs)
+    merge_current_atr_fraction = _weighted_average(current_atr_pairs)
+    merge_baseline_atr_fraction = _weighted_average(baseline_atr_pairs)
 
     clusters: List[Dict[str, Any]] = []
     for payload in results:
@@ -2240,7 +2262,11 @@ def merge_support_resistance_results(  # noqa: C901
             + float(cluster.get("role_reversal_bonus", 0.0))
             + float(cluster.get("mtf_confirmation_bonus", 0.0)),
         )
-        level = _format_level(cluster, current_price=current_price, tolerance_pct=float(merge_tolerance_value))
+        level = _format_level(
+            cluster,
+            current_price=current_price,
+            tolerance_fraction=float(merge_tolerance_value),
+        )
         level["touches"] = int(cluster.get("touches", level.get("touches", 0)))
         level["episodes"] = int(cluster.get("episodes", level.get("episodes", level.get("touches", 0))))
         level["first_touch"] = cluster.get("first_touch")
@@ -2358,8 +2384,8 @@ def merge_support_resistance_results(  # noqa: C901
         ],
         "limit": int(limit) if limit is not None else int(results[0].get("limit", 0) or 0),
         "method": _METHOD_NAME,
-        "tolerance_pct": float(tolerance_pct),
-        "effective_tolerance_pct": float(merge_tolerance_value),
+        "tolerance_pct": float(tolerance_fraction) * 100.0,
+        "effective_tolerance_pct": float(merge_tolerance_value) * 100.0,
         "min_touches": int(max(1, int(min_touches))),
         "qualification_basis": "episodes",
         "score_basis": {
@@ -2377,7 +2403,11 @@ def merge_support_resistance_results(  # noqa: C901
             "distance_pct": (
                 "signed_percent (negative=below_reference, "
                 "positive=above_reference, 1.0=1%)"
-            )
+            ),
+            "tolerance_pct": "percent (1.0=1%)",
+            "effective_tolerance_pct": "percent (1.0=1%)",
+            "current_atr_pct": "percent (1.0=1%)",
+            "baseline_atr_pct": "percent (1.0=1%)",
         },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
@@ -2389,8 +2419,16 @@ def merge_support_resistance_results(  # noqa: C901
         "adx_period": int(max(2, int(adx_period))),
         "adaptive_mode": "atr_regime",
         "volatility_ratio": float(merge_volatility_ratio),
-        "current_atr_pct": None if merge_current_atr_pct is None else float(merge_current_atr_pct),
-        "baseline_atr_pct": None if merge_baseline_atr_pct is None else float(merge_baseline_atr_pct),
+        "current_atr_pct": (
+            None
+            if merge_current_atr_fraction is None
+            else float(merge_current_atr_fraction) * 100.0
+        ),
+        "baseline_atr_pct": (
+            None
+            if merge_baseline_atr_fraction is None
+            else float(merge_baseline_atr_fraction) * 100.0
+        ),
         "decay_half_life_bars": None if decay_half_life_bars is None else int(decay_half_life_bars),
         "current_price": None if current_price is None else float(round(current_price, 6)),
         "current_price_source": str(
@@ -2631,6 +2669,10 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
 
     for key in (
         "max_distance_pct",
+        "tolerance_pct",
+        "effective_tolerance_pct",
+        "current_atr_pct",
+        "baseline_atr_pct",
         "volume_weighting",
         "volume_source",
         "window",
@@ -2727,7 +2769,7 @@ def compute_support_resistance_levels(
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
     limit: Optional[int] = None,
-    tolerance_pct: float = 0.0015,
+    tolerance_fraction: float = 0.0015,
     min_touches: int = 2,
     max_levels: int = 4,
     reaction_bars: int = _DEFAULT_REACTION_BARS,
@@ -2747,9 +2789,9 @@ def compute_support_resistance_levels(
     if len(frame) < 3:
         raise ValueError("Need at least 3 bars to compute support/resistance levels")
 
-    tolerance_value = float(tolerance_pct)
+    tolerance_value = float(tolerance_fraction)
     if tolerance_value < 0.0:
-        raise ValueError("tolerance_pct must be non-negative")
+        raise ValueError("tolerance_fraction must be non-negative")
     volume_weighting_mode = _normalize_volume_weighting(volume_weighting)
     min_touches_value = max(1, int(min_touches))
     max_levels_value = max(1, int(max_levels))
@@ -2780,10 +2822,10 @@ def compute_support_resistance_levels(
     adaptive_settings = _resolve_adaptive_settings(
         closes,
         atr,
-        base_tolerance_pct=tolerance_value,
+        base_tolerance_fraction=tolerance_value,
         base_reaction_bars=reaction_bars_value,
     )
-    effective_tolerance_value = float(adaptive_settings["effective_tolerance_pct"])
+    effective_tolerance_value = float(adaptive_settings["effective_tolerance_fraction"])
     effective_reaction_bars = int(adaptive_settings["effective_reaction_bars"])
 
     epochs = [_to_epoch(value) for value in frame["time"].tolist()] if "time" in frame.columns else []
@@ -2803,14 +2845,14 @@ def compute_support_resistance_levels(
         volume=volume_values,
         volume_baseline=volume_baseline,
     )
-    clusters = _cluster_tests(tests, tolerance_pct=effective_tolerance_value)
+    clusters = _cluster_tests(tests, tolerance_fraction=effective_tolerance_value)
     for cluster in clusters:
         _apply_episode_metrics(cluster, episode_gap_bars=max(1, effective_reaction_bars))
         _analyze_cluster_state(
             cluster,
             closes=closes,
             epochs=epochs,
-            tolerance_pct=effective_tolerance_value,
+            tolerance_fraction=effective_tolerance_value,
         )
     usable_clusters = [cluster for cluster in clusters if int(cluster.get("episodes", cluster["touches"])) >= min_touches_value]
 
@@ -2818,7 +2860,7 @@ def compute_support_resistance_levels(
         _format_level(
             {**cluster, "volume_source": volume_source},
             current_price=current_price,
-            tolerance_pct=effective_tolerance_value,
+            tolerance_fraction=effective_tolerance_value,
         )
         for cluster in usable_clusters
     ]
@@ -2885,8 +2927,8 @@ def compute_support_resistance_levels(
         "timeframes_analyzed": [str(timeframe)] if timeframe is not None else [],
         "limit": int(limit) if limit is not None else len(frame),
         "method": _METHOD_NAME,
-        "tolerance_pct": float(tolerance_value),
-        "effective_tolerance_pct": float(effective_tolerance_value),
+        "tolerance_pct": float(tolerance_value) * 100.0,
+        "effective_tolerance_pct": float(effective_tolerance_value) * 100.0,
         "min_touches": int(min_touches_value),
         "qualification_basis": "episodes",
         "score_basis": {
@@ -2904,7 +2946,11 @@ def compute_support_resistance_levels(
             "distance_pct": (
                 "signed_percent (negative=below_reference, "
                 "positive=above_reference, 1.0=1%)"
-            )
+            ),
+            "tolerance_pct": "percent (1.0=1%)",
+            "effective_tolerance_pct": "percent (1.0=1%)",
+            "current_atr_pct": "percent (1.0=1%)",
+            "baseline_atr_pct": "percent (1.0=1%)",
         },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
@@ -2915,8 +2961,16 @@ def compute_support_resistance_levels(
         "adx_period": int(adx_period_value),
         "adaptive_mode": str(adaptive_settings["adaptive_mode"]),
         "volatility_ratio": float(adaptive_settings["volatility_ratio"]),
-        "current_atr_pct": adaptive_settings["current_atr_pct"],
-        "baseline_atr_pct": adaptive_settings["baseline_atr_pct"],
+        "current_atr_pct": (
+            None
+            if adaptive_settings["current_atr_fraction"] is None
+            else float(adaptive_settings["current_atr_fraction"]) * 100.0
+        ),
+        "baseline_atr_pct": (
+            None
+            if adaptive_settings["baseline_atr_fraction"] is None
+            else float(adaptive_settings["baseline_atr_fraction"]) * 100.0
+        ),
         "decay_half_life_bars": int(half_life_value),
         "current_price": None if current_price is None else float(round(current_price, 6)),
         "current_price_source": resolved_price_source,

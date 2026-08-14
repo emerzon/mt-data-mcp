@@ -58,7 +58,7 @@ mtdata-cli support_resistance_levels EURUSD --timeframe auto --detail standard -
 | `timeframe` | `H1` | Bar timeframe, or `auto` to merge levels from M15, H1, H4, and D1. |
 | `lookback` | `200` | Maximum bars used to detect levels (after any `start`/`end` window). |
 | `start` / `end` | — | Optional time window (e.g. `"1 month ago"`, `"now"`). |
-| `tolerance_pct` | `0.0015` | Price-cluster tolerance (0.15%) when grouping touches into one level. |
+| `tolerance_pct` | `0.15` | Price-cluster tolerance in percentage points (`0.15` = 0.15%) when grouping touches into one level. |
 | `min_touches` | `2` | Minimum tests before a price qualifies as a level. |
 | `max_levels` | `4` | Maximum levels to return. |
 | `max_distance_pct` | `5.0` | Keep levels within this % of current price; pass `None` for all. |
@@ -95,7 +95,7 @@ mtdata-cli confluence_levels EURUSD --min-source-families 2 --max-levels 5 --jso
 | `pivot_timeframe` | `D1` | Timeframe for the formula pivot inputs. |
 | `sr_timeframe` | `auto` | Timeframe for support/resistance inputs (`auto` merges M15–D1). |
 | `lookback` | `200` | Bars of history for the S/R component. |
-| `tolerance_pct` | `0.0015` | Clustering tolerance (0.15%) for merging levels into a zone. |
+| `tolerance_pct` | `0.15` | Clustering tolerance in percentage points (`0.15` = 0.15%) for merging levels into a zone. |
 | `tolerance_points` | — | Broker-point count; overrides `tolerance_pct`. On five-digit EURUSD, `10 × point(0.00001) = 0.0001` price width. |
 | `min_touches` | `2` | Minimum touches for the S/R component. |
 | `max_levels` | `5` | Maximum confluence zones to return. |
@@ -143,7 +143,7 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
 | `volume_source` | `auto` | `auto`, candle `real_volume`/`tick_volume`, tick-snapshot `volume_real`/`volume`, or `tick_count`. Snapshot volume is counted only on MT5 trade-change flags. |
 | `bucket_size` / `bucket_points` / `bucket_count` | — | Choose price-bucket granularity (absolute size, points, or a target bucket count). |
 | `max_buckets` | `120` | Upper bound on buckets. |
-| `value_area_pct` | `0.70` | Fraction of volume that defines the value area (70% is standard). |
+| `value_area_pct` | `70.0` | Percentage of volume that defines the value area (`70` = 70%, the standard setting). |
 | `reference_price` | — | Anchor for distance calculations (defaults to current price). |
 | `max_tick_window_days` | `1` | Cap the tick window pulled. Natural relative windows within one second of the boundary count as in-budget; larger `auto` windows use M1 bars. |
 | `max_ticks` | `50000` | Cap the number of ticks pulled. |

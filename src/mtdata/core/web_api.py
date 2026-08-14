@@ -435,7 +435,7 @@ def get_support_resistance(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
     lookback: Optional[int] = Query(None, ge=100, le=20000),
-    tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
+    tolerance_pct: float = Query(0.15, ge=0.0, le=5.0),
     min_touches: int = Query(2, ge=1),
     max_levels: int = Query(4, ge=1, le=20),
     max_distance_pct: Optional[float] = Query(5.0, ge=0.0, le=100.0),

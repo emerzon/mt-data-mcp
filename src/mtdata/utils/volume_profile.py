@@ -40,7 +40,7 @@ class VolumeProfileConfig:
     bucket_points: Optional[float] = None
     bucket_count: Optional[int] = None
     max_buckets: int = 120
-    value_area_pct: float = 0.70
+    value_area_fraction: float = 0.70
     price_point: Optional[float] = None
     price_digits: Optional[int] = None
     reference_price: Optional[float] = None
@@ -73,9 +73,12 @@ def validate_volume_profile_config(cfg: VolumeProfileConfig) -> list[str]:
         )
     if int(cfg.max_buckets) <= 0:
         errors.append(f"max_buckets must be a positive integer, got {cfg.max_buckets!r}")
-    value_area_pct = _finite_positive(cfg.value_area_pct)
-    if value_area_pct is None or value_area_pct > 1.0:
-        errors.append(f"value_area_pct must be in (0, 1], got {cfg.value_area_pct!r}")
+    value_area_fraction = _finite_positive(cfg.value_area_fraction)
+    if value_area_fraction is None or value_area_fraction > 1.0:
+        errors.append(
+            "value_area_fraction must be in (0, 1], "
+            f"got {cfg.value_area_fraction!r}"
+        )
     return errors
 
 
@@ -148,7 +151,11 @@ def compute_volume_profile(
         }
     buckets = _bucket_rows(buckets_by_index, bucket_size, cfg.price_digits)
     poc_bucket = _select_poc_bucket(buckets, price_values, weights, cfg.reference_price)
-    value_area = _compute_value_area(buckets, poc_bucket["index"], cfg.value_area_pct)
+    value_area = _compute_value_area(
+        buckets,
+        poc_bucket["index"],
+        cfg.value_area_fraction,
+    )
     levels = _build_level_rows(poc_bucket, value_area, cfg.price_digits)
     bucket_count = len(buckets)
     diagnostics: Dict[str, Any] = {
@@ -172,7 +179,7 @@ def compute_volume_profile(
         "price_source": price_source,
         "volume_kind": volume_kind,
         "bucket_size": _round_price(bucket_size, cfg.price_digits),
-        "value_area_pct": float(cfg.value_area_pct),
+        "value_area_pct": float(cfg.value_area_fraction) * 100.0,
         "total_volume": total_volume,
         "poc": levels["poc"],
         "vah": levels["vah"],
@@ -489,11 +496,11 @@ def _select_poc_bucket(
 def _compute_value_area(
     buckets: Sequence[Dict[str, Any]],
     poc_index: int,
-    value_area_pct: float,
+    value_area_fraction: float,
 ) -> Dict[str, Any]:
     by_index = {int(bucket["index"]): bucket for bucket in buckets}
     total_volume = float(sum(float(bucket["volume"]) for bucket in buckets))
-    target = total_volume * float(value_area_pct)
+    target = total_volume * float(value_area_fraction)
     included: set[int] = {int(poc_index)}
     included_volume = float(by_index[int(poc_index)]["volume"])
     min_index = min(by_index)

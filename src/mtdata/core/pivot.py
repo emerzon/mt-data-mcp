@@ -253,6 +253,7 @@ def compute_support_resistance_payload(
     reference_price: Optional[float] = None,
     reference_price_source: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tolerance_fraction = float(tolerance_pct) / 100.0
     requested_timeframe, timeframes = _resolve_support_resistance_timeframes(timeframe)
     multi_timeframe = len(timeframes) > 1
     results: List[Dict[str, Any]] = []
@@ -280,7 +281,7 @@ def compute_support_resistance_payload(
                 symbol=symbol,
                 timeframe=tf,
                 limit=int(limit),
-                tolerance_pct=float(tolerance_pct),
+                tolerance_fraction=tolerance_fraction,
                 min_touches=int(per_timeframe_min_touches),
                 max_levels=int(per_timeframe_max_levels),
                 reaction_bars=int(reaction_bars),
@@ -319,7 +320,7 @@ def compute_support_resistance_payload(
         symbol=symbol,
         timeframe=requested_timeframe,
         limit=int(limit),
-        tolerance_pct=float(tolerance_pct),
+        tolerance_fraction=tolerance_fraction,
         min_touches=int(min_touches),
         max_levels=int(max_levels),
         reaction_bars=int(reaction_bars),
@@ -715,7 +716,7 @@ def confluence_levels(  # noqa: C901
     lookback: Annotated[int, Field(ge=1)] = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.0015,
+    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.15,
     tolerance_points: Annotated[Optional[float], Field(ge=0.0)] = None,
     min_touches: Annotated[int, Field(ge=1)] = 2,
     max_levels: Annotated[int, Field(ge=1)] = 5,
@@ -915,7 +916,7 @@ def confluence_levels(  # noqa: C901
                     bucket_points=None,
                     bucket_count=80,
                     max_buckets=120,
-                    value_area_pct=0.70,
+                    value_area_pct=70.0,
                     reference_price=float(reference_price),
                     max_tick_window_days=int(volume_profile_max_tick_window_days),
                     max_ticks=int(volume_profile_max_ticks),
@@ -1082,7 +1083,7 @@ def support_resistance_levels(
     lookback: Annotated[int, Field(ge=1)] = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.0015,
+    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.15,
     min_touches: Annotated[int, Field(ge=1)] = 2,
     max_levels: Annotated[int, Field(ge=1)] = 4,
     max_distance_pct: Annotated[float, Field(ge=0.0)] = 5.0,

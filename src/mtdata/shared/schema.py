@@ -385,7 +385,9 @@ PARAM_HINTS = {
     "impact": "Economic calendar impact filter: low, medium, high.",
     "page": PARAMETER_HELP["page"],
     "name": "Name of the item to describe.",
-    "tolerance_pct": "Level-clustering tolerance as a price fraction; 0.0015 means 0.15%.",
+    "tolerance_pct": (
+        "Level-clustering tolerance in percentage points; 0.15 means 0.15%."
+    ),
     "tolerance_points": "Tolerance as a broker-point count; for five-digit EURUSD, 10 points at point=0.00001 gives a 0.0001 price width.",
     "min_touches": "Minimum historical tests/touches required for a level.",
     "max_levels": "Maximum support/resistance levels to return per side or method.",
@@ -408,7 +410,9 @@ PARAM_HINTS = {
     "bucket_points": "Volume-profile bucket width in MT5 points.",
     "bucket_count": "Target number of volume-profile price buckets.",
     "max_buckets": "Maximum volume-profile buckets returned after auto sizing.",
-    "value_area_pct": "Value-area fraction for VAH/VAL; 0.70 means 70%.",
+    "value_area_pct": (
+        "Value area in percentage points for VAH/VAL; 70 means 70%."
+    ),
     "reference_price": "Reference price used for nearest-level context; defaults to current quote when available.",
     "max_tick_window_days": "Maximum raw-tick lookback window in days for volume profile.",
     "max_ticks": "Maximum raw ticks fetched for volume profile.",

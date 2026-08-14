@@ -138,7 +138,7 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
             "EURUSD",
             pivot_timeframe="D1",
             sr_timeframe="auto",
-            tolerance_pct=0.001,
+            tolerance_pct=0.1,
             pivot_method="classic",
             max_distance_pct=1.0,
             detail="standard",

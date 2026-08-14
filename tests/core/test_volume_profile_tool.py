@@ -92,7 +92,25 @@ def test_compute_volume_profile_payload_uses_m1_fallback_for_large_auto_window(m
         "start": "2026-01-01T00:00:00Z",
         "end": "2026-01-01T00:00:00Z",
     }
+    assert result["value_area_pct"] == 70.0
     assert result["buckets"]
+
+
+def test_compute_volume_profile_payload_rejects_invalid_value_area_before_io(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: (_ for _ in ()).throw(AssertionError("no gateway access")),
+    )
+
+    for invalid in (0.0, 100.1, float("nan"), "invalid"):
+        result = vp.compute_volume_profile_payload(
+            symbol="EURUSD",
+            value_area_pct=invalid,
+        )
+
+        assert result["code"] == "volume_profile_invalid_value_area_pct"
+        assert "percentage points" in result["error"]
 
 
 def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):

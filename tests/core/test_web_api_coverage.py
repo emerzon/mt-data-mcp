@@ -1620,7 +1620,7 @@ class TestMainWebapi:
 class TestGetSupportResistance:
     def _sr_params(self, **kw):
         defaults = {"symbol": "EURUSD", "timeframe": "H1", "limit": 800,
-                     "tolerance_pct": 0.0015, "min_touches": 2, "max_levels": 4}
+                     "tolerance_pct": 0.15, "min_touches": 2, "max_levels": 4}
         defaults.update(kw)
         return defaults
 
@@ -1674,7 +1674,7 @@ class TestGetSupportResistance:
         })
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params(
-                tolerance_pct=0.01, min_touches=1, max_levels=4,
+                tolerance_pct=1.0, min_touches=1, max_levels=4,
             ))
         res = resp.json()
         assert resp.status_code == 200
@@ -1715,7 +1715,7 @@ class TestGetSupportResistance:
             "mode": "single",
             "limit": 200,
             "method": "support_resistance_levels",
-            "tolerance_pct": 0.0015,
+            "tolerance_pct": 0.15,
             "min_touches": 2,
             "max_levels": 4,
             "levels": [{"type": "support", "value": 1.1, "touches": 2}],
@@ -1738,7 +1738,7 @@ class TestGetSupportResistance:
             "mode": "single",
             "limit": 250,
             "method": "support_resistance_levels",
-            "tolerance_pct": 0.0015,
+            "tolerance_pct": 0.15,
             "min_touches": 2,
             "max_levels": 4,
             "levels": [{"type": "support", "value": 1.1, "touches": 2}],
@@ -1781,7 +1781,7 @@ class TestGetSupportResistance:
         })
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params(
-                tolerance_pct=0.01, min_touches=1,
+                tolerance_pct=1.0, min_touches=1,
             ))
         res = resp.json()
         assert resp.status_code == 200
@@ -1803,7 +1803,7 @@ class TestGetSupportResistance:
         })
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params(
-                tolerance_pct=0.01, min_touches=1,
+                tolerance_pct=1.0, min_touches=1,
             ))
         res = resp.json()
         assert resp.status_code == 200
@@ -1825,7 +1825,7 @@ class TestGetSupportResistance:
         })
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params(
-                tolerance_pct=0.0001, min_touches=1, max_distance_pct=20.0,
+                tolerance_pct=0.01, min_touches=1, max_distance_pct=20.0,
             ))
         assert resp.status_code == 200
         body = resp.json()

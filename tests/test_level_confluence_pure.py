@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mtdata.utils.level_confluence import (
     _cluster_records,
     build_level_confluence_payload,
@@ -12,7 +14,7 @@ def test_confluence_clusters_pivot_sr_and_fibonacci_levels():
         pivot_timeframe="D1",
         sr_timeframe="auto",
         reference_price=1.08,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[
             {
                 "method": "classic",
@@ -70,7 +72,7 @@ def test_confluence_compact_omits_verbose_source_narration():
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.08,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[
             {
                 "method": "classic",
@@ -90,8 +92,8 @@ def test_confluence_compact_omits_verbose_source_narration():
     assert "sources" not in cluster
     assert "score_components" not in cluster
     assert cluster["source_count"] == 3
-    assert payload["tolerance"]["fraction"] == 0.001
-    assert "input_pct" not in payload["tolerance"]
+    assert payload["tolerance"]["pct"] == 0.1
+    assert "fraction" not in payload["tolerance"]
     assert "detail" not in payload
     assert payload["units"]["distance_pct"] == "percent (1.0 = 1%)"
     assert payload["units"]["score"] == "unbounded_heuristic_points"
@@ -107,7 +109,7 @@ def test_confluence_standard_keeps_units_and_filter_context():
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.08,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
         support_resistance_payload={"levels": []},
         max_distance_pct=2.0,
@@ -116,7 +118,9 @@ def test_confluence_standard_keeps_units_and_filter_context():
     )
 
     assert payload["detail"] == "standard"
-    assert payload["units"]["tolerance.pct_points"] == "percent (1.0 = 1%)"
+    assert payload["tolerance"]["pct"] == pytest.approx(0.1)
+    assert payload["units"]["tolerance.pct"] == "percent (1.0 = 1%)"
+    assert "fraction" not in payload["tolerance"]
     assert payload["max_distance_pct"] == 2.0
     assert payload["min_source_families"] == 1
 
@@ -127,7 +131,7 @@ def test_pivot_original_resistance_below_reference_is_role_below():
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.10,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[
             {
                 "method": "classic",
@@ -152,7 +156,7 @@ def test_single_family_clusters_are_returned_but_score_lower_than_multi_family()
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.08,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
         support_resistance_payload={"levels": []},
         detail="standard",
@@ -162,7 +166,7 @@ def test_single_family_clusters_are_returned_but_score_lower_than_multi_family()
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.08,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
         support_resistance_payload={
             "levels": [{"type": "support", "value": 1.0802, "score": 4, "touches": 2}]
@@ -203,7 +207,7 @@ def test_duplicate_pivot_prices_do_not_earn_method_agreement_bonus():
         pivot_timeframe="D1",
         sr_timeframe="H1",
         reference_price=1.1,
-        tolerance_pct=0.001,
+        tolerance_pct=0.1,
         pivot_methods=[
             {"method": "classic", "levels": {"PP": 1.1}},
             {"method": "fibonacci", "levels": {"PP": 1.1}},

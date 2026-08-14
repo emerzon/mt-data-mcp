@@ -335,7 +335,7 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=2,
         max_levels=3,
         reaction_bars=4,
@@ -377,7 +377,7 @@ def test_compute_support_resistance_measures_levels_from_external_reference_pric
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=2,
         max_levels=3,
         reaction_bars=4,
@@ -426,7 +426,7 @@ def test_compute_support_resistance_includes_fibonacci_levels_from_latest_releva
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=2,
         max_levels=3,
         reaction_bars=4,
@@ -468,7 +468,7 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
         symbol="EURUSD",
         timeframe="H1",
         limit=20,
-        tolerance_pct=0.01,
+        tolerance_fraction=0.01,
         min_touches=1,
         max_levels=4,
         reaction_bars=2,
@@ -594,7 +594,7 @@ def test_full_support_resistance_payload_omits_duplicate_levels_array():
         symbol="EURUSD",
         timeframe="H1",
         limit=20,
-        tolerance_pct=0.01,
+        tolerance_fraction=0.01,
         min_touches=1,
         max_levels=4,
         reaction_bars=2,
@@ -639,7 +639,7 @@ def test_recent_stronger_support_scores_above_older_weaker_support():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -668,7 +668,7 @@ def test_volume_weighting_uses_tick_volume_when_real_volume_is_unavailable():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -680,7 +680,7 @@ def test_volume_weighting_uses_tick_volume_when_real_volume_is_unavailable():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -711,7 +711,7 @@ def test_volume_weighting_prefers_real_volume_when_available():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -741,7 +741,7 @@ def test_strict_touch_requirement_returns_no_unqualified_clusters():
         _weighted_supports_frame(),
         min_touches=5,
         max_levels=4,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
         reaction_bars=4,
     )
 
@@ -756,7 +756,7 @@ def test_max_distance_filter_hides_far_levels_but_preserves_coverage_gap_metadat
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         max_distance_pct=4.0,
@@ -779,7 +779,7 @@ def test_atr_filtered_swing_detection_reduces_whipsaw_noise_levels():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.002,
+        tolerance_fraction=0.002,
         min_touches=1,
         max_levels=10,
         reaction_bars=3,
@@ -796,7 +796,7 @@ def test_volatility_expansion_widens_tolerance_and_shortens_reaction_window():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.0015,
+        tolerance_fraction=0.0015,
         min_touches=1,
         max_levels=4,
         reaction_bars=6,
@@ -804,6 +804,7 @@ def test_volatility_expansion_widens_tolerance_and_shortens_reaction_window():
     )
 
     assert result["adaptive_mode"] == "atr_regime"
+    assert result["tolerance_pct"] == pytest.approx(0.15)
     assert result["effective_tolerance_pct"] > result["tolerance_pct"]
     assert result["effective_reaction_bars"] < result["reaction_bars"]
     assert result["volatility_ratio"] > 1.0
@@ -815,7 +816,7 @@ def test_volatility_compression_narrows_tolerance_and_extends_reaction_window():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.0015,
+        tolerance_fraction=0.0015,
         min_touches=1,
         max_levels=4,
         reaction_bars=6,
@@ -835,12 +836,12 @@ def test_adaptive_settings_excludes_recent_window_from_baseline():
     result = _resolve_adaptive_settings(
         closes,
         atr,
-        base_tolerance_pct=0.0015,
+        base_tolerance_fraction=0.0015,
         base_reaction_bars=6,
     )
 
-    assert result["baseline_atr_pct"] == pytest.approx(0.01)
-    assert result["current_atr_pct"] == pytest.approx(0.03)
+    assert result["baseline_atr_fraction"] == pytest.approx(0.01)
+    assert result["current_atr_fraction"] == pytest.approx(0.03)
     assert result["volatility_ratio"] == pytest.approx(3.0)
 
 
@@ -861,7 +862,7 @@ def test_cluster_break_analysis_groups_contiguous_breaches():
         cluster,
         closes=closes,
         epochs=epochs,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
     )
 
     assert cluster["decisive_break_count"] == 2
@@ -894,7 +895,7 @@ def test_overwide_cluster_zone_is_capped_and_classified_as_range() -> None:
             "status": "intact",
         },
         current_price=100.5,
-        tolerance_pct=0.001,
+        tolerance_fraction=0.001,
     )
 
     assert level["type"] == "range"
@@ -924,7 +925,7 @@ def test_episode_counting_keeps_raw_touches_secondary_to_distinct_tests():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.004,
+        tolerance_fraction=0.004,
         min_touches=2,
         max_levels=4,
         reaction_bars=4,
@@ -948,7 +949,7 @@ def test_broken_support_levels_are_penalized_after_decisive_break():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.004,
+        tolerance_fraction=0.004,
         min_touches=1,
         max_levels=4,
         reaction_bars=3,
@@ -974,7 +975,7 @@ def test_role_reversal_levels_gain_bonus_after_break_and_retest():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.004,
+        tolerance_fraction=0.004,
         min_touches=1,
         max_levels=4,
         reaction_bars=3,
@@ -1015,7 +1016,7 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -1025,7 +1026,7 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
         symbol="EURUSD",
         timeframe="H4",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -1036,7 +1037,7 @@ def test_merge_support_resistance_results_combines_multiple_timeframes():
         symbol="EURUSD",
         timeframe="auto",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=2,
         max_levels=4,
         reaction_bars=4,
@@ -1075,7 +1076,7 @@ def test_fibonacci_adds_extension_targets_when_price_is_above_down_swing_high():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.01,
+        tolerance_fraction=0.01,
         min_touches=1,
         max_levels=4,
         reaction_bars=2,
@@ -1104,7 +1105,7 @@ def test_fibonacci_flags_support_only_grid_when_price_is_above_all_levels():
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.01,
+        tolerance_fraction=0.01,
         min_touches=1,
         max_levels=4,
         reaction_bars=2,
@@ -1124,7 +1125,7 @@ def test_merge_support_resistance_recomputes_fibonacci_against_merged_current_pr
         symbol="EURUSD",
         timeframe="H1",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -1137,7 +1138,7 @@ def test_merge_support_resistance_recomputes_fibonacci_against_merged_current_pr
         symbol="EURUSD",
         timeframe="M15",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,
@@ -1148,7 +1149,7 @@ def test_merge_support_resistance_recomputes_fibonacci_against_merged_current_pr
         symbol="EURUSD",
         timeframe="auto",
         limit=200,
-        tolerance_pct=0.005,
+        tolerance_fraction=0.005,
         min_touches=1,
         max_levels=4,
         reaction_bars=4,

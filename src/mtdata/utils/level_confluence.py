@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from .coercion import coerce_finite_float as _as_float
 from .coercion import round_finite
 
-_DEFAULT_TOLERANCE_PCT = 0.0015
+_DEFAULT_TOLERANCE_PCT = 0.15
 
 
 def _round_price(value: Any) -> Optional[float]:
@@ -331,7 +331,7 @@ def resolve_tolerance_abs(
     pct = float(_DEFAULT_TOLERANCE_PCT if tolerance_pct is None else tolerance_pct)
     if pct < 0.0:
         raise ValueError("tolerance_pct must be non-negative")
-    return abs(float(reference_price)) * pct
+    return abs(float(reference_price)) * (pct / 100.0)
 
 
 def _cluster_records(records: List[Dict[str, Any]], *, tolerance_abs: float) -> List[List[Dict[str, Any]]]:
@@ -559,8 +559,7 @@ def build_level_confluence_payload(
         },
         "tolerance": {
             "price": float(tolerance_abs),
-            "pct_points": _round_metric((tolerance_abs / abs(reference)) * 100.0) if abs(reference) > 1e-12 else None,
-            "fraction": tolerance_pct,
+            "pct": tolerance_pct,
             "points": tolerance_points,
         },
         "score_basis": {
@@ -621,8 +620,7 @@ def build_level_confluence_payload(
         out["detail"] = detail_value
         out["units"].update({
             "tolerance.price": "price",
-            "tolerance.pct_points": "percent (1.0 = 1%)",
-            "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
+            "tolerance.pct": "percent (1.0 = 1%)",
             "tolerance.points": "broker_points",
         })
         out["max_distance_pct"] = max_distance_pct

@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
+
+from pydantic import Field
 
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..shared.constants import TIMEFRAME_SECONDS
@@ -781,13 +783,25 @@ def compute_volume_profile_payload(
     bucket_points: Optional[float] = None,
     bucket_count: Optional[int] = None,
     max_buckets: int = 120,
-    value_area_pct: float = 0.70,
+    value_area_pct: float = 70.0,
     reference_price: Optional[float] = None,
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,
     max_ticks: int = _DEFAULT_MAX_TICKS,
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
+    try:
+        value_area_value = float(value_area_pct)
+    except (TypeError, ValueError):
+        value_area_value = math.nan
+    if not math.isfinite(value_area_value) or not 0.0 < value_area_value <= 100.0:
+        return {
+            "error": (
+                "value_area_pct must be in (0, 100] percentage points; "
+                f"got {value_area_pct!r}"
+            ),
+            "code": "volume_profile_invalid_value_area_pct",
+        }
     if lookback is not None and not timeframe:
         return {
             "error": (
@@ -848,7 +862,7 @@ def compute_volume_profile_payload(
         bucket_points=bucket_points,
         bucket_count=bucket_count,
         max_buckets=max_buckets,
-        value_area_pct=value_area_pct,
+        value_area_fraction=value_area_value / 100.0,
         price_point=price_point,
         price_digits=price_digits,
         reference_price=reference_price,
@@ -996,7 +1010,7 @@ def volume_profile_levels(  # noqa: PLR0913
     bucket_points: Optional[float] = None,
     bucket_count: Optional[int] = None,
     max_buckets: int = 120,
-    value_area_pct: float = 0.70,
+    value_area_pct: Annotated[float, Field(gt=0.0, le=100.0)] = 70.0,
     reference_price: Optional[float] = None,
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,
     max_ticks: int = _DEFAULT_MAX_TICKS,
