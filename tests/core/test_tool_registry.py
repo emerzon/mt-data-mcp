@@ -317,6 +317,20 @@ def test_tools_catalog_full_exposes_trading_defaults_and_venue_namespace():
     ]
 
 
+def test_bootstrap_repairs_temporary_tool_name_overwrite():
+    from mtdata.core._mcp_tools import _TOOL_REGISTRY
+
+    def trade_place():
+        return {"success": True}
+
+    _TOOL_REGISTRY["trade_place"] = trade_place
+    bootstrap_tools()
+
+    full = registered_tool_catalog(detail="full")
+    row = next(item for item in full["tools"] if item["name"] == "trade_place")
+    assert row["parameters"]["dry_run"]["default"] is True
+
+
 def test_tools_catalog_full_parameter_contracts_are_machine_described():
     bootstrap_tools()
     full = registered_tool_catalog(detail="full")

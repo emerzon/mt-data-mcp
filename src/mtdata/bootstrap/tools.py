@@ -7,6 +7,7 @@ from types import ModuleType
 from typing import Final, Iterable, Optional
 
 from ..core._mcp_instance import mcp
+from ..core._mcp_tools import _TOOL_REGISTRY
 from ..core.schema_attach import attach_schemas_to_tools
 from ..shared.schema import get_shared_enum_lists
 
@@ -38,6 +39,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
 )
 
 _BOOTSTRAPPED_MODULES: dict[str, ModuleType] = {}
+_BOOTSTRAPPED_TOOL_FUNCTIONS: dict[str, object] = {}
 
 
 def cli_tool_module_names(command: str) -> Optional[tuple[str, ...]]:
@@ -110,7 +112,26 @@ def bootstrap_tools(module_names: Optional[Iterable[str]] = None) -> tuple[Modul
     for name in requested:
         if name not in _BOOTSTRAPPED_MODULES:
             _BOOTSTRAPPED_MODULES[name] = import_module(name)
+            _BOOTSTRAPPED_TOOL_FUNCTIONS.update(
+                {
+                    tool_name: function
+                    for tool_name, function in _TOOL_REGISTRY.items()
+                    if str(getattr(function, "__module__", "")) == name
+                }
+            )
             imported_any = True
+
+    # Tests, notebooks, and plugin discovery can register a temporary function
+    # under an existing name after the official module has loaded. Reassert the
+    # canonical function view so a repeated bootstrap remains deterministic.
+    requested_set = set(requested)
+    _TOOL_REGISTRY.update(
+        {
+            tool_name: function
+            for tool_name, function in _BOOTSTRAPPED_TOOL_FUNCTIONS.items()
+            if str(getattr(function, "__module__", "")) in requested_set
+        }
+    )
 
     # A warm shell may load another module later. That import triggers one new
     # attachment pass for the expanded registry; repeated calls over the same
