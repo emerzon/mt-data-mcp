@@ -1079,6 +1079,7 @@ def test_trade_get_open_logs_finish_event(caplog) -> None:
 
     assert out["success"] is True
     assert out["count"] == 1
+    assert out["row_key"] == "items"
     assert out["items"][0]["ticket"] == 1
     assert out["timezone"] == "UTC"
     assert out["currency"] == "USD"
@@ -1105,6 +1106,7 @@ def test_trade_get_pending_logs_finish_event(caplog) -> None:
 
     assert out["success"] is True
     assert out["count"] == 1
+    assert out["row_key"] == "items"
     assert out["items"][0]["ticket"] == 2
     assert out["timezone"] == "UTC"
     assert any(

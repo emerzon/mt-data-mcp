@@ -520,6 +520,7 @@ def _normalize_trade_read_output(
         "scope": _trade_read_scope(request),
         "count": 0,
         "items": [],
+        "row_key": "items",
     }
     if kind in ("open_positions", "pending_orders"):
         out["as_of"] = format_datetime_utc(datetime.now(timezone.utc))
@@ -646,6 +647,7 @@ def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str
             "kind": out.get("kind"),
             "count": 0,
             "items": [],
+            "row_key": "items",
             "empty": True,
         }
         if out.get("as_of"):
@@ -1231,7 +1233,6 @@ def normalize_trade_history_output(
             out["side_filter"] = side_filter
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
-        out.setdefault("row_key", "items")
         raw_items = list(out["items"])
         total_count = int(out.get("total_count") or len(raw_items))
         offset_value = int(out.get("offset") or getattr(request, "offset", 0) or 0)

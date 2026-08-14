@@ -60,6 +60,7 @@ def test_normalize_trade_read_output_keeps_request_echoes_by_default():
     assert out["limit"] == 5
     assert out["scope"] == "symbol"
     assert out["count"] == 1
+    assert out["row_key"] == "items"
 
 
 def test_normalize_trade_read_output_compact_omits_request_echoes():
@@ -154,6 +155,7 @@ def test_normalize_trade_read_output_compact_empty_keeps_contract_shape():
         "kind": "open_positions",
         "count": 0,
         "items": [],
+        "row_key": "items",
         "empty": True,
         "message": "No open positions matched the request.",
         "hint": (
