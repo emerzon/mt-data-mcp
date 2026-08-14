@@ -386,6 +386,48 @@ def test_adapter_detects_server_clock_from_closed_market_future_tick(monkeypatch
     assert mt5_mod.get_mt5_timestamp_mode("EURUSD") == "server_clock"
 
 
+def test_stale_symbol_does_not_inherit_another_symbols_timestamp_mode(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 14, 3, 30, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    offset = 3 * 60 * 60
+    live_server_tick = SimpleNamespace(
+        time=now_epoch + offset,
+        time_msc=(now_epoch + offset) * 1000,
+    )
+    stale_native_tick = SimpleNamespace(
+        time=now_epoch - 8 * 60 * 60,
+        time_msc=(now_epoch - 8 * 60 * 60) * 1000,
+    )
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: offset,
+    )
+
+    assert mt5_mod._timestamp_mode_from_tick(
+        live_server_tick,
+        symbol="EURUSD",
+    ) == "server_clock"
+    assert mt5_mod._timestamp_mode_from_tick(
+        stale_native_tick,
+        symbol="AAPL.NAS",
+    ) == "native_utc"
+    assert mt5_mod.get_mt5_timestamp_mode("AAPL.NAS") == "native_utc"
+
+    # Repeating the stale-symbol lookup after another live lookup is invariant.
+    assert mt5_mod._timestamp_mode_from_tick(
+        live_server_tick,
+        symbol="EURUSD",
+    ) == "server_clock"
+    assert mt5_mod._timestamp_mode_from_tick(
+        stale_native_tick,
+        symbol="AAPL.NAS",
+    ) == "native_utc"
+
+
 def test_adapter_detects_clock_before_normalizing_positions_and_symbol_info(monkeypatch) -> None:
     now = datetime(2026, 7, 14, 15, 45, tzinfo=timezone.utc)
     now_epoch = now.timestamp()

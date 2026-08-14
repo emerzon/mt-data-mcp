@@ -453,10 +453,14 @@ def _cache_timestamp_mode(symbol: str, mode: str, *, offset_seconds: int) -> str
 def _valid_cached_timestamp_mode(symbol: Optional[str] = None) -> Optional[str]:
     now_monotonic = time.monotonic()
     cache_key = str(symbol or "").upper()
-    candidates = []
-    if cache_key:
-        candidates.append(_mt5_timestamp_mode_cache.get(cache_key))
-    candidates.append(_mt5_terminal_timestamp_mode)
+    # A mode inferred from one symbol is not evidence for another symbol.
+    # Terminal-wide callers may use the latest confident mode only when no
+    # symbol identity is available at all.
+    candidates = (
+        [_mt5_timestamp_mode_cache.get(cache_key)]
+        if cache_key
+        else [_mt5_terminal_timestamp_mode]
+    )
     for cached in candidates:
         if cached is None:
             continue
