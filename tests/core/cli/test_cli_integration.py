@@ -3096,7 +3096,7 @@ def test_help_search_indexes_reviewed_examples():
         ("portfolio_risk_decompose", "--method historical", "theta"),
         ("options_barrier_price", "150 --strike 155", "<"),
         ("wait_event", "--max-wait-seconds 1", "mtdata-cli wait_event\n"),
-        ("trade_stress_test", "EURUSD=-1", "<shocks>"),
+        ("trade_stress_test", "--shocks", "<shocks>"),
         ("cross_correlation", "EURUSD GBPUSD", "<symbols>"),
         ("strategy_validate", "ema_cross", "<candidates>"),
     ],

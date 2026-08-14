@@ -1545,8 +1545,9 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} wait_event --timeframe M1",
     ),
     "trade_stress_test": (
-        f'{CLI_PROGRAM} trade_stress_test "EURUSD=-1"',
-        f'{CLI_PROGRAM} trade_stress_test "EURUSD=-1 XAUUSD=-3"',
+        f"{CLI_PROGRAM} trade_stress_test --shocks '{{\"EURUSD\":-1}}'",
+        f"{CLI_PROGRAM} trade_stress_test --shocks "
+        "'{\"EURUSD\":-1,\"XAUUSD\":-3}'",
     ),
     "cross_correlation": (
         f"{CLI_PROGRAM} cross_correlation EURUSD GBPUSD --max-lag 12",

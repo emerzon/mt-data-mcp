@@ -1,11 +1,13 @@
 import ast
 import json
+import sys
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
 from ....utils.coercion import split_top_level_csv
 from ...error_envelope import build_error_payload
+from ..catalog import display_program_name
 
 LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
 LIVE_TRADE_MUTATION_WARNING = (
@@ -261,7 +263,10 @@ def create_command_function(  # noqa: C901
             operation=cmd_name,
             remediation=(
                 remediation
-                or f"Run 'mtdata-cli {cmd_name} --help' for accepted arguments."
+                or (
+                    f"Run '{display_program_name(sys.argv[0])} {cmd_name} --help' "
+                    "for accepted arguments."
+                )
             ),
         )
 
@@ -596,7 +601,8 @@ def create_command_function(  # noqa: C901
                     code="cli_missing_required",
                     remediation=(
                         f"Provide: {missing_text}. Run "
-                        f"'mtdata-cli {cmd_name} --help' for examples."
+                        f"'{display_program_name(sys.argv[0])} {cmd_name} --help' "
+                        "for examples."
                     ),
                 ),
                 args=args,

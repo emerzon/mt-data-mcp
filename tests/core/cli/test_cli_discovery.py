@@ -1001,6 +1001,28 @@ class TestCreateCommandFunction:
         assert "limit: Input should be greater than or equal to 1" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
+    def test_validation_remediation_uses_invoked_program(self, capsys, monkeypatch):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": DataFetchCandlesRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "limit", "type": int, "required": False, "default": 200},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(symbol="EURUSD", limit=0, json=False, verbose=False)
+        monkeypatch.setattr("sys.argv", ["__main__.py"])
+
+        assert cmd_fn(args) == 2
+        assert (
+            "Run 'python -m mtdata data_fetch_candles --help'"
+            in capsys.readouterr().out
+        )
+        mock_fn.assert_not_called()
+
     def test_trade_stress_test_invalid_shocks_has_json_remediation(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
