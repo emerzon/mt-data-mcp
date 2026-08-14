@@ -57,8 +57,10 @@ _MARKETS = {
         "country": "US",
         "exchange_calendar": "XNYS",
         "timezone": "America/New_York",
+        "pre_open": (4, 0),
         "open": (9, 30),  # 9:30 AM
         "close": (16, 0),  # 4:00 PM
+        "after_hours_close": (20, 0),
         "early_close": (13, 0),  # 1:00 PM on some holidays
         "early_close_holidays": [],
         "early_close_day_after": ["Thanksgiving"],
@@ -69,8 +71,10 @@ _MARKETS = {
         "country": "US",
         "exchange_calendar": "XNYS",
         "timezone": "America/New_York",
+        "pre_open": (4, 0),
         "open": (9, 30),
         "close": (16, 0),
+        "after_hours_close": (20, 0),
         "early_close": (13, 0),
         "early_close_holidays": [],
         "early_close_day_after": ["Thanksgiving"],
@@ -301,7 +305,11 @@ def _apply_market_timezone_display(
 def _apply_global_weekend_reason(status: Dict[str, Any], *, now_utc: datetime) -> Dict[str, Any]:
     if now_utc.weekday() < 5:
         return status
-    if status.get("status") != "closed" or status.get("reason") != "after_hours":
+    if status.get("status") != "closed" or status.get("reason") not in {
+        "after_hours",
+        "before_open",
+        "overnight",
+    }:
         return status
     out = dict(status)
     out["reason"] = "weekend"
@@ -499,7 +507,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "venue": market_id,
             "name": market["name"],
             "status": "closed",
-            "reason": "before_open",
+            "reason": "overnight" if pre_open else "before_open",
             "local_time": _format_local_iso(now_local),
             "message": (
                 f"{market_id}: Closed "
@@ -510,20 +518,67 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             **session_fields,
         }
     
-    # Check if during lunch break
+    # A shortened session can end exactly when the normal lunch interval starts.
+    # Resolve the effective close before considering a midday break.
+    if now_norm >= close_time:
+        after_hours_close = market.get("after_hours_close")
+        if after_hours_close:
+            after_hours_close_time = now_local.replace(
+                hour=after_hours_close[0],
+                minute=after_hours_close[1],
+                second=0,
+                microsecond=0,
+            )
+            if now_norm < after_hours_close_time:
+                minutes_until_close = int(
+                    (after_hours_close_time - now_norm).total_seconds() // 60
+                )
+                return {
+                    "venue": market_id,
+                    "name": market["name"],
+                    "status": "after_hours",
+                    "local_time": _format_local_iso(now_local),
+                    "message": (
+                        f"{market_id}: After-hours "
+                        f"(closing in {_format_duration(minutes_until_close)})"
+                    ),
+                    "next_close": after_hours_close_time.isoformat(),
+                    "minutes_until_close": minutes_until_close,
+                    **session_fields,
+                }
+
+        next_open = _next_market_open_datetime(market, country, now_local)
+        minutes_until = int((next_open - now_norm).total_seconds() // 60)
+        return {
+            "venue": market_id,
+            "name": market["name"],
+            "status": "closed",
+            "reason": "overnight",
+            "local_time": _format_local_iso(now_local),
+            "message": (
+                f"{market_id}: Closed "
+                f"(opening in {_format_duration(minutes_until)})"
+            ),
+            "next_open": next_open.isoformat(),
+            "minutes_until_open": minutes_until,
+            **session_fields,
+        }
+
+    # Check if during lunch break.
     if market.get("lunch_start") and market.get("lunch_end"):
         lunch_start = now_local.replace(hour=market["lunch_start"][0], minute=market["lunch_start"][1], second=0, microsecond=0)
         lunch_end = now_local.replace(hour=market["lunch_end"][0], minute=market["lunch_end"][1], second=0, microsecond=0)
-        
-        if lunch_start <= now_norm < lunch_end:
-            minutes_until_resume = int((lunch_end - now_norm).total_seconds() // 60)
+
+        effective_lunch_end = min(lunch_end, close_time)
+        if lunch_start < close_time and lunch_start <= now_norm < effective_lunch_end:
+            minutes_until_resume = int((effective_lunch_end - now_norm).total_seconds() // 60)
             return {
                 "venue": market_id,
                 "name": market["name"],
                 "status": "lunch_break",
                 "local_time": _format_local_iso(now_local),
                 "message": f"{market_id}: Lunch break (resuming in {_format_duration(minutes_until_resume)})",
-                "next_open": lunch_end.isoformat(),
+                "next_open": effective_lunch_end.isoformat(),
                 "minutes_until_open": minutes_until_resume,
                 **session_fields,
             }
@@ -542,21 +597,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             **session_fields,
         }
     
-    # Market closed for the day
-    next_open = _next_market_open_datetime(market, country, now_local)
-    minutes_until = int((next_open - now_norm).total_seconds() // 60)
-    
-    return {
-        "venue": market_id,
-        "name": market["name"],
-        "status": "closed",
-        "reason": "after_hours",
-        "local_time": _format_local_iso(now_local),
-        "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
-        "next_open": next_open.isoformat(),
-        "minutes_until_open": minutes_until,
-        **session_fields,
-    }
+    raise RuntimeError("Market status interval resolution failed.")
 
 
 def _get_upcoming_holidays(
@@ -1371,7 +1412,7 @@ def market_status(
 ) -> Dict[str, Any]:
     """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.
 
-    Returns the current status (open/closed/pre-market/lunch break) for major
+    Returns the current status (open/closed/pre-market/after-hours/lunch break) for major
     markets including NYSE, NASDAQ, LSE, Xetra, Euronext, Tokyo, Hong Kong,
     Shanghai, and ASX. Handles weekends and holidays correctly.
 
@@ -1413,8 +1454,8 @@ def market_status(
         - `markets`: List of market status objects with:
             - `venue`: Market code (e.g., "NYSE")
             - `name`: Full market name
-            - `status`: "open", "closed", "pre_market", "lunch_break"
-            - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
+            - `status`: "open", "closed", "pre_market", "after_hours", "lunch_break"
+            - `reason`: Reason if closed ("weekend", "holiday", "overnight", "before_open")
             - `local_time`: Current time in the requested display timezone
             - `exchange_local_time`: Current time in the market's own timezone
               when the requested display timezone differs
@@ -1496,6 +1537,7 @@ def market_status(
             try:
                 local_now = _get_local_time(market["timezone"])
                 status = _check_market_status(market_id, local_now)
+                status["exchange_day_of_week"] = local_now.strftime("%A")
                 status = _apply_global_weekend_reason(status, now_utc=now_utc)
                 status = _apply_market_timezone_display(
                     status,
@@ -1514,7 +1556,13 @@ def market_status(
         
         # Sort results: open first, then by region
         def _sort_key(item: Dict[str, Any]) -> Tuple[int, str]:
-            status_priority = {"open": 0, "lunch_break": 1, "pre_market": 2, "closed": 3}
+            status_priority = {
+                "open": 0,
+                "pre_market": 1,
+                "after_hours": 2,
+                "lunch_break": 3,
+                "closed": 4,
+            }
             return (status_priority.get(item["status"], 4), item["venue"])
         
         results.sort(key=_sort_key)
@@ -1523,6 +1571,7 @@ def market_status(
         status_counts = {
             "open": sum(1 for m in results if m["status"] == "open"),
             "pre_market": sum(1 for m in results if m["status"] == "pre_market"),
+            "after_hours": sum(1 for m in results if m["status"] == "after_hours"),
             "lunch_break": sum(1 for m in results if m["status"] == "lunch_break"),
             "closed": sum(1 for m in results if m["status"] == "closed"),
         }
@@ -1538,6 +1587,15 @@ def market_status(
         if status_counts["pre_market"] > 0:
             pre_markets = [m["venue"] for m in results if m["status"] == "pre_market"]
             summary_messages.append(f"{status_counts['pre_market']} pre-market: {', '.join(pre_markets)}")
+
+        if status_counts["after_hours"] > 0:
+            after_hours_markets = [
+                m["venue"] for m in results if m["status"] == "after_hours"
+            ]
+            summary_messages.append(
+                f"{status_counts['after_hours']} after-hours: "
+                + ", ".join(after_hours_markets)
+            )
         
         # Add lunch break markets (always list if any)
         if status_counts["lunch_break"] > 0:
@@ -1565,6 +1623,11 @@ def market_status(
         # Get upcoming holidays impacting these markets
         upcoming_holidays = _get_upcoming_holidays(markets_to_check)
 
+        exchange_days = {
+            str(market.get("exchange_day_of_week"))
+            for market in results
+            if market.get("exchange_day_of_week")
+        }
         payload = {
             "success": True,
             "mode": "equity_exchanges",
@@ -1583,12 +1646,14 @@ def market_status(
                 if timezone_display_mode in {"utc", "server"}
                 else "market_local"
             ),
-            "day_of_week": now_utc.strftime("%A"),
+            "day_of_week": next(iter(exchange_days)) if len(exchange_days) == 1 else "mixed",
+            "day_of_week_basis": "exchange_local",
             "region": region or "all",
             "summary": "; ".join(summary_messages) if summary_messages else "No market data available",
             "markets_open": status_counts["open"],
             "markets_closed": status_counts["closed"],
             "markets_pre_market": status_counts["pre_market"],
+            "markets_after_hours": status_counts["after_hours"],
             "markets_lunch_break": status_counts["lunch_break"],
             "markets": results,
             "upcoming_holidays": upcoming_holidays if upcoming_holidays else None,

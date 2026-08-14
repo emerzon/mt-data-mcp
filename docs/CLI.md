@@ -633,6 +633,11 @@ mtdata-cli market_status --symbol EURUSD --json
 mtdata-cli trade_session_context EURUSD --json
 ```
 
+The US exchange view distinguishes `pre_market` (04:00–09:30 ET), regular
+`open`, `after_hours` (16:00–20:00 ET), and closed `overnight` periods. Each
+market row carries its exchange-local weekday; mixed-region summaries report
+`day_of_week: mixed` when venue calendars are on different dates.
+
 In symbol mode, `is_tradable` reflects the broker trade mode (including
 close-only symbols), while `can_open_new_positions` additionally requires a
 live-ready quote and an active session.

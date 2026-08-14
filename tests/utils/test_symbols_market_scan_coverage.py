@@ -2167,8 +2167,31 @@ class TestMarketScan:
         assert result["summary"]["empty"] is True
         assert "matched_symbols" not in result["summary"]["counts"]
         assert result["pagination"]["total"] == 0
-        assert result["message"] == "No symbols matched the requested market scan filters."
+        assert result["message"].startswith(
+            "No symbols matched the requested market scan filters."
+        )
+        assert result["visible_symbols"] == 1
+        assert result["broker_symbols"] == 1
+        assert "--universe all" in result["remediation"]
         assert "no_action" not in result
+
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_empty_visible_universe_reports_broker_scope(
+        self, mock_symbols_get
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", visible=False),
+            _make_symbol("GBPUSD", visible=False),
+        ]
+
+        result = _get_market_scan()(limit=5)
+
+        assert result["success"] is True
+        assert result["status"] == "no_matches"
+        assert result["visible_symbols"] == 0
+        assert result["broker_symbols"] == 2
+        assert "Market Watch has 0 visible symbol(s)" in result["message"]
+        assert "--symbols/--group" in result["remediation"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbols_get")

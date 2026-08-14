@@ -185,7 +185,7 @@ def test_asx_overnight_is_closed_before_configured_pre_open(monkeypatch) -> None
     )
 
     assert overnight["status"] == "closed"
-    assert overnight["reason"] == "before_open"
+    assert overnight["reason"] == "overnight"
     assert pre_open["status"] == "pre_market"
 
 
@@ -203,6 +203,87 @@ def test_market_without_pre_open_stays_closed_overnight(monkeypatch) -> None:
 
     assert result["status"] == "closed"
     assert result["reason"] == "before_open"
+
+
+def test_us_extended_hours_and_venue_local_weekday(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_utc = datetime(2026, 1, 9, 0, 15, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_utc.replace(tzinfo=None) if tz is None else fixed_utc.astimezone(tz)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        market_status_mod,
+        "_get_local_time",
+        lambda tz_name: fixed_utc.astimezone(ZoneInfo(tz_name)),
+    )
+    monkeypatch.setattr(market_status_mod, "_get_upcoming_holidays", lambda _markets: [])
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+
+    result = raw(region="us", detail="full")
+
+    assert result["day_of_week"] == "Thursday"
+    assert result["day_of_week_basis"] == "exchange_local"
+    assert result["markets_after_hours"] == 2
+    assert {market["status"] for market in result["markets"]} == {"after_hours"}
+    assert {market["exchange_day_of_week"] for market in result["markets"]} == {
+        "Thursday"
+    }
+
+
+def test_us_premarket_and_overnight_boundaries(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+    tz = ZoneInfo("America/New_York")
+
+    before = market_status_mod._check_market_status(
+        "NASDAQ", datetime(2026, 1, 8, 3, 59, tzinfo=tz)
+    )
+    premarket = market_status_mod._check_market_status(
+        "NASDAQ", datetime(2026, 1, 8, 4, 0, tzinfo=tz)
+    )
+    after_close = market_status_mod._check_market_status(
+        "NASDAQ", datetime(2026, 1, 8, 20, 0, tzinfo=tz)
+    )
+
+    assert (before["status"], before["reason"]) == ("closed", "overnight")
+    assert premarket["status"] == "pre_market"
+    assert (after_close["status"], after_close["reason"]) == (
+        "closed",
+        "overnight",
+    )
+
+
+def test_early_close_takes_precedence_over_lunch_interval(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_early_close_session",
+        lambda _market, _country, _dt: True,
+    )
+
+    result = market_status_mod._check_market_status(
+        "HKEX",
+        datetime(2026, 12, 24, 12, 15, tzinfo=ZoneInfo("Asia/Hong_Kong")),
+    )
+
+    assert result["status"] == "closed"
+    assert result["reason"] == "overnight"
+    assert result["early_close"] is True
 
 
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:

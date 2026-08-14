@@ -4478,6 +4478,10 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
             all_symbols = list(raw_symbols)
+            broker_symbol_count = len(all_symbols)
+            visible_symbol_count = sum(
+                bool(getattr(symbol, "visible", False)) for symbol in all_symbols
+            )
 
             selected_symbols, selection_meta, selection_error = _select_market_scan_symbols(
                 all_symbols,
@@ -4882,6 +4886,19 @@ def market_scan(  # noqa: C901
                 )
             if total_matches == 0:
                 out["summary"]["empty"] = True
+                out["visible_symbols"] = int(visible_symbol_count)
+                out["broker_symbols"] = int(broker_symbol_count)
+                if universe_value == "visible":
+                    out["remediation"] = (
+                        "The default scan covers Market Watch symbols. Add symbols "
+                        "to Market Watch, pass explicit --symbols, or use --universe "
+                        "all with --symbols/--group to widen the scan safely."
+                    )
+                    out["message"] = (
+                        f"{out['message']} Market Watch has "
+                        f"{visible_symbol_count} visible symbol(s) out of "
+                        f"{broker_symbol_count} broker symbol(s)."
+                    )
             return attach_collection_contract(
                 out,
                 collection_kind="table",
