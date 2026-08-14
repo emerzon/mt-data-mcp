@@ -35,6 +35,7 @@ from ..utils.mt5 import (
 from ..utils.pivot_points import compute_pivot_method_levels, compute_pivot_methods
 from ..utils.quote import (
     compute_spread_metrics,
+    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_value,
 )
@@ -199,22 +200,21 @@ def _resolve_reference_quote(
         tick_value(resolved_tick, "ask"),
     )
     context: Dict[str, Any] = {**freshness, **source}
-    context.update(
-        {
-            "spread_valid": spread.get("spread_valid"),
-            "spread_quality": spread.get("spread_quality"),
-        }
+    enforce_quote_execution_readiness(
+        context,
+        bid=tick_value(resolved_tick, "bid"),
+        ask=tick_value(resolved_tick, "ask"),
+        quote_source_conflict=source.get("quote_source_conflict"),
     )
     blockers: List[str] = []
-    if spread.get("spread_valid") is not True:
+    if context.get("spread_valid") is not True:
         blockers.append("invalid_spread")
-    if isinstance(source.get("quote_source_conflict"), dict):
+    if (
+        context.get("usable_for_live_trading") is not True
+        and isinstance(source.get("quote_source_conflict"), dict)
+    ):
         blockers.append("quote_source_conflict")
     if blockers:
-        context["usable_for_live_trading"] = False
-        context["usable_for_live_trading_basis"] = (
-            "quote_age_market_session_positive_spread_and_source_agreement"
-        )
         context["execution_blockers"] = blockers
     reference = (
         spread.get("mid")

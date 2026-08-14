@@ -95,20 +95,25 @@ def test_output_fields_prefers_top_level_quote_values_over_nested_diagnostics() 
     }
 
 
-def test_output_fields_does_not_deep_match_bare_fields_from_row_collections() -> None:
+def test_output_fields_projects_bare_fields_from_row_collections() -> None:
     payload = {
         "success": True,
         "symbol": "EURUSD",
-        "data": [{"time": 1, "close": 1.1}, {"time": 2, "close": 1.2}],
+        "row_key": "data",
+        "count": 2,
+        "data": [
+            {"time": 1, "close": 1.1, "open": 1.0},
+            {"time": 2, "close": 1.2, "open": 1.1},
+        ],
     }
 
-    result = _select_output_fields(payload, "close")
+    result = _select_output_fields(payload, "time,close")
 
     assert result == {
         "success": True,
         "symbol": "EURUSD",
-        "unresolved_output_fields": ["close"],
-        "valid_output_fields": ["data"],
+        "count": 2,
+        "data": [{"time": 1, "close": 1.1}, {"time": 2, "close": 1.2}],
     }
 
 

@@ -934,6 +934,47 @@ def _merge_output_field_selection(left: Any, right: Any) -> Any:
     return right
 
 
+def _row_collection_names(value: Dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    row_key = value.get("row_key")
+    if isinstance(row_key, str) and isinstance(value.get(row_key), list):
+        names.append(row_key)
+    for name in ("row_keys",):
+        extra = value.get(name)
+        if isinstance(extra, list):
+            for item in extra:
+                if isinstance(item, str) and item not in names and isinstance(
+                    value.get(item), list
+                ):
+                    names.append(item)
+    for name in ("data", "items", "deals", "orders"):
+        if name not in names and isinstance(value.get(name), list):
+            names.append(name)
+    return names
+
+
+def _project_row_collection_field(
+    value: Dict[str, Any],
+    field: str,
+) -> tuple[Dict[str, Any], bool]:
+    for name in _row_collection_names(value):
+        rows = value.get(name)
+        if not isinstance(rows, list):
+            continue
+        if not any(isinstance(row, dict) and field in row for row in rows):
+            continue
+        projected = []
+        for row in rows:
+            if isinstance(row, dict) and field in row:
+                projected.append({field: row[field]})
+            elif isinstance(row, dict):
+                projected.append({})
+            else:
+                projected.append(row)
+        return {name: projected}, True
+    return {}, False
+
+
 def _select_output_fields(value: Any, fields: Any) -> Any:
     requested = _normalize_output_fields(fields)
     if not requested or not isinstance(value, dict):
@@ -953,12 +994,17 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         elif requested_field in value:
             filtered, matched = {requested_field: value[requested_field]}, True
         else:
-            filtered, matched = {}, requested_field in {
-                "error",
-                "error_code",
-                "remediation",
-                "documentation",
-            }
+            filtered, matched = _project_row_collection_field(
+                value,
+                requested_field,
+            )
+            if not matched:
+                filtered, matched = {}, requested_field in {
+                    "error",
+                    "error_code",
+                    "remediation",
+                    "documentation",
+                }
         if not matched:
             unresolved.append(requested_field)
             continue
