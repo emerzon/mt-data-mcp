@@ -245,7 +245,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     def test_ohlcv_filter_rejects_invalid_value(self):
         result = fetch_candles('EURUSD', limit=5, ohlcv='invalid')
 
-        self.assertIn('Invalid ohlcv value', result.get('error', ''))
+        self.assertIn('Invalid ohlcv', result.get('error', ''))
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

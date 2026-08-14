@@ -318,7 +318,7 @@ PARAM_HINTS = {
     "candidate_filter": "Barrier candidates to return: all or mathematically viable.",
     "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
-    "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",
+    "preset": "TP/SL grid preset: scalp, intraday, swing, or position.",
     "tp_min": "Minimum TP grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
     "tp_max": "Maximum TP grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
     "tp_steps": "Number of TP grid steps.",

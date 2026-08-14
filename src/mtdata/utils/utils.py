@@ -72,10 +72,18 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     if not parts:
         return None
     out: Set[str] = set()
+    unknown: list[str] = []
     for p in parts:
         key = mapping.get(p)
         if key:
             out.add(key)
+        else:
+            unknown.append(p)
+    if unknown:
+        valid = "open, high, low, close, volume (or o,h,l,c,v)"
+        raise ValueError(
+            f"Invalid ohlcv token(s): {', '.join(unknown)}. Use {valid}."
+        )
     return out or None
 
 

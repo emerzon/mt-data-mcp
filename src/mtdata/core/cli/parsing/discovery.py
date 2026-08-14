@@ -1326,5 +1326,7 @@ def add_dynamic_arguments(  # noqa: C901
             action="append",
             default=None,
             metavar="PARAM.KEY=VALUE",
-            help="Override nested mapping params, e.g. --set params.window=64.",
+            help=(
+                "Override nested mapping params, e.g. --set denoise.params.lookback=50."
+            ),
         )

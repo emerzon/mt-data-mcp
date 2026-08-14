@@ -815,6 +815,8 @@ def _training_context_fingerprint(
     target_spec: Any,
     exog: Optional[np.ndarray],
 ) -> Dict[str, Any]:
+    if features in (None, {}):
+        features = {}
     fingerprint = {
         "target_points": int(len(target_series)),
         "history_start_epoch": float(df["time"].iloc[0]),

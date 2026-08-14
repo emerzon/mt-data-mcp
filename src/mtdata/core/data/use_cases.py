@@ -273,6 +273,7 @@ def _run_data_fetch_candles_impl(
             start=request.start,
             end=request.end,
         )
+        _reconcile_returned_window_completeness(result)
         if request.start or request.end:
             _normalize_range_limit_contract(
                 result,
@@ -712,6 +713,33 @@ def _attach_indicator_explanations(result: Dict[str, Any]) -> None:
         )
     if explanations:
         result["indicator_explanations"] = explanations
+
+
+def _reconcile_returned_window_completeness(result: Dict[str, Any]) -> None:
+    """Describe completeness from the returned rows, not the untrimmed fetch."""
+    data = result.get("data")
+    if not isinstance(data, list) or not data:
+        return
+    last = data[-1]
+    if not isinstance(last, dict):
+        return
+    last_is_complete = str(last.get("bar_state") or "closed").strip().lower() not in {
+        "forming",
+        "incomplete",
+        "open",
+    }
+    if not last_is_complete:
+        return
+    data_window = result.get("data_window")
+    if isinstance(data_window, dict):
+        data_window["latest_bar_complete"] = True
+    if result.get("forming_candle_status") == "skipped":
+        result["forming_candle_status"] = "none"
+        result.pop("hint", None)
+        if result.get("range_incomplete_reason") == "forming_bar_excluded":
+            result.pop("range_incomplete_reason", None)
+            if result.get("range_complete") is False and not result.get("truncated"):
+                result["range_complete"] = True
 
 
 def _apply_range_limit_cap(

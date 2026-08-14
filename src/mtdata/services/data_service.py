@@ -1625,8 +1625,11 @@ def _candle_time_convention_metadata(timeframe: str) -> Dict[str, str]:
 def _validate_ohlcv_selection(ohlcv: Optional[str]) -> Optional[str]:
     if ohlcv is None or str(ohlcv).strip() == "":
         return None
-    if _normalize_ohlcv_arg(ohlcv) is not None:
-        return None
+    try:
+        if _normalize_ohlcv_arg(ohlcv) is not None:
+            return None
+    except ValueError as exc:
+        return str(exc)
     return (
         "Invalid ohlcv value. Use all, ohlcv, ohlc, close/price, compact "
         "letters from o/h/l/c/v, or comma-separated names such as "

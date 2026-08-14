@@ -121,8 +121,13 @@ class TestNormalizeOhlcvArg:
         result = _normalize_ohlcv_arg("open;volume")
         assert result == {"O", "V"}
 
-    def test_unknown_names_return_none(self):
-        assert _normalize_ohlcv_arg("foo,bar") is None
+    def test_unknown_names_raise(self):
+        with pytest.raises(ValueError, match="Invalid ohlcv token"):
+            _normalize_ohlcv_arg("foo,bar")
+
+    def test_mixed_valid_and_unknown_names_raise(self):
+        with pytest.raises(ValueError, match="clos"):
+            _normalize_ohlcv_arg("open,clos,high")
 
 
 class TestNormalizeLimit:

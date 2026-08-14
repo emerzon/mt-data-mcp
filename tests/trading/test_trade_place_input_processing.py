@@ -62,6 +62,11 @@ def test_execution_request_dry_run_defaults() -> None:
     assert TradeCloseRequest(ticket=100).dry_run is True
 
 
+def test_trade_close_rejects_numeric_positional_symbol() -> None:
+    with pytest.raises(ValidationError, match="--ticket"):
+        TradeCloseRequest(symbol="1861825294")
+
+
 @pytest.mark.parametrize(
     "request_factory",
     [

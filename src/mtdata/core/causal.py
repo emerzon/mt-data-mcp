@@ -426,6 +426,38 @@ def _history_fetch_error_code(errors: List[str]) -> str:
     )
 
 
+def _symbol_not_found_error(errors: List[str]) -> Optional[str]:
+    for error in errors:
+        text = str(error)
+        if "was not found" in text or "unknown symbol" in text.lower():
+            return text
+    return None
+
+
+def _insufficient_symbol_payload(
+    *,
+    message: str,
+    errors: List[str],
+    meta: Dict[str, Any],
+    warnings: List[str],
+) -> Dict[str, Any]:
+    missing = _symbol_not_found_error(errors)
+    if missing is not None:
+        return _causal_error(
+            missing,
+            code="symbol_not_found",
+            meta=meta,
+            warnings=warnings,
+            details=list(errors),
+        )
+    return _causal_error(
+        message,
+        code="insufficient_symbols",
+        meta=meta,
+        warnings=warnings,
+    )
+
+
 def _fetch_series(
     symbol: str,
     timeframe,
@@ -2009,9 +2041,9 @@ def causal_discover_signals(  # noqa: C901
             )
 
         if len(series_map) < 2:
-            return _causal_error(
-                "Not enough valid symbol data fetched to run causal discovery.",
-                code="insufficient_symbols",
+            return _insufficient_symbol_payload(
+                message="Not enough valid symbol data fetched to run causal discovery.",
+                errors=errors,
                 meta=meta,
                 warnings=warnings_out,
             )
@@ -2657,9 +2689,9 @@ def correlation_matrix(  # noqa: C901
             )
 
         if len(series_map) < 2:
-            return _causal_error(
-                "Not enough valid symbol data fetched to calculate correlations.",
-                code="insufficient_symbols",
+            return _insufficient_symbol_payload(
+                message="Not enough valid symbol data fetched to calculate correlations.",
+                errors=errors,
                 meta=meta,
                 warnings=warnings_out,
             )
@@ -3448,9 +3480,9 @@ def cointegration_test(  # noqa: C901
             )
 
         if len(series_map) < 2:
-            return _causal_error(
-                "Not enough valid symbol data fetched to run cointegration tests.",
-                code="insufficient_symbols",
+            return _insufficient_symbol_payload(
+                message="Not enough valid symbol data fetched to run cointegration tests.",
+                errors=errors,
                 meta=meta,
                 warnings=warnings_out,
             )
@@ -3465,9 +3497,9 @@ def cointegration_test(  # noqa: C901
 
         frame = _build_pairwise_frame(series_map, symbol_list)
         if frame.empty:
-            return _causal_error(
-                "Not enough valid symbol data fetched to run cointegration tests.",
-                code="insufficient_symbols",
+            return _insufficient_symbol_payload(
+                message="Not enough valid symbol data fetched to run cointegration tests.",
+                errors=errors,
                 meta=meta,
                 warnings=warnings_out,
             )

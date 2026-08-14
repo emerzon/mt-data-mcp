@@ -838,6 +838,33 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["query_type"] == "historical"
 
 
+def test_start_anchored_range_does_not_mark_closed_window_incomplete():
+    rows = [{"time": f"t{i}", "close": i, "bar_state": "closed"} for i in range(5)]
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="D1",
+        start="2026-08-01",
+        limit=5,
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": rows,
+            "forming_candle_status": "skipped",
+            "hint": "Set include_incomplete=true to include the latest forming candle.",
+            "data_window": {"start": "t0", "end": "t4", "latest_bar_complete": False},
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+        },
+    )
+
+    assert result["data_window"]["latest_bar_complete"] is True
+    assert result["forming_candle_status"] == "none"
+    assert "include_incomplete" not in str(result.get("hint") or "")
+
+
 def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
     rows = [{"time": f"t{i}", "close": i} for i in range(25)]
     observed = {}

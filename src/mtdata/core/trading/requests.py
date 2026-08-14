@@ -283,6 +283,19 @@ class TradeCloseRequest(BaseModel):
         ),
     )
 
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _reject_numeric_ticket_as_symbol(cls, value: Any) -> Any:
+        if value in (None, ""):
+            return value
+        text = str(value).strip()
+        if text.isdigit() and len(text) >= 6:
+            raise ValueError(
+                f"{text} looks like a position ticket, not a symbol. "
+                "Use --ticket to close by ticket."
+            )
+        return value
+
     @property
     def profit_only(self) -> bool:
         return self.pnl_filter == "profit"

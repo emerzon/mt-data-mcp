@@ -57,6 +57,13 @@ def test_training_context_versions_return_value_policy():
 
     assert "invalid_target_value_policy" not in price_context
     assert return_context["invalid_target_value_policy"] == "mask_v1"
+    assert fe._training_context_fingerprint(
+        quantity="price",
+        **{**kwargs, "features": None},
+    )["features"] == fe._training_context_fingerprint(
+        quantity="price",
+        **{**kwargs, "features": {}},
+    )["features"]
 
 
 def test_available_methods_filters_dependency_unavailable_registry_entries(monkeypatch):
