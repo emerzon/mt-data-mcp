@@ -21,6 +21,7 @@ from typing import (
     Protocol,
     runtime_checkable,
 )
+from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from ..shared.symbols import FIAT_CURRENCY_CODES as _CURRENCY_CODES
@@ -49,6 +50,13 @@ _MAX_SNAPSHOT_ROWS = 8
 _MIN_ECONOMIC_CANDIDATES = 24
 _MIN_SNAPSHOT_RELEVANCE = 1.0
 _YCNBC_GENERAL_CACHE_TTL_SECONDS = 180.0
+_NEWS_SOURCE_ORIGINS = {
+    "cnbc": "https://www.cnbc.com",
+    "finviz": "https://finviz.com",
+    "marketwatch": "https://www.marketwatch.com",
+    "yahoo": "https://finance.yahoo.com",
+    "zacks": "https://www.zacks.com",
+}
 _CURRENCY_TERMS = {
     "USD": ["usd", "dollar", "us dollar", "fed", "fomc", "treasury", "cpi", "pce", "payrolls", "nfp"],
     "EUR": ["eur", "euro", "ecb", "lagarde", "eurozone"],
@@ -316,6 +324,36 @@ class NewsPriority(IntEnum):
     CRITICAL = 4
 
 
+def _normalize_article_url(
+    value: Optional[str],
+    *,
+    source: str,
+) -> tuple[Optional[str], Optional[str]]:
+    url = str(value or "").strip()
+    if not url:
+        return None, None
+    if url.startswith("//"):
+        url = "https:" + url
+    parsed = urlparse(url)
+    if parsed.scheme.lower() in {"http", "https"} and parsed.netloc:
+        return url, None
+    if parsed.scheme or parsed.netloc:
+        return None, "invalid_url"
+
+    source_key = str(source or "").strip().lower()
+    origin = next(
+        (
+            candidate_origin
+            for candidate_source, candidate_origin in _NEWS_SOURCE_ORIGINS.items()
+            if candidate_source in source_key
+        ),
+        None,
+    )
+    if origin is None:
+        return None, "relative_unresolved"
+    return urljoin(origin + "/", url), "relative_resolved"
+
+
 @dataclass
 class NewsItem:
     """Normalized cross-source news representation."""
@@ -332,6 +370,15 @@ class NewsItem:
     metadata: Dict[str, Any] = field(default_factory=dict)
     relevance_score: float = 0.0
     importance_score: float = 0.0
+
+    def __post_init__(self) -> None:
+        normalized_url, url_status = _normalize_article_url(
+            self.url,
+            source=self.source,
+        )
+        self.url = normalized_url
+        if url_status:
+            self.metadata.setdefault("url_status", url_status)
 
     def search_text(self) -> str:
         parts = [self.title, self.summary or "", self.category or "", self.source, self.provider]

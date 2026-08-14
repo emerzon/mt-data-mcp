@@ -65,6 +65,33 @@ def test_score_then_dedupe_keeps_the_more_relevant_duplicate(monkeypatch) -> Non
     assert result == [direct]
 
 
+def test_news_item_resolves_known_provider_relative_url() -> None:
+    item = svc.NewsItem(
+        title="Magnificent Seven earnings remain robust",
+        provider="finviz",
+        source="Zacks",
+        url="/news/381524/magnificent-seven-earnings-remain-robust-msft-aapl",
+    )
+
+    assert item.url == (
+        "https://www.zacks.com/news/381524/"
+        "magnificent-seven-earnings-remain-robust-msft-aapl"
+    )
+    assert item.metadata["url_status"] == "relative_resolved"
+
+
+def test_news_item_nulls_unresolved_relative_url() -> None:
+    item = svc.NewsItem(
+        title="Provider story",
+        provider="unknown",
+        source="Unknown wire",
+        url="/story/123",
+    )
+
+    assert item.url is None
+    assert item.metadata["url_status"] == "relative_unresolved"
+
+
 def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypatch) -> None:
     def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
         return {
