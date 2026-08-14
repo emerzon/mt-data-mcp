@@ -21,14 +21,16 @@ def test_market_status_tool_supports_detail_contract() -> None:
 
     assert [param.name for param in params] == [
         "symbol",
+        "venue",
         "region",
         "timezone_display",
         "detail",
     ]
     assert params[0].default is None
-    assert params[1].default == "all"
-    assert params[2].default == "auto"
-    assert params[3].default == "compact"
+    assert params[1].default is None
+    assert params[2].default == "all"
+    assert params[3].default == "auto"
+    assert params[4].default == "compact"
     assert get_args(get_type_hints(raw)["detail"]) == (
         "compact",
         "standard",
@@ -147,7 +149,7 @@ def test_market_status_rejects_invalid_timezone_display() -> None:
     }
 
 
-def test_market_status_accepts_emitted_venue_identifier(monkeypatch) -> None:
+def test_market_status_accepts_explicit_venue_identifier(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     local_now = datetime(2026, 8, 14, 8, 0, tzinfo=ZoneInfo("Australia/Sydney"))
     monkeypatch.setattr(market_status_mod, "_get_local_time", lambda _tz: local_now)
@@ -158,14 +160,44 @@ def test_market_status_accepts_emitted_venue_identifier(monkeypatch) -> None:
         lambda _country, _dt, _exchange=None: (False, None),
     )
 
-    result = raw(symbol="ASX", detail="full")
+    result = raw(venue="ASX", detail="full")
 
     assert result["success"] is True
-    assert result["mode"] == "equity_exchanges"
+    assert result["mode"] == "equity_venue"
+    assert result["market_scope"] == "single_equity_venue"
+    assert result["requested_venue"] == "ASX"
     assert len(result["markets"]) == 1
     assert result["markets"][0]["venue"] == "ASX"
     assert result["markets"][0]["status"] == "pre_market"
     assert "symbol" not in result["markets"][0]
+
+
+def test_market_status_reserved_venue_name_stays_in_symbol_mode(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    captured = {}
+
+    def fake_symbol_status(symbol, **kwargs):
+        captured.update({"symbol": symbol, **kwargs})
+        return {"success": True, "mode": "symbol", "symbol": symbol}
+
+    monkeypatch.setattr(
+        market_status_mod,
+        "_check_symbol_market_status",
+        fake_symbol_status,
+    )
+
+    result = raw(symbol="ASX")
+
+    assert result == {"success": True, "mode": "symbol", "symbol": "ASX"}
+    assert captured["symbol"] == "ASX"
+
+
+def test_market_status_rejects_ambiguous_symbol_and_venue() -> None:
+    raw = _unwrap(market_status_mod.market_status)
+
+    result = raw(symbol="ASX", venue="ASX")
+
+    assert result["error_code"] == "invalid_market_status_scope"
 
 
 def test_asx_overnight_is_closed_before_configured_pre_open(monkeypatch) -> None:

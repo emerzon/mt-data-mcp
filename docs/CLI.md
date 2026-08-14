@@ -293,7 +293,7 @@ as latest-N queries, so pass an explicit larger `--limit` when needed. Omit
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
-| `market_status` | Show the major-equity exchange calendar without a symbol or by emitted venue id, or MT5 tradability for a broker symbol |
+| `market_status` | Show the major-equity exchange calendar globally or by explicit venue, or MT5 tradability for a broker symbol |
 | `wait_event` | **Blocking:** wait for a candle close or a timed event — see [WAIT_EVENT.md](WAIT_EVENT.md) |
 
 ### Forecasting
@@ -630,7 +630,7 @@ mtdata-cli market_snapshot EURUSD --timeframe H1 --sections all --horizon 8 --js
 
 # Global exchange status (NYSE, LSE, Tokyo, ...) or one broker symbol's tradability
 mtdata-cli market_status --region all --json
-mtdata-cli market_status ASX --json
+mtdata-cli market_status --venue ASX --json
 mtdata-cli market_status --symbol EURUSD --json
 
 # Consolidated broker/session context (account, open/pending, quote, computed state)
@@ -645,6 +645,11 @@ market row carries its exchange-local weekday; mixed-region summaries report
 In symbol mode, `is_tradable` reflects the broker trade mode (including
 close-only symbols), while `can_open_new_positions` additionally requires a
 live-ready quote and an active session.
+
+`--symbol` always means an exact broker instrument, even when its name matches a
+venue ID. Use `--venue` for one of the static exchange calendars. The former
+positional venue shorthand is not supported because it collided with valid
+broker-symbol names.
 
 ### Wait for a candle close
 

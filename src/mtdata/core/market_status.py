@@ -159,6 +159,18 @@ _MARKETS = {
     },
 }
 
+VenueLiteral = Literal[
+    "NYSE",
+    "NASDAQ",
+    "LSE",
+    "XETRA",
+    "EURONEXT",
+    "TSE",
+    "HKEX",
+    "SSE",
+    "ASX",
+]
+
 
 @lru_cache(maxsize=64)
 def _get_holidays(country: str, year: int) -> holidays.HolidayBase:
@@ -1405,13 +1417,14 @@ def _market_status_symbol_mode_warnings(
 
 
 @mcp.tool()
-def market_status(
+def market_status(  # noqa: C901
     symbol: Optional[str] = None,
+    venue: Optional[VenueLiteral] = None,
     region: Literal["us", "europe", "asia", "all"] = "all",
     timezone_display: Literal["local", "utc", "server", "auto"] = "auto",
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.
+    """Get exchange-calendar status or MT5 symbol tradability.
 
     Returns the current status (open/closed/pre-market/after-hours/lunch break) for major
     markets including NYSE, NASDAQ, LSE, Xetra, Euronext, Tokyo, Hong Kong,
@@ -1423,6 +1436,9 @@ def market_status(
         Broker symbol to check via MT5 trade mode and tick freshness. When
         supplied, returns a heuristic symbol status instead of the exchange
         overview.
+    venue : str, optional
+        Exact major-equity venue ID for a single static calendar, such as ASX
+        or NYSE. Mutually exclusive with symbol.
     region : str, optional
         Filter by region: "us", "europe", "asia", or "all" (default: "all")
     timezone_display : str, optional
@@ -1471,9 +1487,27 @@ def market_status(
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)
-    venue_id = str(symbol or "").strip().upper()
-    venue_mode = venue_id in _MARKETS
-    symbol_mode = symbol not in (None, "") and not venue_mode
+    venue_id = str(venue or "").strip().upper()
+    symbol_mode = symbol not in (None, "")
+    venue_mode = venue_id != ""
+    if symbol_mode and venue_mode:
+        return {
+            "error": "symbol and venue are mutually exclusive.",
+            "error_code": "invalid_market_status_scope",
+            "symbol": symbol,
+            "venue": venue_id,
+        }
+    if venue_mode and venue_id not in _MARKETS:
+        return {
+            "error": (
+                f"Unknown venue '{venue}'. Valid venues: "
+                + ", ".join(_MARKETS)
+                + "."
+            ),
+            "error_code": "invalid_venue",
+            "venue": venue_id,
+            "valid_venues": list(_MARKETS),
+        }
     timezone_display_mode = _normalize_timezone_display(
         timezone_display,
         symbol_mode=symbol_mode,
@@ -1631,12 +1665,19 @@ def market_status(
         }
         payload = {
             "success": True,
-            "mode": "equity_exchanges",
-            "market_scope": "major_equity_exchanges",
-            "scope_note": (
-                "This no-symbol view covers major equity exchanges only; pass a "
-                "broker symbol for MT5 tradability and quote-freshness status."
+            "mode": "equity_venue" if venue_mode else "equity_exchanges",
+            "market_scope": (
+                "single_equity_venue" if venue_mode else "major_equity_exchanges"
             ),
+            "scope_note": (
+                f"Explicit static exchange-calendar view for venue {venue_id}."
+                if venue_mode
+                else (
+                    "This no-symbol view covers major equity exchanges only; pass a "
+                    "broker symbol for MT5 tradability and quote-freshness status."
+                )
+            ),
+            "requested_venue": venue_id if venue_mode else None,
             "data_fetched_at": format_datetime_utc(now_utc),
             "timezone": "UTC",
             "timezone_display": timezone_display_mode,
@@ -1673,6 +1714,7 @@ def market_status(
         logger,
         operation="market_status",
             symbol=symbol,
+            venue=venue_id or None,
             region=region,
             timezone_display=timezone_display_mode,
             detail=detail_mode,

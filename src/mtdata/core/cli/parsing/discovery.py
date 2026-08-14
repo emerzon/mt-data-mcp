@@ -228,6 +228,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "command returns a static major-equity-exchange calendar, not the "
         "connected broker book."
     ),
+    ("market_status", "venue"): (
+        "Static major-equity venue calendar: NYSE, NASDAQ, LSE, XETRA, "
+        "EURONEXT, TSE, HKEX, SSE, or ASX. Mutually exclusive with --symbol."
+    ),
     ("forecast_task_cancel_all", "status_filter"): (
         "Cancelable task status: all, pending, or running. Defaults to all active tasks."
     ),
