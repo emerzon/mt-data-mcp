@@ -689,6 +689,50 @@ def _positive_trade_price(value: Any) -> float | None:
     return None
 
 
+def _compact_close_preview_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove nested quote diagnostics from compact close previews."""
+    out = dict(payload)
+    rows = out.get("matched_positions")
+    if isinstance(rows, list):
+        compact_rows: List[Any] = []
+        allowed = {
+            "ticket",
+            "symbol",
+            "side",
+            "volume",
+            "profit",
+            "price_open",
+            "price_current",
+            "sl",
+            "tp",
+            "magic",
+        }
+        for row in rows:
+            if not isinstance(row, dict):
+                compact_rows.append(row)
+                continue
+            compact = {key: row[key] for key in allowed if key in row}
+            context = row.get("quote_context")
+            if isinstance(context, dict):
+                compact["quote_usable"] = (
+                    context.get("usable_for_live_trading") is True
+                )
+                if context.get("usable_for_live_trading") is not True:
+                    compact["quote_readiness_reason"] = (
+                        "quote_source_conflict"
+                        if isinstance(context.get("quote_source_conflict"), dict)
+                        else context.get("freshness_reason")
+                        or context.get("spread_quality")
+                        or "quote_not_live_ready"
+                    )
+            compact_rows.append(compact)
+        out["matched_positions"] = compact_rows
+    closed_positions = out.get("closed_positions")
+    if isinstance(closed_positions, dict):
+        out["closed_positions"] = _compact_close_preview_payload(closed_positions)
+    return out
+
+
 def _resolve_live_trade_risk_entry(
     *,
     gateway: Any,
@@ -710,8 +754,11 @@ def _resolve_live_trade_risk_entry(
     if tick is None:
         return None, None, quote_source
 
-    quote_context = build_trade_quote_context(symbol, tick)
-    quote_context.update(quote_source)
+    quote_context = build_trade_quote_context(
+        symbol,
+        tick,
+        source_metadata=quote_source,
+    )
     live_quote = quote_context.get("usable_for_live_trading") is True
     source_prefix = "live_tick" if live_quote else "last_available_tick"
     if not live_quote:
@@ -2325,6 +2372,13 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
+        if (
+            request.dry_run
+            and result.get("success") is True
+            and not str(result.get("error") or "").strip()
+        ):
+            result.setdefault("preview_ok", True)
+            result.setdefault("would_send_order", False)
         if correlation_id and str(result.get("error") or "").strip():
             result = normalize_error_payload(
                 result,
@@ -2486,6 +2540,15 @@ def _run_trade_close_once(  # noqa: C901
         *,
         scope: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if (
+            request.dry_run
+            and result.get("success") is True
+            and not str(result.get("error") or "").strip()
+        ):
+            result.setdefault("preview_ok", True)
+            result.setdefault("would_send_order", False)
+        if request.detail == "compact":
+            result = _compact_close_preview_payload(result)
         if isinstance(result, dict) and str(result.get("error") or "").strip():
             error_text = str(result.get("error") or "").strip().lower()
             if request.ticket is not None and (
@@ -5583,8 +5646,8 @@ def _position_mark_freshness(
             symbol,
             tick,
             now_epoch=time.time(),
+            source_metadata=quote_source,
         )
-        context.update(quote_source)
         context["symbol"] = symbol
         context["positions"] = int(position_count)
         if fallback_counts.get(symbol):
@@ -5638,7 +5701,11 @@ def _position_mark_freshness(
         "unusable_marks": [
             {
                 "symbol": item.get("symbol"),
-                "reason": item.get("freshness_reason") or "not_live_ready",
+                "reason": (
+                    "quote_source_conflict"
+                    if isinstance(item.get("quote_source_conflict"), dict)
+                    else item.get("freshness_reason") or "not_live_ready"
+                ),
             }
             for item in contexts
             if item.get("usable_for_live_trading") is not True

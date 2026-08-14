@@ -527,9 +527,18 @@ class TestTradeClose:
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
     def test_symbol_bulk_close_dry_run_previews_without_confirmation(self, mock_close, mock_cancel):
+        mock_close.return_value = {
+            "success": True,
+            "matched_count": 0,
+            "matched_positions": [],
+            "would_send_orders": 0,
+            "message": "No open positions for EURUSD",
+        }
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
         assert out["success"] is True
         assert out["dry_run"] is True
+        assert out["preview_ok"] is True
+        assert out["would_send_order"] is False
         assert out["operation"] == "close_symbol_positions"
         assert out["symbol"] == "EURUSD"
         mock_close.assert_called_once_with(
@@ -718,7 +727,14 @@ class TestTradeClose:
             "success": True,
             "matched_count": 2,
             "matched_positions": [
-                {"ticket": 11, "magic": 3001},
+                {
+                    "ticket": 11,
+                    "magic": 3001,
+                    "quote_context": {
+                        "usable_for_live_trading": False,
+                        "quote_source_conflict": {"reason": "test"},
+                    },
+                },
                 {"ticket": 12, "magic": 3001},
             ],
         }
@@ -729,6 +745,11 @@ class TestTradeClose:
         assert out["target"] == "positions"
         assert out["matched_count"] == 2
         assert {row["magic"] for row in out["matched_positions"]} == {3001}
+        assert out["matched_positions"][0]["quote_usable"] is False
+        assert out["matched_positions"][0]["quote_readiness_reason"] == (
+            "quote_source_conflict"
+        )
+        assert "quote_context" not in out["matched_positions"][0]
         assert mock_close.call_args.kwargs["magic"] == 3001
         mock_cancel.assert_not_called()
 

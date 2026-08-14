@@ -44,6 +44,18 @@ def _get_select_market_scan_symbols():
     return _select_market_scan_symbols
 
 
+def test_quote_filter_names_source_conflict_before_freshness() -> None:
+    from mtdata.core.symbols import _market_scan_quote_exclusion_reason
+
+    assert _market_scan_quote_exclusion_reason(
+        {
+            "quote_source_conflict": {"reason": "test"},
+            "quote_freshness_reason": "live_quote",
+            "spread_quality": "two_sided",
+        }
+    ) == "quote_source_conflict"
+
+
 @pytest.mark.parametrize(
     ("rank_by", "rank_order", "expected"),
     [

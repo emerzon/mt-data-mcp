@@ -1640,8 +1640,8 @@ def _close_positions_dry_run_preview(
             symbol_value,
             tick,
             now_epoch=_stdlib_time.time(),
+            source_metadata=quote_source,
         )
-        context.update(quote_source)
         row["quote_context"] = context
         quote_contexts.append(context)
     live_ready = bool(quote_contexts) and all(

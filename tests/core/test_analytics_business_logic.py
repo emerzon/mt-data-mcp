@@ -974,6 +974,8 @@ def test_execution_quality_compact_omits_expanded_breakdowns() -> None:
 
     assert result["summary"]["fills"] == 1
     assert "breakdowns" not in result
+    assert result["data_quality"]["session_calendars"] == ["fx"]
+    assert "session_definition" not in result["data_quality"]
 
 
 def test_execution_quality_excludes_future_dated_fills() -> None:
@@ -1939,6 +1941,35 @@ def test_empty_portfolio_marks_are_not_subject_to_live_quote_gate() -> None:
     assert "usable_for_live_trading" not in context
 
 
+def test_portfolio_mark_conflict_uses_canonical_execution_gate() -> None:
+    gateway = FakeGateway()
+    now = _now()
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.1000,
+        ask=1.1002,
+        time=now,
+        time_msc=now * 1000,
+    )
+    gateway.tick_rows = [
+        {
+            "bid": 1.1001,
+            "ask": 1.1003,
+            "time": now,
+            "time_msc": now * 1000,
+        }
+    ]
+
+    context = _portfolio_mark_context(
+        gateway,
+        [{"ticket": 1, "symbol": "EURUSD"}],
+    )
+
+    assert context["usable_for_live_trading"] is False
+    assert context["unusable_marks"] == [
+        {"symbol": "EURUSD", "reason": "quote_source_conflict"}
+    ]
+
+
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     gateway = FakeGateway()
     gateway.account_info = lambda: SimpleNamespace(currency="USD", equity=25000.0)
@@ -1975,7 +2006,8 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         "valuation_basis": "live_position_marks_with_completed_bar_return_history",
         "data_stale": False,
         "usable_for_live_trading": True,
-        "mark_freshness": result["model_context"]["mark_freshness"],
+        "marks_evaluated": 2,
+        "unusable_marks": [],
         "aligned_returns": result["summary"]["aligned_rows"],
         "aligned_returns_available": result["model_context"]["aligned_returns_available"],
         "warmup_returns_discarded": result["model_context"]["warmup_returns_discarded"],
@@ -1985,10 +2017,7 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert datetime.fromisoformat(
         result["model_context"]["valuation_time"].replace("Z", "+00:00")
     ).tzinfo == timezone.utc
-    assert all(
-        mark["usable_for_live_trading"] is True
-        for mark in result["model_context"]["mark_freshness"]
-    )
+    assert "mark_freshness" not in result["model_context"]
     assert "as_of" not in result["model_context"]
 
 

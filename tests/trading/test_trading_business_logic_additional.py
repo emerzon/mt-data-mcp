@@ -774,6 +774,7 @@ def test_trade_preview_reconciles_equal_timestamp_quote_conflict():
     assert result["quote_context"]["quote_source_conflict"]["reason"] == (
         "equal_timestamp_bid_ask_disagreement"
     )
+    assert result["quote_context"]["usable_for_live_trading"] is False
 
 
 def test_build_trade_place_dry_run_preview_preserves_zero_symbol_digits():

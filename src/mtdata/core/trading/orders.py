@@ -1113,14 +1113,8 @@ def build_trade_place_dry_run_preview(
         symbol,
         tick,
         now_epoch=quote_now,
+        source_metadata=quote_source,
     )
-    quote_context.update(quote_source)
-    if spread_metrics["spread_valid"] is not True:
-        quote_context["usable_for_live_trading"] = False
-        quote_context["usable_for_live_trading_basis"] = (
-            "quote_age_market_session_and_positive_spread"
-        )
-        quote_context["quote_quality"] = spread_metrics["spread_quality"]
     out: Dict[str, Any] = {
         "bid": _round_preview_price(bid, digits=digits),
         "ask": _round_preview_price(ask, digits=digits),

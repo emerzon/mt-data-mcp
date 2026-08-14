@@ -119,15 +119,12 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
             ask = float(tick_value(tick, "ask") or 0.0)
         except (TypeError, ValueError):
             bid = ask = 0.0
-        if not (ask > bid > 0.0):
-            freshness["usable_for_live_trading"] = False
-            freshness["freshness_state"] = "unusable_quote"
-            freshness["freshness_reason"] = (
-                "locked_quote" if ask == bid and bid > 0.0 else "invalid_quote"
-            )
-            freshness["quote_warning"] = (
-                "A positive bid/ask spread is required for a live portfolio mark."
-            )
+        enforce_quote_execution_readiness(
+            freshness,
+            bid=bid,
+            ask=ask,
+            quote_source_conflict=freshness.get("quote_source_conflict"),
+        )
         contexts.append(freshness)
     if not contexts:
         return {
@@ -135,6 +132,8 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
             "valuation_basis": "no_position_marks",
             "data_stale": None,
             "mark_freshness_status": "not_applicable",
+            "marks_evaluated": 0,
+            "unusable_marks": [],
             "mark_freshness": [],
         }
     live_ready = bool(contexts) and all(
@@ -157,8 +156,31 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
         ),
         "data_stale": data_stale,
         "usable_for_live_trading": live_ready,
+        "marks_evaluated": len(contexts),
+        "unusable_marks": [
+            {
+                "symbol": item.get("symbol"),
+                "reason": (
+                    "quote_source_conflict"
+                    if isinstance(item.get("quote_source_conflict"), dict)
+                    else item.get("freshness_reason") or "mark_not_live_ready"
+                ),
+            }
+            for item in contexts
+            if item.get("usable_for_live_trading") is not True
+        ],
         "mark_freshness": contexts,
     }
+
+
+def _portfolio_model_context_for_detail(
+    context: Dict[str, Any],
+    detail: str,
+) -> Dict[str, Any]:
+    out = dict(context)
+    if detail == "compact":
+        out.pop("mark_freshness", None)
+    return out
 
 
 def _filtered_historical_returns(
@@ -1516,7 +1538,9 @@ def analyze_execution_quality(  # noqa: C901
                 ),
             },
             **(
-                {"session_definition": next(iter(session_definitions.values()))}
+                {"session_calendars": session_calendars}
+                if request.detail == "compact"
+                else {"session_definition": next(iter(session_definitions.values()))}
                 if len(session_definitions) == 1
                 else {"session_definitions": session_definitions}
             ),
@@ -2414,7 +2438,11 @@ def decompose_portfolio_risk(  # noqa: C901
         {
             "symbol": str(item.get("symbol") or ""),
             "stage": "mark_freshness",
-            "reason": item.get("freshness_reason") or "mark_not_live_ready",
+            "reason": (
+                "quote_source_conflict"
+                if isinstance(item.get("quote_source_conflict"), dict)
+                else item.get("freshness_reason") or "mark_not_live_ready"
+            ),
             "freshness_state": item.get("freshness_state"),
             "data_age_seconds": item.get("data_age_seconds"),
             "quote_source": item.get("quote_source"),
@@ -2427,7 +2455,9 @@ def decompose_portfolio_risk(  # noqa: C901
             "error": "One or more material position marks are not live-ready.",
             "error_code": "portfolio_mark_unusable",
             "failures": mark_omissions,
-            "model_context": model_context,
+            "model_context": _portfolio_model_context_for_detail(
+                model_context, request.detail
+            ),
             "remediation": (
                 "Refresh MT5 quotes or set allow_partial=true to omit unsafe marks."
             ),
@@ -2454,7 +2484,9 @@ def decompose_portfolio_risk(  # noqa: C901
                 "risk": [],
                 "timeframe": request.timeframe,
                 "holding_periods": holding_periods,
-                "model_context": model_context,
+                "model_context": _portfolio_model_context_for_detail(
+                    model_context, request.detail
+                ),
                 "data_quality": {
                     "allow_partial": True,
                     "mark_omissions": mark_omissions,
@@ -2476,7 +2508,9 @@ def decompose_portfolio_risk(  # noqa: C901
             "risk": [],
             "timeframe": request.timeframe,
             "holding_periods": holding_periods,
-            "model_context": model_context,
+            "model_context": _portfolio_model_context_for_detail(
+                model_context, request.detail
+            ),
         }
     sensitivities: Dict[str, float] = {}
     proposed_sensitivity: Optional[Tuple[str, float]] = None
@@ -2675,7 +2709,9 @@ def decompose_portfolio_risk(  # noqa: C901
         "method": request.method,
         "timeframe": request.timeframe,
         "holding_periods": holding_periods,
-        "model_context": model_context,
+        "model_context": _portfolio_model_context_for_detail(
+            model_context, request.detail
+        ),
         **account_context,
         "summary": {"positions": base_position_count, "positions_after_proposed": total_position_count, "symbols": len(modeled_symbols), "symbols_requested": len(requested_symbols), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
         "risk": risk_rows,

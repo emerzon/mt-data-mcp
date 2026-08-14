@@ -1160,7 +1160,13 @@ def _check_symbol_market_status(
     elif can_open is True and live_ready is not True:
         open_state = "quote_not_live_ready"
         can_open = False
-        reason = str(tick_status.get("freshness_reason") or "quote_not_live_ready")
+        reason = (
+            "quote_source_conflict"
+            if isinstance(tick_status.get("quote_source_conflict"), dict)
+            else f"quote_{tick_status['spread_quality']}"
+            if str(tick_status.get("spread_quality") or "") not in {"", "two_sided"}
+            else str(tick_status.get("freshness_reason") or "quote_not_live_ready")
+        )
     elif can_open is True and tick_freshness == "live":
         open_state = "probably_open"
     elif can_open is True:

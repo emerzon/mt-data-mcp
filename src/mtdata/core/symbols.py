@@ -2701,6 +2701,8 @@ def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
 
 
 def _market_scan_quote_exclusion_reason(row: Dict[str, Any]) -> str:
+    if isinstance(row.get("quote_source_conflict"), dict):
+        return "quote_source_conflict"
     freshness_reason = str(row.get("quote_freshness_reason") or "").strip().lower()
     if freshness_reason and freshness_reason != "live_quote":
         return freshness_reason

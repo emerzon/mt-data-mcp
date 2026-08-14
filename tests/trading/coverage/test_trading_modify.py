@@ -209,6 +209,8 @@ class TestTradeModify:
         assert out["success"] is True
         assert out["dry_run"] is True
         assert out["actionability"] == "preview_only"
+        assert out["preview_ok"] is True
+        assert out["would_send_order"] is False
         mock_pos.assert_called_once_with(
             ticket=100,
             stop_loss=1.08,

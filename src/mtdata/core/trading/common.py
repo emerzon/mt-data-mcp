@@ -6,7 +6,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ...utils.market_metadata import build_tick_freshness_context
-from ...utils.quote import tick_epoch
+from ...utils.quote import (
+    enforce_quote_execution_readiness,
+    tick_epoch,
+    tick_value,
+)
 from ...utils.time import _format_datetime_second_explicit, format_epoch_utc
 from ...utils.utils import _parse_end_datetime, _parse_start_datetime
 from . import validation
@@ -17,11 +21,12 @@ def build_trade_quote_context(
     tick: Any,
     *,
     now_epoch: Optional[float] = None,
+    source_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build trust metadata for a quote used by a pre-trade calculation."""
     epoch_value = tick_epoch(tick)
     if epoch_value is None or epoch_value <= 0.0:
-        return {
+        out = {
             "quote_source": "mt5.symbol_info_tick",
             "quote_timezone": "UTC",
             "freshness_state": "unknown",
@@ -29,6 +34,13 @@ def build_trade_quote_context(
             "usable_for_live_trading": False,
             "warning": "Quote timestamp is unavailable; live readiness cannot be verified.",
         }
+        out.update(source_metadata or {})
+        return enforce_quote_execution_readiness(
+            out,
+            bid=tick_value(tick, "bid"),
+            ask=tick_value(tick, "ask"),
+            quote_source_conflict=out.get("quote_source_conflict"),
+        )
 
     current_epoch = (
         float(now_epoch)
@@ -65,7 +77,13 @@ def build_trade_quote_context(
     ):
         if freshness.get(key) is not None:
             out[key] = freshness[key]
-    return out
+    out.update(source_metadata or {})
+    return enforce_quote_execution_readiness(
+        out,
+        bid=tick_value(tick, "bid"),
+        ask=tick_value(tick, "ask"),
+        quote_source_conflict=out.get("quote_source_conflict"),
+    )
 
 
 def resolve_trade_period_context(
