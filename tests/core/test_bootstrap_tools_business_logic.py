@@ -11,6 +11,8 @@ def test_bootstrap_attaches_schemas_only_when_module_set_expands(monkeypatch) ->
     attached = []
 
     monkeypatch.setattr(tools_module, "_BOOTSTRAPPED_MODULES", {})
+    monkeypatch.setattr(tools_module, "_BOOTSTRAPPED_TOOL_FUNCTIONS", {})
+    monkeypatch.setattr(tools_module, "_BOOTSTRAPPED_TOOL_OBJECTS", {})
     monkeypatch.setattr(
         tools_module,
         "import_module",

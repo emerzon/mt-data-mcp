@@ -7,7 +7,7 @@ from types import ModuleType
 from typing import Final, Iterable, Optional
 
 from ..core._mcp_instance import mcp
-from ..core._mcp_tools import _TOOL_REGISTRY
+from ..core._mcp_tools import _TOOL_OBJECT_REGISTRY, _TOOL_REGISTRY
 from ..core.schema_attach import attach_schemas_to_tools
 from ..shared.schema import get_shared_enum_lists
 
@@ -40,6 +40,7 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
 
 _BOOTSTRAPPED_MODULES: dict[str, ModuleType] = {}
 _BOOTSTRAPPED_TOOL_FUNCTIONS: dict[str, object] = {}
+_BOOTSTRAPPED_TOOL_OBJECTS: dict[str, object] = {}
 
 
 def cli_tool_module_names(command: str) -> Optional[tuple[str, ...]]:
@@ -113,12 +114,18 @@ def bootstrap_tools(module_names: Optional[Iterable[str]] = None) -> tuple[Modul
         if name not in _BOOTSTRAPPED_MODULES:
             module = import_module(name)
             _BOOTSTRAPPED_MODULES[name] = module
-            _BOOTSTRAPPED_TOOL_FUNCTIONS.update(
+            module_tools = {
+                tool_name: candidate
+                for tool_name, candidate in vars(module).items()
+                if callable(candidate)
+                and str(getattr(candidate, "__module__", "")) == name
+                and getattr(candidate, "_mcp_tool_object", None) is not None
+            }
+            _BOOTSTRAPPED_TOOL_FUNCTIONS.update(module_tools)
+            _BOOTSTRAPPED_TOOL_OBJECTS.update(
                 {
-                    tool_name: candidate
-                    for tool_name in tuple(_TOOL_REGISTRY)
-                    if callable(candidate := getattr(module, tool_name, None))
-                    and str(getattr(candidate, "__module__", "")) == name
+                    tool_name: candidate._mcp_tool_object
+                    for tool_name, candidate in module_tools.items()
                 }
             )
             imported_any = True
@@ -127,17 +134,29 @@ def bootstrap_tools(module_names: Optional[Iterable[str]] = None) -> tuple[Modul
     # under an existing name after the official module has loaded. Reassert the
     # canonical function view so a repeated bootstrap remains deterministic.
     requested_set = set(requested)
-    _TOOL_REGISTRY.update(
-        {
-            tool_name: function
-            for tool_name, function in _BOOTSTRAPPED_TOOL_FUNCTIONS.items()
-            if str(getattr(function, "__module__", "")) in requested_set
-        }
+    canonical_functions = {
+        tool_name: function
+        for tool_name, function in _BOOTSTRAPPED_TOOL_FUNCTIONS.items()
+        if str(getattr(function, "__module__", "")) in requested_set
+    }
+    canonical_objects = {
+        tool_name: _BOOTSTRAPPED_TOOL_OBJECTS[tool_name]
+        for tool_name in canonical_functions
+        if tool_name in _BOOTSTRAPPED_TOOL_OBJECTS
+    }
+    repaired_any = any(
+        _TOOL_REGISTRY.get(tool_name) is not function
+        for tool_name, function in canonical_functions.items()
+    ) or any(
+        _TOOL_OBJECT_REGISTRY.get(tool_name) is not tool_object
+        for tool_name, tool_object in canonical_objects.items()
     )
+    _TOOL_REGISTRY.update(canonical_functions)
+    _TOOL_OBJECT_REGISTRY.update(canonical_objects)
 
     # A warm shell may load another module later. That import triggers one new
     # attachment pass for the expanded registry; repeated calls over the same
     # module set do not need to deep-copy every schema again.
-    if imported_any:
+    if imported_any or repaired_any:
         attach_schemas_to_tools(mcp, get_shared_enum_lists())
     return tuple(_BOOTSTRAPPED_MODULES[name] for name in requested)

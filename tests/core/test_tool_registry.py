@@ -319,21 +319,24 @@ def test_tools_catalog_full_exposes_trading_defaults_and_venue_namespace():
 
 def test_bootstrap_repairs_temporary_tool_name_overwrite(monkeypatch):
     from mtdata.bootstrap import tools as bootstrap_module
-    from mtdata.core._mcp_tools import _TOOL_REGISTRY
+    from mtdata.core import trading
+    from mtdata.core._mcp_tools import _TOOL_OBJECT_REGISTRY, _TOOL_REGISTRY
 
     def trade_place():
         return {"success": True}
 
     monkeypatch.setattr(bootstrap_module, "_BOOTSTRAPPED_MODULES", {})
     monkeypatch.setattr(bootstrap_module, "_BOOTSTRAPPED_TOOL_FUNCTIONS", {})
-    monkeypatch.setattr(
-        bootstrap_module,
-        "attach_schemas_to_tools",
-        lambda *_args: None,
-    )
-    _TOOL_REGISTRY["trade_place"] = trade_place
+    monkeypatch.setattr(bootstrap_module, "_BOOTSTRAPPED_TOOL_OBJECTS", {})
+    monkeypatch.setitem(_TOOL_REGISTRY, "trade_place", trade_place)
+    monkeypatch.setitem(_TOOL_OBJECT_REGISTRY, "trade_place", trade_place)
     bootstrap_module.bootstrap_tools(("mtdata.core.trading",))
 
+    assert _TOOL_REGISTRY["trade_place"] is trading.trade_place
+    assert (
+        _TOOL_OBJECT_REGISTRY["trade_place"]
+        is trading.trade_place._mcp_tool_object
+    )
     full = registered_tool_catalog(detail="full")
     row = next(item for item in full["tools"] if item["name"] == "trade_place")
     assert row["parameters"]["dry_run"]["default"] is True
