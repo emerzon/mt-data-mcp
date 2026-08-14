@@ -11,6 +11,7 @@ from mtdata.utils.support_resistance import (
     _collect_support_resistance_warnings,
     _compute_fibonacci_payload,
     _drop_zero_score_when_stronger_exist,
+    _format_level,
     _format_time,
     _nearest_fibonacci_levels,
     _resolve_adaptive_settings,
@@ -143,7 +144,7 @@ def test_single_timeframe_pipeline_filters_zero_score_candidates(monkeypatch):
         min_touches=1,
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 def _clustered_levels_frame() -> pd.DataFrame:
@@ -870,6 +871,51 @@ def test_cluster_break_analysis_groups_contiguous_breaches():
     assert cluster["last_break_time"] == 4.0
     assert cluster["avg_breach_atr"] == pytest.approx(1.25)
     assert cluster["status"] == "broken"
+
+
+def test_overwide_cluster_zone_is_capped_and_classified_as_range() -> None:
+    level = _format_level(
+        {
+            "value": 100.0,
+            "touches": 4,
+            "episodes": 2,
+            "support_episodes": 2,
+            "resistance_episodes": 0,
+            "support_tests": 4,
+            "resistance_tests": 0,
+            "zone_low": 90.0,
+            "zone_high": 110.0,
+            "zone_width_atr": 20.0,
+            "score": 2.0,
+            "score_base": 2.0,
+            "retest_score": 1.0,
+            "bounce_score": 1.0,
+            "adx_score": 0.0,
+            "status": "intact",
+        },
+        current_price=100.5,
+        tolerance_pct=0.001,
+    )
+
+    assert level["type"] == "range"
+    assert level["contains_current_price"] is True
+    assert level["zone_width_capped"] is True
+    assert level["zone_low"] == pytest.approx(99.0)
+    assert level["zone_high"] == pytest.approx(101.0)
+    assert level["zone_width_atr"] == pytest.approx(2.0)
+
+    compact = compact_support_resistance_payload(
+        {"success": True, "supports": [], "resistances": [], "ranges": [level]}
+    )
+    assert compact["level_counts"] == {
+        "support": 0,
+        "resistance": 0,
+        "range": 1,
+        "total": 1,
+    }
+    assert compact["ranges"][0]["type"] == "range"
+    assert compact["ranges"][0]["zone_width_capped"] is True
+    assert compact["ranges"][0]["contains_current_price"] is True
 
 
 def test_episode_counting_keeps_raw_touches_secondary_to_distinct_tests():

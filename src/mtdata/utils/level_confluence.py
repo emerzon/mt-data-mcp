@@ -156,7 +156,11 @@ def _normalize_support_resistance_records(
                 "label": f"S/R {level_type or 'level'} {index}",
                 "level": level_type,
                 "price": price,
-                "role": _role_for_price(price, reference_price),
+                "role": (
+                    "range"
+                    if level_type == "range"
+                    else _role_for_price(price, reference_price)
+                ),
                 "distance_pct": _round_metric(distance),
                 "original_role": level_type,
                 "dominant_source": level.get("dominant_source"),

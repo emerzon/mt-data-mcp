@@ -650,6 +650,14 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
             resistance_count = len(resistances) if isinstance(resistances, list) else 0
         out["support_count"] = int(support_count)
         out["resistance_count"] = int(resistance_count)
+        range_count = counts.get("range") if isinstance(counts, dict) else None
+        ranges = levels.get("ranges")
+        if range_count is None:
+            range_count = len(ranges) if isinstance(ranges, list) else 0
+        if int(range_count) > 0:
+            out["range_count"] = int(range_count)
+            if isinstance(ranges, list) and ranges:
+                out["containing_range"] = ranges[0]
 
     pattern_bias = _pattern_bias(patterns)
     if pattern_bias:

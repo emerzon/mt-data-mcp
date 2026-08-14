@@ -31,6 +31,7 @@ _DEFAULT_ADAPTIVE_REACTION_MAX_SCALE = 1.6
 _DEFAULT_ADAPTIVE_RECENT_WINDOW = 8
 _DEFAULT_ZONE_STD_MULT = 1.5
 _DEFAULT_ZONE_ATR_MULT = 0.2
+_MAX_ZONE_WIDTH_ATR = 2.0
 _DEFAULT_BREAKOUT_BUFFER_ATR_MULT = 0.15
 _DEFAULT_BREAKOUT_PENALTY_BASE = 0.35
 _DEFAULT_BREAKOUT_PENALTY_ATR_MULT = 0.25
@@ -763,7 +764,43 @@ def _resolve_zone(
     cluster: Dict[str, Any],
     *,
     tolerance_pct: float,
-) -> Dict[str, Optional[float]]:
+) -> Dict[str, Any]:
+    raw_value = cluster.get("value")
+    if raw_value is None:
+        raw_low = cluster.get("zone_low")
+        raw_high = cluster.get("zone_high")
+        if raw_low is None or raw_high is None:
+            raise ValueError("Cluster requires value or zone bounds")
+        raw_value = (float(raw_low) + float(raw_high)) * 0.5
+    value = float(raw_value)
+
+    def _bounded_zone(
+        low: float,
+        high: float,
+        atr_avg: Optional[float],
+    ) -> Dict[str, Any]:
+        capped = False
+        if atr_avg is not None and atr_avg > 0.0:
+            max_width = float(atr_avg) * _MAX_ZONE_WIDTH_ATR
+            if high - low > max_width:
+                half_width = max_width * 0.5
+                low = value - half_width
+                high = value + half_width
+                capped = True
+        width = max(0.0, high - low)
+        return {
+            "zone_low": low,
+            "zone_high": high,
+            "zone_width": width,
+            "zone_width_atr": (
+                None
+                if atr_avg is None or atr_avg <= 0.0
+                else width / float(atr_avg)
+            ),
+            "zone_width_capped": capped,
+            "atr_avg": atr_avg,
+        }
+
     try:
         zone_low = cluster.get("zone_low")
         zone_high = cluster.get("zone_high")
@@ -771,19 +808,10 @@ def _resolve_zone(
             low = float(zone_low)
             high = float(zone_high)
             if math.isfinite(low) and math.isfinite(high) and high >= low:
-                width = high - low
-                zone_width_atr = cluster.get("zone_width_atr")
-                return {
-                    "zone_low": low,
-                    "zone_high": high,
-                    "zone_width": width,
-                    "zone_width_atr": None if zone_width_atr is None else float(zone_width_atr),
-                    "atr_avg": _cluster_atr_avg(cluster),
-                }
+                return _bounded_zone(low, high, _cluster_atr_avg(cluster))
     except Exception:
         pass
 
-    value = float(cluster["value"])
     weight_sum = max(float(cluster.get("weight_sum", 0.0)), 1e-9)
     value_sq_sum = float(cluster.get("value_sq_sum", value * value * weight_sum))
     variance = max(0.0, (value_sq_sum / weight_sum) - (value * value))
@@ -797,17 +825,7 @@ def _resolve_zone(
     touch_max = float(cluster.get("touch_max", value))
     zone_low = min(touch_min, value - half_width)
     zone_high = max(touch_max, value + half_width)
-    zone_width = max(0.0, zone_high - zone_low)
-    zone_width_atr = None
-    if atr_avg is not None and atr_avg > 0.0:
-        zone_width_atr = zone_width / atr_avg
-    return {
-        "zone_low": zone_low,
-        "zone_high": zone_high,
-        "zone_width": zone_width,
-        "zone_width_atr": zone_width_atr,
-        "atr_avg": atr_avg,
-    }
+    return _bounded_zone(zone_low, zone_high, atr_avg)
 
 
 def _analyze_cluster_state(
@@ -823,6 +841,7 @@ def _analyze_cluster_state(
     cluster["zone_high"] = zone["zone_high"]
     cluster["zone_width"] = zone["zone_width"]
     cluster["zone_width_atr"] = zone["zone_width_atr"]
+    cluster["zone_width_capped"] = bool(zone["zone_width_capped"])
 
     cluster["decisive_break_count"] = 0
     cluster["avg_breach_atr"] = None
@@ -934,9 +953,22 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
     distance = None
     distance_pct = None
     if current_price is not None and math.isfinite(current_price):
-        level_type = "support" if value <= current_price else "resistance"
+        contains_current_price = bool(
+            zone["zone_low"] is not None
+            and zone["zone_high"] is not None
+            and float(zone["zone_low"]) <= current_price <= float(zone["zone_high"])
+        )
+        level_type = (
+            "range"
+            if contains_current_price
+            else "support"
+            if value <= current_price
+            else "resistance"
+        )
         distance = value - current_price
         distance_pct = (distance / max(abs(current_price), 1e-9)) * 100.0
+    else:
+        contains_current_price = False
 
     metric_weight_sum = float(cluster.get("metric_weight_sum", 0.0))
     avg_bounce_atr = None
@@ -969,6 +1001,8 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
         "zone_high": None if zone["zone_high"] is None else float(round(float(zone["zone_high"]), 6)),
         "zone_width": None if zone["zone_width"] is None else float(round(float(zone["zone_width"]), 6)),
         "zone_width_atr": None if zone["zone_width_atr"] is None else float(round(float(zone["zone_width_atr"]), 4)),
+        "zone_width_capped": bool(zone["zone_width_capped"]),
+        "contains_current_price": contains_current_price,
         "first_touch": _format_time(cluster.get("first_time")),
         "last_touch": _format_time(cluster.get("last_time")),
         "dominant_source": dominant_source,
@@ -2235,11 +2269,19 @@ def merge_support_resistance_results(  # noqa: C901
 
     support_candidates = [dict(level) for level in formatted_levels if level.get("type") == "support"]
     resistance_candidates = [dict(level) for level in formatted_levels if level.get("type") == "resistance"]
+    range_candidates = [dict(level) for level in formatted_levels if level.get("type") == "range"]
 
     support_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), -float(level.get("value", 0.0))))
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
     _annotate_strength_metrics(support_candidates)
     _annotate_strength_metrics(resistance_candidates)
+    range_candidates.sort(
+        key=lambda level: (
+            abs(float(level.get("distance_pct", 0.0))),
+            -float(level.get("score", 0.0)),
+        )
+    )
+    _annotate_strength_metrics(range_candidates)
     coverage_gaps = _build_coverage_gaps(
         support_levels=support_candidates,
         resistance_levels=resistance_candidates,
@@ -2250,10 +2292,12 @@ def merge_support_resistance_results(  # noqa: C901
     # Drop breakout-broken (clamped-to-zero) levels when stronger ones remain.
     support_candidates = _drop_zero_score_when_stronger_exist(support_candidates)
     resistance_candidates = _drop_zero_score_when_stronger_exist(resistance_candidates)
+    range_candidates = _drop_zero_score_when_stronger_exist(range_candidates)
 
     max_levels_value = max(1, int(max_levels))
     supports = support_candidates[:max_levels_value]
     resistances = resistance_candidates[:max_levels_value]
+    ranges = range_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     zone_overlap = _build_zone_overlap(
@@ -2365,7 +2409,8 @@ def merge_support_resistance_results(  # noqa: C901
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
-        "levels": supports + resistances,
+        "ranges": ranges,
+        "levels": supports + resistances + ranges,
     }
 
 
@@ -2384,11 +2429,15 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "last_touch",
         "zone_width",
         "zone_width_atr",
+        "zone_width_capped",
+        "contains_current_price",
         "avg_test_volume_ratio",
         "volume_source",
         "role_transition",
     ):
         value = level.get(key)
+        if key in {"zone_width_capped", "contains_current_price"} and not value:
+            continue
         if value is not None:
             out[str(key)] = _round_support_resistance_display_metric(str(key), value)
     source_timeframes = level.get("source_timeframes")
@@ -2422,6 +2471,8 @@ def _standard_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "zone_high",
         "zone_width",
         "zone_width_atr",
+        "zone_width_capped",
+        "contains_current_price",
         "avg_test_volume_ratio",
         "volume_source",
     ):
@@ -2510,12 +2561,15 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
 
     supports = payload.get("supports")
     resistances = payload.get("resistances")
-    if isinstance(supports, list) or isinstance(resistances, list):
+    ranges = payload.get("ranges")
+    if any(isinstance(rows, list) for rows in (supports, resistances, ranges)):
         counts: Dict[str, int] = {}
         if isinstance(supports, list):
             counts["support"] = len(supports)
         if isinstance(resistances, list):
             counts["resistance"] = len(resistances)
+        if isinstance(ranges, list) and ranges:
+            counts["range"] = len(ranges)
         if counts:
             counts["total"] = sum(counts.values())
             out["level_counts"] = counts
@@ -2549,12 +2603,15 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
             out[key] = value
 
     support_levels = _compact_support_resistance_levels(supports)
-    if support_levels:
+    if isinstance(supports, list):
         out["supports"] = support_levels
     resistance_levels = _compact_support_resistance_levels(resistances)
-    if resistance_levels:
+    if isinstance(resistances, list):
         out["resistances"] = resistance_levels
-    if _has_historical_role_source(support_levels + resistance_levels):
+    range_levels = _compact_support_resistance_levels(ranges)
+    if isinstance(ranges, list):
+        out["ranges"] = range_levels
+    if _has_historical_role_source(support_levels + resistance_levels + range_levels):
         out["role_note"] = (
             "type=current side vs price; dominant_source=historical test role; "
             "role_transition=true marks a support/resistance flip."
@@ -2593,6 +2650,9 @@ def standard_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, An
     resistances = _compact_support_resistance_levels(payload.get("resistances"), standard=True)
     if resistances:
         out["resistances"] = resistances
+    ranges = _compact_support_resistance_levels(payload.get("ranges"), standard=True)
+    if ranges:
+        out["ranges"] = ranges
 
     return out or dict(payload)
 
@@ -2652,7 +2712,7 @@ def full_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(payload.get("fibonacci"), dict):
         out["fibonacci"] = dict(payload["fibonacci"])
     diagnostics: Dict[str, Any] = {}
-    for key in ("supports", "resistances"):
+    for key in ("supports", "resistances", "ranges"):
         section = _support_resistance_level_diagnostics(payload.get(key))
         if section:
             diagnostics[key] = section
@@ -2764,11 +2824,19 @@ def compute_support_resistance_levels(
     ]
     support_candidates = [dict(level) for level in formatted_levels if level.get("type") == "support"]
     resistance_candidates = [dict(level) for level in formatted_levels if level.get("type") == "resistance"]
+    range_candidates = [dict(level) for level in formatted_levels if level.get("type") == "range"]
 
     support_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), -float(level.get("value", 0.0))))
     resistance_candidates.sort(key=lambda level: (-float(level.get("score", 0.0)), float(level.get("value", 0.0))))
     _annotate_strength_metrics(support_candidates)
     _annotate_strength_metrics(resistance_candidates)
+    range_candidates.sort(
+        key=lambda level: (
+            abs(float(level.get("distance_pct", 0.0))),
+            -float(level.get("score", 0.0)),
+        )
+    )
+    _annotate_strength_metrics(range_candidates)
     coverage_gaps = _build_coverage_gaps(
         support_levels=support_candidates,
         resistance_levels=resistance_candidates,
@@ -2778,9 +2846,11 @@ def compute_support_resistance_levels(
     resistance_candidates = _filter_levels_by_distance(resistance_candidates, max_distance_pct=max_distance_value)
     support_candidates = _drop_zero_score_when_stronger_exist(support_candidates)
     resistance_candidates = _drop_zero_score_when_stronger_exist(resistance_candidates)
+    range_candidates = _drop_zero_score_when_stronger_exist(range_candidates)
 
     supports = support_candidates[:max_levels_value]
     resistances = resistance_candidates[:max_levels_value]
+    ranges = range_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     zone_overlap = _build_zone_overlap(
@@ -2863,5 +2933,6 @@ def compute_support_resistance_levels(
         "warnings": warnings,
         "supports": supports,
         "resistances": resistances,
-        "levels": supports + resistances,
+        "ranges": ranges,
+        "levels": supports + resistances + ranges,
     }

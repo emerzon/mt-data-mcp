@@ -2034,7 +2034,7 @@ def _normalize_support_resistance_payload(  # noqa: C901
         if nearest_out:
             out["nearest"] = nearest_out
 
-    for side_key in ("supports", "resistances"):
+    for side_key in ("supports", "resistances", "ranges"):
         side_levels_in = payload.get(side_key)
         if isinstance(side_levels_in, list):
             side_levels = [
