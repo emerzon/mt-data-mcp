@@ -396,6 +396,77 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["contracts_used"] == 5
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
     assert out["calibration_error_rmse"] is not None
+    assert out["calibration_error_rmse_unit"] == "absolute_implied_volatility"
+    assert out["calibration_status"] == "accepted"
+    assert out["usable_for_pricing"] is True
+    assert out["feller_satisfied"] is True
+    assert out["rho_at_bound"] is False
+
+
+def test_calibrate_heston_rejects_subweek_maturity_before_fit(monkeypatch):
+    fake = _make_fake_quantlib()
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-02",
+            "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+
+    assert out["error_code"] == "heston_maturity_too_short"
+    assert out["calendar_days_to_expiry"] == 1
+    assert out["minimum_calendar_days"] == 7
+    assert fake.HestonModelHelper.created == []
+
+
+def test_calibrate_heston_marks_bound_fit_unusable(monkeypatch):
+    fake = _make_fake_quantlib()
+
+    class BoundModel(fake.HestonModel):
+        def __init__(self, process):
+            super().__init__(process)
+            self._kappa = 0.00001
+            self._sigma = 1.5
+            self._rho = -0.999
+
+    fake.HestonModel = BoundModel
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+
+    assert out["success"] is True
+    assert out["calibration_status"] == "rejected"
+    assert out["usable_for_pricing"] is False
+    assert out["rho_at_bound"] is True
+    assert out["feller_satisfied"] is False
+    assert set(out["calibration_quality_failures"]) == {
+        "rho_at_calibration_bound",
+        "kappa_near_zero",
+    }
 
 
 def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch):

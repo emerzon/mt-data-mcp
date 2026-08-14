@@ -653,6 +653,25 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
             "expiration": expiry_date.isoformat(),
             "days_to_expiry_basis": maturity_basis_norm,
         }
+    maturity_calendar_days = int((expiry_date - valuation_day).days)
+    if maturity_calendar_days < 7:
+        return {
+            "error": (
+                "Heston calibration requires at least 7 calendar days to "
+                "expiration; the selected chain expires in "
+                f"{maturity_calendar_days} day(s)."
+            ),
+            "error_code": "heston_maturity_too_short",
+            "expiration": expiry_date.isoformat(),
+            "valuation_date": valuation_day.isoformat(),
+            "days_to_expiry": int(days_to_expiry),
+            "calendar_days_to_expiry": maturity_calendar_days,
+            "minimum_calendar_days": 7,
+            "remediation": (
+                "Pass --expiration with a listed expiry at least 7 calendar "
+                "days after the chain observation date."
+            ),
+        }
 
     ql_today = _quantlib_date(ql, valuation_day)
     ql.Settings.instance().evaluationDate = ql_today
@@ -675,7 +694,6 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     # HestonModelHelper advances Period(Days) through the supplied calendar.
     # A calendar-day delta therefore requires NullCalendar to preserve the
     # contract's actual expiry date instead of skipping weekends and holidays.
-    maturity_calendar_days = int((expiry_date - valuation_day).days)
     maturity = ql.Period(maturity_calendar_days, ql.Days)
     maturity_calendar = ql.NullCalendar()
     for row in rows:
@@ -716,6 +734,35 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         if calibration_data_stale
         else []
     )
+    params = {
+        "kappa": float(model.kappa()),
+        "theta": float(model.theta()),
+        "sigma": float(model.sigma()),
+        "rho": float(model.rho()),
+        "v0": float(model.v0()),
+    }
+    feller_left = 2.0 * params["kappa"] * params["theta"]
+    feller_right = params["sigma"] ** 2
+    feller_satisfied = bool(feller_left >= feller_right)
+    rho_at_bound = bool(abs(params["rho"]) >= 0.98)
+    quality_failures: List[str] = []
+    if not np.isfinite(rmse) or rmse > 0.15:
+        quality_failures.append("implied_vol_rmse_exceeds_0.15")
+    if rho_at_bound:
+        quality_failures.append("rho_at_calibration_bound")
+    if params["kappa"] <= 1e-4:
+        quality_failures.append("kappa_near_zero")
+    if not feller_satisfied:
+        warnings.append(
+            "Calibrated parameters violate the Feller condition; variance can "
+            "approach zero and simulation schemes require extra care."
+        )
+    if quality_failures:
+        warnings.append(
+            "Heston calibration failed pricing-usability checks: "
+            + ", ".join(quality_failures)
+            + "."
+        )
 
     return {
         "success": True,
@@ -740,13 +787,15 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "calibration_data_status": calibration_data_status,
         "warnings": warnings,
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
-        "params": {
-            "kappa": float(model.kappa()),
-            "theta": float(model.theta()),
-            "sigma": float(model.sigma()),
-            "rho": float(model.rho()),
-            "v0": float(model.v0()),
-        },
+        "calibration_error_rmse_unit": "absolute_implied_volatility",
+        "calibration_status": "rejected" if quality_failures else "accepted",
+        "usable_for_pricing": not quality_failures,
+        "calibration_quality_failures": quality_failures,
+        "feller_satisfied": feller_satisfied,
+        "feller_left": float(feller_left),
+        "feller_right": float(feller_right),
+        "rho_at_bound": rho_at_bound,
+        "params": params,
         "pricing_assumptions": _heston_pricing_assumptions(
             calendar=calendar_name,
             days_to_expiry_basis=maturity_basis_norm,

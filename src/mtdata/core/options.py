@@ -469,6 +469,14 @@ def _apply_options_detail(
                 "calibration_data_status",
                 "warnings",
                 "calibration_error_rmse",
+                "calibration_error_rmse_unit",
+                "calibration_status",
+                "usable_for_pricing",
+                "calibration_quality_failures",
+                "feller_satisfied",
+                "feller_left",
+                "feller_right",
+                "rho_at_bound",
                 "params",
                 "pricing_assumptions",
                 "detail",
@@ -777,7 +785,10 @@ def options_heston_calibrate(
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
     tokens: https://documentation.tradier.com/. Use `calendar` and
     `maturity_basis` to override the default `UnitedStates.NYSE` /
-    `calendar_days` maturity assumptions.
+    `calendar_days` maturity assumptions. The selected expiry must be at least
+    seven calendar days after the chain observation date. Fits that hit
+    parameter or IV-error quality gates return `usable_for_pricing=false` and
+    `calibration_status=rejected`.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
