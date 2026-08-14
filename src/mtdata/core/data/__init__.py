@@ -41,8 +41,8 @@ _WAIT_EVENT_SPEC_HINT = (
     '"symbol":"EURUSD"}; use candle_close for candle-boundary waits.'
 )
 _WAIT_EVENT_MODE_HINT = (
-    "Set timeframe for a candle-boundary wait or max_wait_seconds for a duration "
-    "wait. Do not combine max_wait_seconds with timeframe or end_on."
+    "Set timeframe for a candle-boundary wait, optionally bounded by "
+    "max_wait_seconds, or set max_wait_seconds alone for a duration wait."
 )
 
 
@@ -513,7 +513,7 @@ def _compact_wait_event_public_result(
         out["timeout"] = True
         out["timed_out"] = True
         out["events"] = []
-        mode = "duration" if max_wait_seconds is not None else "timeframe_boundary"
+        mode = str(out.get("wait_mode") or "duration")
         out["wait_mode"] = mode
         if elapsed_seconds is not None:
             out["waited_seconds"] = elapsed_seconds
@@ -539,7 +539,7 @@ def _compact_wait_event_public_result(
         }
         out.setdefault(
             "remediation",
-            "Retry the same wait or increase max_wait_seconds for a longer duration wait.",
+            "Retry the same wait or increase max_wait_seconds.",
         )
     else:
         wait_policy = {
@@ -730,11 +730,11 @@ def wait_event(
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """BLOCKING: Wait in exactly one mode: timeframe boundary or max_wait_seconds.
+    """BLOCKING: Wait for a timeframe boundary and/or a duration deadline.
 
-    Provide exactly one wait mode: set `timeframe` to stop at the next candle
-    boundary, or set `max_wait_seconds` to stop after a fixed duration. Combining
-    both modes, or omitting both, is invalid.
+    Set `timeframe` to stop at the next candle boundary, optionally with
+    `max_wait_seconds` as a safety cap. Set `max_wait_seconds` alone to stop after
+    a fixed duration. Omitting both is invalid.
 
     In timeframe mode, omitting `watch_for` watches the lightweight core set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
@@ -758,9 +758,10 @@ def wait_event(
     same boundary-only behavior while still collecting candle statistics for a
     supplied symbol or basket.
 
-    `max_wait_seconds` selects duration mode and must be omitted when
-    `timeframe` or `end_on` is set. Explicit `end_on` timeframes must match the
-    top-level `timeframe`.
+    `max_wait_seconds` alone selects duration mode. With `timeframe`, it bounds
+    the candle-boundary wait; when the boundary is beyond that budget, the call
+    returns `wait_budget_exceeded` without sleeping. Explicit `end_on`
+    timeframes must match the top-level `timeframe`.
     A timer-only duration or a timeframe boundary reached with inferred watchers
     is a successful completion.
     With explicit `watch_for`, a timeout is a failed wait (`success=false`,
@@ -811,7 +812,6 @@ def wait_event(
         end_on,
         field_name="end_on",
     )
-    end_on_provided = end_on is not None
     moved_boundary_watchers = False
     if watch_for_error is None and end_on_error is None:
         normalized_watch_for, normalized_end_on, moved_boundary_watchers = (
@@ -821,11 +821,7 @@ def wait_event(
     explicit_end_on = normalized_end_on is not None
     wait_mode_error: Optional[str] = None
     if timeframe is None and max_wait_seconds is None:
-        wait_mode_error = "Provide exactly one of timeframe or max_wait_seconds."
-    elif timeframe is not None and max_wait_seconds is not None:
-        wait_mode_error = "Do not combine timeframe with max_wait_seconds."
-    elif max_wait_seconds is not None and end_on_provided:
-        wait_mode_error = "max_wait_seconds cannot be combined with end_on."
+        wait_mode_error = "Provide timeframe and/or max_wait_seconds."
     request_error: Optional[str] = None
     spec_error = watch_for_error or end_on_error
     if symbols_error is not None:

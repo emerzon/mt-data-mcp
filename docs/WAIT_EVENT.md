@@ -16,14 +16,16 @@ progress bar for a long wait.
 
 ---
 
-## Pick exactly one wait mode
+## Pick a wait target
 
-You must choose **one**:
+Choose at least one:
 
-- a **timeframe** — stop at the next candle boundary (for example the next H1 close), or
-- **`max_wait_seconds`** — stop after a fixed number of seconds.
+- a **timeframe** — stop at the next candle boundary (for example the next H1 close),
+- **`max_wait_seconds`** — stop after a fixed number of seconds, or bound a timeframe wait.
 
-Do not set both. Do not omit both.
+Do not omit both. Setting both creates a bounded boundary wait: the command
+returns at the candle boundary when it fits within the budget, or reports
+`wait_budget_exceeded` without starting an over-budget sleep.
 
 ---
 
@@ -35,6 +37,12 @@ mtdata-cli wait_event EURUSD --timeframe H1 --json
 
 Use this when the next research step should run on a *completed* hour, not a
 bar that is still forming.
+
+Add a safety cap for unattended scripts:
+
+```bash
+mtdata-cli wait_event EURUSD --timeframe H1 --max-wait-seconds 300 --json
+```
 
 A timeframe wait with no symbol and no extra watch list is a pure clock wait
 (no candle payload). Passing the symbol includes a best-effort closed-candle

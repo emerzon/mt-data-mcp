@@ -641,6 +641,7 @@ def test_wait_event_compact_timeout_keeps_explicit_watch_types() -> None:
         {
             "success": True,
             "status": "timeout",
+            "wait_mode": "timeframe_boundary",
             "matched": False,
             "event": None,
             "elapsed_seconds": 2.003,
@@ -656,6 +657,8 @@ def test_wait_event_compact_timeout_keeps_explicit_watch_types() -> None:
     )
 
     assert result["events_monitored"] == ["candle_close", "price_change"]
+    assert result["wait_mode"] == "timeframe_boundary"
+    assert result["details"]["mode"] == "timeframe_boundary"
 
 
 def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
@@ -920,16 +923,41 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
 
-def test_wait_event_request_rejects_boundary_with_duration_cap() -> None:
-    with pytest.raises(
-        ValidationError,
-        match="max_wait_seconds cannot be combined with timeframe or end_on",
-    ):
+def test_wait_event_boundary_respects_duration_cap(monkeypatch) -> None:
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        lambda timeframe, buffer_seconds, now_utc: {
+            "timeframe": timeframe,
+            "buffer_seconds": buffer_seconds,
+            "sleep_seconds": 60.0,
+            "started_at_utc": now_utc.isoformat(),
+            "next_candle_close_utc": (now_utc + timedelta(seconds=60)).isoformat(),
+            "next_candle_close_server": "2026-03-15T12:01:00",
+            "server_timezone": "UTC",
+        },
+    )
+    clock = FakeClock(started)
+
+    result = run_wait_event(
         WaitEventRequest(
             watch_for=[],
+            timeframe="M1",
             end_on=[{"type": "candle_close", "timeframe": "M1"}],
             max_wait_seconds=30.0,
-        )
+        ),
+        gateway=None,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "wait_budget_exceeded"
+    assert result["wait_mode"] == "timeframe_boundary"
+    assert result["max_wait_seconds"] == 30.0
+    assert result["remaining_seconds"] == 60.0
+    assert clock.monotonic_value == 0.0
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(

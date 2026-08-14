@@ -372,7 +372,7 @@ def test_wait_event_symbol_less_timeframe_builds_boundary_only_request(
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-def test_wait_event_rejects_timeframe_with_max_wait_seconds(
+def test_wait_event_forwards_bounded_timeframe_wait(
     mock_run_wait,
     _mock_gateway,
 ) -> None:
@@ -382,16 +382,13 @@ def test_wait_event_rejects_timeframe_with_max_wait_seconds(
         max_wait_seconds=30,
     )
 
-    assert result == {
-        "error": "Do not combine timeframe with max_wait_seconds.",
-        "error_code": "wait_event_invalid_request",
-        "hint": (
-            "Set timeframe for a candle-boundary wait or "
-            "max_wait_seconds for a duration wait. Do not combine "
-            "max_wait_seconds with timeframe or end_on."
-        ),
-    }
-    mock_run_wait.assert_not_called()
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.timeframe == "M1"
+    assert request.max_wait_seconds == 30
+    assert [(item.type, item.timeframe) for item in request.end_on] == [
+        ("candle_close", "M1")
+    ]
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
@@ -402,7 +399,7 @@ def test_wait_event_rejects_missing_wait_mode(
 ) -> None:
     result = _raw_wait_event()(symbol="BTCUSD")
 
-    assert result["error"] == "Provide exactly one of timeframe or max_wait_seconds."
+    assert result["error"] == "Provide timeframe and/or max_wait_seconds."
     assert result["error_code"] == "wait_event_invalid_request"
     mock_run_wait.assert_not_called()
 
@@ -461,13 +458,13 @@ def test_wait_event_rejects_duration_mode_with_end_on(
     )
 
     assert result["error_code"] == "wait_event_invalid_request"
-    assert result["error"] == "max_wait_seconds cannot be combined with end_on."
+    assert "end_on requires a top-level timeframe" in result["error"]
     mock_run_wait.assert_not_called()
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-def test_wait_event_rejects_duration_mode_with_empty_end_on(
+def test_wait_event_accepts_duration_mode_with_empty_end_on(
     mock_run_wait,
     _mock_gateway,
 ) -> None:
@@ -478,9 +475,11 @@ def test_wait_event_rejects_duration_mode_with_empty_end_on(
         end_on=[],
     )
 
-    assert result["error"] == "max_wait_seconds cannot be combined with end_on."
-    assert result["error_code"] == "wait_event_invalid_request"
-    mock_run_wait.assert_not_called()
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.timeframe is None
+    assert request.max_wait_seconds == 30
+    assert request.end_on == []
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())

@@ -652,6 +652,7 @@ Do not run long waits from the Web UI. See [WAIT_EVENT.md](WAIT_EVENT.md).
 
 ```bash
 mtdata-cli wait_event EURUSD --timeframe H1 --json
+mtdata-cli wait_event EURUSD --timeframe H1 --max-wait-seconds 300 --json
 mtdata-cli wait_event EURUSD --max-wait-seconds 30 --json
 ```
 

@@ -905,7 +905,7 @@ class TestAddDynamicArguments:
         )
         assert "Timer-only duration" in symbol_action.help
 
-    def test_wait_event_help_explains_exclusive_wait_modes(self):
+    def test_wait_event_help_explains_bounded_boundary_mode(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -935,8 +935,8 @@ class TestAddDynamicArguments:
         help_text = _strip_ansi(parser.format_help())
         compact_help = " ".join(help_text.split())
 
-        assert "Cannot be combined with max_wait_seconds" in compact_help
-        assert "Cannot be combined with timeframe or end_on" in compact_help
+        assert "optional safety cap" in compact_help
+        assert "bounds the candle-boundary wait" in compact_help
         assert "Basket of 1-12 trading symbols" in compact_help
         assert "Cannot be combined with symbol" in compact_help
         assert "must be at least 0.1" in compact_help

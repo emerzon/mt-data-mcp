@@ -597,12 +597,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "watchers apply to every basket member."
     ),
     ("wait_event", "timeframe"): (
-        "Candle-boundary wait mode. Cannot be combined with max_wait_seconds. "
+        "Candle-boundary wait mode. Set max_wait_seconds for an optional safety cap. "
         "With inferred watchers, reaching the boundary is a successful completion."
     ),
     ("wait_event", "max_wait_seconds"): (
-        "Duration wait mode in seconds. Cannot be combined with timeframe or end_on. "
-        "Omit watch_for for a timer-only wait; pass watchers to return early on events."
+        "Maximum wait in seconds. With timeframe, bounds the candle-boundary wait; "
+        "without timeframe, omit watch_for for a timer or pass watchers to return early."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."

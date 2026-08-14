@@ -741,6 +741,7 @@ def _run_candle_boundary_only(
         preview["slept_seconds"] = 0.0
         preview["remaining_seconds"] = float(preview["sleep_seconds"])
         preview["max_wait_seconds"] = float(max_wait_seconds)
+        preview["wait_mode"] = "timeframe_boundary"
         preview["remediation"] = (
             "Increase max_wait_seconds beyond remaining_seconds and retry."
         )
@@ -772,6 +773,7 @@ def _run_candle_boundary_only(
     payload["max_wait_seconds"] = (
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
+    payload["wait_mode"] = "timeframe_boundary"
     payload["success"] = True
     payload["completed"] = True
     if identity_payload:
@@ -2710,9 +2712,7 @@ def _build_wait_result(
         "status": status,
         "timed_out": timed_out,
         "wait_mode": (
-            "duration"
-            if request.max_wait_seconds is not None
-            else "timeframe_boundary"
+            "timeframe_boundary" if request.timeframe is not None else "duration"
         ),
         "matched": matched,
         "event": matched_event["type"] if matched_event is not None else None,
@@ -2753,14 +2753,13 @@ def _build_wait_result(
                     "Wait timed out before a watched event or boundary was observed."
                 ),
                 "remediation": (
-                    "Retry the same wait or increase max_wait_seconds for a "
-                    "longer duration wait."
+                    "Retry the same wait or increase max_wait_seconds."
                 ),
                 "details": {
                     "mode": (
-                        "duration"
-                        if request.max_wait_seconds is not None
-                        else "timeframe_boundary"
+                        "timeframe_boundary"
+                        if request.timeframe is not None
+                        else "duration"
                     ),
                     "watch_for": [
                         item.get("type")

@@ -879,16 +879,11 @@ class WaitEventRequest(BaseModel):
                 )
         has_boundary = self.timeframe is not None
         has_duration = self.max_wait_seconds is not None
-        end_on_was_provided = "end_on" in self.model_fields_set
-        if has_duration and (has_boundary or end_on_was_provided):
-            raise ValueError(
-                "max_wait_seconds cannot be combined with timeframe or end_on."
-            )
         if self.end_on and not has_boundary:
             raise ValueError("end_on requires a top-level timeframe.")
         if not has_boundary and not has_duration:
             raise ValueError(
-                "Provide exactly one of timeframe or max_wait_seconds."
+                "Provide timeframe and/or max_wait_seconds."
             )
         if self.timeframe is not None:
             conflicting_timeframes = sorted(
