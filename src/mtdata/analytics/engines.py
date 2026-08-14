@@ -2485,12 +2485,13 @@ def decompose_portfolio_risk(  # noqa: C901
         starts = rng.integers(0, max_start + 1, size=request.simulations)
         scenario_returns = np.stack([standardized.iloc[start : start + horizon].sum(axis=0).to_numpy(dtype=float) for start in starts])
         scenario_returns = scenario_returns * current_vol.to_numpy(dtype=float)
-        component_pnl = scenario_returns * sensitivity_vec
+        scenario_simple_returns = np.expm1(scenario_returns)
+        component_pnl = scenario_simple_returns * sensitivity_vec
         pnl = component_pnl.sum(axis=1)
         base_pnl = pnl.copy()
         if proposed_sensitivity and proposed_sensitivity[0] in list(standardized.columns):
             proposed_idx = list(standardized.columns).index(proposed_sensitivity[0])
-            base_pnl = pnl - scenario_returns[:, proposed_idx] * proposed_sensitivity[1]
+            base_pnl = pnl - component_pnl[:, proposed_idx]
         scenario_details[horizon] = pnl
         for confidence in request.confidence:
             cutoff = float(np.quantile(pnl, 1.0 - confidence))
@@ -2520,7 +2521,7 @@ def decompose_portfolio_risk(  # noqa: C901
     exposure_abs = np.abs(sensitivity_vec)
     weights = exposure_abs / exposure_abs.sum() if exposure_abs.sum() else exposure_abs
     correlation = returns.corr()
-    worst_historical = (returns * sensitivity_vec).sum(axis=1)
+    worst_historical = (np.expm1(returns) * sensitivity_vec).sum(axis=1)
     perfect_correlation = []
     for horizon in request.horizon_bars:
         if request.method == "filtered_historical":

@@ -1934,6 +1934,48 @@ def test_portfolio_risk_horizons_share_one_stable_calibration_window() -> None:
     assert short_one["horizon_windows_available"] == 300
 
 
+def test_portfolio_risk_converts_log_scenarios_to_simple_return_pnl() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        }
+    ]
+    bars = _bars(130)
+    price = 2.0
+    for row in bars:
+        row["open"] = price
+        price *= 0.99
+        row["close"] = price
+        row["high"] = row["open"]
+        row["low"] = price
+    gateway.bar_rows["EURUSD"] = bars
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=120,
+            horizon_bars=[2],
+            confidence=[0.95],
+            method="historical",
+            simulations=500,
+        ),
+        gateway,
+    )
+
+    sensitivity = 110_010.0
+    expected_two_bar_pnl = sensitivity * ((0.99**2) - 1.0)
+    assert result["risk"][0]["worst_simulated_pnl"] == pytest.approx(
+        expected_two_bar_pnl
+    )
+    assert result["stresses"]["worst_historical_bar_pnl"] == pytest.approx(
+        sensitivity * -0.01
+    )
+
+
 def test_filtered_historical_shock_uses_pre_shock_volatility() -> None:
     baseline = np.tile(np.array([-0.01, 0.01]), 60)
     values = np.concatenate([baseline, np.array([0.20])])

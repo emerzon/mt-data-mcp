@@ -99,6 +99,8 @@ Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
 filtered-historical scenarios. It returns multi-horizon VaR/Expected Shortfall,
 component ES, concentration, prescribed stresses, and optional proposed-trade
 incremental ES and margin.
+Multi-bar log-return paths are converted to compounded simple returns before
+they are applied to account-currency position sensitivities.
 
 When `proposed_trade` is supplied, its symbol is resolved against the broker
 catalog and its volume is validated against that symbol's minimum, maximum, and
