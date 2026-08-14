@@ -1842,6 +1842,27 @@ class TestResolveParamKwargs:
             assert "SELL_STOP_LIMIT" in kwargs["help"]
             assert "market" not in kwargs["help"].lower()
 
+    @pytest.mark.parametrize(
+        "cmd_name",
+        [
+            "finviz_fundamentals",
+            "finviz_description",
+            "finviz_news",
+            "finviz_insider",
+            "finviz_ratings",
+            "finviz_peers",
+        ],
+    )
+    def test_finviz_symbol_help_uses_an_equity_ticker(self, cmd_name):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "symbol", "type": str, "required": True, "default": None},
+            None,
+            cmd_name=cmd_name,
+        )
+
+        assert "AAPL" in kwargs["help"]
+        assert "EURUSD" not in kwargs["help"]
+
     def test_market_scan_limit_help_is_command_specific(self):
         param = {
             "name": "limit",

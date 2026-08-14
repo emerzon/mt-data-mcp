@@ -1493,6 +1493,34 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} finviz_fundamentals AAPL",
         None,
     ),
+    "finviz_description": (
+        f"{CLI_PROGRAM} finviz_description AAPL",
+        None,
+    ),
+    "finviz_news": (
+        f"{CLI_PROGRAM} finviz_news AAPL --limit 5",
+        None,
+    ),
+    "finviz_insider": (
+        f"{CLI_PROGRAM} finviz_insider AAPL --limit 5",
+        None,
+    ),
+    "finviz_ratings": (
+        f"{CLI_PROGRAM} finviz_ratings AAPL",
+        None,
+    ),
+    "finviz_peers": (
+        f"{CLI_PROGRAM} finviz_peers AAPL",
+        None,
+    ),
+    "options_chain": (
+        f"{CLI_PROGRAM} options_chain AAPL --limit 5",
+        None,
+    ),
+    "options_expirations": (
+        f"{CLI_PROGRAM} options_expirations AAPL",
+        None,
+    ),
     "options_heston_calibrate": (
         f"{CLI_PROGRAM} options_heston_calibrate AAPL",
         None,
@@ -1721,7 +1749,7 @@ def _match_commands(
     tokens = [tok for tok in query.lower().split() if tok]
     if not tokens:
         return []
-    matches: List[Tuple[str, ToolInfo, Dict[str, Any]]] = []
+    scored_matches: List[Tuple[int, str, ToolInfo, Dict[str, Any]]] = []
     for name, tool in sorted(functions.items()):
         func = tool["func"]
         func_info = tool.setdefault("_cli_func_info", get_function_info(func))
@@ -1743,20 +1771,41 @@ def _match_commands(
                     ),
                 ]
             )
+        name_text = name.lower()
+        description_text = str(
+            meta.get("description") or func_info.get("doc") or ""
+        ).lower()
+        parameter_text = " ".join(param_terms).lower()
+        example_text = " ".join(
+            (example or "").replace(CLI_PROGRAM, "")
+            for example in _build_usage_examples(name, func_info)
+        ).lower()
         haystack = " ".join(
-            [
-                name.lower(),
-                str(meta.get("description") or func_info.get("doc") or "").lower(),
-                " ".join(param_terms).lower(),
-                " ".join(
-                    (example or "").replace(CLI_PROGRAM, "")
-                    for example in _build_usage_examples(name, func_info)
-                ).lower(),
-            ]
+            [name_text, description_text, parameter_text, example_text]
         )
         if all(tok in haystack for tok in tokens):
-            matches.append((name, tool, func_info))
-    return matches
+            name_terms = name_text.replace("-", "_").split("_")
+            score = 0
+            if name_text == "_".join(tokens):
+                score += 1_000
+            if name_text.startswith("_".join(tokens)):
+                score += 500
+            for token in tokens:
+                if token in name_terms:
+                    score += 200
+                elif name_text.startswith(token):
+                    score += 150
+                elif token in name_text:
+                    score += 80
+                elif token in description_text.split():
+                    score += 40
+                elif token in parameter_text.split():
+                    score += 20
+                else:
+                    score += 1
+            scored_matches.append((score, name, tool, func_info))
+    scored_matches.sort(key=lambda item: (-item[0], item[1]))
+    return [(name, tool, func_info) for _, name, tool, func_info in scored_matches]
 
 
 def _suggest_commands(

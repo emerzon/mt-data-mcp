@@ -4,6 +4,8 @@ Covers lines 45-245 by mocking template functions and external data fetching.
 """
 import logging
 import warnings
+from contextlib import redirect_stderr
+from io import StringIO
 from typing import Any, Dict, List, get_type_hints
 from unittest.mock import MagicMock, patch
 
@@ -364,6 +366,31 @@ def test_run_report_generate_logs_finish_event(caplog):
         "event=finish operation=report_generate success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_run_report_generate_progress_respects_stderr_redirection():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+    from mtdata.core.report.utils import emit_report_progress
+
+    def template(*_args, **_kwargs):
+        emit_report_progress("test_operation", "started")
+        return {"sections": _make_full_sections(), "diagnostics": {}}
+
+    captured = StringIO()
+    with (
+        patch("mtdata.core.report_templates.template_minimal", template, create=True),
+        redirect_stderr(captured),
+    ):
+        run_report_generate(
+            ReportGenerateRequest(symbol="EURUSD", progress=True),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert "report_generate progress" in captured.getvalue()
 
 
 def test_run_report_generate_scopes_volatility_rate_cache():

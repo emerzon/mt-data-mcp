@@ -77,13 +77,15 @@ Requires `symbol`, `volume`, and `order_type`.
 | `--take-profit` / `--tp` | — | Take-profit price |
 | `--deviation` | `20` | Max slippage in points (market orders) |
 | `--require-sl-tp` | `true` | Require both SL and TP on market orders |
-| `--auto-close-on-sl-tp-fail` | `true` | Close the position if SL/TP attachment fails after a fill |
 | `--expiration` | — | Pending-order expiry (`dateparser`, UTC epoch seconds, or `GTC`) |
 | `--magic` | `MTDATA_ORDER_MAGIC` | Strategy identifier stamped on the order |
 | `--comment` | — | Free-text order comment |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts (24-hour default retention) |
 | `--dry-run` | `true` | Set `false` explicitly for live execution |
 | `--detail` | `compact` | Use `full` for execution diagnostics |
+
+If required SL/TP protection cannot be attached after a market fill, mtdata
+always attempts to close the unprotected position. This fail-safe is not optional.
 
 Idempotency outcomes are stored in `MTDATA_TRADE_IDEMPOTENCY_DB`. If a process
 stops after reserving a key but before recording the broker outcome, retries for

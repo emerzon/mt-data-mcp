@@ -1309,7 +1309,7 @@ def run_report_generate(  # noqa: C901
                 print(
                     "report_generate progress "
                     f"operation={operation} state={state} elapsed={elapsed:.1f}s",
-                    file=sys.__stderr__,
+                    file=sys.stderr,
                     flush=True,
                 )
 

@@ -353,6 +353,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("options_heston_calibrate", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."
     ),
+    ("finviz_fundamentals", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("finviz_description", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("finviz_news", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("finviz_insider", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("finviz_ratings", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("finviz_peers", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
     ("options_heston_calibrate", "calendar"): (
         "QuantLib calendar name used by calibration helpers, such as UnitedStates.NYSE or NullCalendar."
     ),

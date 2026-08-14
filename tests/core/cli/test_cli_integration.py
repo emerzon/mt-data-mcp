@@ -2928,6 +2928,43 @@ class TestMatchCommands:
         matches = _match_commands(fns, "generate")
         assert len(matches) == 1
 
+    def test_command_family_name_matches_rank_before_loose_help_text(self):
+        def command(symbol: str):
+            pass
+
+        info = get_function_info(command)
+        functions = {
+            "finviz_insider": {
+                "func": command,
+                "meta": {"description": "Show insider trades"},
+                "_cli_func_info": info,
+            },
+            "trade_place": {
+                "func": command,
+                "meta": {"description": "Place an order"},
+                "_cli_func_info": info,
+            },
+            "denoise_describe": {
+                "func": command,
+                "meta": {"description": "Describe supported options"},
+                "_cli_func_info": info,
+            },
+            "options_chain": {
+                "func": command,
+                "meta": {"description": "Fetch listed contracts"},
+                "_cli_func_info": info,
+            },
+        }
+
+        assert [row[0] for row in _match_commands(functions, "trade")][:2] == [
+            "trade_place",
+            "finviz_insider",
+        ]
+        assert [row[0] for row in _match_commands(functions, "options")][:2] == [
+            "options_chain",
+            "denoise_describe",
+        ]
+
 
 def test_extended_help_surfaces_global_flags(capsys):
     from mtdata.core.cli.api import _print_extended_help
@@ -2981,6 +3018,10 @@ def test_help_search_indexes_reviewed_examples():
         ("outliers_detect", "--method mad", "theta"),
         ("forecast_volatility_estimate", "--method ewma", "theta"),
         ("finviz_fundamentals", "AAPL", "EURUSD"),
+        ("finviz_insider", "AAPL", "EURUSD"),
+        ("finviz_news", "AAPL", "EURUSD"),
+        ("options_chain", "AAPL", "EURUSD"),
+        ("options_expirations", "AAPL", "EURUSD"),
         ("options_heston_calibrate", "AAPL", "EURUSD"),
         ("report_generate", "--template minimal", "<template>"),
         ("portfolio_risk_decompose", "--method historical", "theta"),
