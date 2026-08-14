@@ -53,6 +53,7 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
     "forecast_backtest": {
         "symbol": "data_preparation",
         "timeframe": "data_preparation",
+        "lookback": "data_preparation",
         "horizon": "evaluation",
         "steps": "evaluation",
         "spacing": "evaluation",
