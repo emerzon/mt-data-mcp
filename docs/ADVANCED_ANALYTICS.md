@@ -52,6 +52,8 @@ market-order fills only. Pending fills are compared with their submitted order
 price, while setup-to-fill price movement is reported separately as arrival
 implementation shortfall. Unmatched or unbenchmarked fills are counted rather
 than silently discarded.
+Commission and fee percentiles are non-negative cost magnitudes per broker lot;
+signed commission and fee fields remain available on full-detail fill rows.
 
 ## Fixed-candidate chronological validation
 

@@ -1208,7 +1208,14 @@ def analyze_execution_quality(  # noqa: C901
             "deal_fill_ratio": min(1.0, volume / initial_volume) if initial_volume > 0 else None,
             "commission": float(deal.get("commission") or 0.0),
             "fee": float(deal.get("fee") or 0.0),
-            "commission_fee_per_lot": (float(deal.get("commission") or 0.0) + float(deal.get("fee") or 0.0)) / volume,
+            "commission_fee_per_lot": max(
+                0.0,
+                -(
+                    float(deal.get("commission") or 0.0)
+                    + float(deal.get("fee") or 0.0)
+                ),
+            )
+            / volume,
             "markout_bps": markouts,
             "fill_epoch": fill_epoch,
             "order_type": order_type_label,

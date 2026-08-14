@@ -572,6 +572,10 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         gateway,
     )
     assert result["summary"]["fills"] == 1
+    assert result["items"][0]["commission_fee_per_lot"] == pytest.approx(0.30)
+    assert result["summary"]["commission_fee_per_lot"]["mean"] == pytest.approx(
+        0.30
+    )
     assert result["currency"] == "USD"
     assert result["units"]["commission_fee_per_lot"] == (
         "account_currency_per_broker_lot"
@@ -601,6 +605,67 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     assert result["data_quality"]["session_definition"]["basis"] == (
         "dst_aware_market_sessions"
     )
+
+
+def test_execution_quality_fee_percentiles_use_positive_cost_magnitudes() -> None:
+    gateway = FakeGateway()
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 1.1, "volume_initial": 1.0},
+        {"ticket": 11, "price_open": 1.1, "volume_initial": 0.5},
+        {"ticket": 12, "price_open": 1.1, "volume_initial": 1.0},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": fill_epoch * 1000,
+            "commission": -3.5,
+            "fee": 0.0,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 0.5,
+            "price": 1.1001,
+            "time_msc": (fill_epoch + 1) * 1000,
+            "commission": -0.7,
+            "fee": 0.0,
+        },
+        {
+            "ticket": 22,
+            "order": 12,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": (fill_epoch + 2) * 1000,
+            "commission": 0.5,
+            "fee": 0.0,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    costs = [item["commission_fee_per_lot"] for item in result["items"]]
+    percentiles = result["summary"]["commission_fee_per_lot"]
+    assert costs == pytest.approx([3.5, 1.4, 0.0])
+    assert percentiles["max"] == 3.5
+    assert percentiles["max"] >= percentiles["p99"] >= percentiles["p95"]
+    assert percentiles["median"] >= 0.0
 
 
 def test_execution_quality_rejects_substring_as_missing_exact_symbol() -> None:
