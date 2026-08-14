@@ -111,12 +111,14 @@ def bootstrap_tools(module_names: Optional[Iterable[str]] = None) -> tuple[Modul
     imported_any = False
     for name in requested:
         if name not in _BOOTSTRAPPED_MODULES:
-            _BOOTSTRAPPED_MODULES[name] = import_module(name)
+            module = import_module(name)
+            _BOOTSTRAPPED_MODULES[name] = module
             _BOOTSTRAPPED_TOOL_FUNCTIONS.update(
                 {
-                    tool_name: function
-                    for tool_name, function in _TOOL_REGISTRY.items()
-                    if str(getattr(function, "__module__", "")) == name
+                    tool_name: candidate
+                    for tool_name in tuple(_TOOL_REGISTRY)
+                    if callable(candidate := getattr(module, tool_name, None))
+                    and str(getattr(candidate, "__module__", "")) == name
                 }
             )
             imported_any = True
