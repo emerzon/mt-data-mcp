@@ -356,6 +356,12 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
+            "data_age_seconds": 15.0,
+            "data_stale": False,
+            "freshness": "provider_timestamped",
+            "underlying_price_source": "tradier_last",
+            "underlying_price_session": "provider_reported_last",
             "options": [
                 {"strike": 90.0, "implied_volatility": 0.35, "side": "call"},
                 {"strike": 95.0, "implied_volatility": 0.30, "side": "call"},
@@ -375,11 +381,17 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
         min_open_interest=0,
         min_volume=0,
         max_contracts=5,
-        valuation_date="2026-12-01",
     )
     assert out["success"] is True
     assert out["symbol"] == "AAPL"
     assert out["valuation_date"] == "2026-12-01"
+    assert out["valuation_date_source"] == "chain_observation_date"
+    assert out["spot_as_of"] == "2026-12-01T20:00:00Z"
+    assert out["spot_data_age_seconds"] == 15.0
+    assert out["spot_data_stale"] is False
+    assert out["spot_source"] == "tradier_last"
+    assert out["calibration_data_status"] == "current"
+    assert out["warnings"] == []
     assert out["days_to_expiry"] == 18
     assert out["contracts_used"] == 5
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
@@ -397,6 +409,7 @@ def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch)
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
             "options": [
                 {"strike": strike, "implied_volatility": 0.25, "side": side}
                 for strike, side in zip((90, 95, 100, 105, 110), ("put", "call", "put", "call", "put"))
@@ -427,6 +440,7 @@ def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monk
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
             "options": [
                 {"strike": 90.0, "implied_volatility": 0.35, "side": "call"},
                 {"strike": 95.0, "implied_volatility": 0.30, "side": "call"},
@@ -453,7 +467,58 @@ def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monk
     assert out["pricing_assumptions"]["days_to_expiry_basis"] == "business_days"
     assert "maturity_basis" not in out["pricing_assumptions"]
     assert out["valuation_timezone"] == "UTC"
-    assert out["valuation_date_source"] == "explicit"
+    assert out["valuation_date_source"] == "explicit_chain_observation_date"
+
+
+def test_calibrate_heston_rejects_valuation_date_outside_chain_snapshot(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "as_of": "2026-12-01T23:30:00Z",
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        valuation_date="2026-11-30",
+    )
+
+    assert out["error_code"] == "valuation_date_chain_mismatch"
+    assert out["chain_observation_date"] == "2026-12-01"
+    assert out["spot_as_of"] == "2026-12-01T23:30:00Z"
+    assert "Omit valuation_date" in out["remediation"]
+
+
+def test_calibrate_heston_requires_chain_observation_timestamp(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "as_of": None,
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+
+    assert out["error_code"] == "chain_observation_time_unavailable"
+    assert out["spot_as_of"] is None
 
 
 def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):
@@ -521,6 +586,7 @@ def test_calibrate_heston_rejects_nonpositive_contract_maturity(
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
+            "as_of": f"{valuation_date}T15:00:00Z",
             "options": [
                 {"strike": strike, "implied_volatility": 0.25, "side": "call"}
                 for strike in (90, 95, 100, 105, 110)

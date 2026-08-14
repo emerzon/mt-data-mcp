@@ -755,13 +755,53 @@ def _option_side_coverage(items: List[Dict[str, Any]]) -> str:
     return "none"
 
 
+def _option_selection_metadata(
+    available: List[Dict[str, Any]],
+    selected: List[Dict[str, Any]],
+    *,
+    option_type: str,
+    limit: int,
+) -> Dict[str, Any]:
+    available_count = len(available)
+    truncated = len(selected) < available_count
+    return {
+        "available_count": available_count,
+        "available_count_basis": "after_side_and_liquidity_filters",
+        "available_calls_count": sum(
+            1 for item in available if item.get("side") == "call"
+        ),
+        "available_puts_count": sum(
+            1 for item in available if item.get("side") == "put"
+        ),
+        "returned": len(selected),
+        "truncated": truncated,
+        "has_more": truncated,
+        "selection_order": (
+            "nearest_strike_to_underlying_balanced_by_side"
+            if option_type == "both"
+            else "nearest_strike_to_underlying"
+        ),
+        "complete_request": (
+            {
+                "limit": available_count,
+                "instruction": (
+                    f"Repeat the request with limit={available_count} to return "
+                    "the complete filtered chain."
+                ),
+            }
+            if truncated
+            else None
+        ),
+        "applied_limit": int(limit),
+    }
+
+
 def _normalize_tradier_options(
     rows: List[Dict[str, Any]],
     *,
     option_type: str,
     min_open_interest: int,
     min_volume: int,
-    limit: int,
     underlying_price: Any,
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
@@ -819,12 +859,7 @@ def _normalize_tradier_options(
             "currency": row.get("currency") or "USD",
         }
         out.append(entry)
-    return _limit_option_contracts(
-        out,
-        option_type=option_type,
-        limit=limit,
-        underlying_price=underlying,
-    )
+    return out
 
 
 def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
@@ -887,11 +922,16 @@ def _get_tradier_options_chain(
     rows = _extract_tradier_option_rows(
         _fetch_tradier_chain_payload(symbol_norm, chosen_expiry)
     )
-    normalized = _normalize_tradier_options(
+    available = _normalize_tradier_options(
         rows,
         option_type=option_type,
         min_open_interest=min_open_interest,
         min_volume=min_volume,
+        underlying_price=underlying_price,
+    )
+    normalized = _limit_option_contracts(
+        available,
+        option_type=option_type,
         limit=limit,
         underlying_price=underlying_price,
     )
@@ -911,6 +951,12 @@ def _get_tradier_options_chain(
         "calls_count": sum(1 for item in normalized if item.get("side") == "call"),
         "puts_count": sum(1 for item in normalized if item.get("side") == "put"),
         "side_coverage": _option_side_coverage(normalized),
+        **_option_selection_metadata(
+            available,
+            normalized,
+            option_type=option_type,
+            limit=limit,
+        ),
         "options": normalized,
     }
 
@@ -1027,8 +1073,9 @@ def _get_yahoo_options_chain(
         float("nan"),
         field_name="quote.regularMarketPrice",
     )
+    available = calls + puts
     combined = _limit_option_contracts(
-        calls + puts,
+        available,
         option_type=option_type,
         limit=limit,
         underlying_price=underlying_price,
@@ -1050,6 +1097,12 @@ def _get_yahoo_options_chain(
         "calls_count": sum(1 for item in combined if item.get("side") == "call"),
         "puts_count": sum(1 for item in combined if item.get("side") == "put"),
         "side_coverage": _option_side_coverage(combined),
+        **_option_selection_metadata(
+            available,
+            combined,
+            option_type=option_type,
+            limit=limit,
+        ),
         "options": combined,
     }
 

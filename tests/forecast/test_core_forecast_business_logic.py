@@ -4254,6 +4254,16 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "count": 1,
             "calls_count": 1,
             "puts_count": 0,
+            "available_count": 25,
+            "available_count_basis": "after_side_and_liquidity_filters",
+            "available_calls_count": 13,
+            "available_puts_count": 12,
+            "returned": 1,
+            "truncated": True,
+            "has_more": True,
+            "selection_order": "nearest_strike_to_underlying_balanced_by_side",
+            "complete_request": {"limit": 25},
+            "applied_limit": kwargs["limit"],
             "contract_size": "REGULAR",
             "expirations": ["2026-06-19"],
             "options": [
@@ -4309,6 +4319,17 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "days_to_expiry": 30,
             "contracts_used": 5,
             "spot": 100.0,
+            "spot_as_of": "2026-06-01T20:00:00Z",
+            "spot_data_age_seconds": 30.0,
+            "spot_data_stale": True,
+            "spot_freshness": "stale",
+            "spot_freshness_reason": "provider_quote_age_exceeds_live_threshold",
+            "spot_source": "tradier_last",
+            "spot_session": "provider_reported_last",
+            "calibration_data_status": "stale",
+            "warnings": [
+                "Heston calibration used stale options-provider market data."
+            ],
             "calibration_error_rmse": 0.01,
             "params": {"kappa": 1.0},
             "sample_contracts": [{"strike": 100.0, "iv": 0.2}],
@@ -4320,6 +4341,10 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
 
     compact_chain = raw_chain("AAPL", detail="compact")
     assert compact_chain["detail"] == "compact"
+    assert compact_chain["available_count"] == 25
+    assert compact_chain["returned"] == 1
+    assert compact_chain["truncated"] is True
+    assert compact_chain["complete_request"] == {"limit": 25}
     assert "contract_size" not in compact_chain
     assert "implied_volatility" not in compact_chain["options"][0]
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
@@ -4334,6 +4359,8 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     )
     assert compact_price["price"] == 1.23
     assert compact_price["delta"] == 0.4
+    assert compact_price["gamma"] == 0.01
+    assert compact_price["vega"] == 0.2
     assert compact_price["detail"] == "compact"
     assert compact_price["valuation_date"] == "2026-07-03"
     assert compact_price["maturity_date"] == "2026-08-02"
@@ -4365,6 +4392,16 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
 
     compact_cal = raw_cal("AAPL", detail="compact")
     assert compact_cal["params"] == {"kappa": 1.0}
+    assert compact_cal["spot_as_of"] == "2026-06-01T20:00:00Z"
+    assert compact_cal["spot_data_stale"] is True
+    assert compact_cal["spot_freshness_reason"] == (
+        "provider_quote_age_exceeds_live_threshold"
+    )
+    assert compact_cal["spot_source"] == "tradier_last"
+    assert compact_cal["calibration_data_status"] == "stale"
+    assert compact_cal["warnings"] == [
+        "Heston calibration used stale options-provider market data."
+    ]
     assert "sample_contracts" not in compact_cal
     assert raw_cal("AAPL", detail="full")["sample_contracts"] == [
         {"strike": 100.0, "iv": 0.2}

@@ -440,6 +440,25 @@ def _heston_pricing_assumptions(
     return assumptions
 
 
+def _chain_observation_date(
+    as_of: Any,
+    *,
+    timezone_name: str,
+) -> Optional[_dt.date]:
+    if as_of in (None, ""):
+        return None
+    try:
+        text = str(as_of).strip()
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        observed_at = _dt.datetime.fromisoformat(text)
+        if observed_at.tzinfo is None:
+            return None
+        return observed_at.astimezone(ZoneInfo(timezone_name)).date()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def calibrate_heston_quantlib_from_options(  # noqa: C901
     *,
     symbol: str,
@@ -552,9 +571,28 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     except Exception:
         return {"error": f"Invalid expiration format: {expiry_text}"}
     valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
+    spot_as_of = chain.get("as_of")
+    observation_day = _chain_observation_date(
+        spot_as_of,
+        timezone_name=valuation_timezone,
+    )
+    if observation_day is None:
+        return {
+            "error": (
+                "Options provider timestamp is required to anchor Heston "
+                "calibration to a single market snapshot."
+            ),
+            "error_code": "chain_observation_time_unavailable",
+            "spot_as_of": spot_as_of,
+            "valuation_timezone": valuation_timezone,
+            "remediation": (
+                "Retry with a provider response that includes a timezone-qualified "
+                "as_of timestamp."
+            ),
+        }
     if valuation_date is None:
-        valuation_day, valuation_timezone = _default_valuation_date(calendar_name)
-        valuation_date_source = "default_calendar_local_date"
+        valuation_day = observation_day
+        valuation_date_source = "chain_observation_date"
     else:
         try:
             valuation_day = _dt.datetime.strptime(
@@ -568,7 +606,24 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
                     "Use YYYY-MM-DD."
                 )
             }
-        valuation_date_source = "explicit"
+        if valuation_day != observation_day:
+            return {
+                "error": (
+                    "valuation_date must match the options chain observation date. "
+                    f"Received valuation_date={valuation_day.isoformat()} and "
+                    f"chain_observation_date={observation_day.isoformat()}."
+                ),
+                "error_code": "valuation_date_chain_mismatch",
+                "valuation_date": valuation_day.isoformat(),
+                "chain_observation_date": observation_day.isoformat(),
+                "spot_as_of": spot_as_of,
+                "valuation_timezone": valuation_timezone,
+                "remediation": (
+                    "Omit valuation_date to use the chain observation date, or "
+                    "request a chain snapshot from the intended valuation date."
+                ),
+            }
+        valuation_date_source = "explicit_chain_observation_date"
     if valuation_day >= expiry_date:
         return {
             "error": (
@@ -646,6 +701,21 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
 
     errors = [float(h.calibrationError()) for h in helpers]
     rmse = float(np.sqrt(np.mean(np.square(errors)))) if errors else float("nan")
+    spot_data_stale = chain.get("data_stale")
+    spot_freshness = chain.get("freshness")
+    calibration_data_stale = spot_data_stale is True or spot_freshness == "stale"
+    calibration_data_status = (
+        "stale"
+        if calibration_data_stale
+        else "current"
+        if spot_data_stale is False
+        else "unknown"
+    )
+    warnings = (
+        ["Heston calibration used stale options-provider market data."]
+        if calibration_data_stale
+        else []
+    )
 
     return {
         "success": True,
@@ -660,11 +730,15 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "calls_used": sum(1 for row in rows if row.get("side") == "call"),
         "puts_used": sum(1 for row in rows if row.get("side") == "put"),
         "spot": float(spot_val),
-        "spot_as_of": chain.get("as_of"),
+        "spot_as_of": spot_as_of,
         "spot_data_age_seconds": chain.get("data_age_seconds"),
-        "spot_freshness": chain.get("freshness"),
+        "spot_data_stale": spot_data_stale,
+        "spot_freshness": spot_freshness,
+        "spot_freshness_reason": chain.get("freshness_reason"),
         "spot_source": chain.get("underlying_price_source"),
         "spot_session": chain.get("underlying_price_session"),
+        "calibration_data_status": calibration_data_status,
+        "warnings": warnings,
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
         "params": {
             "kappa": float(model.kappa()),

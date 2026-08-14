@@ -179,6 +179,10 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["expiration"] == "2026-04-17"
     assert out["option_type"] == "call"
     assert out["count"] == 1
+    assert out["available_count"] == 1
+    assert out["truncated"] is False
+    assert out["has_more"] is False
+    assert out["complete_request"] is None
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
@@ -241,6 +245,45 @@ def test_single_option_side_is_limited_nearest_to_spot():
     )
 
     assert [item["strike"] for item in selected] == [100.0, 95.0, 105.0]
+
+
+def test_option_selection_metadata_discloses_truncation_and_recovery():
+    available = [
+        {"side": side, "strike": strike}
+        for side in ("call", "put")
+        for strike in (95.0, 100.0, 105.0)
+    ]
+    selected = osvc._limit_option_contracts(
+        available,
+        option_type="both",
+        limit=4,
+        underlying_price=100.0,
+    )
+
+    metadata = osvc._option_selection_metadata(
+        available,
+        selected,
+        option_type="both",
+        limit=4,
+    )
+
+    assert metadata == {
+        "available_count": 6,
+        "available_count_basis": "after_side_and_liquidity_filters",
+        "available_calls_count": 3,
+        "available_puts_count": 3,
+        "returned": 4,
+        "truncated": True,
+        "has_more": True,
+        "selection_order": "nearest_strike_to_underlying_balanced_by_side",
+        "complete_request": {
+            "limit": 6,
+            "instruction": (
+                "Repeat the request with limit=6 to return the complete filtered chain."
+            ),
+        },
+        "applied_limit": 4,
+    }
 
 
 def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
@@ -347,6 +390,8 @@ def test_get_options_chain_uses_configured_tradier_provider(monkeypatch):
     assert out["expiration"] == "2026-04-17"
     assert out["underlying_price"] == 101.0
     assert out["count"] == 1
+    assert out["available_count"] == 1
+    assert out["truncated"] is False
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"

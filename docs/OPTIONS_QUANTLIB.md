@@ -53,7 +53,7 @@ mtdata-cli options_expirations AAPL --json
 Fetch an options chain snapshot with filtering.
 
 ```bash
-# Full chain (calls + puts)
+# Compact chain snapshot (calls + puts)
 mtdata-cli options_chain AAPL --json
 
 # Calls only for a specific expiration
@@ -70,7 +70,14 @@ mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 | `--option-type` | `both` | `call`, `put`, or `both` |
 | `--min-open-interest` | 0 | Minimum open interest filter; must be at least 0 |
 | `--min-volume` | 0 | Minimum volume filter; must be at least 0 |
-| `--limit` | 200 | Maximum contracts to return; must be at least 1 |
+| `--limit` | 20 compact; 200 full | Maximum contracts to return; must be at least 1 |
+
+Chain results report exact filtered `available_count` and `returned` values,
+plus `truncated`, `has_more`, and the
+nearest-strike `selection_order`. When a limit omits contracts,
+`complete_request.limit` gives the value to pass with `--limit` to retrieve the
+complete filtered chain. This is a bounded nearest-strike selection, not offset
+pagination.
 
 Both options-data commands expose the provider quote time, its age, and
 `data_stale`. A quote older than 15 minutes is marked stale; an unavailable
@@ -118,7 +125,7 @@ mtdata-cli options_barrier_price \
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
 | `--volatility` | 0.2 | Implied volatility (decimal, e.g., 0.2 = 20%) |
 | `--rebate` | 0.0 | Rebate paid at barrier touch |
-| `--valuation-date` | selected calendar's local date | Valuation date in `YYYY-MM-DD` format |
+| `--valuation-date` | chain observation date | Valuation date in `YYYY-MM-DD` format; when supplied, it must match the provider snapshot date in the selected calendar timezone |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name (for example `UnitedStates.NYSE` or `NullCalendar`) |
 | `--maturity-basis` | `calendar_days` | Interpret `--maturity-days` as `calendar_days` or `business_days` in the selected calendar |
 
@@ -166,6 +173,13 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--max-contracts` | 25 | Max contracts used in calibration; must be at least 5 |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name used for maturity assumptions |
 | `--maturity-basis` | `calendar_days` | Basis for the reported `days_to_expiry` diagnostic. The Heston helper maturity is always anchored to the contract's calendar expiry date. |
+
+Calibration requires a timezone-qualified provider `as_of` timestamp so the
+spot, implied volatilities, and valuation date describe one market snapshot.
+Compact and full results include the spot timestamp, source, session, age,
+freshness reason, and stale flag. Stale calibration inputs set
+`calibration_data_status: stale` and emit a warning. Omit `--valuation-date` to
+derive it from the chain snapshot.
 
 **Heston parameters returned:**
 
