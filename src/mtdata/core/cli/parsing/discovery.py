@@ -379,7 +379,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("options_heston_calibrate", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "
-        "Omit to use the provider's nearest available expiration."
+        "Omit to use the provider's nearest listed expiration at least 7 "
+        "calendar days after the observation date."
     ),
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",

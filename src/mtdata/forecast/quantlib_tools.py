@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from ..services.options_service import get_options_chain
+from ..services.options_service import get_options_chain, get_options_expirations
 
 _DEFAULT_QUANTLIB_CALENDAR = "UnitedStates.NYSE"
 _DEFAULT_MATURITY_BASIS = "calendar_days"
@@ -508,6 +508,88 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     if side not in {"call", "put", "both"}:
         return {"error": f"Invalid option_type: {option_type}. Use call|put|both."}
 
+    expiration_selection: Optional[Dict[str, Any]] = None
+    if expiration is None:
+        expirations_result = get_options_expirations(symbol)
+        if isinstance(expirations_result, dict) and expirations_result.get("error"):
+            return expirations_result
+        listed_raw = (
+            expirations_result.get("expirations", [])
+            if isinstance(expirations_result, dict)
+            else []
+        )
+        listed_expirations: List[_dt.date] = []
+        for value in listed_raw if isinstance(listed_raw, list) else []:
+            try:
+                listed_expirations.append(
+                    _dt.datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+                )
+            except (TypeError, ValueError):
+                continue
+        listed_expirations = sorted(set(listed_expirations))
+        valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
+        if valuation_date is not None:
+            selection_day = _dt.datetime.strptime(
+                str(valuation_date).strip(), "%Y-%m-%d"
+            ).date()
+            selection_date_source = "explicit_valuation_date"
+        else:
+            selection_day = _chain_observation_date(
+                expirations_result.get("as_of")
+                if isinstance(expirations_result, dict)
+                else None,
+                timezone_name=valuation_timezone,
+            )
+            selection_date_source = "expirations_observation_date"
+        if selection_day is None:
+            return {
+                "error": (
+                    "Options provider timestamp is required to select an eligible "
+                    "default Heston expiration."
+                ),
+                "error_code": "expiration_observation_time_unavailable",
+                "remediation": (
+                    "Pass --expiration explicitly, or retry with a provider response "
+                    "that includes a timezone-qualified as_of timestamp."
+                ),
+            }
+        eligible = [
+            value
+            for value in listed_expirations
+            if (value - selection_day).days >= 7
+        ]
+        if not eligible:
+            return {
+                "error": (
+                    "No listed option expiration is at least 7 calendar days "
+                    "after the provider observation date."
+                ),
+                "error_code": "heston_no_eligible_expiration",
+                "valuation_date": selection_day.isoformat(),
+                "minimum_calendar_days": 7,
+                "listed_expirations": [
+                    value.isoformat() for value in listed_expirations
+                ],
+                "remediation": (
+                    "Retry when a later contract is listed, or pass --expiration "
+                    "with an eligible listed date."
+                ),
+            }
+        selected_expiration = eligible[0]
+        skipped = [
+            value.isoformat()
+            for value in listed_expirations
+            if value < selected_expiration
+        ]
+        expiration = selected_expiration.isoformat()
+        expiration_selection = {
+            "mode": "nearest_eligible",
+            "minimum_calendar_days": 7,
+            "selection_date": selection_day.isoformat(),
+            "selection_date_source": selection_date_source,
+            "skipped_ineligible_expirations": skipped,
+        }
+
     chain = get_options_chain(
         symbol=symbol,
         expiration=expiration,
@@ -768,6 +850,11 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "success": True,
         "symbol": str(symbol).upper().strip(),
         "expiration": expiry_text,
+        **(
+            {"expiration_selection": expiration_selection}
+            if expiration_selection is not None
+            else {}
+        ),
         "valuation_date": valuation_day.isoformat(),
         "valuation_timezone": valuation_timezone,
         "valuation_date_source": valuation_date_source,

@@ -403,6 +403,48 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["rho_at_bound"] is False
 
 
+def test_calibrate_heston_default_selects_nearest_eligible_expiration(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_expirations",
+        lambda _symbol: {
+            "success": True,
+            "as_of": "2026-12-01T20:00:00Z",
+            "expirations": ["2026-12-01", "2026-12-04", "2026-12-08"],
+        },
+    )
+    requested: list[str] = []
+
+    def _chain(**kwargs):
+        requested.append(kwargs["expiration"])
+        return {
+            "success": True,
+            "expiration": kwargs["expiration"],
+            "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        }
+
+    monkeypatch.setattr(qtools, "get_options_chain", _chain)
+
+    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+
+    assert out["success"] is True
+    assert requested == ["2026-12-08"]
+    assert out["expiration"] == "2026-12-08"
+    assert out["expiration_selection"] == {
+        "mode": "nearest_eligible",
+        "minimum_calendar_days": 7,
+        "selection_date": "2026-12-01",
+        "selection_date_source": "expirations_observation_date",
+        "skipped_ineligible_expirations": ["2026-12-01", "2026-12-04"],
+    }
+
+
 def test_calibrate_heston_rejects_subweek_maturity_before_fit(monkeypatch):
     fake = _make_fake_quantlib()
     monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
@@ -421,7 +463,9 @@ def test_calibrate_heston_rejects_subweek_maturity_before_fit(monkeypatch):
         },
     )
 
-    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL", expiration="2026-12-02"
+    )
 
     assert out["error_code"] == "heston_maturity_too_short"
     assert out["calendar_days_to_expiry"] == 1
@@ -456,7 +500,9 @@ def test_calibrate_heston_marks_bound_fit_unusable(monkeypatch):
         },
     )
 
-    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL", expiration="2026-12-19"
+    )
 
     assert out["success"] is True
     assert out["calibration_status"] == "rejected"
@@ -560,6 +606,7 @@ def test_calibrate_heston_rejects_valuation_date_outside_chain_snapshot(monkeypa
 
     out = qtools.calibrate_heston_quantlib_from_options(
         symbol="AAPL",
+        expiration="2026-12-19",
         valuation_date="2026-11-30",
     )
 
@@ -586,7 +633,9 @@ def test_calibrate_heston_requires_chain_observation_timestamp(monkeypatch):
         },
     )
 
-    out = qtools.calibrate_heston_quantlib_from_options(symbol="AAPL")
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL", expiration="2026-12-19"
+    )
 
     assert out["error_code"] == "chain_observation_time_unavailable"
     assert out["spot_as_of"] is None

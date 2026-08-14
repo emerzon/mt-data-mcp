@@ -163,11 +163,11 @@ mtdata-cli options_heston_calibrate TSLA \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `symbol` | (required) | Stock ticker |
-| `--expiration` | (nearest) | Specific expiration to calibrate against |
+| `--expiration` | (nearest eligible) | Specific expiration to calibrate against; when omitted, selects the nearest listed expiry at least 7 calendar days after the provider observation date |
 | `--option-type` | `call` | `call`, `put`, or `both` |
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
-| `--valuation-date` | selected calendar's local date | Valuation date in `YYYY-MM-DD` format |
+| `--valuation-date` | provider observation date | Valuation date in `YYYY-MM-DD` format |
 | `--min-open-interest` | 0 | Min open interest for contract selection; must be at least 0 |
 | `--min-volume` | 0 | Min volume for contract selection; must be at least 0 |
 | `--max-contracts` | 25 | Max contracts used in calibration; must be at least 5 |
@@ -180,6 +180,8 @@ Compact and full results include the spot timestamp, source, session, age,
 freshness reason, and stale flag. Stale calibration inputs set
 `calibration_data_status: stale` and emit a warning. Omit `--valuation-date` to
 derive it from the chain snapshot.
+When `--expiration` is omitted, calibration skips same-day and short-dated
+contracts that do not meet its seven-calendar-day minimum.
 
 **Heston parameters returned:**
 
