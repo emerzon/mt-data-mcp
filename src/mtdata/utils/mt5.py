@@ -642,6 +642,13 @@ def _history_rows_timestamp_mode(rows: Any, dt_from: Any, dt_to: Any) -> str:
     return _MT5_TIMESTAMP_MODE_NATIVE
 
 
+def _history_rows_empty(rows: Any) -> bool:
+    try:
+        return rows is None or len(rows) == 0
+    except TypeError:
+        return False
+
+
 def _history_get_normalized(
     module: Any,
     method_name: str,
@@ -649,26 +656,26 @@ def _history_get_normalized(
     dt_to: Any,
     kwargs: Dict[str, Any],
 ) -> Any:
-    """Query MT5 history on UTC first, with a gated server-clock fallback."""
+    """Query MT5 history on the detected clock axis, with a mixed-terminal fallback."""
     mode_hint = _timestamp_mode_for_history_query(module, kwargs)
     fetch = getattr(module, method_name)
     native_from = _to_server_query_dt(dt_from, mode=_MT5_TIMESTAMP_MODE_NATIVE)
     native_to = _to_server_query_dt(dt_to, mode=_MT5_TIMESTAMP_MODE_NATIVE)
+    if mode_hint == _MT5_TIMESTAMP_MODE_SERVER:
+        # Server-clock terminals stamp deals on the broker clock. A native UTC
+        # window can return a self-confirming older subset and drop the most
+        # recent offset hours, so query the server axis first.
+        server_from = _to_server_query_dt(dt_from, mode=_MT5_TIMESTAMP_MODE_SERVER)
+        server_to = _to_server_query_dt(dt_to, mode=_MT5_TIMESTAMP_MODE_SERVER)
+        rows = fetch(server_from, server_to, **kwargs)
+        if not _history_rows_empty(rows):
+            return _normalize_object_time_rows(
+                rows,
+                mode=_MT5_TIMESTAMP_MODE_SERVER,
+            )
+        rows = fetch(native_from, native_to, **kwargs)
+        return _normalize_object_time_rows(rows, mode=_MT5_TIMESTAMP_MODE_NATIVE)
     rows = fetch(native_from, native_to, **kwargs)
-    try:
-        empty = rows is None or len(rows) == 0
-    except TypeError:
-        empty = False
-    if empty and mode_hint == _MT5_TIMESTAMP_MODE_SERVER:
-        rows = fetch(
-            _to_server_query_dt(dt_from, mode=_MT5_TIMESTAMP_MODE_SERVER),
-            _to_server_query_dt(dt_to, mode=_MT5_TIMESTAMP_MODE_SERVER),
-            **kwargs,
-        )
-        return _normalize_object_time_rows(
-            rows,
-            mode=_MT5_TIMESTAMP_MODE_SERVER,
-        )
     response_mode = _history_rows_timestamp_mode(rows, dt_from, dt_to)
     return _normalize_object_time_rows(rows, mode=response_mode)
 

@@ -169,8 +169,8 @@ def test_adapter_aligns_server_clock_tick_history_to_utc(monkeypatch) -> None:
     assert float(normalized_tick.time) == now_epoch
     assert float(normalized_tick.time_msc) == now_epoch * 1000
     assert float(result[0]["time"]) == now_epoch
-    assert observed_bounds["deals_from"] == now_epoch - 60
-    assert observed_bounds["deals_to"] == now_epoch
+    assert observed_bounds["deals_from"] == now_epoch - 60 + 3 * 60 * 60
+    assert observed_bounds["deals_to"] == now_epoch + 3 * 60 * 60
     assert position_probe_calls == []
     assert float(deals[0].time) == now_epoch
     assert mt5_mod.get_mt5_timestamp_mode("TSLA.NAS-24") == "server_clock"
@@ -219,8 +219,8 @@ def test_standalone_history_probes_open_position_clock_mode(monkeypatch) -> None
         now_epoch,
     )
 
-    assert observed_bounds["from"] == now_epoch - 60
-    assert observed_bounds["to"] == now_epoch
+    assert observed_bounds["from"] == now_epoch - 60 + 3 * 60 * 60
+    assert observed_bounds["to"] == now_epoch + 3 * 60 * 60
     assert deals[0].time == now_epoch
     assert mt5_mod.get_mt5_timestamp_mode("TSLA.NAS-24") == "server_clock"
 
@@ -236,6 +236,9 @@ def test_warm_server_clock_cache_does_not_shift_native_history(monkeypatch) -> N
 
     def history_deals_get(dt_from, dt_to, **kwargs):
         observed_bounds.append((dt_from, dt_to))
+        # Mixed terminal: live ticks are server-clock, history is native UTC.
+        if float(dt_to) > now_epoch + 60:
+            return ()
         return (native_deal,)
 
     module = SimpleNamespace(
@@ -260,7 +263,8 @@ def test_warm_server_clock_cache_does_not_shift_native_history(monkeypatch) -> N
     adapter.symbol_info_tick("SERVER.CLOCK")
     deals = adapter.history_deals_get(now_epoch - 60, now_epoch)
 
-    assert observed_bounds == [(now_epoch - 60, now_epoch)]
+    assert observed_bounds[0] == (now_epoch - 60 + 3 * 60 * 60, now_epoch + 3 * 60 * 60)
+    assert observed_bounds[-1] == (now_epoch - 60, now_epoch)
     assert deals[0].time == native_deal.time
 
 
@@ -303,10 +307,51 @@ def test_history_retries_server_axis_only_after_empty_native_query(monkeypatch) 
     deals = mt5_mod.MT5Adapter().history_deals_get(now_epoch - 60, now_epoch)
 
     assert calls == [
-        (now_epoch - 60, now_epoch),
         (now_epoch - 60 + offset, now_epoch + offset),
     ]
     assert deals[0].time == now_epoch
+
+
+def test_server_clock_history_does_not_keep_overlapping_native_subset(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 14, 20, 0, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    offset = 3 * 60 * 60
+    Tick = namedtuple("Tick", ["time", "time_msc", "bid", "ask"])
+    Deal = namedtuple("Deal", ["time", "ticket", "symbol"])
+    server_epoch = int(now_epoch + offset)
+    recent_server_stamp = int(now_epoch - 60 + offset)
+    stale_in_utc_window = int(now_epoch - 30)
+
+    def history_deals_get(dt_from, dt_to, **kwargs):
+        if float(dt_to) > now_epoch + 60:
+            return (Deal(recent_server_stamp, 2, "EURUSD"),)
+        return (Deal(stale_in_utc_window, 1, "XAUUSD"),)
+
+    module = SimpleNamespace(
+        symbol_info_tick=lambda _symbol: Tick(
+            server_epoch,
+            server_epoch * 1000,
+            1.15,
+            1.1501,
+        ),
+        positions_get=lambda: (SimpleNamespace(symbol="EURUSD"),),
+        history_deals_get=history_deals_get,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: offset,
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 0)
+
+    deals = mt5_mod.MT5Adapter().history_deals_get(now_epoch - 3600, now_epoch)
+
+    assert deals[0].ticket == 2
+    assert deals[0].time == now_epoch - 60
 
 
 def test_adapter_keeps_native_utc_terminal_unchanged(monkeypatch) -> None:
