@@ -635,8 +635,13 @@ def _fetch_rates_with_warmup(  # noqa: C901
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
+        overlap_periods = int(
+            timeframe in {"W1", "MN1"}
+            and _is_calendar_query_bound(start_datetime)
+        )
         from_date_internal = from_date - timedelta(
-            seconds=seconds_per_bar * (warmup_bars + extra_bars)
+            seconds=seconds_per_bar
+            * (warmup_bars + extra_bars + overlap_periods)
         )
         expected_end_ts = _utc_epoch_seconds(to_date)
         requested_rows = max(1, candles + warmup_bars + extra_bars)
@@ -715,8 +720,13 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if future_error:
             return None, future_error
         now_utc = datetime.now(dt_timezone.utc)
+        overlap_periods = int(
+            timeframe in {"W1", "MN1"}
+            and _is_calendar_query_bound(start_datetime)
+        )
         from_date_internal = from_date - timedelta(
-            seconds=seconds_per_bar * (warmup_bars + extra_bars)
+            seconds=seconds_per_bar
+            * (warmup_bars + extra_bars + overlap_periods)
         )
         requested_rows = candles + extra_bars
         # A start-only query means "the first N bars from start", not "the
@@ -952,6 +962,8 @@ def _candle_query_applied(
     )
     if calendar_session_bounds:
         query["bound_basis"] = "broker_session_calendar"
+    elif _is_calendar_query_bound(start) or _is_calendar_query_bound(end):
+        query["bound_basis"] = "utc_calendar"
     if end not in (None, ""):
         query["end_filter"] = (
             "bar_open_calendar_period"
@@ -1656,6 +1668,43 @@ def _append_denoise_application(
         pass
 
 
+def _denoise_history_context(
+    denoise: Optional[DenoiseSpec],
+) -> Optional[Dict[str, Any]]:
+    """Return method-specific history needed for stable denoise output."""
+    normalized = _normalize_denoise_spec(denoise, default_when="pre_ti")
+    if not normalized:
+        return None
+    method = str(normalized.get("method") or "none").strip().lower()
+    params = dict(normalized.get("params") or {})
+    causality = str(normalized.get("causality") or "causal").strip().lower()
+    context: Dict[str, Any] = {
+        "method": method,
+        "causality": causality,
+        "warmup_bars": 0,
+    }
+    if method == "butterworth" and causality == "zero_phase":
+        order = max(1, int(params.get("order", 4)))
+        btype = str(params.get("btype") or "low").strip().lower()
+        coefficient_count = (
+            2 * order + 1
+            if btype in {"band", "bandpass", "bandstop"}
+            else order + 1
+        )
+        configured_padlen = params.get("padlen")
+        padlen = (
+            max(0, int(configured_padlen))
+            if configured_padlen is not None
+            else 3 * coefficient_count
+        )
+        context["minimum_bars"] = padlen + 1
+        context["warmup_bars"] = padlen + 1
+    elif method == "kalman":
+        context["recommended_bars"] = 20
+        context["warmup_bars"] = 20
+    return context
+
+
 def _latest_indicator_values_missing(df: pd.DataFrame, columns: List[str]) -> bool:
     required_columns = _indicator_columns_required_for_completeness(columns)
     if not required_columns or len(df) <= 0:
@@ -2164,7 +2213,12 @@ def fetch_candles(  # noqa: C901
                         "macd(12,26,9); use indicators_list to view valid indicator names."
                     )
                 }
-            warmup_bars = _estimate_warmup_bars(ti_spec)
+            indicator_warmup_bars = _estimate_warmup_bars(ti_spec)
+            denoise_history_context = _denoise_history_context(denoise)
+            denoise_warmup_bars = int(
+                (denoise_history_context or {}).get("warmup_bars") or 0
+            )
+            warmup_bars = max(indicator_warmup_bars, denoise_warmup_bars)
             rate_fetch_diagnostics: Dict[str, Any] = {}
             freshness_diagnostics: Optional[Dict[str, Any]] = None
             historical_bounds_requested = bool(start_datetime or end_datetime)
@@ -2279,6 +2333,39 @@ def fetch_candles(  # noqa: C901
         denoise_apps: List[Dict[str, Any]] = []
         denoise_warnings: List[str] = []
         ti_warnings: List[str] = []
+        minimum_denoise_bars = int(
+            (denoise_history_context or {}).get("minimum_bars") or 0
+        )
+        if minimum_denoise_bars and len(df) < minimum_denoise_bars:
+            method = str((denoise_history_context or {}).get("method") or "denoise")
+            return {
+                "success": False,
+                "error_code": "denoise_insufficient_history",
+                "error": (
+                    f"Denoise method '{method}' requires at least "
+                    f"{minimum_denoise_bars} bars, but only {len(df)} were fetched."
+                ),
+                "operation": "data_fetch_candles",
+                "details": {
+                    "method": method,
+                    "required_bars": minimum_denoise_bars,
+                    "fetched_bars": int(len(df)),
+                },
+                "remediation": (
+                    f"Increase --limit or the requested history window so at least "
+                    f"{minimum_denoise_bars} bars are available, or omit --denoise."
+                ),
+            }
+        recommended_denoise_bars = int(
+            (denoise_history_context or {}).get("recommended_bars") or 0
+        )
+        if recommended_denoise_bars and len(df) < recommended_denoise_bars:
+            denoise_warnings.append(
+                "denoise_warmup_insufficient: "
+                f"{(denoise_history_context or {}).get('method')} received {len(df)} "
+                f"bars; request at least {recommended_denoise_bars} bars to reduce "
+                "initial-state effects."
+            )
         _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
         denoise_warnings.extend(consume_denoise_warnings(df))
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
@@ -2650,6 +2737,8 @@ def fetch_candles(  # noqa: C901
                         "latency_ms": query_latency_ms,
                         "requested_bars": candles_requested,
                         "warmup_bars": int(warmup_bars),
+                        "indicator_warmup_bars": int(indicator_warmup_bars),
+                        "denoise_warmup_bars": int(denoise_warmup_bars),
                         "raw_bars_fetched": raw_bars_fetched,
                         "rows_after_target_trim": rows_after_target_trim,
                         "indicator_rows_dropped": int(indicator_rows_dropped),
@@ -2785,6 +2874,11 @@ def fetch_candles(  # noqa: C901
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}
+            if denoise_history_context:
+                payload['denoise']['history_context'] = {
+                    **denoise_history_context,
+                    "history_bars_fetched": raw_bars_fetched,
+                }
             payload['denoise_status'] = 'applied'
         elif denoise:
             payload['denoise_status'] = 'skipped'

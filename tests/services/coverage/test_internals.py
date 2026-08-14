@@ -220,6 +220,7 @@ def test_candle_query_context_expands_natural_calendar_periods() -> None:
     assert query["end_bound"] == "inclusive_day_end"
     assert query["resolved_start"].endswith("T00:00:00Z")
     assert query["resolved_end"].endswith("T23:59:59.999999Z")
+    assert query["bound_basis"] == "utc_calendar"
 
 
 def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
@@ -307,6 +308,43 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         )
         self.assertIsNone(err)
         self.assertIsNotNone(result)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_weekly_calendar_range_fetches_overlapping_period_open(
+        self,
+        mock_parse,
+        mock_range,
+    ):
+        requested_start = datetime(2026, 8, 9, 21, tzinfo=_UTC)
+        requested_end = datetime(2026, 8, 14, 20, 59, tzinfo=_UTC)
+        mock_parse.side_effect = [requested_start, requested_end]
+        mock_range.return_value = _make_rates(
+            2,
+            base_ts=datetime(2026, 8, 8, 21, tzinfo=_UTC).timestamp(),
+            step=7 * 86_400,
+        )
+
+        result, err = _fetch_rates_with_warmup(
+            "EURUSD",
+            32769,
+            "W1",
+            5,
+            0,
+            "2026-08-10",
+            "2026-08-14",
+            include_incomplete=True,
+            retry=False,
+            sanity_check=False,
+        )
+
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+        provider_start = mock_range.call_args.args[2]
+        self.assertLessEqual(
+            provider_start,
+            datetime(2026, 8, 8, 21, tzinfo=_UTC),
+        )
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)

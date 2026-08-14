@@ -1296,8 +1296,13 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noq
         public["latency_ms"] = query["latency_ms"]
     indicators = diagnostics.get("indicators")
     if isinstance(indicators, dict) and indicators.get("requested") is True:
-        if isinstance(query, dict) and query.get("warmup_bars") is not None:
-            public["indicator_warmup_bars"] = int(query["warmup_bars"])
+        if isinstance(query, dict) and (
+            query.get("indicator_warmup_bars") is not None
+            or query.get("warmup_bars") is not None
+        ):
+            public["indicator_warmup_bars"] = int(
+                query.get("indicator_warmup_bars", query.get("warmup_bars"))
+            )
         if isinstance(query, dict) and query.get("raw_bars_fetched") is not None:
             public["history_bars_fetched"] = int(query["raw_bars_fetched"])
 

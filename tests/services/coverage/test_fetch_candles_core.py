@@ -65,6 +65,69 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_zero_phase_butterworth_fetches_required_history(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30, step=3600)
+
+        result = fetch_candles(
+            "EURUSD",
+            timeframe="H1",
+            limit=5,
+            denoise={"method": "butterworth", "causality": "zero_phase"},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertNotIn("Error getting rates", str(result))
+        self.assertGreaterEqual(
+            result["denoise"]["history_context"]["minimum_bars"],
+            16,
+        )
+        requested_count = mock_from.call_args.args[3]
+        self.assertGreaterEqual(requested_count, 5 + 16)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_short_butterworth_history_returns_typed_error(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(5, step=3600)
+
+        result = fetch_candles(
+            "EURUSD",
+            timeframe="H1",
+            limit=5,
+            denoise={"method": "butterworth", "causality": "zero_phase"},
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "denoise_insufficient_history")
+        self.assertEqual(result["details"]["required_bars"], 16)
+        self.assertLess(result["details"]["fetched_bars"], 16)
+        self.assertNotIn("Error getting rates", result["error"])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_basic_success(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(10, step=3600)
@@ -1006,6 +1069,7 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'mode': 'range',
                 'timeframe': 'H1',
                 'limit': 100,
+                'bound_basis': 'utc_calendar',
                 'end_filter': 'bar_close',
                 'start': '2025-01-01',
                 'resolved_start': '2025-01-01T00:00:00Z',
