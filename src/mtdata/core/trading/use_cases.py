@@ -5393,6 +5393,7 @@ def run_trade_stress_test(
         validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
     )
     rows: List[Dict[str, Any]] = []
+    evaluated_positions: List[Any] = []
     warnings_out: List[Dict[str, Any]] = []
     total_pnl = 0.0
     shocked_positions = 0
@@ -5478,6 +5479,7 @@ def run_trade_stress_test(
                 }
             )
         rows.append(row)
+        evaluated_positions.append(position)
     rows.sort(key=lambda row: (float(row.get("pnl_impact") or 0.0), str(row.get("symbol") or "")))
     stressed_equity = float(equity + total_pnl) if equity > 0.0 else None
     result: Dict[str, Any] = {
@@ -5527,7 +5529,7 @@ def run_trade_stress_test(
     if warnings_out:
         result["warnings"] = warnings_out
         result["partial_failure"] = True
-    result.update(_position_mark_freshness(gateway, positions))
+    result.update(_position_mark_freshness(gateway, evaluated_positions))
     return result
 
 

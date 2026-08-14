@@ -1669,6 +1669,38 @@ class TestReportWarnings:
         assert res["error_code"] == "report_sections_not_found"
         assert res["section_controls"]["missing_requested_sections"] == ["not-a-section"]
 
+    @pytest.mark.parametrize(
+        ("allow_partial", "expected_success", "expected_status"),
+        [(False, False, "failed"), (True, True, "partial")],
+    )
+    def test_mixed_known_and_unknown_sections_respect_partial_policy(
+        self,
+        allow_partial,
+        expected_success,
+        expected_status,
+    ):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn(
+                "EURUSD",
+                template="basic",
+                include_sections=["forecast", "not-a-section"],
+                allow_partial=allow_partial,
+                format="toon",
+            )
+
+        assert res["success"] is expected_success
+        assert res["section_run_status"] == expected_status
+        assert res["execution_progress"]["complete"] is False
+        assert res["execution_progress"]["missing_requested_sections"] == [
+            "not-a-section"
+        ]
+        if not allow_partial:
+            assert res["error_code"] == "report_sections_not_found"
+
     def test_forecast_selection_runs_dependency_without_summary_leak(self):
         fn = _get_report_generate()
         captured_params: Dict[str, Any] = {}

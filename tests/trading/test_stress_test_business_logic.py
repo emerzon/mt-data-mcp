@@ -132,3 +132,34 @@ def test_trade_stress_test_fails_when_no_position_matches_shocks():
 
     assert result["success"] is False
     assert result["error_code"] == "stress_no_positions_evaluated"
+
+
+def test_trade_stress_test_freshness_only_covers_evaluated_positions():
+    gateway = _Gateway()
+    gateway.positions_get = lambda: [
+        SimpleNamespace(
+            ticket=1,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_current=1.1,
+            price_open=1.09,
+        ),
+        SimpleNamespace(
+            ticket=2,
+            symbol="AAPL.NAS",
+            type=0,
+            volume=1.0,
+            price_current=200.0,
+            price_open=190.0,
+        ),
+    ]
+
+    result = run_trade_stress_test(
+        TradeStressTestRequest(shocks={"EURUSD": -1.0}),
+        gateway=gateway,
+    )
+
+    assert result["positions_total"] == 2
+    assert result["positions_evaluated"] == 1
+    assert [item["symbol"] for item in result["mark_freshness"]] == ["EURUSD"]

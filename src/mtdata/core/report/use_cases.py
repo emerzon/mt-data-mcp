@@ -1844,11 +1844,14 @@ def run_report_generate(  # noqa: C901
                     if isinstance(controls, dict)
                     else []
                 )
-                selection_failed = bool(
+                unsatisfied_selection = bool(
                     request.include_sections
-                    and not sections
                     and missing_requested
                     and not summary_mode
+                )
+                selection_failed = bool(
+                    unsatisfied_selection
+                    and (not sections or not request.allow_partial)
                 )
                 usable_section_count = ok_count + partial_count
                 hard_failed = bool(
@@ -1859,7 +1862,12 @@ def run_report_generate(  # noqa: C901
                     "failed"
                     if hard_failed
                     else "partial"
-                    if partial_count > 0 or error_count > 0 or omitted_count > 0
+                    if (
+                        partial_count > 0
+                        or error_count > 0
+                        or omitted_count > 0
+                        or unsatisfied_selection
+                    )
                     else "complete"
                 )
                 rep["content_detail"] = (
@@ -1879,7 +1887,7 @@ def run_report_generate(  # noqa: C901
                 if selection_failed:
                     rep.update(
                         build_error_payload(
-                            "None of the requested report sections were available: "
+                            "One or more requested report sections were unavailable: "
                             + ", ".join(str(name) for name in missing_requested)
                             + ".",
                             code="report_sections_not_found",
@@ -1915,6 +1923,7 @@ def run_report_generate(  # noqa: C901
                         if status in {"ok", "partial", "error"}
                     ],
                     "omitted_sections": omitted_section_names,
+                    "missing_requested_sections": list(missing_requested),
                     "complete": rep["section_run_status"] == "complete",
                 }
                 if partial_section_names or error_section_names:
