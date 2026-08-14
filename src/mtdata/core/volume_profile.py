@@ -630,6 +630,8 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "timezone",
         "data_age_seconds",
         "data_stale",
+        "stale_after_seconds",
+        "freshness_basis",
         "freshness_applicability",
         "query_type",
         "units",
@@ -674,6 +676,7 @@ def _profile_freshness_meta(
     *,
     data_as_of: Optional[str],
     historical_query: bool,
+    timeframe: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(fetch_payload, dict):
         fetch_payload = {}
@@ -692,6 +695,11 @@ def _profile_freshness_meta(
     if data_as_of:
         observed_at = _parse_start_datetime(data_as_of)
         if observed_at is not None:
+            timeframe_seconds = float(
+                TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper(), 0)
+                or 0
+            )
+            stale_after_seconds = max(300.0, timeframe_seconds)
             age_seconds = max(
                 0.0,
                 (_utc_now_naive() - observed_at).total_seconds(),
@@ -700,7 +708,13 @@ def _profile_freshness_meta(
                 {
                     "as_of": data_as_of,
                     "data_age_seconds": round(age_seconds, 3),
-                    "data_stale": age_seconds > 300.0,
+                    "data_stale": age_seconds > stale_after_seconds,
+                    "stale_after_seconds": stale_after_seconds,
+                    "freshness_basis": (
+                        "completed_bar_close_timeframe_window"
+                        if timeframe_seconds > 0
+                        else "observation_age_300_seconds"
+                    ),
                     "query_type": "historical" if historical_query else "latest",
                 }
             )
@@ -984,6 +998,7 @@ def compute_volume_profile_payload(
             historical_query=(
                 start is not None or end is not None
             ),
+            timeframe=timeframe,
         )
     )
     profile["units"] = _profile_units(profile)

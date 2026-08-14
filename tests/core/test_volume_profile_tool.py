@@ -407,13 +407,35 @@ def test_latest_bar_window_uses_profile_window_end_for_freshness(monkeypatch):
         },
         data_as_of="2026-08-13T14:00:00Z",
         historical_query=False,
+        timeframe="H1",
     )
 
     assert out["query_type"] == "latest"
     assert out["as_of"] == "2026-08-13T14:00:00Z"
     assert out["data_age_seconds"] == 1800.0
-    assert out["data_stale"] is True
+    assert out["data_stale"] is False
+    assert out["stale_after_seconds"] == 3600.0
+    assert out["freshness_basis"] == "completed_bar_close_timeframe_window"
     assert "freshness_applicability" not in out
+
+
+def test_latest_bar_window_marks_missing_completed_period_stale(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "_utc_now_naive",
+        lambda: vp.datetime(2026, 8, 13, 16, 0, 1),
+    )
+
+    out = vp._profile_freshness_meta(
+        {},
+        data_as_of="2026-08-13T14:00:00Z",
+        historical_query=False,
+        timeframe="H1",
+    )
+
+    assert out["data_age_seconds"] == 7201.0
+    assert out["data_stale"] is True
+    assert out["stale_after_seconds"] == 3600.0
 
 
 def test_natural_one_day_window_stays_inside_tick_budget() -> None:

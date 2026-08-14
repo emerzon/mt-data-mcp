@@ -154,6 +154,10 @@ queries also include `bar_window` with the resolved first open and last close.
 `profile_source`, `source_decision`, and `volume_profile_accuracy` identify
 whether `auto` used ticks or the M1 approximation and why. The top-level
 `source` remains the standard structured MT5 broker-provenance object.
+For latest timeframe-derived profiles, `data_stale` compares the completed
+window endpoint with one requested bar period (and exposes that threshold as
+`stale_after_seconds`); non-timeframe windows retain the five-minute
+observation-age threshold.
 `--detail full` adds the full `levels`
 histogram. To request a week of ticks, explicitly set
 `--max-tick-window-days 7` and an appropriate `--max-ticks` cap.
