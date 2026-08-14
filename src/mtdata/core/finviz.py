@@ -2692,6 +2692,35 @@ def _finviz_calendar_item_is_upcoming(
     return event_time.astimezone(timezone.utc) >= reference.astimezone(timezone.utc)
 
 
+def _apply_finviz_calendar_empty_hint(
+    out: Dict[str, Any],
+    *,
+    calendar_type: str,
+    upcoming_only: bool,
+    filtered_released_count: int,
+) -> None:
+    cal_type = str(calendar_type or "economic").strip().lower()
+    if cal_type == "earnings":
+        out["message"] = "No detailed earnings calendar rows matched the date range."
+        out["hint"] = (
+            "Use finviz_earnings for the period-based earnings view with price/volume context."
+        )
+        return
+    if cal_type == "dividends":
+        out["message"] = "No dividend calendar rows matched the date range."
+        return
+    out["message"] = "No economic calendar events matched the filters."
+    if upcoming_only:
+        out["hint"] = (
+            "upcoming_only filtered "
+            f"{filtered_released_count} released event(s); "
+            "pass --upcoming false to include prints that already have an actual."
+        )
+        out["filtered_released_count"] = int(filtered_released_count)
+        return
+    out["hint"] = "Relax impact, country, currency, start, or end filters."
+
+
 def _normalize_finviz_calendar_payload(
     result: Dict[str, Any],
     *,
@@ -2781,13 +2810,15 @@ def _normalize_finviz_calendar_payload(
                     "and were excluded by the country/currency filter."
                 )
                 out["warnings"] = warnings_out
+        filtered_released_count = 0
         if upcoming_only and calendar_mode == "economic":
-            normalized_items = [
-                item
-                for item in normalized_items
-                if isinstance(item, dict)
-                and _finviz_calendar_item_is_upcoming(item)
-            ]
+            kept_items = []
+            for item in normalized_items:
+                if isinstance(item, dict) and _finviz_calendar_item_is_upcoming(item):
+                    kept_items.append(item)
+                elif isinstance(item, dict):
+                    filtered_released_count += 1
+            normalized_items = kept_items
             normalized_items.sort(
                 key=lambda item: str(item.get("date") or item.get("earnings_date") or "")
             )
@@ -2813,17 +2844,12 @@ def _normalize_finviz_calendar_payload(
         out["count"] = len(out["items"])
         out["row_key"] = "items"
         if out["count"] == 0:
-            cal_type = str(calendar_type or "economic").strip().lower()
-            if cal_type == "earnings":
-                out["message"] = "No detailed earnings calendar rows matched the date range."
-                out["hint"] = (
-                    "Use finviz_earnings for the period-based earnings view with price/volume context."
-                )
-            elif cal_type == "dividends":
-                out["message"] = "No dividend calendar rows matched the date range."
-            else:
-                out["message"] = "No economic calendar events matched the filters."
-                out["hint"] = "Relax impact, country, currency, start, or end filters."
+            _apply_finviz_calendar_empty_hint(
+                out,
+                calendar_type=calendar_type,
+                upcoming_only=upcoming_only,
+                filtered_released_count=filtered_released_count,
+            )
     if country_code_filter:
         out["country_filter"] = str(country_code_filter).upper()
     if upcoming_only:
@@ -4518,7 +4544,16 @@ def finviz_earnings(
             for item in output_items
         ):
             _attach_finviz_delayed_root_metadata(out)
-        if out["detail"] != "full":
+        if out["count"] == 0 and not include_elapsed:
+            out["message"] = (
+                "No unelapsed earnings remain in this period after the "
+                "include_elapsed=false filter."
+            )
+            out["hint"] = (
+                "Pass --include-elapsed true to include already-released "
+                "prints, or --period next-week for the next window."
+            )
+        elif out["detail"] != "full":
             out["hint"] = (
                 "Period-based earnings view; use finviz_calendar(calendar='earnings') "
                 "for date-range EPS/sales actuals and surprises."

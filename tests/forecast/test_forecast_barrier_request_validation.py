@@ -53,6 +53,26 @@ def test_forecast_barrier_prob_request_names_allowed_kinds():
         ForecastBarrierProbRequest(symbol="EURUSD", barrier={})
 
 
+def test_forecast_barrier_prob_accepts_price_alias_for_single_price():
+    request = ForecastBarrierProbRequest(
+        symbol="EURUSD",
+        method="closed_form",
+        barrier={"kind": "single_price", "price": 1.18},
+    )
+
+    assert request.barrier_level == 1.18
+
+
+def test_forecast_barrier_prob_accepts_numeric_barrier_as_single_price():
+    request = ForecastBarrierProbRequest(
+        symbol="EURUSD",
+        method="closed_form",
+        barrier=1.18,
+    )
+
+    assert request.barrier_level == 1.18
+
+
 def test_forecast_barrier_prob_request_defaults_to_touch_aware_method():
     request = ForecastBarrierProbRequest(symbol="EURUSD", barrier=_tp_sl_barrier())
 

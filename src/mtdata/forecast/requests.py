@@ -81,11 +81,28 @@ class TakeProfitStopLossBarrierSpec(BaseModel):
 
 
 def _normalize_forecast_barrier_spec(value: Any) -> Any:
+    if isinstance(value, bool):
+        raise ValueError(
+            "barrier must be an object with kind='single_price' or kind='tp_sl'"
+        )
+    if isinstance(value, (int, float)):
+        return {"kind": "single_price", "level": float(value)}
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return {"kind": "single_price", "level": float(text)}
+        except ValueError:
+            pass
     if not isinstance(value, dict):
         raise ValueError(
             "barrier must be an object with kind='single_price' or kind='tp_sl'"
         )
     out = dict(value)
+    if "level" not in out:
+        for alias in ("price", "barrier"):
+            if alias in out:
+                out["level"] = out.pop(alias)
+                break
     if out.get("kind") in (None, ""):
         if "level" in out:
             out["kind"] = "single_price"
@@ -408,9 +425,19 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     population: int = Field(
         12,
         ge=2,
-        description="Population size per generation (minimum 2).",
+        description=(
+            "Population size per generation (minimum 2). Defaults evaluate "
+            "about 12*10*5=600 rolling backtests."
+        ),
     )
-    generations: int = Field(10, ge=1)
+    generations: int = Field(
+        10,
+        ge=1,
+        description=(
+            "Generation count. Combined with population and steps, defaults "
+            "evaluate about 600 rolling backtests."
+        ),
+    )
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     seed: int = 42

@@ -762,6 +762,49 @@ class TestMain:
         )
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_global_timeframe_defaults_optimize_hints_timeframes(
+        self,
+        mock_discover,
+    ):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_optimize_hints"
+        mock_fn.__doc__ = "Optimize hints."
+
+        def forecast_optimize_hints(
+            symbol: str,
+            timeframes: Optional[List[str]] = None,
+        ):
+            """Optimize hints."""
+
+        info = get_function_info(forecast_optimize_hints)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "forecast_optimize_hints": {
+                "func": mock_fn,
+                "meta": {"description": "Optimize hints"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--timeframe",
+                "H1",
+                "forecast_optimize_hints",
+                "EURUSD",
+                "--json",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        assert mock_fn.call_args.kwargs["symbol"] == "EURUSD"
+        assert mock_fn.call_args.kwargs["timeframes"] == ["H1"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_explicit_confluence_pivot_timeframe_overrides_global(
         self,
         mock_discover,

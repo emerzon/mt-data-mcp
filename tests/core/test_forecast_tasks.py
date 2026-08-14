@@ -333,6 +333,11 @@ class TestForecastTaskCancel:
 
 
 class TestForecastTaskWait:
+    def test_wait_accepts_ten_minute_timeout(self):
+        request = ForecastTaskWaitRequest(task_id="task-abc", timeout_seconds=600.0)
+
+        assert request.timeout_seconds == 600.0
+
     def test_wait_returns_latest_status(self):
         from src.mtdata.core.forecast_tasks import forecast_task_wait
 

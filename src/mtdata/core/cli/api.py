@@ -435,6 +435,7 @@ def _apply_global_cli_overrides(
         if functions is not None and command not in {
             "confluence_levels",
             "forecast_generate",
+            "forecast_optimize_hints",
         }:
             tool = functions.get(command) or {}
             func_info = tool.get("_cli_func_info") or {}
@@ -462,6 +463,21 @@ def _apply_global_cli_overrides(
             )
             if not pivot_timeframe_present:
                 args.pivot_timeframe = global_timeframe
+        elif command == "forecast_optimize_hints":
+            timeframes_present = (
+                _argv_option_present_after_command(
+                    argv,
+                    command,
+                    "--timeframes",
+                )
+                or _argv_option_present_after_command(
+                    argv,
+                    command,
+                    "--timeframe",
+                )
+            )
+            if not timeframes_present:
+                args.timeframes = [global_timeframe]
         elif not _argv_option_present_after_command(
             argv,
             command,
@@ -1270,6 +1286,8 @@ def create_command_function(
         return command_func
 
     def _forecast_train_cmd(args: Any) -> int:
+        # One-shot and stdin-batch processes exit after the command. Training
+        # runs in-process, so those invocations always wait or the worker dies.
         if _INTERACTIVE_SHELL_SESSION_DEPTH <= 0:
             args.wait = "true"
         return command_func(args)
@@ -1541,8 +1559,8 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         None,
     ),
     "wait_event": (
-        f"{CLI_PROGRAM} wait_event EURUSD --max-wait-seconds 1",
-        f"{CLI_PROGRAM} wait_event --timeframe M1",
+        f"{CLI_PROGRAM} wait_event --max-wait-seconds 1",
+        f"{CLI_PROGRAM} wait_event EURUSD --timeframe M1",
     ),
     "trade_stress_test": (
         f"{CLI_PROGRAM} trade_stress_test --shocks '{{\"EURUSD\":-1}}'",
@@ -1565,7 +1583,17 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         None,
     ),
     "forecast_train": (
-        f"{CLI_PROGRAM} forecast_train EURUSD --method theta",
+        f"{CLI_PROGRAM} forecast_train EURUSD --method skt_naive",
+        None,
+    ),
+    "forecast_tune_genetic": (
+        f"{CLI_PROGRAM} forecast_tune_genetic EURUSD --population 4 "
+        "--generations 2 --steps 2",
+        None,
+    ),
+    "forecast_optimize_hints": (
+        f"{CLI_PROGRAM} forecast_optimize_hints EURUSD --timeframes H1 "
+        "--max-search-time-seconds 30",
         None,
     ),
     "denoise_describe": (
@@ -1851,7 +1879,8 @@ _GLOBAL_FLAG_HELP: Dict[str, str] = {
         "always full precision)."
     ),
     "output_fields": (
-        "--output-fields FIELD[,FIELD...]: return only selected output fields plus envelope metadata."
+        "--output-fields FIELD[,FIELD...]: return only selected output fields plus envelope metadata. "
+        "Use dotted paths for nested row columns, e.g. data.time,data.close."
     ),
     "json": (
         "--json: emit machine-readable JSON instead of TOON (always full precision)."

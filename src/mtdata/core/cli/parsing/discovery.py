@@ -112,9 +112,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "forecast_volatility_estimate and is not separately trainable."
     ),
     ("forecast_train", "wait"): (
-        "Wait for training to finish. One-shot CLI and stdin shell batches wait "
-        "by default; interactive shell, MCP, and Web API calls submit in the "
-        "background unless wait is true."
+        "Wait for training to finish. One-shot CLI and stdin shell batches "
+        "always wait so the in-process worker stays alive; the flag only "
+        "applies in interactive shell, MCP, and Web API sessions."
     ),
     ("forecast_tune_optuna", "n_trials"): (
         "Optuna trial count. Each trial runs --steps rolling backtests; the "
@@ -144,6 +144,15 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("data_fetch_ticks", "timestamp_format"): (
         "Format each MT5 tick event's `time` value as an ISO UTC timestamp or "
         "UTC epoch seconds."
+    ),
+    ("data_fetch_ticks", "start"): (
+        "Inclusive range start (dateparser). Date-only and calendar phrases "
+        "are UTC midnight, not the broker D1 session open. Example: "
+        "--start 2026-08-14 begins at 2026-08-14T00:00:00Z."
+    ),
+    ("data_fetch_ticks", "end"): (
+        "Inclusive range end (dateparser). Date-only and calendar phrases are "
+        "UTC end-of-day, not the broker session close."
     ),
     ("market_ticker", "price_field"): (
         "Omit for the default bid/ask/spread quote snapshot; set bid, ask, mid, "
@@ -200,10 +209,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
     ("data_fetch_candles", "limit"): (
-        "Maximum returned bars (default: 20). Queries with --start retain the "
-        "earliest matching bars (first-N); otherwise the latest bars are retained. "
-        "On an explicit range, omission uses a 100000-bar safety cap. Indicator "
-        "warmup bars are fetched in addition to returned rows."
+        "Maximum returned bars. Latest queries default to 20 most-recent bars. "
+        "On an explicit --start/--end range, omission returns the full matching "
+        "window up to a 100000-bar safety cap. Queries with --start retain the "
+        "earliest matching bars (first-N) when the cap binds; otherwise the latest "
+        "bars are retained. Indicator warmup bars are fetched in addition to returned rows."
     ),
     ("data_fetch_candles", "start"): (
         "Inclusive range start. Intraday date-only and calendar phrases use UTC. "
@@ -220,8 +230,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "bar is omitted; full detail also includes counts and booleans."
     ),
     ("data_fetch_ticks", "limit"): (
-        "Maximum ticks returned (default 20, maximum 50000). Queries with a "
-        "start bound return the earliest matching ticks; otherwise the latest ticks."
+        "Maximum ticks returned (maximum 50000). Latest queries default to 20. "
+        "On an explicit --start/--end range, omission returns matching ticks up "
+        "to the 50000-tick safety cap. Start-bounded queries keep the earliest "
+        "ticks when the cap binds. Date-only start/end values are UTC midnight, "
+        "not the broker session day."
     ),
     ("market_status", "symbol"): (
         "Broker symbol for MT5 session/tradability status. If omitted, the "
@@ -231,6 +244,22 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("market_status", "venue"): (
         "Static major-equity venue calendar: NYSE, NASDAQ, LSE, XETRA, "
         "EURONEXT, TSE, HKEX, SSE, or ASX. Mutually exclusive with --symbol."
+    ),
+    ("forecast_task_wait", "timeout_seconds"): (
+        "Seconds to wait for a terminal task state. Default 30 is a short poll, "
+        "not a training budget. Maximum 86400 (24 hours)."
+    ),
+    ("forecast_tune_genetic", "population"): (
+        "Population size (minimum 2). Defaults evaluate about 12*10*5=600 "
+        "rolling backtests."
+    ),
+    ("forecast_tune_genetic", "generations"): (
+        "Generation count. Work is about population*generations*steps rolling "
+        "backtests (600 at the defaults)."
+    ),
+    ("forecast_tune_genetic", "steps"): (
+        "Rolling-origin backtest anchors per candidate. Combined with "
+        "population and generations, defaults evaluate about 600 backtests."
     ),
     ("forecast_task_cancel_all", "status_filter"): (
         "Cancelable task status: all, pending, or running. Defaults to all active tasks."
@@ -255,12 +284,20 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
+    ("finviz_calendar", "upcoming"): (
+        "When omitted with no start/end, economic calendar defaults to upcoming "
+        "unreleased events. Pass false to include already-printed releases."
+    ),
+    ("finviz_earnings", "include_elapsed"): (
+        "Include earnings already released in the selected period. Defaults to "
+        "false; after the US cash close this can empty this-week results."
+    ),
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
     ("forecast_barrier_prob", "barrier"): (
-        'Barrier object. Use {"kind":"single_price","level":1.1000} for '
-        'closed_form, or {"kind":"tp_sl","unit":"pct","take_profit":0.2,'
-        '"stop_loss":0.1} for simulation methods. The kind may be omitted '
-        "from a complete TP/SL object."
+        'Barrier object. Use {"kind":"single_price","level":1.1000} (aliases: '
+        'price, barrier) for closed_form, or {"kind":"tp_sl","unit":"pct",'
+        '"take_profit":0.2,"stop_loss":0.1} for simulation methods. The kind '
+        "may be omitted from a complete TP/SL or single-price object."
     ),
     ("forecast_barrier_prob", "mu"): (
         "Annual log-return drift override (decimal fraction) on the shared "
@@ -289,7 +326,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Maximum distinct ranked symbols returned across strongest and weakest "
         "tails; the stronger tail receives the extra row for odd limits."
     ),
-    ("options_chain", "limit"): "Max option contracts to return.",
+    ("options_chain", "limit"): (
+        "Max option contracts to return. Omitted compact output uses 20 nearest "
+        "strikes; omitted full output uses 200."
+    ),
     ("options_heston_calibrate", "valuation_date"): (
         "Valuation date in YYYY-MM-DD format; omit for the selected calendar's local date."
     ),
@@ -375,7 +415,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("options_chain", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "
-        "Omit to use the provider's nearest available expiration."
+        "Omit to use the next live listed expiration (skips the same-day weekly "
+        "after the regular US cash close). Explicit expired dates are labeled."
     ),
     ("options_heston_calibrate", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "
@@ -457,7 +498,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "horizon bars."
     ),
     ("labels_triple_barrier", "barriers"): (
-        "Required JSON barrier pair. Example: "
+        "Barrier pair as KV or JSON. Prefer the shell-safe form "
+        "'unit=pct take_profit=0.5 stop_loss=0.5'. JSON objects also work: "
         "'{\"kind\":\"tp_sl\",\"unit\":\"pct\",\"take_profit\":0.5,\"stop_loss\":0.5}'. "
         "kind='tp_sl' is optional, so forecast_barrier_prob TP/SL objects can be reused. "
         "pct/ticks are distances from entry; price values are absolute levels."
@@ -599,6 +641,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): (
         "Single trading symbol (e.g. EURUSD). Cannot be combined with symbols. "
+        "Requires --timeframe or --watch-for; a symbol plus --max-wait-seconds "
+        "alone is rejected because duration mode ignores the symbol. "
         "Timer-only duration and clock-only timeframe waits may omit both."
     ),
     ("wait_event", "symbols"): (
@@ -611,7 +655,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("wait_event", "max_wait_seconds"): (
         "Maximum wait in seconds. With timeframe, bounds the candle-boundary wait; "
-        "without timeframe, omit watch_for for a timer or pass watchers to return early."
+        "without timeframe, omit the symbol and watch_for for a timer, or pass "
+        "watchers to return early."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
@@ -1212,12 +1257,14 @@ def add_dynamic_arguments(  # noqa: C901
                     f"--no-{param['name'].replace('_', '-')}",
                     f"--no_{param['name']}",
                 )
+                no_default = kwargs.get("default", argparse.SUPPRESS)
                 if no_flags:
                     parser.add_argument(
                         *no_flags,
                         dest=param["name"],
                         action="store_const",
                         const="false",
+                        default=no_default,
                         help=argparse.SUPPRESS,
                     )
                 if no_hidden_flags:
@@ -1225,6 +1272,7 @@ def add_dynamic_arguments(  # noqa: C901
                         "dest": param["name"],
                         "action": "store_const",
                         "const": "false",
+                        "default": no_default,
                         "help": argparse.SUPPRESS,
                     }
                     parser.add_argument(*no_hidden_flags, **hidden_no_kwargs)

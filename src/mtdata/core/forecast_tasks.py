@@ -152,7 +152,15 @@ class ForecastTaskCancelAllRequest(BaseModel):
 
 class ForecastTaskWaitRequest(BaseModel):
     task_id: str = Field(..., description="Task ID returned by forecast_train or forecast_generate async mode.")
-    timeout_seconds: float = Field(30.0, ge=0.0, le=300.0)
+    timeout_seconds: float = Field(
+        30.0,
+        ge=0.0,
+        le=86_400.0,
+        description=(
+            "Seconds to wait for a terminal task state. Default 30 is a short "
+            "poll, not a training budget; the maximum is 86400 (24 hours)."
+        ),
+    )
     detail: DetailLevel = Field(
         "compact",
         description="Response detail level: 'compact' for summary fields or 'full' for expanded task details.",

@@ -1454,7 +1454,7 @@ class TestResolveParamKwargs:
             cmd_name="forecast_train",
         )
 
-        assert "One-shot CLI and stdin shell batches wait by default" in kwargs["help"]
+        assert "One-shot CLI and stdin shell batches always wait" in kwargs["help"]
         assert "interactive shell, MCP, and Web API" in kwargs["help"]
 
     @pytest.mark.parametrize(
@@ -1470,6 +1470,9 @@ class TestResolveParamKwargs:
                 "max_search_time_seconds",
                 "wall-clock search limit",
             ),
+            ("forecast_tune_genetic", "population", "600 rolling backtests"),
+            ("forecast_tune_genetic", "generations", "600 at the defaults"),
+            ("forecast_task_wait", "timeout_seconds", "Maximum 86400"),
         ],
     )
     def test_forecast_search_help_quantifies_work(
@@ -1720,7 +1723,7 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "expected"),
         [
-            ("data_fetch_candles", "limit", "default: 20"),
+            ("data_fetch_candles", "limit", "100000-bar safety cap"),
             ("data_fetch_ticks", "limit", "maximum 50000"),
             ("market_status", "symbol", "static major-equity-exchange calendar"),
             ("forecast_task_cancel_all", "status_filter", "all, pending, or running"),
