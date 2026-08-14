@@ -1238,14 +1238,19 @@ def genetic_search_optimize_hints(  # noqa: C901
             if _has_trading_fitness_metrics(backtest_metrics):
                 fitness = _composite_fitness(backtest_metrics, weights=fitness_weights)
                 fitness_source = "trading_composite"
+                fitness_score = 1.0 - fitness
             else:
-                fitness = _forecast_accuracy_fitness(backtest_metrics)
+                forecast_accuracy = _forecast_accuracy_fitness(backtest_metrics)
                 fitness_source = "forecast_accuracy_fallback"
+                # Keep accuracy-only candidates below every trading composite.
+                # Their score is useful for ordering fallbacks, but it is not a
+                # comparable measure of trading edge.
+                fitness_score = 3.0 - forecast_accuracy
             if isinstance(res, dict):
                 res = dict(res)
                 res['_optimization_fitness_source'] = fitness_source
-            # Convert to minimization score (1 - fitness to minimize)
-            fitness_score = 1.0 - fitness
+                if fitness_source == "forecast_accuracy_fallback":
+                    res['_optimization_forecast_accuracy_score'] = forecast_accuracy
         else:
             # Single metric: use raw score from backtest
             fitness_score = float(score)
@@ -1329,10 +1334,23 @@ def genetic_search_optimize_hints(  # noqa: C901
             'avg_score': float(sum(p[1] for p in pop) / len(pop)) if pop else float('nan'),
         }
         if fitness_metric == 'composite':
-            gen_summary['best_fitness_score'] = 1.0 - float(gen_best[1])
+            best_source = gen_best[2].get('_optimization_fitness_source')
+            gen_summary['best_fitness_score'] = (
+                0.0
+                if best_source == 'forecast_accuracy_fallback'
+                else 1.0 - float(gen_best[1])
+            )
+            display_scores = [
+                0.0
+                if item[2].get('_optimization_fitness_source')
+                == 'forecast_accuracy_fallback'
+                else 1.0 - float(item[1])
+                for item in pop
+                if math.isfinite(float(item[1]))
+            ]
             gen_summary['avg_fitness_score'] = (
-                1.0 - float(gen_summary['avg_score'])
-                if math.isfinite(float(gen_summary['avg_score']))
+                float(sum(display_scores) / len(display_scores))
+                if display_scores
                 else float('nan')
             )
         history.append(gen_summary)
@@ -1388,24 +1406,42 @@ def genetic_search_optimize_hints(  # noqa: C901
         seen_configs.add(config_key)
 
         # Build hint entry
+        fitness_source = (
+            backtest_res.get('_optimization_fitness_source')
+            if isinstance(backtest_res, dict)
+            else None
+        )
+        fallback_accuracy = (
+            backtest_res.get('_optimization_forecast_accuracy_score')
+            if isinstance(backtest_res, dict)
+            else None
+        )
         hint: Dict[str, Any] = {
             'rank': len(top_configs) + 1,
             'timeframe': tf,
             'method': method,
             'method_params': params,
             'fitness_score': (
-                1.0 - fitness
+                0.0
+                if fitness_metric == 'composite'
+                and fitness_source == 'forecast_accuracy_fallback'
+                else 1.0 - fitness
                 if fitness_metric == 'composite'
                 else (-fitness if metric_mode == 'max' else fitness)
             ),
         }
-        fitness_source = (
-            backtest_res.get('_optimization_fitness_source')
-            if isinstance(backtest_res, dict)
-            else None
-        )
         if fitness_source:
             hint['fitness_source'] = fitness_source
+        if fitness_source == 'forecast_accuracy_fallback':
+            hint['fitness_comparable'] = False
+            hint['ranking_tier'] = 'forecast_accuracy_fallback'
+            hint['forecast_accuracy_score'] = fallback_accuracy
+            hint['forecast_accuracy_basis'] = (
+                'mean_of_directional_accuracy_and_inverse_one_plus_price_error'
+            )
+        elif fitness_metric == 'composite':
+            hint['fitness_comparable'] = True
+            hint['ranking_tier'] = 'trading_composite'
 
         # Extract backtest metrics
         try:
@@ -1463,6 +1499,7 @@ def genetic_search_optimize_hints(  # noqa: C901
     finite_scores = [
         float(item['fitness_score'])
         for item in top_configs
+        if item.get('fitness_comparable') is not False
         if math.isfinite(float(item.get('fitness_score', float('nan'))))
     ]
     if len(finite_scores) > 1 and max(finite_scores) - min(finite_scores) <= 1e-12:

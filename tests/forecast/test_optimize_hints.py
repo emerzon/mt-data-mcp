@@ -278,9 +278,61 @@ def test_genetic_search_optimize_hints_falls_back_to_forecast_accuracy():
 
     hint = result["hints"][0]
     assert hint["fitness_source"] == "forecast_accuracy_fallback"
-    assert hint["fitness_score"] > 0.1
+    assert hint["fitness_score"] == 0.0
+    assert hint["fitness_comparable"] is False
+    assert hint["ranking_tier"] == "forecast_accuracy_fallback"
+    assert hint["forecast_accuracy_score"] == pytest.approx(
+        (0.6 + (1.0 / 1.02)) / 2.0
+    )
     assert hint["backtest_metrics"]["avg_rmse"] == 0.02
     assert hint["backtest_metrics"]["metrics_reason"] == "no_non_flat_trades"
+
+
+def test_genetic_search_ranks_trading_composite_above_accuracy_fallback():
+    def _candidate(**kwargs):
+        method = kwargs["method"]
+        if method == "theta":
+            return 0.02, {
+                "results": {
+                    "theta": {
+                        "avg_rmse": 0.02,
+                        "metrics": {
+                            "win_rate": 0.55,
+                            "sharpe_ratio": 0.4,
+                        },
+                    }
+                }
+            }
+        return 0.0005, {
+            "results": {
+                "naive": {
+                    "avg_rmse": 0.0005,
+                    "metrics_available": False,
+                    "metrics_reason": "no_non_flat_trades",
+                    "trade_status": "flat",
+                    "metrics": {},
+                }
+            }
+        }
+
+    with patch(
+        "mtdata.forecast.tune._eval_candidate", side_effect=_candidate
+    ) as evaluate:
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive", "theta"],
+            population=4,
+            generations=0,
+            top_n=4,
+            fitness_metric="composite",
+            mutation_rate=0.0,
+            seed=1,
+        )
+
+    assert "naive" in {call.kwargs["method"] for call in evaluate.call_args_list}
+    assert result["hints"][0]["method"] == "theta"
+    assert result["hints"][0]["ranking_tier"] == "trading_composite"
 
 
 def test_genetic_search_optimize_hints_deduplicates_identical_configs():

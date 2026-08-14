@@ -282,6 +282,8 @@ _TRADE_BACKTEST_UNITS = {
     "cumulative_return_pct": "percent",
     "gross_return": "return_fraction",
     "gross_return_pct": "percent",
+    "gross_before_costs": "return_fraction",
+    "gross_before_costs_pct": "percent",
     "net_return": "return_fraction",
     "net_return_pct": "percent",
     "return_after_known_costs": "return_fraction",
@@ -1694,10 +1696,14 @@ def strategy_backtest(  # noqa: C901
         )
         result_units = _backtest_units()
         if cost_model_complete:
+            result_units.pop("gross_before_costs", None)
+            result_units.pop("gross_before_costs_pct", None)
             result_units.pop("return_after_known_costs", None)
             result_units.pop("return_after_known_costs_pct", None)
             reported_metrics = metrics
         else:
+            result_units.pop("gross_return", None)
+            result_units.pop("gross_return_pct", None)
             result_units.pop("net_return", None)
             result_units.pop("net_return_pct", None)
             if not known_cost_return_available:
@@ -1767,8 +1773,19 @@ def strategy_backtest(  # noqa: C901
                 "longest_continuous_exposure_bars": int(
                     longest_continuous_exposure_bars
                 ),
-                "gross_return": gross_return,
-                "gross_return_pct": _return_fraction_to_pct(gross_return),
+                **(
+                    {
+                        "gross_return": gross_return,
+                        "gross_return_pct": _return_fraction_to_pct(gross_return),
+                    }
+                    if cost_model_complete
+                    else {
+                        "gross_before_costs": gross_return,
+                        "gross_before_costs_pct": _return_fraction_to_pct(
+                            gross_return
+                        ),
+                    }
+                ),
                 "costs_complete": bool(cost_model_complete),
                 "cost_coverage_pct": priced_trade_coverage_pct,
                 **summary_returns,

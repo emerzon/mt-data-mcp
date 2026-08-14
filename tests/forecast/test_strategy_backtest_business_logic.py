@@ -154,6 +154,10 @@ def test_strategy_backtest_strict_historical_rejects_zero_spread_samples(monkeyp
     assert "net_return" not in out["summary"]
     assert out["summary"]["return_status"] == "unavailable_transaction_costs"
     assert out["summary"]["costs_complete"] is False
+    assert "gross_return" not in out["summary"]
+    assert "gross_return_pct" not in out["summary"]
+    assert out["summary"]["gross_before_costs"] > 0.0
+    assert out["units"]["gross_before_costs"] == "return_fraction"
     assert out["summary"]["cost_coverage_pct"] == 0.0
     assert out["metrics"]["metrics_available"] is False
 
