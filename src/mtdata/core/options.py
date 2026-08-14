@@ -10,6 +10,7 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..shared.schema import DetailLiteral
+from ..shared.symbols import normalize_equity_provider_symbol
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -49,7 +50,24 @@ def _normalize_options_symbol(
             ),
             "error_code": "invalid_symbol",
         }
-    return normalized, None
+    return normalize_equity_provider_symbol(normalized), None
+
+
+def _attach_options_symbol_mapping(
+    payload: Dict[str, Any],
+    *,
+    requested_symbol: str,
+    provider_symbol: str,
+) -> Dict[str, Any]:
+    out = dict(payload)
+    requested = str(requested_symbol or "").strip().upper()
+    provider = str(provider_symbol or "").strip().upper()
+    if requested and provider and requested != provider:
+        out["requested_symbol"] = requested
+        out["provider_symbol"] = provider
+        if out.get("error") and not out.get("did_you_mean"):
+            out["did_you_mean"] = [provider]
+    return out
 
 
 def _normalize_option_expiration(
@@ -333,6 +351,8 @@ def _apply_options_detail(
                 "underlying_price_source",
                 "underlying_price_session",
                 "symbol",
+                "requested_symbol",
+                "provider_symbol",
                 "expirations",
                 "expiration_count",
                 "warnings",
@@ -358,6 +378,8 @@ def _apply_options_detail(
                 "underlying_price_source",
                 "underlying_price_session",
                 "symbol",
+                "requested_symbol",
+                "provider_symbol",
                 "expiration",
                 "underlying_price",
                 "currency",
@@ -428,6 +450,8 @@ def _apply_options_detail(
             for key in (
                 "success",
                 "symbol",
+                "requested_symbol",
+                "provider_symbol",
                 "expiration",
                 "valuation_date",
                 "valuation_timezone",
@@ -528,7 +552,11 @@ def options_expirations(
         symbol=symbol_value,
         detail=detail,
         func=lambda: _apply_options_detail(
-            _impl(symbol=symbol_value),
+            _attach_options_symbol_mapping(
+                _impl(symbol=symbol_value),
+                requested_symbol=symbol,
+                provider_symbol=symbol_value,
+            ),
             detail=detail,
             kind="expirations",
         ),
@@ -627,20 +655,24 @@ def options_chain(
         limit=effective_limit,
         detail=detail,
         func=lambda: _apply_options_detail(
-            {
-                **_impl(
-                    symbol=symbol_value,
-                    expiration=expiration_value,
-                    option_type=option_type,
-                    min_open_interest=int(min_open_interest),
-                    min_volume=int(min_volume),
-                    limit=effective_limit,
-                ),
-                "limit": effective_limit,
-                "limit_source": (
-                    "request" if limit is not None else f"{detail_mode}_default"
-                ),
-            },
+            _attach_options_symbol_mapping(
+                {
+                    **_impl(
+                        symbol=symbol_value,
+                        expiration=expiration_value,
+                        option_type=option_type,
+                        min_open_interest=int(min_open_interest),
+                        min_volume=int(min_volume),
+                        limit=effective_limit,
+                    ),
+                    "limit": effective_limit,
+                    "limit_source": (
+                        "request" if limit is not None else f"{detail_mode}_default"
+                    ),
+                },
+                requested_symbol=symbol,
+                provider_symbol=symbol_value,
+            ),
             detail=detail,
             kind="chain",
         ),
@@ -815,18 +847,22 @@ def options_heston_calibrate(
         max_contracts=max_contracts,
         detail=detail,
         func=lambda: _apply_options_detail(
-            _impl(
-                symbol=symbol_value,
-                expiration=expiration_value,
-                valuation_date=valuation_date,
-                option_type=option_type,
-                risk_free_rate=float(risk_free_rate),
-                dividend_yield=float(dividend_yield),
-                min_open_interest=int(min_open_interest),
-                min_volume=int(min_volume),
-                max_contracts=int(max_contracts),
-                calendar=calendar,
-                maturity_basis=maturity_basis,
+            _attach_options_symbol_mapping(
+                _impl(
+                    symbol=symbol_value,
+                    expiration=expiration_value,
+                    valuation_date=valuation_date,
+                    option_type=option_type,
+                    risk_free_rate=float(risk_free_rate),
+                    dividend_yield=float(dividend_yield),
+                    min_open_interest=int(min_open_interest),
+                    min_volume=int(min_volume),
+                    max_contracts=int(max_contracts),
+                    calendar=calendar,
+                    maturity_basis=maturity_basis,
+                ),
+                requested_symbol=symbol,
+                provider_symbol=symbol_value,
             ),
             detail=detail,
             kind="heston_calibrate",

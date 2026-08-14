@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import AbstractSet, Any
 
 # Major G10-style fiat codes used for conservative news-provider conversion.
@@ -64,6 +65,27 @@ _CRYPTO_QUOTE_CODES = frozenset(
     }
 )
 
+EQUITY_BROKER_SUFFIXES = frozenset(
+    {
+        "AMEX",
+        "ARCA",
+        "ASE",
+        "BATS",
+        "L",
+        "NAS",
+        "NASDAQ",
+        "NQ",
+        "NY",
+        "NYSE",
+        "NYS",
+        "NYQ",
+        "O",
+        "OTC",
+        "TQ",
+        "US",
+    }
+)
+
 
 def _alnum_upper(symbol: Any) -> str:
     return "".join(ch for ch in str(symbol or "").upper().strip() if ch.isalnum())
@@ -82,6 +104,23 @@ def finviz_forex_symbol_to_mt5(symbol: Any) -> str | None:
     if left in FIAT_CURRENCY_CODES and right in FIAT_CURRENCY_CODES:
         return f"{left}{right}"
     return None
+
+
+def normalize_equity_provider_symbol(symbol: Any) -> str:
+    """Strip a recognized MT5 exchange/session suffix from an equity ticker."""
+    normalized = str(symbol or "").strip().upper()
+    if not normalized:
+        return normalized
+    match = re.fullmatch(
+        r"([A-Z0-9]{1,6})[._-]([A-Z0-9]+)(?:[._-].*)?",
+        normalized,
+    )
+    if match is None:
+        return normalized
+    base, suffix = match.groups()
+    if suffix not in EQUITY_BROKER_SUFFIXES:
+        return normalized
+    return base
 
 
 def is_probably_crypto_symbol(symbol: Any) -> bool:

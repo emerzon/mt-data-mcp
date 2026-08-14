@@ -3965,11 +3965,22 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["kind"] == "exp"
     assert out["symbol"] == "AAPL"
 
+    out = raw_exp(symbol="AAPL.NAS-24")
+    assert out["kind"] == "exp"
+    assert out["symbol"] == "AAPL"
+    assert out["requested_symbol"] == "AAPL.NAS-24"
+    assert out["provider_symbol"] == "AAPL"
+
     out = raw_chain(symbol="AAPL", expiration="2026-06-19", option_type="call", min_open_interest=10, min_volume=5, limit=20)
     assert out["kind"] == "chain"
     assert out["symbol"] == "AAPL"
     assert out["option_type"] == "call"
     assert out["limit"] == 20
+
+    out = raw_chain(symbol="AAPL.NAS", limit=20)
+    assert out["symbol"] == "AAPL"
+    assert out["requested_symbol"] == "AAPL.NAS"
+    assert out["provider_symbol"] == "AAPL"
 
     out = raw_price(
         spot=100.0,
