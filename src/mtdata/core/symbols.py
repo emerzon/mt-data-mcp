@@ -2551,10 +2551,62 @@ def _market_scan_freshness_summary(
         for row in rows
         if str(row.get("time") or "").strip()
     ]
-    if row_times:
+    bar_rows = [
+        row
+        for row in rows
+        if str(row.get("data_source") or "").strip().endswith("_bars")
+        and str(row.get("time") or "").strip()
+    ]
+    if bar_rows:
+        symbols_by_time: Dict[str, List[str]] = {}
+        for row in bar_rows:
+            timestamp = str(row.get("time") or "").strip()
+            symbol = str(row.get("symbol") or "").strip()
+            symbols_by_time.setdefault(timestamp, [])
+            if symbol and symbol not in symbols_by_time[timestamp]:
+                symbols_by_time[timestamp].append(symbol)
+        bar_times = sorted(symbols_by_time)
+        aligned = len(bar_times) == 1
+        out["bar_time_alignment"] = {
+            "status": "aligned" if aligned else "mixed",
+            "comparable": aligned,
+            "distinct_timestamps": len(bar_times),
+            "basis": "latest_completed_bar_open_per_symbol",
+        }
+        out["bar_rank_comparable"] = aligned
+        out["price_change_comparable"] = aligned
+        if aligned:
+            out["data_as_of"] = bar_times[0]
+            out["bar_as_of"] = bar_times[0]
+            out["data_as_of_basis"] = "shared_latest_completed_bar_open"
+        else:
+            time_range = {
+                "oldest": bar_times[0],
+                "newest": bar_times[-1],
+            }
+            out["data_as_of_range"] = time_range
+            out["bar_as_of_range"] = dict(time_range)
+            out["data_as_of_basis"] = "per_row_latest_completed_bar_open"
+            out["bar_time_alignment"]["groups"] = [
+                {
+                    "time": timestamp,
+                    "symbols": symbols_by_time[timestamp],
+                }
+                for timestamp in bar_times
+            ]
+            out["comparison_warning"] = (
+                "Completed-bar timestamps differ across returned symbols; one-bar "
+                "price-change and volume ranks are not clock-aligned. Use each row's "
+                "time before comparing ranks."
+            )
+    elif row_times:
         out["data_as_of"] = max(row_times)
-        out["bar_as_of"] = out["data_as_of"]
-        out["data_as_of_basis"] = "latest_completed_bar_open"
+        out["data_as_of_basis"] = "latest_source_timestamp"
+        if min(row_times) != max(row_times):
+            out["data_as_of_range"] = {
+                "oldest": min(row_times),
+                "newest": max(row_times),
+            }
     quote_times = [
         str(row.get("quote_as_of") or "").strip()
         for row in rows
@@ -3973,6 +4025,10 @@ def symbols_top_markets(  # noqa: C901
                     key: freshness_context[key]
                     for key in (
                         "data_as_of",
+                        "data_as_of_range",
+                        "bar_time_alignment",
+                        "bar_rank_comparable",
+                        "price_change_comparable",
                         "freshness",
                         "stale_rows",
                         "stale_bar_rows",
@@ -3986,15 +4042,35 @@ def symbols_top_markets(  # noqa: C901
                 ranking_time = str(context.get("data_as_of") or "").strip()
                 if ranking_time:
                     ranking_times.append(ranking_time)
+                ranking_range = context.get("data_as_of_range")
+                if isinstance(ranking_range, dict):
+                    ranking_times.extend(
+                        str(ranking_range.get(key) or "").strip()
+                        for key in ("oldest", "newest")
+                        if str(ranking_range.get(key) or "").strip()
+                    )
                 ranking_context[ranking_name] = context
             out["ranking_context"] = ranking_context
             if ranking_times:
+                distinct_ranking_times = sorted(set(ranking_times))
                 out["data_as_of_range"] = {
-                    "oldest": min(ranking_times),
-                    "newest": max(ranking_times),
+                    "oldest": distinct_ranking_times[0],
+                    "newest": distinct_ranking_times[-1],
                 }
-                out["data_as_of"] = max(ranking_times)
-                out["data_as_of_basis"] = "latest_source_timestamp_across_rankings"
+                if len(distinct_ranking_times) == 1:
+                    out["data_as_of"] = distinct_ranking_times[0]
+                    out["data_as_of_basis"] = "shared_source_timestamp_across_rankings"
+                else:
+                    out.pop("data_as_of", None)
+                    out.pop("bar_as_of", None)
+                    out["data_as_of_basis"] = "per_ranking_source_timestamps"
+                out["data_time_alignment"] = {
+                    "status": (
+                        "aligned" if len(distinct_ranking_times) == 1 else "mixed"
+                    ),
+                    "comparable": len(distinct_ranking_times) == 1,
+                    "distinct_timestamps": len(distinct_ranking_times),
+                }
             if detail_mode == "full":
                 out["scan_stats"] = {
                     "spread": {
@@ -4627,6 +4703,7 @@ def market_scan(  # noqa: C901
                 "symbol",
                 "asset_class",
                 "close",
+                "time",
                 "quote_as_of",
                 "bid",
                 "ask",

@@ -534,7 +534,12 @@ locked or otherwise unsafe live quote cannot look executable.
 
 Price-change rankings compare the previous completed close with the latest
 completed close over exactly one requested `timeframe` bar. Responses expose
-that window in `price_change_period`. `symbols_describe` reports the broker's
+that window in `price_change_period`, and compact rows include the per-symbol
+completed-bar `time`. When returned symbols do not share that timestamp, the
+response omits a single `data_as_of`, reports `data_as_of_range`, and sets
+`bar_time_alignment.comparable` and `price_change_comparable` to `false`.
+Treat those rows as separate session windows rather than one clock-aligned
+leaderboard. `symbols_describe` reports the broker's
 native `price_change` field when available. MT5 defines it as the current quote
 relative to the previous trading day's close, so the response identifies that
 distinct live window in `price_change_basis` and `price_change_period`.

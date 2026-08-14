@@ -347,6 +347,7 @@ def test_market_scan_freshness_separates_bar_and_quote_clocks():
         [
             {
                 "symbol": "EURUSD",
+                "data_source": "H1_bars",
                 "time": "2026-08-13T19:00:00Z",
                 "quote_as_of": "2026-08-13T20:45:00Z",
                 "data_stale": False,
@@ -357,7 +358,47 @@ def test_market_scan_freshness_separates_bar_and_quote_clocks():
     assert result["data_as_of"] == "2026-08-13T19:00:00Z"
     assert result["bar_as_of"] == "2026-08-13T19:00:00Z"
     assert result["quote_as_of"] == "2026-08-13T20:45:00Z"
-    assert result["data_as_of_basis"] == "latest_completed_bar_open"
+    assert result["data_as_of_basis"] == "shared_latest_completed_bar_open"
+    assert result["bar_rank_comparable"] is True
+    assert result["bar_time_alignment"]["status"] == "aligned"
+
+
+def test_market_scan_freshness_refuses_single_as_of_for_mixed_bar_times():
+    from mtdata.core.symbols import _market_scan_freshness_summary
+
+    result = _market_scan_freshness_summary(
+        [
+            {
+                "symbol": "EURUSD",
+                "data_source": "H1_bars",
+                "time": "2026-08-13T21:00:00Z",
+            },
+            {
+                "symbol": "XAUUSD",
+                "data_source": "H1_bars",
+                "time": "2026-08-13T20:00:00Z",
+            },
+        ]
+    )
+
+    assert "data_as_of" not in result
+    assert "bar_as_of" not in result
+    assert result["data_as_of_range"] == {
+        "oldest": "2026-08-13T20:00:00Z",
+        "newest": "2026-08-13T21:00:00Z",
+    }
+    assert result["bar_time_alignment"] == {
+        "status": "mixed",
+        "comparable": False,
+        "distinct_timestamps": 2,
+        "basis": "latest_completed_bar_open_per_symbol",
+        "groups": [
+            {"time": "2026-08-13T20:00:00Z", "symbols": ["XAUUSD"]},
+            {"time": "2026-08-13T21:00:00Z", "symbols": ["EURUSD"]},
+        ],
+    }
+    assert result["price_change_comparable"] is False
+    assert "not clock-aligned" in result["comparison_warning"]
 
 
 def test_market_scan_freshness_summary_labels_closed_weekend_snapshot():
@@ -1158,7 +1199,8 @@ class TestSymbolsTopMarkets:
         assert result["ranking_context"]["lowest_spread"]["data_source"] == "live_tick"
         assert result["ranking_context"]["highest_tick_volume"]["data_source"] == "H1_bars"
         assert result["data_as_of_range"]["oldest"] <= result["data_as_of_range"]["newest"]
-        assert result["data_as_of_basis"] == "latest_source_timestamp_across_rankings"
+        assert result["data_as_of_basis"] == "shared_source_timestamp_across_rankings"
+        assert result["data_time_alignment"]["status"] == "aligned"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -1571,6 +1613,7 @@ class TestMarketScan:
             "symbol",
             "asset_class",
             "close",
+            "time",
             "bid",
             "ask",
             "spread_quality",
@@ -1585,6 +1628,56 @@ class TestMarketScan:
         assert result["meta"]["request"]["detail"] == "compact"
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_bar_rankings_disclose_mixed_completed_bar_times(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        symbols = [
+            _make_symbol("EURUSD", description="Euro", digits=5),
+            _make_symbol("XAUUSD", description="Gold", digits=2, point=0.01),
+        ]
+        mock_symbols_get.return_value = symbols
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
+            "XAUUSD": _make_tick(bid=4354.0, ask=4354.2),
+        }[symbol]
+        eurusd_bars = _make_bars([1.0, 1.01, 1.02, 1.03])
+        xauusd_bars = [
+            {**row, "time": row["time"] - 3600.0}
+            for row in _make_bars([4300.0, 4320.0, 4340.0, 4350.0])
+        ]
+        mock_rates.side_effect = lambda symbol, *_args: (
+            eurusd_bars if symbol == "EURUSD" else xauusd_bars
+        )
+
+        with patch("mtdata.core.symbols.time.time", return_value=1_700_018_000.0):
+            scan = _get_market_scan()(
+                symbols="EURUSD,XAUUSD",
+                timeframe="H1",
+                lookback=4,
+                limit=2,
+            )
+            top = _get_symbols_top_markets()(
+                rank_by="price_change",
+                timeframe="H1",
+                limit=2,
+            )
+
+        for result in (scan, top):
+            assert "data_as_of" not in result
+            assert result["bar_rank_comparable"] is False
+            assert result["price_change_comparable"] is False
+            assert result["bar_time_alignment"]["status"] == "mixed"
+            assert result["data_as_of_range"]["oldest"] < result["data_as_of_range"]["newest"]
+            assert all(row["time"] for row in result["data"])
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
