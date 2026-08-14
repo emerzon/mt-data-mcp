@@ -5,6 +5,7 @@ import pytest
 
 from mtdata.utils.mt5 import account_currency_from_gateway
 from mtdata.utils.quote import (
+    _quote_source_conflict_is_material,
     canonical_quote_midpoint,
     compute_spread_metrics,
     enforce_quote_execution_readiness,
@@ -39,6 +40,46 @@ def test_quote_execution_readiness_preserves_fresh_two_sided_quote() -> None:
     assert result["spread_quality"] == "two_sided"
     assert result["spread_valid"] is True
     assert result["usable_for_live_trading"] is True
+
+
+def test_equal_timestamp_few_point_disagreement_stays_live_usable() -> None:
+    live = {"usable_for_live_trading": True}
+    conflict = {
+        "reason": "equal_timestamp_bid_ask_disagreement",
+        "symbol_info_tick": {"bid": 1.15665, "ask": 1.15674},
+        "stream_tick": {"bid": 1.15669, "ask": 1.15670},
+    }
+
+    result = enforce_quote_execution_readiness(
+        live,
+        bid=1.15665,
+        ask=1.15674,
+        quote_source_conflict=conflict,
+        point=0.00001,
+    )
+
+    assert _quote_source_conflict_is_material(conflict, point=0.00001) is False
+    assert result["usable_for_live_trading"] is True
+    assert "disagree" in result["warning"]
+
+
+def test_material_mid_disagreement_marks_quote_unusable() -> None:
+    live = {"usable_for_live_trading": True}
+    conflict = {
+        "reason": "equal_timestamp_bid_ask_disagreement",
+        "symbol_info_tick": {"bid": 1.15600, "ask": 1.15610},
+        "stream_tick": {"bid": 1.15700, "ask": 1.15710},
+    }
+
+    result = enforce_quote_execution_readiness(
+        live,
+        bid=1.15600,
+        ask=1.15610,
+        quote_source_conflict=conflict,
+        point=0.00001,
+    )
+
+    assert result["usable_for_live_trading"] is False
 
 
 class _IndexedTick:

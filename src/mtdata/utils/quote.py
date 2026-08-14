@@ -18,6 +18,46 @@ QUOTE_EXECUTION_READINESS_BASIS = (
 QUOTE_EXECUTION_SOURCE_AGREEMENT_BASIS = (
     "quote_age_market_session_spread_and_source_agreement"
 )
+_MATERIAL_QUOTE_MID_DISAGREEMENT_POINTS = 10.0
+
+
+def _quote_source_conflict_is_material(
+    quote_source_conflict: Any,
+    *,
+    point: Any = None,
+) -> bool:
+    """Return True when source disagreement is large enough to block execution."""
+    if not isinstance(quote_source_conflict, dict):
+        return False
+    cached = quote_source_conflict.get("symbol_info_tick")
+    stream = quote_source_conflict.get("stream_tick")
+    if not isinstance(cached, dict) or not isinstance(stream, dict):
+        return True
+    left_mid = canonical_quote_midpoint(cached.get("bid"), cached.get("ask"))
+    right_mid = canonical_quote_midpoint(stream.get("bid"), stream.get("ask"))
+    if left_mid is None or right_mid is None:
+        return True
+    try:
+        point_value = float(point) if point is not None else None
+    except (TypeError, ValueError):
+        point_value = None
+    if point_value is None or not math.isfinite(point_value) or point_value <= 0:
+        point_value = None
+        for pair in (cached, stream):
+            try:
+                bid_value = float(pair.get("bid"))
+                ask_value = float(pair.get("ask"))
+            except (TypeError, ValueError):
+                continue
+            spread = abs(ask_value - bid_value)
+            if math.isfinite(spread) and spread > 0:
+                point_value = spread / 10.0
+                break
+    if point_value is None:
+        return abs(left_mid - right_mid) > 0
+    return abs(left_mid - right_mid) >= (
+        _MATERIAL_QUOTE_MID_DISAGREEMENT_POINTS * point_value
+    )
 
 
 def enforce_quote_execution_readiness(
@@ -26,19 +66,25 @@ def enforce_quote_execution_readiness(
     bid: Any,
     ask: Any,
     quote_source_conflict: Any = None,
+    point: Any = None,
 ) -> Dict[str, Any]:
     """Apply the canonical executable-quote gate to a freshness context.
 
     Tick freshness alone only establishes that a quote is current and the
     market session is active. Live execution additionally requires a positive
-    two-sided spread and agreement between reconciled quote sources.
+    two-sided spread. Small same-timestamp book disagreements are disclosed
+    but do not by themselves mark a two-sided quote unusable.
     """
     spread = compute_spread_metrics(bid, ask)
     spread_quality = str(spread["spread_quality"])
     source_conflict = isinstance(quote_source_conflict, dict)
+    material_conflict = _quote_source_conflict_is_material(
+        quote_source_conflict,
+        point=point,
+    )
     context["spread_valid"] = bool(spread["spread_valid"])
     context["spread_quality"] = spread_quality
-    spread_is_executable = spread["spread_valid"] is True and not source_conflict
+    spread_is_executable = spread["spread_valid"] is True and not material_conflict
     freshness_available = "usable_for_live_trading" in context
     if not spread_is_executable:
         context["usable_for_live_trading"] = False
@@ -49,7 +95,7 @@ def enforce_quote_execution_readiness(
     if "usable_for_live_trading" in context:
         context["usable_for_live_trading_basis"] = (
             QUOTE_EXECUTION_SOURCE_AGREEMENT_BASIS
-            if source_conflict
+            if material_conflict
             else QUOTE_EXECUTION_READINESS_BASIS
         )
 

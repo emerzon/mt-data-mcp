@@ -938,6 +938,7 @@ def market_ticker(  # noqa: C901
                 bid=bid,
                 ask=ask,
                 quote_source_conflict=out.get("quote_source_conflict"),
+                point=point,
             )
             diagnostics = {
                 "source": out.get("quote_source", "mt5.symbol_info_tick"),
