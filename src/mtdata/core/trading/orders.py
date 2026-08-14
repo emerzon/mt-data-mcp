@@ -929,7 +929,7 @@ def _submit_order_request(
             "retcode": retcode,
             "retcode_name": mt5.retcode_name(retcode),
             "comment": _order_result_value(result, "comment"),
-            "request_id": _order_result_value(result, "request_id"),
+            "mt5_request_id": _order_result_value(result, "request_id"),
             "fill_mode_attempts": fill_mode_attempts,
         }
         if diagnostic_last_error is not None:
@@ -1635,7 +1635,7 @@ def _place_market_order(  # noqa: C901
                 "bid": _order_result_value(result, "bid"),
                 "ask": _order_result_value(result, "ask"),
                 "comment": _order_result_value(result, "comment"),
-                "request_id": _order_result_value(result, "request_id"),
+                "mt5_request_id": _order_result_value(result, "request_id"),
                 "position_ticket": position_ticket,
                 "position_ticket_candidates": position_ticket_candidates_out,
                 "position_ticket_resolution": position_ticket_resolution,
@@ -1889,7 +1889,7 @@ def _place_pending_order(  # noqa: C901
                 "requested_sl": float(norm_sl) if norm_sl is not None else None,
                 "requested_tp": float(norm_tp) if norm_tp is not None else None,
                 "comment": _order_result_value(result, "comment"),
-                "request_id": _order_result_value(result, "request_id"),
+                "mt5_request_id": _order_result_value(result, "request_id"),
                 "type_filling_used": used_request.get("type_filling"),
             }
             if expiration_specified:

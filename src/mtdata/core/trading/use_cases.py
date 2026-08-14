@@ -337,6 +337,15 @@ def _attach_trade_correlation(
     if not correlation_value or not isinstance(result, dict):
         return result
     out = dict(result)
+    broker_request_id = out.get("mt5_request_id")
+    legacy_request_id = out.get("request_id")
+    if (
+        broker_request_id is None
+        and isinstance(legacy_request_id, int)
+        and not isinstance(legacy_request_id, bool)
+    ):
+        out["mt5_request_id"] = legacy_request_id
+    out["request_id"] = correlation_value
     out["correlation_id"] = correlation_value
     original_outcome = out.get("original_outcome")
     if isinstance(original_outcome, dict):
@@ -368,7 +377,7 @@ def _log_trade_correlation(
     identifier_source = (
         original_outcome if isinstance(original_outcome, dict) else result
     )
-    mt5_request_id = identifier_source.get("request_id")
+    mt5_request_id = identifier_source.get("mt5_request_id")
     if isinstance(mt5_request_id, int) and not isinstance(mt5_request_id, bool):
         fields.append(f"mt5_request_id={mt5_request_id}")
     for key in ("order", "deal", "position_ticket", "ticket"):
@@ -1150,7 +1159,8 @@ def _shape_trade_var_cvar_payload(
             "entry_price_fallback_positions",
             "market_status",
             "market_status_reason",
-            "mark_freshness",
+            "marks_evaluated",
+            "unusable_marks",
         )
         if key in result
     }
@@ -5529,13 +5539,21 @@ def run_trade_stress_test(
     if warnings_out:
         result["warnings"] = warnings_out
         result["partial_failure"] = True
-    result.update(_position_mark_freshness(gateway, evaluated_positions))
+    result.update(
+        _position_mark_freshness(
+            gateway,
+            evaluated_positions,
+            include_contexts=request.detail == "full",
+        )
+    )
     return result
 
 
 def _position_mark_freshness(
     gateway: Any,
     positions: List[Any],
+    *,
+    include_contexts: bool = True,
 ) -> Dict[str, Any]:
     contexts: List[Dict[str, Any]] = []
     symbol_counts: Dict[str, int] = {}
@@ -5616,8 +5634,18 @@ def _position_mark_freshness(
             if fallback_used
             else "stale_or_unverified_position_marks"
         ),
-        "mark_freshness": contexts,
+        "marks_evaluated": len(contexts),
+        "unusable_marks": [
+            {
+                "symbol": item.get("symbol"),
+                "reason": item.get("freshness_reason") or "not_live_ready",
+            }
+            for item in contexts
+            if item.get("usable_for_live_trading") is not True
+        ],
     }
+    if include_contexts:
+        out["mark_freshness"] = contexts
     if fallback_used:
         out["valuation_warning"] = (
             "One or more positions were valued from entry price because the current "
@@ -6243,7 +6271,13 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         )
     if history_failures:
         result["history_failures"] = history_failures
-    result.update(_position_mark_freshness(gateway, positions))
+    result.update(
+        _position_mark_freshness(
+            gateway,
+            positions,
+            include_contexts=request.detail == "full",
+        )
+    )
     return _finish(
         _shape_trade_var_cvar_payload(result, detail=request.detail)
     )

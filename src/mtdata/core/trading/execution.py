@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ...bootstrap.settings import trade_guardrails_config
 from ...utils.mt5 import _to_mt5_history_epoch_seconds
+from ...utils.quote import resolve_quote_tick
 from . import comments, time, validation
 from .common import build_trade_quote_context
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
@@ -296,7 +297,6 @@ def _position_no_change_result(
         "retcode": no_change_code,
         "retcode_name": mt5.retcode_name(no_change_code),
         "comment": "No changes",
-        "request_id": 0,
         "position_ticket": resolved_ticket,
         "ticket_requested": requested_ticket,
         "ticket_resolution": ticket_resolution,
@@ -664,7 +664,7 @@ def _modify_position(  # noqa: C901
                         "deal": result.deal,
                         "order": result.order,
                         "comment": result.comment,
-                        "request_id": result.request_id,
+                        "mt5_request_id": result.request_id,
                         "position_ticket": resolved_ticket,
                         "ticket_requested": ticket_id,
                         "ticket_resolution": ticket_resolution,
@@ -682,7 +682,7 @@ def _modify_position(  # noqa: C901
                     "retcode": result_retcode,
                     "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": result.comment,
-                    "request_id": result.request_id,
+                    "mt5_request_id": result.request_id,
                     "position_ticket": resolved_ticket,
                     "ticket_requested": ticket_id,
                     "ticket_resolution": ticket_resolution,
@@ -703,7 +703,7 @@ def _modify_position(  # noqa: C901
                     "retcode": result_retcode,
                     "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": result.comment,
-                    "request_id": result.request_id,
+                    "mt5_request_id": result.request_id,
                     "last_error": last_error,
                 }
                 if isinstance(comment_fallback, dict):
@@ -724,7 +724,7 @@ def _modify_position(  # noqa: C901
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
-                "request_id": result.request_id,
+                "mt5_request_id": result.request_id,
                 "position_ticket": resolved_ticket,
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
@@ -1129,7 +1129,7 @@ def _modify_pending_order(  # noqa: C901
                     "retcode": result_retcode,
                     "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": getattr(result, "comment", None),
-                    "request_id": getattr(result, "request_id", None),
+                    "mt5_request_id": getattr(result, "request_id", None),
                     "pending_order_ticket": resolved_ticket,
                     "ticket_requested": ticket_id,
                     "ticket_resolution": ticket_resolution,
@@ -1161,7 +1161,7 @@ def _modify_pending_order(  # noqa: C901
                     "retcode": result_retcode,
                     "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": result.comment,
-                    "request_id": result.request_id,
+                    "mt5_request_id": result.request_id,
                     "last_error": last_error,
                 }
                 if isinstance(comment_fallback, dict):
@@ -1175,7 +1175,7 @@ def _modify_pending_order(  # noqa: C901
                 "deal": result.deal,
                 "order": result.order,
                 "comment": result.comment,
-                "request_id": result.request_id,
+                "mt5_request_id": result.request_id,
                 "pending_order_ticket": resolved_ticket,
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
@@ -1589,13 +1589,13 @@ def _sort_close_positions(
     return list(positions)
 
 
-def _close_position_preview_row(position: Any) -> Dict[str, Any]:
+def _close_position_preview_row(position: Any, mt5: Any) -> Dict[str, Any]:
     return {
         key: value
         for key, value in {
             "ticket": getattr(position, "ticket", None),
             "symbol": getattr(position, "symbol", None),
-            "type": getattr(position, "type", None),
+            "side": _resolve_position_side(position, mt5),
             "volume": getattr(position, "volume", None),
             "profit": getattr(position, "profit", None),
             "price_open": getattr(position, "price_open", None),
@@ -1619,17 +1619,29 @@ def _close_positions_dry_run_preview(
     close_priority: Optional[str],
     mt5: Any,
 ) -> Dict[str, Any]:
-    rows = [_close_position_preview_row(position) for position in positions]
+    rows = [_close_position_preview_row(position, mt5) for position in positions]
     quote_contexts: List[Dict[str, Any]] = []
     for row in rows:
         symbol_value = str(row.get("symbol") or "").strip()
         if not symbol_value:
             continue
         try:
-            tick = mt5.symbol_info_tick(symbol_value)
+            raw_tick = mt5.symbol_info_tick(symbol_value)
         except Exception:
-            tick = None
-        context = build_trade_quote_context(symbol_value, tick)
+            raw_tick = None
+        query_epoch = _stdlib_time.time()
+        tick, quote_source = resolve_quote_tick(
+            mt5,
+            symbol_value,
+            raw_tick,
+            now_epoch=query_epoch,
+        )
+        context = build_trade_quote_context(
+            symbol_value,
+            tick,
+            now_epoch=_stdlib_time.time(),
+        )
+        context.update(quote_source)
         row["quote_context"] = context
         quote_contexts.append(context)
     live_ready = bool(quote_contexts) and all(

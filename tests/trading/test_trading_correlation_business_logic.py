@@ -80,7 +80,8 @@ def test_trade_place_replay_links_current_original_and_mt5_ids(caplog):
         replay = run_trade_place(request, correlation_id="retry-call", **kwargs)
 
     assert first["correlation_id"] == "first-call"
-    assert first["request_id"] == 321
+    assert first["request_id"] == "first-call"
+    assert first["mt5_request_id"] == 321
     assert replay["correlation_id"] == "retry-call"
     assert replay["original_correlation_id"] == "first-call"
     assert replay["original_outcome"]["correlation_id"] == "first-call"
@@ -119,7 +120,8 @@ def test_trade_modify_success_includes_correlation_and_mt5_log(caplog):
         )
 
     assert result["correlation_id"] == "modify-call"
-    assert result["request_id"] == 654
+    assert result["request_id"] == "modify-call"
+    assert result["mt5_request_id"] == 654
     assert any(
         "event=trade_result operation=trade_modify" in record.message
         and "correlation_id=modify-call" in record.message

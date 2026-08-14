@@ -188,7 +188,7 @@ class TestMergedTools(unittest.TestCase):
         res = get_open(__cli_raw=True)
         row = res["items"][0]
 
-        self.assertEqual(row.get("comment"), "audit short")
+        self.assertNotIn("comment", row)
         self.assertNotIn("comment_max_length", row)
         self.assertNotIn("comment_visible_length", row)
         self.assertNotIn("comment_may_be_truncated", row)

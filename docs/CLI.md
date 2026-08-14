@@ -709,9 +709,10 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |
 
 Every `trade_place`, `trade_modify`, and `trade_close` response includes a
-`correlation_id`. The same value appears in execution logs; live order results
-also log MT5's numeric `request_id` as `mt5_request_id`. Idempotent replays expose
-both the current `correlation_id` and the original invocation's
+string `request_id` and matching `correlation_id`. The same correlation value
+appears in execution logs; live broker results expose MT5's numeric identifier
+separately as `mt5_request_id`. Dry runs that do not reach MT5 omit that broker
+field. Idempotent replays expose both the current `correlation_id` and the original invocation's
 `original_correlation_id`.
 
 For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.

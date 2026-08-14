@@ -162,4 +162,6 @@ def test_trade_stress_test_freshness_only_covers_evaluated_positions():
 
     assert result["positions_total"] == 2
     assert result["positions_evaluated"] == 1
-    assert [item["symbol"] for item in result["mark_freshness"]] == ["EURUSD"]
+    assert result["marks_evaluated"] == 1
+    assert [item["symbol"] for item in result["unusable_marks"]] == ["EURUSD"]
+    assert "mark_freshness" not in result

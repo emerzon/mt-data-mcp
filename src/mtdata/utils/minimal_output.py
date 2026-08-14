@@ -1022,6 +1022,7 @@ def _normalize_trade_payload(  # noqa: C901
             "retcode",
             "comment",
             "request_id",
+            "mt5_request_id",
             "bid",
             "ask",
             "type_filling_used",

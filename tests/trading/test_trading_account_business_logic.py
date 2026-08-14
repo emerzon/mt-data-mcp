@@ -1358,3 +1358,56 @@ def test_open_position_quote_context_discloses_missing_conversion_metadata() -> 
     )
     assert row["notional_quote"] == 159_480.0
     assert row["notional_quote_currency"] == "JPY"
+
+
+def test_compact_open_position_projection_omits_quote_diagnostics() -> None:
+    payload = {
+        "items": [
+            {
+                "ticket": 1,
+                "symbol": "EURUSD",
+                "side": "BUY",
+                "volume": 0.1,
+                "entry_price": 1.09,
+                "price_current": 1.1,
+                "sl": 1.08,
+                "tp": 1.12,
+                "profit": 10.0,
+                "usable_for_live_trading": True,
+                "quote_source": "mt5.copy_ticks_range",
+                "stream_tick_time_epoch": 1_700_000_000.0,
+                "lot_definition": "1 broker lot = 100000 contract units",
+            }
+        ]
+    }
+
+    core_trading_positions._project_open_position_rows(
+        payload,
+        request=TradeGetOpenRequest(detail="compact"),
+    )
+
+    row = payload["items"][0]
+    assert set(row) == {
+        "ticket",
+        "symbol",
+        "side",
+        "volume",
+        "entry_price",
+        "price_current",
+        "sl",
+        "tp",
+        "profit",
+        "usable_for_live_trading",
+    }
+    assert "quote_source" not in row
+
+
+def test_full_open_position_projection_preserves_quote_diagnostics() -> None:
+    payload = {"items": [{"symbol": "EURUSD", "quote_source": "stream"}]}
+
+    core_trading_positions._project_open_position_rows(
+        payload,
+        request=TradeGetOpenRequest(detail="full"),
+    )
+
+    assert payload["items"][0]["quote_source"] == "stream"

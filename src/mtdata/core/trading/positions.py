@@ -210,6 +210,35 @@ def _attach_open_position_quote_context(
             units["notional_account"] = "account_currency"
             units["notional_quote"] = "quote_currency"
 
+
+def _project_open_position_rows(payload: Dict[str, Any], *, request: Any) -> None:
+    """Keep the default blotter bounded while preserving full diagnostics."""
+    if _include_trade_read_request_metadata(request):
+        return
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return
+    compact_fields = (
+        "ticket",
+        "symbol",
+        "time",
+        "side",
+        "volume",
+        "entry_price",
+        "sl",
+        "tp",
+        "price_current",
+        "swap",
+        "profit",
+        "usable_for_live_trading",
+    )
+    payload["items"] = [
+        {key: item[key] for key in compact_fields if key in item}
+        if isinstance(item, dict)
+        else item
+        for item in items
+    ]
+
 _TRADE_VOLUME_UNITS = {
     "volume": BROKER_VOLUME_UNIT,
     "volume_initial": BROKER_VOLUME_UNIT,
@@ -1654,6 +1683,7 @@ def trade_get_open(
             gateway,
             account_currency=account_currency,
         )
+        _project_open_position_rows(out, request=request)
         return out
 
     return run_logged_operation(

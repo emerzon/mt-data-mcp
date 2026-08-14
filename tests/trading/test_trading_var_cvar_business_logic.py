@@ -208,6 +208,52 @@ def test_run_trade_var_cvar_excludes_forming_return_by_default(monkeypatch) -> N
     assert out["worst_observations"][0]["time"] != "1970-01-01T00:00:06Z"
 
 
+def test_compact_var_uses_bounded_unusable_mark_summary() -> None:
+    position = SimpleNamespace(
+        ticket=21,
+        symbol="EURUSD",
+        type=0,
+        volume=1.0,
+        price_current=100.0,
+        price_open=99.0,
+        profit=1.0,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: _symbol_info(),
+        symbol_info_tick=lambda symbol: SimpleNamespace(bid=99.0, ask=101.0, time=1),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: [
+            {"time": 1, "close": 100.0},
+            {"time": 2, "close": 95.0},
+            {"time": 3, "close": 105.0},
+            {"time": 4, "close": 90.0},
+            {"time": 5, "close": 110.0},
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(
+            lookback=5,
+            confidence=0.75,
+            transform="pct",
+            min_observations=4,
+        ),
+        gateway=gateway,
+    )
+
+    assert out["marks_evaluated"] == 1
+    assert out["unusable_marks"] == [
+        {"symbol": "EURUSD", "reason": "stale_age"}
+    ]
+    assert "mark_freshness" not in out
+
+
 def test_run_trade_var_cvar_uses_account_currency_tick_sensitivity() -> None:
     position = SimpleNamespace(
         ticket=12,
