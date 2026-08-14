@@ -282,7 +282,7 @@ def test_early_close_takes_precedence_over_lunch_interval(monkeypatch) -> None:
     )
 
     assert result["status"] == "closed"
-    assert result["reason"] == "overnight"
+    assert result["reason"] == "post_close"
     assert result["early_close"] is True
 
 

@@ -309,6 +309,7 @@ def _apply_global_weekend_reason(status: Dict[str, Any], *, now_utc: datetime) -
         "after_hours",
         "before_open",
         "overnight",
+        "post_close",
     }:
         return status
     out = dict(status)
@@ -553,7 +554,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "venue": market_id,
             "name": market["name"],
             "status": "closed",
-            "reason": "overnight",
+            "reason": "overnight" if after_hours_close else "post_close",
             "local_time": _format_local_iso(now_local),
             "message": (
                 f"{market_id}: Closed "
@@ -1455,7 +1456,7 @@ def market_status(
             - `venue`: Market code (e.g., "NYSE")
             - `name`: Full market name
             - `status`: "open", "closed", "pre_market", "after_hours", "lunch_break"
-            - `reason`: Reason if closed ("weekend", "holiday", "overnight", "before_open")
+            - `reason`: Reason if closed ("weekend", "holiday", "post_close", "overnight", "before_open")
             - `local_time`: Current time in the requested display timezone
             - `exchange_local_time`: Current time in the market's own timezone
               when the requested display timezone differs

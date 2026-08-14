@@ -125,7 +125,7 @@ class TestLseProductionEarlyCloseCalendar:
         result = ms_mod._check_market_status("LSE", session_time)
 
         assert result["status"] == "closed"
-        assert result["reason"] == "after_hours"
+        assert result["reason"] == "post_close"
         assert result["early_close"] is True
         assert result["early_close_time"] == "12:30"
         assert result["next_open"].startswith(expected_date)
@@ -293,7 +293,7 @@ class TestNextOpenSkipsAndAllowsHolidaySessions:
         result = ms_mod._check_market_status("TEST", now)
 
         assert result["status"] == "closed"
-        assert result["reason"] == "after_hours"
+        assert result["reason"] == "post_close"
         assert result["next_open"] == "2030-12-25T09:00:00+00:00"
 
 
