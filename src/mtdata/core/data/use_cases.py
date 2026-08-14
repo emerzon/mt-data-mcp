@@ -95,13 +95,17 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "simplified",
     "simplify",
     "query_applied",
+    "history_window_truncated",
+    "history_window_limit_days",
+    "history_window_floor",
+    "effective_start",
     "data_quality",
     "last_unavailable",
     "warnings",
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
-_RANGE_CANDLE_DEFAULT_LIMIT = 100_000
+_RANGE_CANDLE_DEFAULT_LIMIT = DATA_FETCH_CANDLES_DEFAULT_LIMIT
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -259,6 +263,7 @@ def _run_data_fetch_candles_impl(
                 effective_limit=applied_limit,
                 limit_explicit=limit_explicit,
             )
+        _annotate_empty_candle_result(result)
         _normalize_candle_count_field(result)
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
@@ -270,6 +275,11 @@ def _run_data_fetch_candles_impl(
         elif detail_mode == "standard":
             result = _standard_candles_payload(result)
         _attach_candle_machine_freshness(result)
+        _attach_latest_candle_quote_freshness(
+            result,
+            request=request,
+            gateway=gateway,
+        )
         _attach_forming_candle_update_freshness(
             result,
             request=request,
@@ -337,6 +347,58 @@ def _attach_forming_candle_update_freshness(
         payload["freshness"] = f"forming bar; last update {update_text} ago"
 
 
+def _attach_latest_candle_quote_freshness(
+    payload: Dict[str, Any],
+    *,
+    request: DataFetchCandlesRequest,
+    gateway: Any,
+) -> None:
+    """Prevent a stale latest quote from being presented as a fresh candle mark."""
+    if request.start or request.end or request.include_incomplete or payload.get("error"):
+        return
+    rows = payload.get("data")
+    if not isinstance(rows, list) or not rows:
+        return
+    try:
+        now_epoch = time.time()
+        tick, _ = resolve_quote_tick(gateway, request.symbol, now_epoch=now_epoch)
+        quote_context = build_tick_freshness_context(
+            request.symbol,
+            tick_epoch=tick_epoch(tick),
+            now_epoch=now_epoch,
+            item="tick",
+        )
+    except Exception:
+        return
+    if quote_context.get("data_stale") is not True:
+        return
+    quote_age = quote_context.get("data_age_seconds")
+    payload["latest_quote_stale"] = True
+    if quote_age is not None:
+        payload["latest_quote_age_seconds"] = quote_age
+    payload["data_stale"] = True
+    payload["freshness_basis"] = "bar_policy_and_latest_quote"
+    payload["freshness_reason"] = str(
+        quote_context.get("freshness_reason") or "latest_quote_stale"
+    )
+    for key in ("market_status", "market_status_reason", "market_status_source"):
+        if quote_context.get(key) is not None:
+            payload[key] = quote_context[key]
+    freshness_label = format_freshness_label(
+        data_stale=True,
+        market_status=payload.get("market_status"),
+        market_status_reason=payload.get("market_status_reason"),
+        age_seconds=payload.get("data_age_seconds"),
+        item="bar",
+    )
+    if freshness_label:
+        payload["freshness"] = freshness_label
+    payload["stale_warning"] = (
+        "The latest quote is stale, so the last candle must not be treated as a "
+        "live mark even though completed-bar history is within policy."
+    )
+
+
 def _normalize_candle_query_error(
     result: Any,
     *,
@@ -345,6 +407,33 @@ def _normalize_candle_query_error(
 ) -> Any:
     if not isinstance(result, dict) or not result.get("error"):
         return result
+    if result.get("error_code") == "data_fetch_candles_no_data":
+        details = result.get("details")
+        details = dict(details) if isinstance(details, dict) else {}
+        empty_reason = str(details.get("no_data_reason") or "no_candles_in_range")
+        payload: Dict[str, Any] = {
+            "success": True,
+            "symbol": request.symbol,
+            "timeframe": request.timeframe,
+            "count": 0,
+            "data": [],
+            "empty": True,
+            "empty_reason": empty_reason,
+        }
+        if details.get("no_data_reason") is not None:
+            payload["no_data_reason"] = details["no_data_reason"]
+        for key in (
+            "market_status_reason",
+            "note",
+            "requested_range",
+            "available_range",
+        ):
+            if details.get(key) is not None:
+                payload[key] = details[key]
+        for key in ("query_applied", "warnings", "diagnostics"):
+            if result.get(key) is not None:
+                payload[key] = result[key]
+        return payload
     if result.get("error_code"):
         return result
 
@@ -510,6 +599,26 @@ def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
     return limit
 
 
+def _annotate_empty_candle_result(result: Dict[str, Any]) -> None:
+    if (
+        result.get("error")
+        or not isinstance(result.get("data"), list)
+        or result["data"]
+    ):
+        return
+    reported_count = result.get("count", result.get("candles"))
+    try:
+        if reported_count is not None and int(reported_count) > 0:
+            return
+    except (TypeError, ValueError):
+        pass
+    result["empty"] = True
+    result.setdefault(
+        "empty_reason",
+        result.get("range_incomplete_reason") or "no_candles_in_range",
+    )
+
+
 def _latest_numeric_row_value(rows: Any, column: str) -> Optional[float]:
     if not isinstance(rows, list):
         return None
@@ -618,7 +727,7 @@ def _apply_range_limit_cap(
     query_applied["limit_anchor"] = "start" if start_anchored else "end"
     query_applied["selection"] = "first_n" if start_anchored else "last_n"
     query_applied["order"] = "ascending"
-    query_applied["limit_source"] = "user" if limit_explicit else "safety_cap"
+    query_applied["limit_source"] = "user" if limit_explicit else "default"
     try:
         limit_value = max(1, int(limit))
     except Exception:
@@ -668,6 +777,14 @@ def _apply_range_limit_cap(
             f"Fetched range contained {available} bars; returned the {retained_label} "
             f"{len(retained)} because limit={limit_value}."
         )
+        result["pagination"] = {
+            "total": available,
+            "returned": len(retained),
+            "offset": 0,
+            "limit": limit_value,
+            "has_more": True,
+            "more_available": available - len(retained),
+        }
     else:
         result["truncation"]["excluded_count"] = None
         warning = (
@@ -675,6 +792,15 @@ def _apply_range_limit_cap(
             f"returned up to the latest {limit_value} bars. Increase limit or "
             "move the range start forward to retrieve an earlier page."
         )
+        result["pagination"] = {
+            "total": None,
+            "total_lower_bound": len(retained) + 1,
+            "returned": len(retained),
+            "offset": 0,
+            "limit": limit_value,
+            "has_more": True,
+            "more_available": None,
+        }
     result.setdefault("warnings", []).append(warning)
     data_window = result.get("data_window")
     if isinstance(data_window, dict) and retained:
@@ -713,9 +839,9 @@ def _normalize_range_limit_contract(
         return
     result.pop("requested_limit", None)
     result.pop("candles_requested", None)
-    result["safety_limit"] = int(effective_limit)
+    result["default_limit"] = int(effective_limit)
     query_applied.pop("limit", None)
-    query_applied["safety_limit"] = int(effective_limit)
+    query_applied["default_limit"] = int(effective_limit)
     candle_counts = result.get("candle_counts")
     if isinstance(candle_counts, dict):
         candle_counts.pop("requested", None)
@@ -1359,6 +1485,10 @@ def _run_data_fetch_ticks_impl(
         request=request,
         gateway=gateway,
     )
+    if isinstance(result, dict):
+        warnings = result.get("warnings")
+        if isinstance(warnings, list):
+            result["warnings"] = list(dict.fromkeys(warnings))
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
     _attach_tick_freshness_contract(result)

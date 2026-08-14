@@ -355,8 +355,8 @@ def get_history(
             ge=1,
             le=100000,
             description=(
-                "Maximum bars to return. Defaults to 20 for latest-N queries and "
-                "100,000 for bounded start/end range queries."
+                "Maximum bars to return. Defaults to 20 for latest-N and bounded "
+                "start/end range queries."
             ),
         ),
     ] = None,

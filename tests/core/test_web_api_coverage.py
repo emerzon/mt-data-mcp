@@ -783,7 +783,7 @@ class TestGetHistory:
         assert fetch.call_args.kwargs["allow_stale"] is True
         assert fetch.call_args.kwargs["indicators"] == [{"name": "RSI_14"}]
 
-    def test_range_without_limit_uses_range_safety_cap(self):
+    def test_range_without_limit_uses_small_default_page(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value={"data": []}) as fetch, \
              patch("mtdata.core.web_api.mt5_config"):
@@ -793,7 +793,7 @@ class TestGetHistory:
             )
 
         assert resp.status_code == 200
-        assert fetch.call_args.kwargs["limit"] == 100_000
+        assert fetch.call_args.kwargs["limit"] == 20
 
     def test_basic_success(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}

@@ -244,6 +244,16 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         self.assertTrue(result['history_window_truncated'])
+        self.assertEqual(result['query_applied']['requested_start'], '2020-01-01')
+        self.assertEqual(
+            result['query_applied']['start'],
+            result['history_window_floor'],
+        )
+        self.assertEqual(
+            result['query_applied']['effective_start'],
+            result['history_window_floor'],
+        )
+        self.assertEqual(len(result['warnings']), 1)
         self.assertEqual(mock_ticks.call_count, 1)
         provider_from = mock_ticks.call_args.args[1]
         provider_to = mock_ticks.call_args.args[2]

@@ -1006,6 +1006,7 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'mode': 'range',
                 'timeframe': 'H1',
                 'limit': 100,
+                'end_filter': 'bar_close',
                 'start': '2025-01-01',
                 'resolved_start': '2025-01-01T00:00:00Z',
                 'start_bound': 'inclusive_day_start',

@@ -134,6 +134,37 @@ def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):
     assert result["details"]["symbol"] == "EURUSD.BAD"
 
 
+def test_run_data_fetch_candles_returns_empty_envelope_for_no_rows():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        start="2026-08-08T12:00:00Z",
+        end="2026-08-08T18:00:00Z",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": False,
+            "error": "No data available",
+            "error_code": "data_fetch_candles_no_data",
+            "details": {
+                "no_data_reason": "market_closed_weekend",
+                "market_status_reason": "weekend",
+            },
+            "query_applied": {"mode": "range"},
+        },
+    )
+
+    assert result["success"] is True
+    assert result["count"] == 0
+    assert result["data"] == []
+    assert result["empty"] is True
+    assert result["empty_reason"] == "market_closed_weekend"
+    assert result["no_data_reason"] == "market_closed_weekend"
+
+
 def test_data_fetch_symbol_errors_use_canonical_structured_suggestions() -> None:
     candidates = [
         SimpleNamespace(
@@ -646,6 +677,41 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     assert "stale_warning" not in result
 
 
+def test_latest_candles_inherit_stale_quote_readiness(monkeypatch):
+    monkeypatch.setattr("mtdata.core.data.use_cases.time.time", lambda: 10_000.0)
+    monkeypatch.setattr(
+        "mtdata.core.data.use_cases.resolve_quote_tick",
+        lambda *_args, **_kwargs: (SimpleNamespace(time=1_000.0), {}),
+    )
+    request = DataFetchCandlesRequest(symbol="AAPL.NAS", timeframe="H1", limit=1)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "candles": 1,
+            "data": [{"time": "2026-08-13T22:00:00Z", "close": 305.21}],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest"},
+                    "freshness": {
+                        "data_freshness_seconds": 12_600.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                }
+            },
+        },
+    )
+
+    assert result["history_policy_ok"] is True
+    assert result["latest_quote_stale"] is True
+    assert result["latest_quote_age_seconds"] == 9_000.0
+    assert result["data_stale"] is True
+    assert result["freshness"] == "stale, bar 3h 30m ago"
+    assert result["freshness_basis"] == "bar_policy_and_latest_quote"
+
+
 def test_run_data_fetch_candles_closed_market_keeps_absolute_staleness():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
@@ -772,7 +838,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["query_type"] == "historical"
 
 
-def test_run_data_fetch_candles_range_does_not_use_latest_default_limit():
+def test_run_data_fetch_candles_range_uses_small_default_page():
     rows = [{"time": f"t{i}", "close": i} for i in range(25)]
     observed = {}
     request = DataFetchCandlesRequest(
@@ -796,12 +862,21 @@ def test_run_data_fetch_candles_range_does_not_use_latest_default_limit():
         fetch_candles_impl=_fetch,
     )
 
-    assert observed["limit"] == 100_000
-    assert result["data"] == rows
-    assert result["count"] == 25
-    assert "truncated" not in result
-    assert result["range_complete"] is True
-    assert result["safety_limit"] == 100_000
+    assert observed["limit"] == 20
+    assert result["data"] == rows[:20]
+    assert result["count"] == 20
+    assert result["truncated"] is True
+    assert result["range_complete"] is False
+    assert result["default_limit"] == 20
+    assert result["query_applied"]["limit_source"] == "default"
+    assert result["pagination"] == {
+        "total": 25,
+        "returned": 20,
+        "offset": 0,
+        "limit": 20,
+        "has_more": True,
+        "more_available": 5,
+    }
     assert "requested_limit" not in result
 
 
@@ -858,6 +933,8 @@ def test_range_with_only_excluded_forming_bar_is_not_complete():
     assert result["count"] == 0
     assert result["range_complete"] is False
     assert result["range_incomplete_reason"] == "forming_bar_excluded"
+    assert result["empty"] is True
+    assert result["empty_reason"] == "forming_bar_excluded"
     assert result["forming_candle_status"] == "skipped"
     assert result["data_window"]["latest_bar_complete"] is False
     assert "query_end_gap" not in result

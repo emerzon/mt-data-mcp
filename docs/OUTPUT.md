@@ -115,6 +115,12 @@ Finviz fundamentals) selects source data and is not response projection.
 
 ## Pagination
 
+An empty market-data window is a successful query, not a provider failure.
+Both candle and tick tools return `success=true`, `data=[]`, `empty=true`, and
+an `empty_reason` such as `market_closed_weekend`, `forming_bar_excluded`, or
+`no_ticks_in_range`. Connection, symbol, validation, and provider failures keep
+the normal error envelope and a nonzero CLI exit.
+
 List-style tools return a normalized pagination block so you can page deterministically:
 
 Public `limit` parameters always cap returned rows (including returned candles or

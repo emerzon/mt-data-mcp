@@ -269,8 +269,13 @@ and timezone when automation needs an exact instant, using either an ISO offset
 (`2026-08-03 09:30 America/New_York`). Ambiguous or nonexistent daylight-saving
 local times are rejected; use an ISO offset to choose a specific instant.
 Candle responses echo the resolved instants and bound modes in `query_applied`.
+For an exact timestamp end, only candles whose close is at or before that
+instant are returned; completed OHLC values from an overlapping bar are never
+included early. Calendar-period ends retain their date/session-label behavior.
 When `--start` and `--limit` are combined, candles are returned in ascending
-order from the start bound (first-N). Omit `--start` for latest-N retrieval.
+order from the start bound (first-N). Range queries use the same 20-row default
+as latest-N queries, so pass an explicit larger `--limit` when needed. Omit
+`--start` for latest-N retrieval.
 
 ---
 

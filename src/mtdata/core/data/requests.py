@@ -377,9 +377,9 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "latest bars; any query with start selects the earliest bars at or "
             "after start (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
-            "For start/end range queries, an omitted limit uses a 100,000-bar "
-            f"safety cap. Explicit limits are capped at {DATA_FETCH_CANDLES_MAX_LIMIT:,}; "
-            "use bounded start/end ranges to retrieve longer histories in pages. "
+            "Start/end range queries use the same small default page; pass an "
+            f"explicit limit to request more bars, up to {DATA_FETCH_CANDLES_MAX_LIMIT:,}. "
+            "Use bounded start/end ranges to retrieve longer histories in pages. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),
@@ -398,7 +398,7 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "Inclusive range end parsed by dateparser. An ISO date-only value "
             "selects broker-session calendar periods for D1/W1/MN1 and resolves "
             "to 23:59:59.999999 UTC for intraday timeframes; a value with a time "
-            "is treated as that exact instant."
+            "is treated as that exact instant and returns only bars closed by it."
         ),
     )
     timestamp_format: Literal["epoch", "iso"] = Field(

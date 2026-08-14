@@ -952,6 +952,12 @@ def _candle_query_applied(
     )
     if calendar_session_bounds:
         query["bound_basis"] = "broker_session_calendar"
+    if end not in (None, ""):
+        query["end_filter"] = (
+            "bar_open_calendar_period"
+            if _is_calendar_query_bound(end)
+            else "bar_close"
+        )
 
     for name, raw_value, end_bound in (
         ("start", start, False),
@@ -1280,8 +1286,13 @@ def _trim_df_to_target(
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
         target_to = _utc_epoch_seconds(to_dt)
+        end_epochs = df["__epoch"]
+        if timeframe and not _is_calendar_query_bound(end_datetime):
+            end_epochs = df["__epoch"].map(
+                lambda value: bar_close_epoch(float(value), str(timeframe))
+            )
         out = df.loc[
-            (df["__epoch"] >= target_from) & (df["__epoch"] <= target_to)
+            (df["__epoch"] >= target_from) & (end_epochs <= target_to)
         ]
     elif start_datetime:
         from_dt = _parse_start_datetime(start_datetime)
@@ -1298,7 +1309,12 @@ def _trim_df_to_target(
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[df["__epoch"] <= target_to]
+        end_epochs = df["__epoch"]
+        if timeframe and not _is_calendar_query_bound(end_datetime):
+            end_epochs = df["__epoch"].map(
+                lambda value: bar_close_epoch(float(value), str(timeframe))
+            )
+        out = df.loc[end_epochs <= target_to]
         if len(out) > candles:
             out = out.iloc[-candles:]
     else:
@@ -3281,7 +3297,7 @@ def fetch_ticks(  # noqa: C901
         
         # Generate tabular format with dynamic column filtering
         if len(ticks) == 0:
-            return {
+            empty_payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "count": 0,
@@ -3290,8 +3306,31 @@ def fetch_ticks(  # noqa: C901
                 "empty": True,
                 "empty_reason": "no_ticks_in_range",
                 "timezone": "UTC",
-                "query_applied": {"start": start, "end": end},
+                "query_applied": {
+                    "mode": "historical" if start or end else "latest",
+                    "start": start,
+                    "end": end,
+                },
             }
+            if history_window_truncated:
+                empty_payload["history_window_truncated"] = True
+                empty_payload["history_window_limit_days"] = max(
+                    max(1, int(TICKS_LOOKBACK_DAYS)), 30
+                )
+                if history_window_floor is not None:
+                    effective_start = _format_time_explicit(
+                        history_window_floor.timestamp()
+                    )
+                    empty_payload["history_window_floor"] = effective_start
+                    empty_payload["effective_start"] = effective_start
+                    empty_payload["query_applied"]["requested_start"] = str(start)
+                    empty_payload["query_applied"]["start"] = effective_start
+                    empty_payload["query_applied"]["effective_start"] = effective_start
+                empty_payload["warnings"] = [
+                    "Tick history retrieval stopped at the configured lookback "
+                    "budget before reaching the requested start."
+                ]
+            return empty_payload
 
         if output_mode not in ("summary", "stats", "rows", "full_rows"):
             return {
@@ -3656,13 +3695,22 @@ def fetch_ticks(  # noqa: C901
                     max(1, int(TICKS_LOOKBACK_DAYS)), 30
                 )
                 if history_window_floor is not None:
-                    payload["history_window_floor"] = _format_time_explicit(
+                    effective_start = _format_time_explicit(
                         history_window_floor.timestamp()
                     )
-                payload.setdefault("warnings", []).append(
+                    payload["history_window_floor"] = effective_start
+                    payload["effective_start"] = effective_start
+                    if start:
+                        query_applied["requested_start"] = str(start)
+                        query_applied["start"] = effective_start
+                        query_applied["effective_start"] = effective_start
+                warning = (
                     "Tick history retrieval stopped at the configured lookback "
                     "budget before reaching the requested start."
                 )
+                warnings = payload.setdefault("warnings", [])
+                if warning not in warnings:
+                    warnings.append(warning)
             last_quote = payload.get("last_quote")
             execution_quote = None
             if (
