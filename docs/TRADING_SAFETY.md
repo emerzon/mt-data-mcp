@@ -47,6 +47,7 @@ on `preview_ok` (and the equivalent nested `validation.live_submission_eligible`
 which is `false` when local requirements such as required SL/TP are missing.
 Closed-market and stale-quote previews also complete successfully, but retain
 `quote_not_live_ready` in `blockers` and keep `preview_ok=false`.
+The CLI prints those blocked previews and exits `1`; an eligible preview exits `0`.
 Compact output always retains these gate fields and the broker-validation
 limitations; `guardrails_preview` remains a standard/full-detail section.
 
@@ -73,8 +74,8 @@ Requires `symbol`, `volume`, and `order_type`.
 | `--volume` | — | Lots (validated against broker min/max/step) |
 | `--order-type` | — | See [Order types](#order-types) |
 | `--price` | — | Entry for pending orders; **omit for market orders** |
-| `--stop-loss` / `--sl` | — | Stop-loss price |
-| `--take-profit` / `--tp` | — | Take-profit price |
+| `--stop-loss` | — | Stop-loss price |
+| `--take-profit` | — | Take-profit price |
 | `--deviation` | `20` | Max slippage in points (market orders) |
 | `--require-sl-tp` | `true` | Require both SL and TP on market orders |
 | `--expiration` | — | Pending-order expiry (`dateparser`, UTC epoch seconds, or `GTC`) |
@@ -120,8 +121,8 @@ Modifies an existing order/position by ticket.
 |------|---------|-------|
 | `ticket` | — | **Required** |
 | `--price` | — | New pending-order price |
-| `--stop-loss` / `--sl` | — | New stop-loss |
-| `--take-profit` / `--tp` | — | New take-profit |
+| `--stop-loss` | — | New stop-loss |
+| `--take-profit` | — | New take-profit |
 | `--expiration` | — | New pending-order expiry |
 | `--comment` | — | Updated comment |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts |

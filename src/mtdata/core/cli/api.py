@@ -577,6 +577,8 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
 
 def _result_has_tool_error(result: Any) -> bool:
     if isinstance(result, dict):
+        if result.get("preview_ok") is False:
+            return True
         if result.get("success") is False:
             return True
         if bool(result.get("no_action", False)) and result.get("success") is not True:

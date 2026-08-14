@@ -1388,6 +1388,75 @@ class TestMain:
         assert result == 1
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_command_blocked_trade_preview_returns_nonzero(
+        self,
+        mock_discover,
+        capsys,
+    ):
+        mock_fn = MagicMock(
+            return_value={
+                "success": True,
+                "status": "preview_blocked",
+                "preview_ok": False,
+                "blockers": ["missing_stop_loss"],
+            }
+        )
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_place"
+        mock_fn.__doc__ = "Preview a trade."
+
+        def trade_place(symbol: str):
+            """Preview a trade."""
+
+        info = get_function_info(trade_place)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "trade_place": {
+                "func": mock_fn,
+                "meta": {"description": "Preview a trade"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "trade_place", "EURUSD", "--json"]):
+            result = main()
+
+        assert result == 1
+        assert json.loads(capsys.readouterr().out)["preview_ok"] is False
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_command_eligible_trade_preview_returns_zero(
+        self,
+        mock_discover,
+        capsys,
+    ):
+        mock_fn = MagicMock(
+            return_value={"success": True, "status": "preview", "preview_ok": True}
+        )
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "trade_place"
+        mock_fn.__doc__ = "Preview a trade."
+
+        def trade_place(symbol: str):
+            """Preview a trade."""
+
+        info = get_function_info(trade_place)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "trade_place": {
+                "func": mock_fn,
+                "meta": {"description": "Preview a trade"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "trade_place", "EURUSD", "--json"]):
+            result = main()
+
+        assert result == 0
+        assert json.loads(capsys.readouterr().out)["preview_ok"] is True
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_no_action_result_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(
             return_value={"message": "No action taken", "no_action": True}
