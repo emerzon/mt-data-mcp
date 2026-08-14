@@ -403,7 +403,7 @@ PARAM_HINTS = {
     "volume_profile_source": "Volume-profile input source: auto, ticks, or m1_bars.",
     "volume_profile_max_tick_window_days": "Maximum raw-tick lookback window in days for confluence volume profile.",
     "volume_profile_max_ticks": "Maximum raw ticks fetched for confluence volume profile.",
-    "spread": "Bid/ask spread value in symbol price units.",
+    "spread": "Compute and include bid/ask spread metrics from returned market data.",
     "price_source": "Volume-profile price source: mid, last, bid, or ask.",
     "volume_source": "Volume-profile volume source: auto, real_volume, tick_volume, or tick_count.",
     "bucket_size": "Volume-profile bucket width in symbol price units.",

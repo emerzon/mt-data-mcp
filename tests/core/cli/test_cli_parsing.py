@@ -857,6 +857,25 @@ class TestAddDynamicArguments:
         )
         assert "--require-dom" in require_dom_action.option_strings
 
+    def test_market_depth_spread_help_describes_boolean_output_control(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "spread", "type": bool, "required": False, "default": False},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="market_depth_fetch")
+        args = parser.parse_args(["--spread", "true"])
+        spread_action = next(
+            action for action in parser._actions if action.dest == "spread"
+        )
+
+        assert args.spread == "true"
+        assert "Boolean output control" in spread_action.help
+        assert "fallback quote" in spread_action.help
+        assert "spread value" not in spread_action.help.lower()
+
     @pytest.mark.parametrize(
         ("command", "parameter", "expected"),
         [

@@ -639,7 +639,11 @@ def market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = Fa
     When enabled, returns broker DOM if available and otherwise falls back to
     the current bid/ask snapshot unless `require_dom=True`.
 
-    Parameters: symbol
+    Set `spread=True` to compute and include bid/ask spread metrics from the DOM
+    or fallback quote. Returned spread prices use symbol price units; points use
+    the broker symbol's point size, and pips are included when applicable.
+
+    Parameters: symbol, spread, require_dom
     """
     if not _market_depth_fetch_enabled():
         return run_logged_operation(

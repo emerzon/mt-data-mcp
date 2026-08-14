@@ -53,8 +53,12 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 300 --json
 Optional liquidity snapshot. This requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` and broker support for Level 2/DOM data:
 
 ```bash
-mtdata-cli market_depth_fetch EURUSD --json
+mtdata-cli market_depth_fetch EURUSD --spread true --json
 ```
+
+`--spread` is a Boolean output switch. It computes spread prices in symbol price
+units and, where metadata permits, also reports points, pips, and basis points
+from the DOM or fallback bid/ask quote.
 
 ---
 

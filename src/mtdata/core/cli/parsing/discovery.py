@@ -87,6 +87,10 @@ _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
 }
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("market_depth_fetch", "spread"): (
+        "Boolean output control. Compute and include bid/ask spread metrics from "
+        "broker DOM or the fallback quote; disabled by default."
+    ),
     ("forecast_train", "lookback"): (
         "Maximum historical bars to use for training after applying the requested "
         "time window."
