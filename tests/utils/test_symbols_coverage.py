@@ -261,6 +261,65 @@ class TestSymbolsListNoSearch:
         assert result["currency_filter_basis"] == "broker_reported_currency"
         assert result["trust"] == "verify_broker_metadata"
 
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_currency_filter_uses_asset_aware_pair_inference(
+        self,
+        mock_get,
+        mock_tbl,
+        mock_lim,
+    ):
+        btc = _make_symbol("BTCUSD", path="Crypto", description="Bitcoin (USD)")
+        btc.currency_base = "USD"
+        btc.currency_profit = "USD"
+        stock = _make_symbol(
+            "BTCT.NAS-24",
+            path="Stock CFD's\\Nasdaq",
+            description="BTC Digital Ltd",
+        )
+        stock.currency_base = "USD"
+        stock.currency_profit = "USD"
+        mock_get.return_value = [stock, btc]
+
+        result = _get_symbols_list()(
+            universe="all",
+            currency="BTC",
+            limit=25,
+            detail="full",
+        )
+
+        headers = result["headers"]
+        assert [row[headers.index("symbol")] for row in result["data"]] == [
+            "BTCUSD"
+        ]
+        assert result["data"][0][headers.index("currency_match_basis")] == (
+            "inferred_base_from_crypto_pair"
+        )
+        assert result["currency_filter_basis"] == "asset_aware_inference"
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_crypto_shorthand_search_prefers_base_quote_pair(
+        self,
+        mock_get,
+        mock_tbl,
+        mock_lim,
+    ):
+        mock_get.return_value = [
+            _make_symbol(
+                "BTCT.NAS-24",
+                path="Stock CFD's\\Nasdaq",
+                description="BTC Digital Ltd",
+            ),
+            _make_symbol("BTCUSD", path="Crypto", description="Bitcoin (USD)"),
+        ]
+
+        result = _get_symbols_list()(search_term="BTC", universe="all", limit=25)
+
+        assert [row[0] for row in result["data"]] == ["BTCUSD", "BTCT.NAS-24"]
+
     @patch(_NORM_LIMIT, return_value=1)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")

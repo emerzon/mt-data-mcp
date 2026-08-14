@@ -51,6 +51,7 @@ from ..utils.symbol import (
 )
 from ..utils.symbol import (
     _normalize_group_path_query,
+    symbol_shorthand_rank,
     symbol_suggestions_from_gateway,
 )
 from ..utils.time import (
@@ -469,15 +470,43 @@ def _symbol_group_matches(symbol: Any, group_filter: Optional[str]) -> bool:
     return group_filter.casefold() in group_path.casefold()
 
 
-def _symbol_currency_matches(symbol: Any, currency_filter: Optional[str]) -> bool:
+def _symbol_currency_match_basis(
+    symbol: Any,
+    currency_filter: Optional[str],
+) -> Optional[str]:
     if not currency_filter:
-        return True
+        return "not_filtered"
     target = currency_filter.upper()
     for attr in ("currency_base", "currency_profit", "currency_margin"):
         value = str(getattr(symbol, attr, "") or "").upper()
         if value == target:
-            return True
-    return target in _symbol_name_letters(symbol)
+            return f"reported_{attr.removeprefix('currency_')}"
+    inferred_base = _infer_symbol_base_from_name(
+        getattr(symbol, "name", ""),
+        getattr(symbol, "currency_profit", ""),
+    )
+    if _symbol_category(symbol) == "crypto" and inferred_base == target:
+        return "inferred_base_from_crypto_pair"
+    return None
+
+
+def _symbol_currency_matches(symbol: Any, currency_filter: Optional[str]) -> bool:
+    return _symbol_currency_match_basis(symbol, currency_filter) is not None
+
+
+def _currency_filter_basis_summary(rows: List[Dict[str, Any]]) -> str:
+    bases = {
+        str(row.get("currency_match_basis") or "")
+        for row in rows
+        if row.get("currency_match_basis")
+    }
+    if not bases:
+        return "no_returned_matches"
+    if all(basis.startswith("reported_") for basis in bases):
+        return "broker_reported_currency"
+    if all(basis.startswith("inferred_") for basis in bases):
+        return "asset_aware_inference"
+    return "mixed_reported_and_inferred"
 
 
 def _symbol_search_match_reason(symbol: Any, search_term: str, search_mode: str) -> str:
@@ -507,7 +536,7 @@ def _symbol_search_sort_key(
     symbol: Any,
     search_term: str,
     search_mode: str,
-) -> tuple[int, int, str, str]:
+) -> tuple[int, int, int, str, str]:
     reason = _symbol_search_match_reason(symbol, search_term, search_mode)
     forex_rank = _symbol_search_forex_rank(symbol, search_term)
     reason_rank = _SYMBOL_SEARCH_REASON_RANK.get(reason, 9)
@@ -516,6 +545,7 @@ def _symbol_search_sort_key(
     return (
         reason_rank,
         forex_rank,
+        symbol_shorthand_rank(symbol, search_term),
         *_case_insensitive_sort_key(getattr(symbol, "name", "")),
     )
 
@@ -1104,6 +1134,11 @@ def symbols_list(  # noqa: C901
                         description=symbol.description,
                     ),
                 }
+                if currency_filter:
+                    row["currency_match_basis"] = _symbol_currency_match_basis(
+                        symbol,
+                        currency_filter,
+                    )
                 if category_filter:
                     row["category"] = symbol_category
                 if normalized_search_term:
@@ -1209,6 +1244,7 @@ def symbols_list(  # noqa: C901
                                 "currency_base_source",
                                 "currency_base_inference_source",
                                 "currency_base_warning",
+                                "currency_match_basis",
                             )
                             if row.get(key) is not None
                         }
@@ -1256,7 +1292,9 @@ def symbols_list(  # noqa: C901
                     limit=limit_value,
                 )
                 if currency_filter:
-                    out["currency_filter_basis"] = "broker_reported_currency"
+                    out["currency_filter_basis"] = _currency_filter_basis_summary(
+                        symbol_list
+                    )
                 _attach_symbol_currency_anomaly_summary(
                     out,
                     anomalies=currency_anomalies,
@@ -1275,6 +1313,7 @@ def symbols_list(  # noqa: C901
                 "currency_base_source",
                 "currency_base_inference_source",
                 "currency_base_warning",
+                "currency_match_basis",
                 "currency_profit",
                 "digits",
                 "spread_is_floating",
@@ -1330,7 +1369,9 @@ def symbols_list(  # noqa: C901
                 limit=limit_value,
             )
             if currency_filter:
-                result["currency_filter_basis"] = "broker_reported_currency"
+                result["currency_filter_basis"] = _currency_filter_basis_summary(
+                    symbol_list
+                )
             _attach_symbol_currency_anomaly_summary(
                 result,
                 anomalies=currency_anomalies,

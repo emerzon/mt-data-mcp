@@ -1,9 +1,30 @@
 import re
 from typing import Any, Callable, Optional, Sequence
 
+_COMMON_CRYPTO_SHORTHANDS = frozenset(
+    {"BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "BCH"}
+)
+_COMMON_QUOTE_CURRENCIES = frozenset(
+    {"USD", "USDT", "USDC", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"}
+)
+
 
 def _normalize_symbol_token(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def symbol_shorthand_rank(symbol: Any, query: str) -> int:
+    """Prefer an exact crypto base/quote pair for common base shorthands."""
+    query_text = re.sub(r"[^A-Z0-9]", "", str(query or "").upper())
+    if query_text not in _COMMON_CRYPTO_SHORTHANDS:
+        return 0
+    symbol_text = re.sub(
+        r"[^A-Z0-9]",
+        "",
+        str(getattr(symbol, "name", "") or "").upper(),
+    )
+    tail = symbol_text[len(query_text) :] if symbol_text.startswith(query_text) else ""
+    return 0 if tail in _COMMON_QUOTE_CURRENCIES else 1
 
 
 def _normalize_group_path_query(value: str) -> str:
@@ -87,6 +108,7 @@ def match_symbol_infos(
                     _normalize_symbol_token(str(getattr(info, "name", "") or "")).startswith(token)
                     for token in query_tokens
                 ),
+                symbol_shorthand_rank(info, text),
                 str(getattr(info, "name", "") or "").casefold(),
             )
         )

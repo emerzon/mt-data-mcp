@@ -1,7 +1,11 @@
 """Tests for src/mtdata/utils/symbol.py"""
 from types import SimpleNamespace
 
-from mtdata.utils.symbol import _extract_group_path, match_symbol_infos
+from mtdata.utils.symbol import (
+    _extract_group_path,
+    match_symbol_infos,
+    symbol_shorthand_rank,
+)
 
 
 class TestExtractGroupPath:
@@ -47,3 +51,16 @@ def test_match_symbol_infos_suggests_usd_crypto_pair_for_usdt_query():
     eth = SimpleNamespace(name="ETHUSD", description="Ethereum", path="Crypto")
 
     assert match_symbol_infos([eth, btc], "BTCUSDT") == [btc]
+
+
+def test_crypto_shorthand_prefers_base_quote_pair_over_stock_prefix():
+    stock = SimpleNamespace(
+        name="BTCT.NAS-24",
+        description="BTC Digital Ltd",
+        path="Stock CFD's\\Nasdaq",
+    )
+    crypto = SimpleNamespace(name="BTCUSD", description="Bitcoin", path="Crypto")
+
+    assert symbol_shorthand_rank(crypto, "BTC") == 0
+    assert symbol_shorthand_rank(stock, "BTC") == 1
+    assert match_symbol_infos([stock, crypto], "BTC") == [crypto, stock]
