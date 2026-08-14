@@ -249,6 +249,7 @@ def test_preprocessing_helpers_and_output_format():
     assert res["last_price"] == float(df["close"].iloc[-1])
     assert "last_price_close" not in res
     assert res["last_price_source"] == "candle_close"
+    assert res["price_basis"] == "mt5_bid_ohlc"
 
     with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
         no_ci = fe._format_forecast_output(
@@ -281,6 +282,39 @@ def test_preprocessing_helpers_and_output_format():
     assert no_ci["last_price"] == float(df["close"].iloc[-1])
     assert "last_price_close" not in no_ci
     assert no_ci["last_price_source"] == "candle_close"
+    assert no_ci["price_basis"] == "mt5_bid_ohlc"
+
+
+def test_forecast_engine_as_of_uses_replay_time_for_target_bar_states():
+    times = [
+        datetime(2026, 8, 13, hour, tzinfo=timezone.utc).timestamp()
+        for hour in (18, 19, 20)
+    ]
+    frame = pd.DataFrame(
+        {
+            "time": times,
+            "open": [1.0, 1.1, 1.2],
+            "high": [1.1, 1.2, 1.3],
+            "low": [0.9, 1.0, 1.1],
+            "close": [1.05, 1.15, 1.25],
+        }
+    )
+
+    result = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=3,
+        as_of="2026-08-13T21:30:00Z",
+        ci_alpha=None,
+        prefetched_df=frame,
+    )
+
+    assert result["forecast_bar_states"] == ["forming", "future", "future"]
+    assert result["horizon_includes_forming_bar"] is True
+    assert result["last_bar_complete"] is True
+    assert result["bar_state_reference"] == "as_of"
+    assert result["bar_state_reference_time"] == "2026-08-13T21:30:00Z"
 
 
 def test_prepare_feature_context_surfaces_univariate_fallback(monkeypatch, caplog):

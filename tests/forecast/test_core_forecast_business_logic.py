@@ -364,6 +364,7 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
             "forecast_epoch": [1.0, 2.0, 3.0],
             "last_price": 1.05,
             "last_price_source": "candle_close",
+            "price_basis": "mt5_bid_ohlc",
             "last_price_age_seconds": 3600,
             "last_price_age": "1h 0m",
             "last_price_stale": False,
@@ -384,7 +385,8 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "forecast_anchor" not in out
     assert "forecast_step_seconds" not in out
     assert out["last_price"] == 1.05
-    assert "last_price_source" not in out
+    assert out["last_price_source"] == "candle_close"
+    assert out["price_basis"] == "mt5_bid_ohlc"
     assert out["last_price_stale"] is False
     assert out["freshness"] == "fresh, anchor 1h 0m ago"
     assert "last_price_age_seconds" not in out
@@ -3407,6 +3409,9 @@ def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
             "concise": True,
             "reference_price": 1.16606,
             "reference_price_source": "live_tick_ask",
+            "usable_for_live_trading": True,
+            "usable_for_live_trading_basis": "model_history_and_reference_quote",
+            "execution_blockers": [],
         }
 
     out = forecast_use_cases.run_forecast_barrier_optimize(
@@ -3422,6 +3427,11 @@ def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
     assert out["viable_results_total"] == 0
     assert out["best"] is None
     assert out["reference_price"] == 1.16606
+    assert out["usable_for_live_trading"] is False
+    assert out["usable_for_live_trading_basis"] == (
+        "model_viability_and_reference_quote"
+    )
+    assert out["execution_blockers"] == ["optimizer_non_viable"]
     for key in (
         "no_action",
         "no_action_reason",

@@ -350,7 +350,8 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
         description=(
             "Residual-quantile alpha for rolling-backtest absolute-error bands "
             "(not a true conformal coverage guarantee). Defaults to 0.05, the "
-            "same 95% target used by forecast_generate; 0.10 targets 90%. "
+            "conformal tool's own 95% target; 0.10 targets 90%. "
+            "forecast_generate defaults to point-only output unless its ci_alpha is set. "
             "Values outside 0.05-0.20 are warned."
         ),
     )

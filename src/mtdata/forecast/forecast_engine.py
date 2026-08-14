@@ -35,6 +35,9 @@ from ..utils.time import (
     bar_close_epoch,
 )
 from ..utils.utils import (
+    _parse_start_datetime,
+)
+from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
 )
 from . import forecast_preprocessing as _forecast_preprocessing
@@ -1470,6 +1473,19 @@ def _forecast_target_bar_states(
     return states
 
 
+def _forecast_bar_state_reference_epoch(as_of: Optional[str]) -> Optional[float]:
+    if not as_of:
+        return None
+    parsed = _parse_start_datetime(as_of)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return float(parsed.timestamp())
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -1591,6 +1607,7 @@ def _format_forecast_output(
         ),
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
+        "price_basis": "mt5_bid_ohlc" if last_price is not None else None,
         "direction_threshold_pct": float(round(direction_threshold_pct, 6)),
         "direction_threshold_basis": direction_threshold_basis,
         "calendar_treatment": describe_forecast_calendar_treatment(
@@ -1623,6 +1640,7 @@ def _format_forecast_output(
     if custom_target:
         result.pop("last_price", None)
         result.pop("last_price_source", None)
+        result.pop("price_basis", None)
         result.pop("direction_threshold_pct", None)
         result.pop("direction_threshold_basis", None)
         result["forecast_target"] = [float(v) for v in forecast_values]
@@ -2057,7 +2075,11 @@ def forecast_engine(  # noqa: C901
             symbol=symbol,
             timeframe=timeframe,
             target_info=target_info,
+            now_epoch=_forecast_bar_state_reference_epoch(as_of),
         )
+        if as_of is not None:
+            result["bar_state_reference"] = "as_of"
+            result["bar_state_reference_time"] = str(as_of)
         result.update(
             {
                 key: value

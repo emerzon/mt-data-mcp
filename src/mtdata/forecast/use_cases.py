@@ -506,6 +506,27 @@ def _compact_barrier_optimize_payload(payload: Dict[str, Any]) -> Dict[str, Any]
     return out
 
 
+def _gate_barrier_optimize_live_readiness(payload: Dict[str, Any]) -> None:
+    """Require both live inputs and a viable optimizer result for live readiness."""
+    if "usable_for_live_trading" not in payload:
+        return
+    viable_result = bool(
+        payload.get("tradable") is True and isinstance(payload.get("best"), dict)
+    )
+    payload["usable_for_live_trading"] = bool(
+        payload.get("usable_for_live_trading") is True and viable_result
+    )
+    payload["usable_for_live_trading_basis"] = (
+        "model_viability_and_reference_quote"
+    )
+    if viable_result:
+        return
+    blockers = list(payload.get("execution_blockers") or [])
+    if "optimizer_non_viable" not in blockers:
+        blockers.append("optimizer_non_viable")
+    payload["execution_blockers"] = blockers
+
+
 def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     last_price = _finite_float(payload.get("last_price"))
     prices = payload.get("forecast_price")
@@ -1146,6 +1167,8 @@ def _apply_forecast_generate_detail(  # noqa: C901
         "forecast_price",
         "forecast_return",
         "last_price",
+        "last_price_source",
+        "price_basis",
         "last_price_stale",
         "warnings",
     ):
@@ -3757,6 +3780,7 @@ def run_forecast_barrier_optimize(
                 result.pop("last_price_source", None)
             if detail_value == "compact":
                 result = _compact_barrier_optimize_payload(result)
+            _gate_barrier_optimize_live_readiness(result)
             barrier_unit, barrier_mode = _barrier_optimize_unit_context(result)
             result.setdefault("barrier_unit", barrier_unit)
             result.setdefault("barrier_mode", barrier_mode)

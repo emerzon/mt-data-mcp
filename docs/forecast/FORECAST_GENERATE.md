@@ -25,7 +25,13 @@ forecast[12]{time,bar_state,value}:
 Forecast row `time` is the target bar's **open timestamp**, while `value` is
 the predicted **bar close**. `bar_state` is `forming` when that target bar is
 already in progress, `future` before it opens, and `closed` when its wall-clock
-interval has elapsed. This is independent of the closed-bars-only input policy.
+interval has elapsed. With `--as-of`, these states and `last_bar_complete` are
+evaluated at the replay timestamp rather than the current wall clock. This is
+independent of the closed-bars-only input policy.
+
+For price and return forecasts, `last_price_source=candle_close` identifies the
+forecast anchor and `price_basis=mt5_bid_ohlc` identifies the MT5 candle-price
+basis. This is a historical candle close, not a live executable bid or ask.
 
 For `analog` forecasts, compact output retains concise `component_status` and
 `ensemble_metrics` summaries. Raw analog paths, per-timeframe diagnostics, and
