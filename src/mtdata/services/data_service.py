@@ -1849,6 +1849,47 @@ def _rebuild_candle_indicator_window(
     return df, ti_cols
 
 
+def _describe_session_gap(
+    previous_epoch: float,
+    current_epoch: float,
+    *,
+    expected_bar_seconds: float,
+    use_client_tz: bool,
+) -> Optional[Dict[str, Any]]:
+    """Describe a discontinuity between two observed broker bars."""
+    prev_t = float(previous_epoch)
+    curr_t = float(current_epoch)
+    if not (math.isfinite(prev_t) and math.isfinite(curr_t)):
+        return None
+    gap_seconds = float(curr_t - prev_t)
+    if expected_bar_seconds <= 0 or gap_seconds <= expected_bar_seconds * 1.5:
+        return None
+
+    if use_client_tz:
+        from_disp = _format_time_explicit_local(prev_t)
+        to_disp = _format_time_explicit_local(curr_t)
+    else:
+        from_disp = _format_time_explicit(prev_t)
+        to_disp = _format_time_explicit(curr_t)
+
+    missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
+    prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
+    curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
+    crosses_weekend = (
+        prev_dt.weekday() >= 5
+        or curr_dt.weekday() >= 5
+        or gap_seconds >= (36.0 * 3600.0)
+    )
+    return {
+        "from": from_disp,
+        "to": to_disp,
+        "gap_seconds": gap_seconds,
+        "expected_bar_seconds": expected_bar_seconds,
+        "missing_bars_est": int(missing_bars_est),
+        "context": "weekend/session break" if crosses_weekend else "session break",
+    }
+
+
 def _collect_session_gaps(
     df: pd.DataFrame,
     *,
@@ -1862,43 +1903,15 @@ def _collect_session_gaps(
 
     try:
         epochs = pd.to_numeric(df['__epoch'], errors='coerce').to_numpy(dtype=float)
-        threshold = expected_bar_seconds * 1.5
         for index in range(1, len(epochs)):
-            prev_t = float(epochs[index - 1])
-            curr_t = float(epochs[index])
-            if not (math.isfinite(prev_t) and math.isfinite(curr_t)):
-                continue
-
-            gap_seconds = float(curr_t - prev_t)
-            if gap_seconds <= threshold:
-                continue
-
-            if use_client_tz:
-                from_disp = _format_time_explicit_local(prev_t)
-                to_disp = _format_time_explicit_local(curr_t)
-            else:
-                from_disp = _format_time_explicit(prev_t)
-                to_disp = _format_time_explicit(curr_t)
-
-            missing_bars_est = max(1, int(round(gap_seconds / expected_bar_seconds)) - 1)
-            prev_dt = datetime.fromtimestamp(prev_t, tz=dt_timezone.utc)
-            curr_dt = datetime.fromtimestamp(curr_t, tz=dt_timezone.utc)
-            crosses_weekend = (
-                prev_dt.weekday() >= 5
-                or curr_dt.weekday() >= 5
-                or ((curr_t - prev_t) >= (36.0 * 3600.0))
+            gap = _describe_session_gap(
+                float(epochs[index - 1]),
+                float(epochs[index]),
+                expected_bar_seconds=expected_bar_seconds,
+                use_client_tz=use_client_tz,
             )
-            gap_context = "weekend/session break" if crosses_weekend else "session break"
-            session_gaps.append(
-                {
-                    "from": from_disp,
-                    "to": to_disp,
-                    "gap_seconds": gap_seconds,
-                    "expected_bar_seconds": expected_bar_seconds,
-                    "missing_bars_est": int(missing_bars_est),
-                    "context": gap_context,
-                }
-            )
+            if gap is not None:
+                session_gaps.append(gap)
     except Exception as exc:
         logger.warning("Session gap diagnostics unavailable: %s", exc)
         return session_gaps, "Session gap diagnostics unavailable."
@@ -2174,14 +2187,40 @@ def fetch_candles(  # noqa: C901
         # live fact and must never be advanced by a future range end.
         completion_reference_epoch = live_bar_reference_epoch
         initial_incomplete_trimmed = False
+        trailing_gap_epochs: Optional[Tuple[float, float]] = None
         if not include_incomplete:
             rates_before_trim = int(len(rates))
+            if not historical_bounds_requested and rates_before_trim >= 2:
+                try:
+                    raw_previous_epoch = float(rates[-2]["time"])
+                    raw_tail_epoch = float(rates[-1]["time"])
+                    raw_gap = _describe_session_gap(
+                        raw_previous_epoch,
+                        raw_tail_epoch,
+                        expected_bar_seconds=float(
+                            TIMEFRAME_SECONDS.get(timeframe, 0) or 0
+                        ),
+                        use_client_tz=False,
+                    )
+                    if raw_gap is not None:
+                        trailing_gap_epochs = (raw_previous_epoch, raw_tail_epoch)
+                except (
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    IndexError,
+                    OverflowError,
+                    OSError,
+                ):
+                    trailing_gap_epochs = None
             rates = _drop_incomplete_tail(
                 rates,
                 timeframe,
                 current_time_epoch=completion_reference_epoch,
             )
             initial_incomplete_trimmed = int(len(rates)) < rates_before_trim
+            if not initial_incomplete_trimmed:
+                trailing_gap_epochs = None
         if len(rates) == 0:
             return _build_no_data_error_with_context(
                 symbol, timeframe, mt5_timeframe, start_datetime, end_datetime
@@ -2375,9 +2414,40 @@ def fetch_candles(  # noqa: C901
 
         # Detect large time discontinuities (e.g., closed session windows) and
         # surface them explicitly so users can interpret forecast/analysis gaps.
-        session_gaps, session_gap_warning = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
+        session_gaps, session_gap_warning = _collect_session_gaps(
+            df,
+            timeframe=timeframe,
+            use_client_tz=_use_ctz,
+        )
         spacing_quality = _candle_spacing_quality(df, timeframe=timeframe)
         expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+        gap_after_last_bar: Optional[Dict[str, Any]] = None
+        if trailing_gap_epochs is not None and "__epoch" in df.columns and len(df):
+            try:
+                returned_tail_epoch = float(df["__epoch"].iloc[-1])
+                previous_epoch, forming_epoch = trailing_gap_epochs
+                if math.isclose(returned_tail_epoch, previous_epoch, abs_tol=0.001):
+                    gap_after_last_bar = _describe_session_gap(
+                        previous_epoch,
+                        forming_epoch,
+                        expected_bar_seconds=expected_bar_seconds,
+                        use_client_tz=_use_ctz,
+                    )
+            except (TypeError, ValueError, OverflowError, OSError):
+                gap_after_last_bar = None
+        if gap_after_last_bar is not None:
+            gap_after_last_bar.update(
+                {
+                    "position": "after_last_closed_bar",
+                    "next_bar_state": "forming_excluded",
+                }
+            )
+            session_gaps.append(gap_after_last_bar)
+        if spacing_quality is not None:
+            spacing_quality["spacing_complete"] = not bool(session_gaps)
+            spacing_quality["session_gap_count"] = len(session_gaps)
+            if session_gaps and spacing_quality.get("status") == "ok":
+                spacing_quality["status"] = "session_gaps_detected"
 
         # Reformat time consistently across rows for display, unless caller
         # explicitly requests numeric UTC epoch seconds.
@@ -2744,6 +2814,8 @@ def fetch_candles(  # noqa: C901
             payload['warnings'] = warns
         if session_gaps:
             payload['session_gaps'] = session_gaps
+            if gap_after_last_bar is not None:
+                payload['gap_after_last_bar'] = gap_after_last_bar
             _annotate_candle_gap_rows(payload, session_gaps)
             warns = payload.get('warnings')
             if not isinstance(warns, list):

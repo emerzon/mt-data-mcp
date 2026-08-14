@@ -726,6 +726,58 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertIn('warnings', result)
         self.assertTrue(any('session gap' in w.lower() for w in result['warnings']))
         self.assertTrue(any('example gap' in w.lower() for w in result['warnings']))
+        self.assertEqual(result['bar_spacing']['status'], 'session_gaps_detected')
+        self.assertFalse(result['bar_spacing']['spacing_complete'])
+        self.assertEqual(result['bar_spacing']['session_gap_count'], 1)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_session_gap_before_excluded_forming_bar_is_surfaced(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        bar_20 = datetime(2026, 8, 13, 20, tzinfo=_UTC).timestamp()
+        now = datetime(2026, 8, 13, 22, 3, tzinfo=_UTC).timestamp()
+        rates = _make_rates(5, base_ts=bar_20, step=3600)
+        rates.append(
+            {
+                'time': bar_20 + 7200,
+                'open': 1.1050,
+                'high': 1.2050,
+                'low': 1.0050,
+                'close': 1.1550,
+                'tick_volume': 100,
+                'real_volume': 0,
+                'spread': 1,
+            }
+        )
+        mock_from.return_value = rates
+
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=now):
+            result = fetch_candles('XAGUSD', timeframe='H1', limit=5)
+
+        self.assertTrue(result.get('success'), result)
+        self.assertEqual(result['data'][-1]['time'], '2026-08-13T20:00Z')
+        self.assertNotEqual(result['data'][-1]['time'], '2026-08-13T22:00Z')
+        gap = result['gap_after_last_bar']
+        self.assertEqual(gap['from'], '2026-08-13T20:00Z')
+        self.assertEqual(gap['to'], '2026-08-13T22:00Z')
+        self.assertEqual(gap['missing_bars_est'], 1)
+        self.assertEqual(gap['position'], 'after_last_closed_bar')
+        self.assertEqual(gap['next_bar_state'], 'forming_excluded')
+        self.assertEqual(result['session_gaps'], [gap])
+        self.assertTrue(result['bar_spacing']['spacing_matches_timeframe'])
+        self.assertEqual(result['bar_spacing']['status'], 'session_gaps_detected')
+        self.assertFalse(result['bar_spacing']['spacing_complete'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

@@ -116,6 +116,13 @@ include `broker_session_date`; D1 rows include `broker_trading_day`. These
 labels use the configured broker timezone and disambiguate sessions whose UTC
 open falls on the preceding calendar date.
 
+Latest-N requests exclude a forming candle by default. If that forming candle
+starts after a broker session break, the response still retains the observed
+discontinuity in `session_gaps` and `gap_after_last_bar`. In that case,
+`bar_spacing.status=session_gaps_detected`; `spacing_matches_timeframe` may
+remain true because it describes the dominant interval, while
+`spacing_complete=false` describes the missing session interval.
+
 For completed-bar analytics, freshness ages are measured from bar close, even
 though `data_as_of` and row timestamps remain bar-open anchors. Forecast and
 volatility payloads identify this as

@@ -1324,6 +1324,11 @@ def test_run_data_fetch_candles_compact_drops_redundant_session_gap_warnings():
         "missing_bars_est": 48,
         "context": "weekend/session break",
     }
+    gap_after_last_bar = {
+        **session_gap,
+        "position": "after_last_closed_bar",
+        "next_bar_state": "forming_excluded",
+    }
 
     result = run_data_fetch_candles(
         request,
@@ -1335,6 +1340,7 @@ def test_run_data_fetch_candles_compact_drops_redundant_session_gap_warnings():
             "candles": 5,
             "data": [],
             "session_gaps": [session_gap],
+            "gap_after_last_bar": gap_after_last_bar,
             "warnings": [
                 "Detected session gaps larger than expected bar spacing (3600s).",
                 "Example gap: 2026-05-01 20:00 -> 2026-05-03 21:00 (48 missing bars, likely weekend/session break).",
@@ -1344,6 +1350,7 @@ def test_run_data_fetch_candles_compact_drops_redundant_session_gap_warnings():
     )
 
     assert result["session_gaps"] == [session_gap]
+    assert result["gap_after_last_bar"] == gap_after_last_bar
     assert result["warnings"] == ["Other warning"]
 
 
