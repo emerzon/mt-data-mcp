@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -776,3 +777,29 @@ def test_get_options_expirations_handles_429_with_provider_remediation(monkeypat
     assert result["next_tool"] == "options_provider_status"
     assert "MTDATA_OPTIONS_PROVIDER=tradier" in result["remediation"]
     assert "MTDATA_OPTIONS_API_KEY" in result["remediation"]
+
+
+def test_select_options_expiration_skips_same_day_after_cash_close() -> None:
+    now = dt.datetime(2026, 8, 14, 20, 8, tzinfo=dt.timezone.utc)
+    chosen, status, defaulted = osvc._select_options_expiration(
+        ["2026-08-14", "2026-08-17", "2026-08-21"],
+        None,
+        now=now,
+    )
+
+    assert chosen == "2026-08-17"
+    assert status == "live"
+    assert defaulted is True
+
+
+def test_select_options_expiration_labels_explicit_expired_date() -> None:
+    now = dt.datetime(2026, 8, 14, 20, 8, tzinfo=dt.timezone.utc)
+    chosen, status, defaulted = osvc._select_options_expiration(
+        ["2026-08-14", "2026-08-17"],
+        "2026-08-14",
+        now=now,
+    )
+
+    assert chosen == "2026-08-14"
+    assert status == "expired"
+    assert defaulted is False

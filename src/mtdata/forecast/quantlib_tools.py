@@ -199,30 +199,46 @@ def price_barrier_option_quantlib(
             }
         valuation_date_source = "explicit"
 
-    geometry_error = _barrier_option_geometry_error(
+    barrier_status = _barrier_option_status(
         barrier_type=barrier_type_norm,
         spot=spot_val,
         barrier=barrier_val,
     )
-    if geometry_error is not None:
+    if barrier_status == "knocked_out":
+        params_used = _barrier_option_params(
+            spot=spot_val,
+            strike=strike_val,
+            barrier=barrier_val,
+            maturity_days=maturity_val,
+            option_type=option_type_norm,
+            barrier_type=barrier_type_norm,
+            risk_free_rate=rf,
+            dividend_yield=div,
+            volatility=vol,
+            rebate=rebate_val,
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
+            valuation_date=valuation_day.isoformat(),
+        )
         return {
-            "error": geometry_error,
-            "error_code": "invalid_barrier_geometry",
-            "params_used": _barrier_option_params(
-                spot=spot_val,
-                strike=strike_val,
-                barrier=barrier_val,
-                maturity_days=maturity_val,
-                option_type=option_type_norm,
-                barrier_type=barrier_type_norm,
-                risk_free_rate=rf,
-                dividend_yield=div,
-                volatility=vol,
-                rebate=rebate_val,
+            "success": True,
+            "price": float(rebate_val),
+            "status": "knocked_out",
+            "option_status": "knocked_out",
+            "valuation_date": valuation_day.isoformat(),
+            "valuation_timezone": valuation_timezone,
+            "valuation_date_source": valuation_date_source,
+            "delta": 0.0,
+            "gamma": 0.0,
+            "vega": 0.0,
+            "greeks_status": "complete",
+            "greeks_method": "knocked_out_boundary",
+            "pricing_assumptions": _quantlib_pricing_assumptions(
+                "already-breached knock-out (rebate)",
                 calendar=calendar_name,
                 maturity_basis=maturity_basis_norm,
-                valuation_date=valuation_day.isoformat(),
             ),
+            "params_used": params_used,
         }
 
     try:
@@ -234,6 +250,27 @@ def price_barrier_option_quantlib(
         calendar_obj, calendar_name = _resolve_quantlib_calendar(ql, calendar_name)
     except ValueError as ex:
         return {"error": str(ex)}
+
+    if barrier_status == "knocked_in":
+        return _price_knocked_in_as_vanilla(
+            ql=ql,
+            spot_val=spot_val,
+            strike_val=strike_val,
+            barrier_val=barrier_val,
+            maturity_days=maturity_val,
+            option_type_norm=option_type_norm,
+            barrier_type_norm=barrier_type_norm,
+            rf=rf,
+            div=div,
+            vol=vol,
+            rebate_val=rebate_val,
+            calendar_name=calendar_name,
+            calendar_obj=calendar_obj,
+            maturity_basis_norm=maturity_basis_norm,
+            valuation_day=valuation_day,
+            valuation_timezone=valuation_timezone,
+            valuation_date_source=valuation_date_source,
+        )
 
     opt_map = {"call": ql.Option.Call, "put": ql.Option.Put}
     barrier_map = {
@@ -388,6 +425,112 @@ def _barrier_option_geometry_error(
         return "For an up barrier option, barrier must be above spot."
     if str(barrier_type).startswith("down_") and barrier >= spot:
         return "For a down barrier option, barrier must be below spot."
+    return None
+
+
+def _price_knocked_in_as_vanilla(
+    *,
+    ql: Any,
+    spot_val: float,
+    strike_val: float,
+    barrier_val: float,
+    maturity_days: int,
+    option_type_norm: str,
+    barrier_type_norm: str,
+    rf: float,
+    div: float,
+    vol: float,
+    rebate_val: float,
+    calendar_name: str,
+    calendar_obj: Any,
+    maturity_basis_norm: str,
+    valuation_day: Any,
+    valuation_timezone: str,
+    valuation_date_source: str,
+) -> Dict[str, Any]:
+    """Price a barrier that has already knocked in as the equivalent vanilla."""
+    ql_today = _quantlib_date(ql, valuation_day)
+    ql.Settings.instance().evaluationDate = ql_today
+    day_count = ql.Actual365Fixed()
+    maturity = _advance_maturity_date(
+        ql=ql,
+        ql_today=ql_today,
+        calendar=calendar_obj,
+        maturity_days=maturity_days,
+        maturity_basis=maturity_basis_norm,
+    )
+    maturity_day = _python_date_from_quantlib(maturity)
+    time_to_maturity_years = float((maturity - ql_today) / 365.0)
+    payoff = ql.PlainVanillaPayoff(
+        ql.Option.Call if option_type_norm == "call" else ql.Option.Put,
+        float(strike_val),
+    )
+    exercise = ql.EuropeanExercise(maturity)
+    option = ql.VanillaOption(payoff, exercise)
+    spot_h = ql.QuoteHandle(ql.SimpleQuote(float(spot_val)))
+    rf_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(rf), day_count))
+    div_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(div), day_count))
+    vol_ts = ql.BlackVolTermStructureHandle(
+        ql.BlackConstantVol(ql_today, calendar_obj, float(vol), day_count)
+    )
+    process = ql.BlackScholesMertonProcess(spot_h, div_ts, rf_ts, vol_ts)
+    option.setPricingEngine(ql.AnalyticEuropeanEngine(process))
+    try:
+        npv = float(option.NPV())
+        delta = float(option.delta())
+        gamma = float(option.gamma())
+        vega = float(option.vega())
+    except Exception as ex:
+        return {"error": f"QuantLib pricing failed: {ex}"}
+    return {
+        "success": True,
+        "price": npv,
+        "status": "knocked_in",
+        "option_status": "knocked_in",
+        "valuation_date": valuation_day.isoformat(),
+        "valuation_timezone": valuation_timezone,
+        "valuation_date_source": valuation_date_source,
+        "maturity_date": maturity_day.isoformat(),
+        "time_to_maturity_years": time_to_maturity_years,
+        "delta": delta,
+        "gamma": gamma,
+        "vega": vega,
+        "greeks_status": "complete",
+        "greeks_method": "knocked_in_vanilla",
+        "pricing_assumptions": _quantlib_pricing_assumptions(
+            "already-breached knock-in priced as European vanilla",
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
+        ),
+        "params_used": _barrier_option_params(
+            spot=spot_val,
+            strike=strike_val,
+            barrier=barrier_val,
+            maturity_days=maturity_days,
+            option_type=option_type_norm,
+            barrier_type=barrier_type_norm,
+            risk_free_rate=rf,
+            dividend_yield=div,
+            volatility=vol,
+            rebate=rebate_val,
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
+            valuation_date=valuation_day.isoformat(),
+        ),
+    }
+
+
+def _barrier_option_status(
+    *,
+    barrier_type: str,
+    spot: float,
+    barrier: float,
+) -> Optional[str]:
+    kind = str(barrier_type)
+    if kind.startswith("up_") and barrier <= spot:
+        return "knocked_out" if kind.endswith("_out") else "knocked_in"
+    if kind.startswith("down_") and barrier >= spot:
+        return "knocked_out" if kind.endswith("_out") else "knocked_in"
     return None
 
 

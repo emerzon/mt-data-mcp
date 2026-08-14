@@ -381,6 +381,7 @@ def _apply_options_detail(
                 "requested_symbol",
                 "provider_symbol",
                 "expiration",
+                "expiration_status",
                 "underlying_price",
                 "currency",
                 "option_type",

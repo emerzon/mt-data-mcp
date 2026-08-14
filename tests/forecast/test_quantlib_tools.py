@@ -326,24 +326,28 @@ def test_price_barrier_option_quantlib_exposes_calendar_overrides(monkeypatch):
     assert out["params_used"]["valuation_date"] == "2026-07-03"
 
 
-def test_price_barrier_option_quantlib_validates_touched_down_barrier():
+def test_price_barrier_option_quantlib_returns_knocked_out_payoff():
     out = qtools.price_barrier_option_quantlib(
-        spot=100.0,
+        spot=115.0,
         strike=100.0,
-        barrier=100.0,
+        barrier=110.0,
         maturity_days=30,
         option_type="call",
-        barrier_type="down_in",
+        barrier_type="up_out",
         risk_free_rate=0.02,
         dividend_yield=0.0,
         volatility=0.2,
         rebate=0.0,
     )
 
-    assert out["error_code"] == "invalid_barrier_geometry"
-    assert out["error"] == "For a down barrier option, barrier must be below spot."
-    assert out["params_used"]["spot"] == 100.0
-    assert out["params_used"]["barrier_type"] == "down_in"
+    assert out["success"] is True
+    assert out["price"] == 0.0
+    assert out["status"] == "knocked_out"
+    assert out["delta"] == 0.0
+    assert out["gamma"] == 0.0
+    assert out["vega"] == 0.0
+    assert out["params_used"]["spot"] == 115.0
+    assert out["params_used"]["barrier"] == 110.0
 
 
 def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):

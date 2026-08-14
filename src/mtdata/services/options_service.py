@@ -8,7 +8,8 @@ import logging
 import re
 import threading as _threading
 import time as _time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -31,6 +32,8 @@ _YAHOO_MAX_ATTEMPTS = 3
 _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _OPTIONS_QUOTE_STALE_AFTER_SECONDS = 900.0
+_US_EQUITY_OPTIONS_TZ = ZoneInfo("America/New_York")
+_US_EQUITY_OPTIONS_CLOSE = _dt.time(16, 0)
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
     "Run options_provider_status for configuration details. Yahoo options is "
@@ -191,6 +194,52 @@ def _ymd_to_epoch(ymd: str) -> int:
     dt = _dt.datetime.strptime(str(ymd).strip(), "%Y-%m-%d")
     dt = dt.replace(tzinfo=_dt.timezone.utc)
     return int(dt.timestamp())
+
+
+def _us_equity_option_expiration_is_live(
+    expiration: str,
+    *,
+    now: Optional[_dt.datetime] = None,
+) -> bool:
+    """Return True if a listed US equity expiration is still the live weekly."""
+    try:
+        expiry = _dt.date.fromisoformat(str(expiration).strip())
+    except ValueError:
+        return False
+    reference = now or _dt.datetime.now(_dt.timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=_dt.timezone.utc)
+    local = reference.astimezone(_US_EQUITY_OPTIONS_TZ)
+    if expiry > local.date():
+        return True
+    if expiry < local.date():
+        return False
+    return local.timetz().replace(tzinfo=None) < _US_EQUITY_OPTIONS_CLOSE
+
+
+def _select_options_expiration(
+    expirations: List[str],
+    requested: Optional[str],
+    *,
+    now: Optional[_dt.datetime] = None,
+) -> Tuple[str, str, bool]:
+    """Return (chosen, status, defaulted) for a listed expiration."""
+    if requested not in (None, ""):
+        chosen = str(requested).strip()
+        status = (
+            "live"
+            if _us_equity_option_expiration_is_live(chosen, now=now)
+            else "expired"
+        )
+        return chosen, status, False
+    live = [
+        item
+        for item in expirations
+        if _us_equity_option_expiration_is_live(item, now=now)
+    ]
+    if live:
+        return live[0], "live", True
+    return expirations[0], "expired", True
 
 
 def _build_yahoo_session() -> requests.Session:
@@ -902,7 +951,10 @@ def _get_tradier_options_chain(
     )
     if not expirations:
         return {"error": f"No option expirations found for {symbol_norm}"}
-    chosen_expiry = str(expiration).strip() if expiration else expirations[0]
+    chosen_expiry, expiration_status, _ = _select_options_expiration(
+        expirations,
+        expiration,
+    )
     if chosen_expiry not in expirations:
         return {
             "error": f"Requested expiration {chosen_expiry} not available for {symbol_norm}",
@@ -940,6 +992,7 @@ def _get_tradier_options_chain(
         **_options_quote_metadata("tradier", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry,
+        "expiration_status": expiration_status,
         "underlying_price": underlying_price,
         "currency": quote.get("currency") or "USD",
         "contract_size": "REGULAR",
@@ -998,19 +1051,16 @@ def _get_yahoo_options_chain(
         return {"error": f"No option expirations found for {symbol_norm}"}
 
     available_map = {_epoch_to_ymd(ep): int(ep) for ep in expiration_epochs}
-    chosen_expiry_ymd: str
-    chosen_expiry_epoch: int
-    if expiration is None:
-        chosen_expiry_epoch = int(expiration_epochs[0])
-        chosen_expiry_ymd = _epoch_to_ymd(chosen_expiry_epoch)
-    else:
-        chosen_expiry_ymd = str(expiration).strip()
-        chosen_expiry_epoch = int(available_map.get(chosen_expiry_ymd, -1))
-        if chosen_expiry_epoch < 0:
-            return {
-                "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
-                "expirations": sorted(available_map),
-            }
+    chosen_expiry_ymd, expiration_status, _ = _select_options_expiration(
+        sorted(available_map),
+        expiration,
+    )
+    chosen_expiry_epoch = int(available_map.get(chosen_expiry_ymd, -1))
+    if chosen_expiry_epoch < 0:
+        return {
+            "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
+            "expirations": sorted(available_map),
+        }
 
     payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
     quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
@@ -1086,6 +1136,7 @@ def _get_yahoo_options_chain(
         **_options_quote_metadata("yahoo", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry_ymd,
+        "expiration_status": expiration_status,
         "underlying_price": underlying_price,
         "currency": quote.get("currency"),
         "contract_size": quote.get("contractSize"),
