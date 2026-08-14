@@ -299,6 +299,32 @@ class TestFinvizService:
             "TAK",
             "NMM",
         ]
+        assert result["duplicates_removed"] == 0
+
+    @patch("finvizfinance.insider.Insider")
+    def test_get_insider_activity_deduplicates_before_pagination(self, mock_insider):
+        from mtdata.services.finviz import get_insider_activity
+
+        duplicate = {
+            "Ticker": "ATTO",
+            "Insider Trading": "Goldman Sachs Group Inc",
+            "Date": "2026-08-06",
+            "Transaction": "Buy",
+            "Cost": "17.00",
+            "#Shares": "500000",
+            "Value ($)": "8500000",
+            "SEC Form 4 Link": "https://sec.example/atto",
+        }
+        mock_insider.return_value.get_insider.return_value = pd.DataFrame(
+            [duplicate, dict(duplicate), {**duplicate, "#Shares": "85000"}]
+        )
+        mock_insider.return_value.soup = None
+
+        result = get_insider_activity(option="latest", limit=10)
+
+        assert result["total"] == 2
+        assert result["count"] == 2
+        assert result["duplicates_removed"] == 1
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_ratings_success(self, mock_finviz):
@@ -1565,6 +1591,7 @@ class TestFinvizTools:
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
         valuation = raw("AAPL", category="valuation")
+        valuation_full = raw("AAPL", category="valuation", detail="full")
         technical = raw("AAPL", category="technical")
         financial = raw("AAPL", category="financial")
         custom = raw("AAPL", fields="P/E,RSI (14),SMA20,Missing")
@@ -1581,6 +1608,9 @@ class TestFinvizTools:
             "price_to_sales": 8.1,
             "eps_ttm": 7.9,
         }
+        assert valuation_full["category"] == "valuation"
+        assert valuation_full["fundamentals"] == valuation["fundamentals"]
+        assert "rsi_14" not in valuation_full["fundamentals"]
         assert custom["category"] == "custom"
         assert custom["fundamentals"] == {
             "pe_ratio": 34.29,
@@ -1621,7 +1651,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
-        result = raw("AAPL", detail="full")
+        result = raw("AAPL", detail="full", category="all")
 
         assert "fields_returned" not in result
         assert result["available_field_count"] == 3
@@ -1677,7 +1707,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
-        result = raw("AAPL", detail="full")
+        result = raw("AAPL", detail="full", category="all")
 
         fundamentals = result["fundamentals"]
         assert fundamentals["high_52w_price"] == 300.92
@@ -1717,7 +1747,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
-        result = raw("AAPL", detail="full")
+        result = raw("AAPL", detail="full", category="all")
 
         fundamentals = result["fundamentals"]
         assert fundamentals["return_on_assets"] == 29.5
@@ -1755,7 +1785,7 @@ class TestFinvizTools:
         }
 
         raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
-        result = raw("AAPL", detail="full")
+        result = raw("AAPL", detail="full", category="all")
 
         fundamentals = result["fundamentals"]
         assert fundamentals["enterprise_value"] == 4_599_540_000_000
@@ -1766,6 +1796,38 @@ class TestFinvizTools:
         assert fundamentals["sales_formatted"] == "451.44B"
         assert fundamentals["eps_this_y"] == 17.26
         assert fundamentals["eps_next_y"] == 9.62
+
+    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    def test_finviz_fundamentals_canonicalizes_percent_aliases(
+        self,
+        mock_get_fundamentals,
+    ):
+        from mtdata.core.finviz import finviz_fundamentals
+
+        mock_get_fundamentals.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "fundamentals": {
+                "oper_margin": "33.17%",
+                "EPS next 5 Y": "12.35%",
+            },
+        }
+
+        raw = getattr(finviz_fundamentals, "__wrapped__", finviz_fundamentals)
+        result = raw(
+            "AAPL",
+            detail="full",
+            fields="oper_margin,eps_next_5_y",
+        )
+
+        assert result["fundamentals"] == {
+            "operating_margin": 33.17,
+            "eps_next_5_y": 12.35,
+        }
+        assert result["units"] == {
+            "operating_margin": "percent (1.0 = 1%)",
+            "eps_next_5_y": "percent (1.0 = 1%)",
+        }
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
     def test_finviz_insider_defaults_to_compact_detail(self, mock_get_trades):

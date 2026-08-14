@@ -52,9 +52,17 @@ Get fundamental metrics for a US stock.
 
 ```bash
 mtdata-cli finviz_fundamentals AAPL --json
+mtdata-cli finviz_fundamentals AAPL --category valuation --detail full --json
+mtdata-cli finviz_fundamentals AAPL --category all --detail full --json
 ```
 
 **Returns:** P/E, Forward P/E, EPS, market cap, sector, industry, dividend yield, 52-week range, analyst recommendations, and 60+ other metrics.
+
+`--category` and `--detail` are independent: `detail=full` preserves full
+diagnostics and values inside the selected category, while `--category all` is
+the explicit way to return every available metric family. Percentage metrics
+are JSON numbers on the documented `1.0 = 1%` scale and carry entries in
+`units`.
 
 ### `finviz_description`
 
@@ -152,17 +160,22 @@ Get market-wide insider trading activity.
 mtdata-cli finviz_insider_activity --option latest --json
 
 # Top insider buys this week
-mtdata-cli finviz_insider_activity --option "top week" --json
+mtdata-cli finviz_insider_activity --option "top week buys" --json
 
-# Only insider buys
-mtdata-cli finviz_insider_activity --option "insider buy" --json
+# Latest insider buys
+mtdata-cli finviz_insider_activity --option "latest buys" --json
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--option` | `latest` | `latest`, `top week`, `top owner trade`, `insider buy`, `insider sale` |
+| `--option` | `latest` | `latest`, `latest buys`, `latest sales`, `top week`, `top week buys`, `top week sales`, `top owner trade`, `top owner buys`, `top owner sales` |
 | `--limit` | 50 | Max items |
 | `--page` | 1 | Pagination page |
+
+The `latest*` feeds preserve provider filing-recency order and report
+`ordering=filed_at_descending`. Compact rows distinguish `transaction_date`
+from timezone-qualified `filed_at`; exact repeated filing transactions are
+removed before pagination and aggregation.
 
 ---
 

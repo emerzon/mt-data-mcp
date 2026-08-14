@@ -1777,6 +1777,7 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "outer": "firm",
     "Gross M": "gross_margin",
     "Oper M": "operating_margin",
+    "Oper Margin": "operating_margin",
     "Profit M": "profit_margin",
     "Book/sh": "book_value_per_share",
     "Shs Outstand": "shares_outstanding",
@@ -1799,6 +1800,9 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Dividend Gr. 3Y": "dividend_growth_3y",
     "Dividend Gr. 5Y": "dividend_growth_5y",
     "Dividend Gr. 3/5Y": "dividend_growth_3_5_y",
+}
+_FINVIZ_OUTPUT_KEY_ALIASES = {
+    "oper_margin": "operating_margin",
 }
 _FINVIZ_MARKET_CAP_BUCKETS = {
     "nano",
@@ -1840,6 +1844,7 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "eps_this_y",
         "eps_next_y",
         "eps_next_q",
+        "eps_next_5_y",
         "rsi_14",
         "sma20_distance_pct",
         "sma50_distance_pct",
@@ -1923,6 +1928,7 @@ _FINVIZ_PERCENT_FUNDAMENTAL_KEYS = frozenset(
         "gross_margin",
         "operating_margin",
         "profit_margin",
+        "eps_next_5_y",
         "performance_week",
         "performance_month",
         "performance_quarter",
@@ -2027,7 +2033,8 @@ def _normalize_finviz_output_key(key: Any) -> str:
     text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", "_", text)
     text = text.replace("%", " pct ").replace("&", " and ").replace("/", " ")
     text = re.sub(r"[^0-9A-Za-z]+", "_", text).strip("_").lower()
-    return text or str(key)
+    normalized = text or str(key)
+    return _FINVIZ_OUTPUT_KEY_ALIASES.get(normalized, normalized)
 
 
 def _parse_finviz_numeric_value(value: Any) -> Optional[float]:
@@ -2974,7 +2981,8 @@ def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) ->
         else ()
     ) + (
         "owner",
-        "date",
+        "transaction_date",
+        "filed_at",
         "transaction",
         "price_per_share",
         "shares",
@@ -2985,14 +2993,94 @@ def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) ->
     return out
 
 
+def _normalize_finviz_filing_timestamp(
+    value: Any,
+    *,
+    transaction_date: Any = None,
+) -> Optional[str]:
+    """Normalize Finviz's yearless SEC filing time as US Eastern ISO-8601."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    reference_date = None
+    try:
+        reference_date = datetime.fromisoformat(str(transaction_date)).date()
+    except (TypeError, ValueError):
+        pass
+    eastern = ZoneInfo("America/New_York")
+    if reference_date is None:
+        reference_date = datetime.now(timezone.utc).astimezone(eastern).date()
+    try:
+        parsed = datetime.strptime(
+            f"{reference_date.year} {text}",
+            "%Y %b %d %I:%M %p",
+        )
+    except ValueError:
+        return None
+    year = reference_date.year
+    candidate = parsed.replace(tzinfo=eastern)
+    if candidate.date() < reference_date - timedelta(days=180):
+        candidate = candidate.replace(year=year + 1)
+    elif candidate.date() > reference_date + timedelta(days=180):
+        candidate = candidate.replace(year=year - 1)
+    return candidate.isoformat()
+
+
 def _normalize_finviz_insider_rows(rows: Any) -> List[Any]:
     normalized = _normalize_finviz_output_rows(rows)
     if not isinstance(normalized, list):
         return []
     for row in normalized:
-        if isinstance(row, dict) and row.get("cost") not in (None, ""):
+        if not isinstance(row, dict):
+            continue
+        if row.get("cost") not in (None, ""):
             row.setdefault("price_per_share", row["cost"])
+        if row.get("date") not in (None, ""):
+            row.setdefault("transaction_date", row["date"])
+        filed_at = _normalize_finviz_filing_timestamp(
+            row.get("sec_form_4"),
+            transaction_date=row.get("transaction_date"),
+        )
+        if filed_at is not None:
+            row["filed_at"] = filed_at
     return normalized
+
+
+def _finviz_insider_identity(row: Any) -> str:
+    if not isinstance(row, dict):
+        return repr(row)
+    fields = (
+        "symbol",
+        "owner",
+        "sec_form_4_link",
+        "filed_at",
+        "transaction_date",
+        "transaction",
+        "price_per_share",
+        "shares",
+        "value_usd",
+        "shares_total",
+    )
+    identity = {
+        key: row.get(key)
+        for key in fields
+        if row.get(key) not in (None, "")
+    }
+    if not identity:
+        identity = row
+    return json.dumps(identity, sort_keys=True, default=str, separators=(",", ":"))
+
+
+def _dedupe_finviz_insider_rows(rows: List[Any]) -> tuple[List[Any], int]:
+    unique: List[Any] = []
+    seen: set[str] = set()
+    for row in rows:
+        identity = _finviz_insider_identity(row)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(row)
+    return unique, len(rows) - len(unique)
 
 
 def _compact_finviz_insider_payload(
@@ -3009,8 +3097,14 @@ def _compact_finviz_insider_payload(
     rows = result.get("insider_trades")
     if not isinstance(rows, list):
         return result
-    normalized_rows = _normalize_finviz_insider_rows(rows)
+    normalized_rows, duplicates_removed = _dedupe_finviz_insider_rows(
+        _normalize_finviz_insider_rows(rows)
+    )
     out = {key: value for key, value in result.items() if key != "insider_trades"}
+    if duplicates_removed:
+        out["duplicates_removed"] = int(out.get("duplicates_removed") or 0) + int(
+            duplicates_removed
+        )
     out["detail"] = detail_mode
     page_value = int(result.get("page") or page or 1)
     pages = result.get("pages")
@@ -3071,8 +3165,14 @@ def _compact_finviz_insider_activity_payload(
         return result
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
-    normalized_rows = _normalize_finviz_insider_rows(rows)
+    normalized_rows, duplicates_removed = _dedupe_finviz_insider_rows(
+        _normalize_finviz_insider_rows(rows)
+    )
     out = {key: value for key, value in result.items() if key != "insider_trades"}
+    if duplicates_removed:
+        out["duplicates_removed"] = int(out.get("duplicates_removed") or 0) + int(
+            duplicates_removed
+        )
     out["detail"] = detail_mode
     page_value = int(result.get("page") or page or 1)
     pages = result.get("pages")
@@ -3110,6 +3210,8 @@ def _compact_finviz_insider_activity_payload(
         "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
     out["hint"] = "Market-wide insider activity; use finviz_insider SYMBOL for one ticker."
+    if str(result.get("option") or "").startswith("latest"):
+        out["ordering"] = "filed_at_descending"
     _apply_finviz_pagination_contract(
         out,
         returned=len(compact_rows),
@@ -3307,10 +3409,7 @@ def _filter_finviz_fundamentals_payload(
         )
         category_out = "custom"
     elif category_mode != "all":
-        if detail_mode == "compact":
-            selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
-        else:
-            selected_fields = list(fundamentals.keys())
+        selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
         category_out = category_mode
     elif detail_mode == "compact":
         selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES["summary"])
@@ -3923,8 +4022,7 @@ def finviz_insider_activity(
     ----------
     option : str
         Activity type:
-        - "latest": Most recent insider trades
-        - "latest", "latest buys", "latest sales"
+        - "latest", "latest buys", "latest sales": newest SEC filings first
         - "top week", "top week buys", "top week sales"
         - "top owner trade", "top owner buys", "top owner sales"
     limit : int

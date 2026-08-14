@@ -782,6 +782,29 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             elif len(ordered_symbols) == len(df.index):
                 df["Ticker"] = ordered_symbols
 
+        identity_columns = [
+            column
+            for column in (
+                "Ticker",
+                "Insider Trading",
+                "Owner",
+                "SEC Form 4 Link",
+                "SEC Form 4",
+                "Date",
+                "Transaction",
+                "Cost",
+                "#Shares",
+                "Shares",
+                "Value ($)",
+                "#Shares Total",
+            )
+            if column in df.columns
+        ]
+        rows_before_deduplication = len(df.index)
+        if identity_columns:
+            df = df.drop_duplicates(subset=identity_columns, keep="first")
+        duplicates_removed = rows_before_deduplication - len(df.index)
+
         items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
             df,
             limit=limit,
@@ -796,6 +819,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             "page": safe_page,
             "pages": pages,
             "insider_trades": items_list,
+            "duplicates_removed": int(duplicates_removed),
         }
     except Exception as e:
         logger.exception("Error fetching insider activity")

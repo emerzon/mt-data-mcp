@@ -648,6 +648,7 @@ class TestFinvizInsiderActivityOutputContract:
                     "SEC Form 4": "Apr 27 06:30 PM",
                     "SEC Form 4 Link": "https://sec.example/a",
                     "Insider_id": "123",
+                    "Date": "2026-04-20",
                     "#Shares Total": "200",
                     "Transaction": "Sale",
                     "#Shares": "10",
@@ -675,6 +676,8 @@ class TestFinvizInsiderActivityOutputContract:
         assert result["items"][0]["symbol"] == "AAPL"
         assert result["items"][0] == {
             "symbol": "AAPL",
+            "transaction_date": "2026-04-20",
+            "filed_at": "2026-04-27T18:30:00-04:00",
             "transaction": "Sale",
             "shares": "10",
             "value_usd": "1000",
@@ -694,6 +697,33 @@ class TestFinvizInsiderActivityOutputContract:
         }
         assert result["pagination"]["returned"] == 6
         assert result["pagination"]["more_available"] == 0
+        assert result["ordering"] == "filed_at_descending"
+
+    @patch("mtdata.core.finviz.get_insider_activity")
+    def test_compact_deduplicates_before_summary(self, mock_get):
+        duplicate = {
+            "Ticker": "ATTO",
+            "Insider Trading": "Goldman Sachs Group Inc",
+            "Date": "2026-08-06",
+            "SEC Form 4": "Aug 13 09:52 PM",
+            "SEC Form 4 Link": "https://sec.example/atto",
+            "Transaction": "Buy",
+            "Cost": "17.00",
+            "#Shares": "500000",
+            "Value ($)": "8500000",
+        }
+        mock_get.return_value = {
+            "success": True,
+            "option": "latest",
+            "insider_trades": [duplicate, dict(duplicate)],
+        }
+
+        result = _unwrap(finviz_insider_activity)(detail="compact")
+
+        assert result["count"] == 1
+        assert result["duplicates_removed"] == 1
+        assert result["summary"]["buy_transactions"] == 1
+        assert result["summary"]["top_symbols"][0]["transactions"] == 1
 
     @patch("mtdata.core.finviz.get_insider_activity")
     def test_full_keeps_all_normalized_rows_including_urls(self, mock_get):
@@ -765,7 +795,11 @@ class TestFinvizInsiderOutputContract:
 
         assert result["detail"] == "full"
         assert result["items"] == [
-            {"owner": "Parekh Kevan", "sec_form_4": "Apr 27 06:30 PM"}
+            {
+                "owner": "Parekh Kevan",
+                "sec_form_4": "Apr 27 06:30 PM",
+                "filed_at": "2026-04-27T18:30:00-04:00",
+            }
         ]
         assert "insider_trades" not in result
 
