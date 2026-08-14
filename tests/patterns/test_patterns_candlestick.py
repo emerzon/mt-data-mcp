@@ -600,11 +600,13 @@ def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
     monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
     monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
-    monkeypatch.setattr(
-        candlestick_mod,
-        "_mt5_copy_rates_from",
-        lambda *_a, **_k: [object(), object(), object()],
-    )
+    requested_counts = []
+
+    def _copy_rates_from(*args, **_kwargs):
+        requested_counts.append(args[-1])
+        return [object(), object(), object()]
+
+    monkeypatch.setattr(candlestick_mod, "_mt5_copy_rates_from", _copy_rates_from)
     monkeypatch.setattr(
         candlestick_mod, "_get_candlestick_pattern_methods", lambda _temp: ["cdl_alpha"]
     )
@@ -625,7 +627,7 @@ def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
     res = candlestick_mod.detect_candlestick_patterns(
         symbol="EURUSD",
         timeframe="H1",
-        limit=10,
+        limit=2,
         min_strength=0.70,
         min_gap=0,
         robust_only=False,
@@ -634,6 +636,9 @@ def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
     )
 
     assert res["success"] is True
+    assert requested_counts == [3]
+    assert res["candles"] == 2
+    assert res["lookback_satisfied"] is True
     assert len(res["data"]) == 1
     assert res["data"][0]["end_index"] == 1
 
@@ -830,7 +835,8 @@ def test_detect_candlestick_patterns_adds_volume_and_regime_enrichment(monkeypat
     row = res["data"][0]
     assert row["volume_confirmation"]["status"] == "confirmed"
     assert row["regime_context"]["status"] == "aligned"
-    assert row["end_index"] == 24
+    assert row["end_index"] == 19
+    assert res["candles"] == 20
 
 
 def test_detect_candlestick_patterns_reapplies_min_strength_after_enrichment(

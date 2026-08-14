@@ -772,9 +772,13 @@ def detect_candlestick_patterns(  # noqa: C901
         if start_dt is not None:
             rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
         elif end_dt is not None:
-            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, limit)
+            rates = _mt5_copy_rates_from(
+                symbol, mt5_timeframe, end_dt, int(limit) + 1
+            )
         else:
-            rates = _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, limit)
+            rates = _mt5_copy_rates_from(
+                symbol, mt5_timeframe, utc_now, int(limit) + 1
+            )
 
     if rates is None:
         return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
@@ -785,14 +789,14 @@ def detect_candlestick_patterns(  # noqa: C901
     from ..services.data_service import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
-    if end_dt is None and should_drop_last_live_bar(
+    if should_drop_last_live_bar(
         df,
         timeframe,
         now_utc=utc_now,
         current_time_epoch=live_bar_reference_epoch,
     ):
         df = df.iloc[:-1].copy()
-    if (start_dt is not None or end_dt is not None) and len(df) > int(limit):
+    if len(df) > int(limit):
         df = df.iloc[-int(limit):].copy()
     if len(df) == 0:
         return {"error": "No closed candle data available"}
