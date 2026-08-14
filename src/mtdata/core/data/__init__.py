@@ -433,14 +433,15 @@ def _compact_wait_event_public_result(
     criteria_in = out.get("criteria")
     criteria = dict(criteria_in) if isinstance(criteria_in, dict) else None
     if criteria is not None:
-        criteria["watch_for_inferred"] = not explicit_watch_for
-        criteria["end_on_inferred"] = not explicit_end_on
         watch_specs = criteria.get("watch_for")
         watcher_count = len(watch_specs) if isinstance(watch_specs, list) else 0
+        watch_for_inferred = bool(not explicit_watch_for and watcher_count)
+        criteria["watch_for_inferred"] = watch_for_inferred
+        criteria["end_on_inferred"] = not explicit_end_on
         watcher_types = _wait_event_monitored_types(
             {"watch_for": watch_specs if isinstance(watch_specs, list) else []}
         )
-        out["watch_for_inferred"] = not explicit_watch_for
+        out["watch_for_inferred"] = watch_for_inferred
         out["watcher_count"] = watcher_count
         out["watcher_types"] = watcher_types
 
@@ -735,11 +736,16 @@ def wait_event(
     boundary, or set `max_wait_seconds` to stop after a fixed duration. Combining
     both modes, or omitting both, is invalid.
 
-    If `watch_for` is omitted, the public default watches the lightweight core set:
+    In timeframe mode, omitting `watch_for` watches the lightweight core set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
     events, and tick-count changes. It does not fetch support/resistance or pivot
     zones during setup. Pass explicit price_touch_level, price_break_level, or
     price_enter_zone objects when those levels are part of the intended wait.
+
+    In duration mode, omitting `watch_for` creates a timer-only wait. It does not
+    connect to MT5 or poll market/account state. Pass explicit watcher objects to
+    return early when an event matches; an unmatched explicit event wait fails
+    with `wait_event_timeout`.
 
     Supply either `symbol` for a single instrument or `symbols` for a basket of
     up to 12 instruments; the parameters are mutually exclusive. Basket waits
@@ -755,8 +761,8 @@ def wait_event(
     `max_wait_seconds` selects duration mode and must be omitted when
     `timeframe` or `end_on` is set. Explicit `end_on` timeframes must match the
     top-level `timeframe`.
-    When `watch_for` is omitted, reaching the requested duration or timeframe
-    boundary is a successful completion if no inferred watcher matches first.
+    A timer-only duration or a timeframe boundary reached with inferred watchers
+    is a successful completion.
     With explicit `watch_for`, a timeout is a failed wait (`success=false`,
     `error_code=wait_event_timeout`) and produces a nonzero CLI exit status. Timeout responses set
     `timed_out=true`, return `events=[]`, identify `wait_mode`, and include the
@@ -789,8 +795,9 @@ def wait_event(
     watch_for=[{"type": "order_filled", "symbol": "EURUSD"}]`.
 
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
-    use the richer wait-event engine directly. When explicit `watch_for` is
-    provided, `watch_tick_count_spike` no longer alters the watcher list.
+    use the richer wait-event engine directly. `watch_tick_count_spike` only
+    alters the inferred timeframe watcher list; it does not affect timer-only
+    duration waits or explicit `watch_for`.
     Set `detail="full"` to include polling/timing details and the full criteria
     echo in the response.
     """
@@ -825,15 +832,6 @@ def wait_event(
         request_error = symbols_error
     elif symbol_value is not None and symbols_value is not None:
         request_error = "symbol and symbols cannot be combined."
-    elif (
-        max_wait_seconds is not None
-        and symbol_value is None
-        and symbols_value is None
-        and not explicit_watch_for
-    ):
-        request_error = (
-            "symbol or symbols is required when watch_for is omitted in duration mode."
-        )
 
     def _run() -> Dict[str, Any]:
         if spec_error is not None:
@@ -872,6 +870,8 @@ def wait_event(
             ]
         if normalized_watch_for is not None:
             resolved_watch_for = list(normalized_watch_for)
+        elif max_wait_seconds is not None:
+            resolved_watch_for = []
         else:
             watcher_symbols = (
                 list(symbols_value)
@@ -892,7 +892,9 @@ def wait_event(
                 **request_kwargs,
                 watch_for=resolved_watch_for,
             )
-            request._watch_for_inferred = not explicit_watch_for
+            request._watch_for_inferred = bool(
+                not explicit_watch_for and resolved_watch_for
+            )
         except ValidationError as exc:
             error_message, error_code = _wait_event_validation_error(exc)
             return {

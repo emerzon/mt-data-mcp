@@ -420,7 +420,10 @@ PARAM_HINTS = {
     "max_regimes": "Maximum regime summary rows to return in compact output.",
     "limit_per_bucket": "Maximum news items returned per bucket.",
     "poll_interval_seconds": "Seconds between polling attempts while waiting for events.",
-    "watch_tick_count_spike": "Watch for abnormal tick-volume spikes while waiting.",
+    "watch_tick_count_spike": (
+        "Add the abnormal tick-volume watcher to an inferred timeframe wait; "
+        "ignored for timer-only duration waits and explicit watch_for."
+    ),
     "core_only": "Return only methods implemented by the core package.",
 }
 

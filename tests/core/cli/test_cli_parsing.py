@@ -900,6 +900,10 @@ class TestAddDynamicArguments:
             action.dest == "instrument"
             for action in parser._actions
         )
+        symbol_action = next(
+            action for action in parser._actions if action.dest == "symbol"
+        )
+        assert "Timer-only duration" in symbol_action.help
 
     def test_wait_event_help_explains_exclusive_wait_modes(self):
         parser = argparse.ArgumentParser()

@@ -1740,6 +1740,8 @@ def _run_wait_event_impl(
 
 
 def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:
+    if request.max_wait_seconds is not None and not request.watch_for:
+        return False
     if request.watch_for is None:
         return request.symbol is not None or bool(request.symbols)
     if request.watch_for:

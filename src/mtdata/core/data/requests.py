@@ -781,7 +781,8 @@ class WaitEventRequest(BaseModel):
             "position_opened, position_closed, tp_hit, sl_hit, pending_near_fill, "
             "stop_threat. Example: "
             "[{\"type\": \"price_change\", \"direction\": \"up\", "
-            "\"threshold_mode\": \"fixed_pct\", \"threshold_value\": 0.1}]."
+            "\"threshold_mode\": \"fixed_pct\", \"threshold_value\": 0.1}]. "
+            "In duration mode, omitting watch_for creates a timer-only wait."
         ),
     )
     end_on: List[WaitBoundaryEventSpec] = Field(default_factory=list)
@@ -902,17 +903,4 @@ class WaitEventRequest(BaseModel):
                     "end_on timeframes must match the top-level timeframe "
                     f"({self.timeframe}); received {', '.join(conflicting_timeframes)}."
                 )
-        if self.watch_for == [] and not has_boundary:
-            raise ValueError(
-                "watch_for cannot be empty in duration mode because no event could match."
-            )
-        if (
-            has_duration
-            and self.watch_for is None
-            and self.symbol is None
-            and self.symbols is None
-        ):
-            raise ValueError(
-                "symbol or symbols is required when watch_for is omitted in duration mode."
-            )
         return self

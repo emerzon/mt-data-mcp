@@ -797,12 +797,11 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
         },
     }
 
-def test_wait_event_request_rejects_empty_watchers_in_duration_mode() -> None:
-    with pytest.raises(
-        ValidationError,
-        match="watch_for cannot be empty in duration mode because no event could match",
-    ):
-        WaitEventRequest(watch_for=[], max_wait_seconds=5)
+def test_wait_event_request_accepts_empty_watchers_as_duration_timer() -> None:
+    request = WaitEventRequest(watch_for=[], max_wait_seconds=5)
+
+    assert request.watch_for == []
+    assert _wait_event_needs_gateway(request) is False
 
 
 def test_wait_event_request_rejects_too_small_poll_interval() -> None:
@@ -818,7 +817,7 @@ def test_wait_event_gateway_check_treats_constructed_none_boundary_as_empty() ->
 
     assert _wait_event_needs_gateway(request) is False
 
-def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
+def test_run_wait_event_omitted_duration_watchers_do_not_poll_account_state() -> None:
     gateway = SequenceGateway(
         orders_seq=[
             [],
@@ -839,14 +838,20 @@ def test_run_wait_event_uses_all_default_watchers_when_omitted() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
-    assert result["matched_event"]["type"] == "order_created"
-    assert result["criteria"]["watch_for_inferred"] is True
-    assert any(item["type"] == "price_change" for item in result["criteria"]["watch_for"])
+    assert result["status"] == "completed"
+    assert result["completion_reason"] == "duration_elapsed"
+    assert result["timer_only"] is True
+    assert result["matched"] is False
+    assert result["criteria"]["watch_for"] == []
+    assert result["criteria"]["watch_for_inferred"] is False
     assert result["criteria"]["end_on_inferred"] is False
+    assert gateway._orders_calls == 0
+    assert gateway._positions_calls == 0
+    assert gateway._history_orders_calls == 0
+    assert gateway._history_deals_calls == 0
 
 
-def test_inferred_watcher_duration_completes_when_clock_expires() -> None:
+def test_symbol_less_duration_timer_completes_when_clock_expires() -> None:
     gateway = SequenceGateway(
         orders_seq=[[], [], []],
         positions_seq=[[], [], []],
@@ -857,7 +862,6 @@ def test_inferred_watcher_duration_completes_when_clock_expires() -> None:
 
     result = run_wait_event(
         WaitEventRequest(
-            symbol="EURUSD",
             poll_interval_seconds=0.5,
             max_wait_seconds=1.0,
         ),
@@ -874,7 +878,9 @@ def test_inferred_watcher_duration_completes_when_clock_expires() -> None:
     assert result["matched"] is False
     assert result["completion_reason"] == "duration_elapsed"
     assert result["elapsed_seconds"] == 1.0
-    assert result["criteria"]["watch_for_inferred"] is True
+    assert result["criteria"]["watch_for"] == []
+    assert result["criteria"]["watch_for_inferred"] is False
+    assert result["timer_only"] is True
 
 
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
@@ -1423,6 +1429,7 @@ def test_run_wait_event_rejects_unknown_symbol_before_polling() -> None:
             symbol="NOTAREAL",
             max_wait_seconds=0.2,
             poll_interval_seconds=0.1,
+            watch_for=[{"type": "order_created"}],
         ),
         gateway=UnknownSymbolGateway(),
         sleep_impl=clock.sleep,
@@ -1451,6 +1458,7 @@ def test_run_wait_event_distinguishes_unselectable_known_symbol() -> None:
             symbol="EURUSD",
             max_wait_seconds=0.2,
             poll_interval_seconds=0.1,
+            watch_for=[{"type": "order_created"}],
         ),
         gateway=UnavailableSymbolGateway(),
         sleep_impl=clock.sleep,

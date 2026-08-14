@@ -53,13 +53,16 @@ If nothing fills in time, the command fails (`success=false`,
 `error_code=wait_event_timeout`) and the CLI exits nonzero. That is
 intentional: a script can decide whether to retry.
 
-Default watchers (when you omit `--watch-for`) include order/position
-lifecycle, pending-stop proximity, activity spikes, and tick-count changes.
-They do **not** fetch support/resistance or pivot zones unless you ask.
-If none of those inferred watchers matches, reaching the requested duration is
-a successful clock completion (`success=true`, `matched=false`,
-`completion_reason=duration_elapsed`). Pass an explicit `--watch-for` when an
-unmatched deadline must fail with `wait_event_timeout`.
+Omitting `--watch-for` in duration mode makes this a pure timer. It does not
+connect to MT5 or poll order, position, or market state. Completion reports
+`success=true`, `matched=false`, `timed_out=false`, `timer_only=true`, and
+`completion_reason=duration_elapsed`. `timed_out` is reserved for an explicit
+event wait whose deadline expires.
+
+Pass an explicit `--watch-for` when the wait should return early for an event,
+as in the fill example above. In timeframe mode, omitted watchers still include
+the lightweight order/position lifecycle, pending-stop proximity, activity,
+and tick-count set. They do **not** fetch support/resistance or pivot zones.
 
 ---
 

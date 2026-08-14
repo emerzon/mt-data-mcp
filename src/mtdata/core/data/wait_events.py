@@ -113,6 +113,9 @@ def run_wait_event_loop(  # noqa: C901
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     poll_interval_seconds = float(request.poll_interval_seconds)
+    timer_only = bool(
+        max_wait_seconds is not None and not watch_for and not boundaries
+    )
 
     def _timeout_if_expired(*, polls: int = 0) -> Optional[Dict[str, Any]]:
         if max_wait_seconds is None:
@@ -122,7 +125,7 @@ def run_wait_event_loop(  # noqa: C901
             return None
         return _build_wait_result(
             request=request,
-            status="completed" if watch_for_inferred else "timeout",
+            status="completed" if watch_for_inferred or timer_only else "timeout",
             started_at_utc=started_at_utc,
             observed_at_utc=_normalize_utc_datetime(now_utc_impl()),
             polls=polls,
@@ -150,6 +153,18 @@ def run_wait_event_loop(  # noqa: C901
 
     if (timeout_result := _timeout_if_expired()) is not None:
         return timeout_result
+
+    if timer_only:
+        while True:
+            elapsed = max(
+                0.0,
+                float(monotonic_impl()) - started_at_monotonic,
+            )
+            remaining = max(0.0, float(max_wait_seconds) - elapsed)
+            if remaining > 0.0:
+                sleep_impl(remaining)
+            if (timeout_result := _timeout_if_expired()) is not None:
+                return timeout_result
 
     connection_error = _wait_event_connection_error(gateway)
     if connection_error is not None:
@@ -355,10 +370,11 @@ def _compile_request(
     started_at_utc: datetime,
 ) -> Dict[str, Any]:
     raw_watch_specs = request.watch_for
-    watch_for_inferred = bool(
+    inference_requested = bool(
         raw_watch_specs is None or request._watch_for_inferred
     )
     source_watch_specs = _expanded_watch_specs(request, raw_watch_specs)
+    watch_for_inferred = bool(inference_requested and source_watch_specs)
     source_end_specs: List[Any]
     end_on_inferred = False
     if request.end_on:
@@ -410,6 +426,8 @@ def _expanded_watch_specs(
     raw_watch_specs: Optional[List[Any]],
 ) -> List[Any]:
     if raw_watch_specs is None:
+        if request.max_wait_seconds is not None:
+            return []
         return _default_watch_specs(request)
     if not request.symbols:
         return list(raw_watch_specs)
@@ -2684,7 +2702,7 @@ def _build_wait_result(
     successful_duration = (
         status == "completed"
         and request.max_wait_seconds is not None
-        and watch_for_inferred
+        and (watch_for_inferred or not watch_for_payload)
     )
     result = {
         "success": matched or successful_boundary or successful_duration,
@@ -2719,6 +2737,7 @@ def _build_wait_result(
     }
     if successful_duration:
         result["completion_reason"] = "duration_elapsed"
+        result["timer_only"] = not bool(watch_for_payload)
     elif successful_boundary:
         result["completion_reason"] = "candle_boundary_reached"
     if request.symbols is not None:

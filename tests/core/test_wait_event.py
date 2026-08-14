@@ -520,13 +520,18 @@ def test_wait_event_rejects_conflicting_end_on_timeframe(
     mock_run_wait.assert_not_called()
 
 
-def test_wait_event_duration_without_scope_uses_standard_error_code() -> None:
-    result = _raw_wait_event()(max_wait_seconds=30)
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+def test_wait_event_duration_without_scope_is_timer_only(_mock_gateway) -> None:
+    result = _raw_wait_event()(max_wait_seconds=0)
 
-    assert result == {
-        "error": "symbol or symbols is required when watch_for is omitted in duration mode.",
-        "error_code": "wait_event_invalid_request",
-    }
+    assert result["success"] is True
+    assert result["completion_reason"] == "duration_elapsed"
+    assert result["timer_only"] is True
+    assert result["timed_out"] is False
+    assert result["matched"] is False
+    assert result["watch_for_inferred"] is False
+    assert result["watcher_count"] == 0
+    assert result["watcher_types"] == []
 
 
 def test_wait_event_request_rejects_instrument_as_extra_field() -> None:

@@ -584,8 +584,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): (
         "Single trading symbol (e.g. EURUSD). Cannot be combined with symbols. "
-        "Omit both only for timeframe clock-boundary mode; duration mode "
-        "requires symbol or symbols."
+        "Timer-only duration and clock-only timeframe waits may omit both."
     ),
     ("wait_event", "symbols"): (
         "Basket of 1-12 trading symbols. Cannot be combined with symbol; omitted-symbol "
@@ -597,21 +596,22 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("wait_event", "max_wait_seconds"): (
         "Duration wait mode in seconds. Cannot be combined with timeframe or end_on. "
-        "With inferred watchers, elapsed duration is a successful completion."
+        "Omit watch_for for a timer-only wait; pass watchers to return early on events."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
     ),
     ("wait_event", "watch_tick_count_spike"): (
-        "Include the inferred tick-count-spike watcher. Ignored with explicit watch_for."
+        "Include the inferred timeframe tick-count-spike watcher. Ignored in timer-only "
+        "duration mode and with explicit watch_for."
     ),
     ("wait_event", "watch_for"): (
         "Event names or event objects. Examples: order_filled, "
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "
-        "Put candle_close boundaries in end_on. Omit for the lightweight core "
-        "order/position and market-activity watcher set; generated S/R and pivot "
-        "zones are not inferred. Explicit watchers make an unmatched timeout or "
-        "boundary a failed wait."
+        "Put candle_close boundaries in end_on. In timeframe mode, omit for the "
+        "lightweight core order/position and market-activity watcher set; generated "
+        "S/R and pivot zones are not inferred. In duration mode, omit for a pure "
+        "timer. Explicit watchers make an unmatched timeout or boundary a failed wait."
     ),
     ("wait_event", "end_on"): (
         "Optional timeframe-mode boundaries. Explicit boundary timeframes must "
