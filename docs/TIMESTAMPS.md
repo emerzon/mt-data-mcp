@@ -49,8 +49,8 @@ Internal filtering and range comparisons stay on the UTC epoch axis.
 
 Live quote freshness is anchored to the wall clock after quote acquisition.
 Broker ticks less than 10 seconds ahead are retained as live but disclose a
-negative `data_age_seconds`, `timestamp_ahead_of_wall_clock=true`, and the
-measured skew. A lead of 10 seconds or more is unsafe and sets
+floored `data_age_seconds=0`, `timestamp_ahead_of_wall_clock=true`, and the
+measured lead in `timestamp_skew_seconds`. A lead of 10 seconds or more is unsafe and sets
 `timestamp_in_future=true`. Quote-reading tools reconcile the cached
 `symbol_info_tick` snapshot with the latest tick stream before applying this
 single policy.
