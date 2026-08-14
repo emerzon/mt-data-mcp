@@ -33,6 +33,7 @@ from ..utils.freshness import (
 )
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.quote import (
+    compute_spread_metrics,
     enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
@@ -386,6 +387,63 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     return df.reset_index(drop=True), truncated
 
 
+def _microstructure_latest_quote(
+    gateway: Any,
+    symbol: str,
+    latest_tick: pd.Series,
+    *,
+    reconcile_live_quote: bool,
+    now_epoch: float,
+) -> Dict[str, Any]:
+    """Return execution quote state while retaining the final raw update state."""
+    raw_epoch = float(latest_tick["epoch"])
+    raw_quality = str(latest_tick["spread_quality"])
+    out: Dict[str, Any] = {
+        "bid": latest_tick.get("bid"),
+        "ask": latest_tick.get("ask"),
+        "epoch": raw_epoch,
+        "spread_quality": raw_quality,
+        "quote_source": "mt5.copy_ticks_range",
+        "quote_source_state": "latest_raw_update",
+        "raw_update_quality": raw_quality,
+        "raw_update_epoch": raw_epoch,
+        "reconciled": False,
+    }
+    if not reconcile_live_quote or raw_quality == "two_sided":
+        return out
+
+    try:
+        cached_tick = gateway.symbol_info_tick(symbol)
+    except Exception:
+        cached_tick = None
+    resolved_tick, quote_source = resolve_quote_tick(
+        gateway,
+        symbol,
+        cached_tick,
+        now_epoch=now_epoch,
+    )
+    spread = compute_spread_metrics(
+        tick_value(resolved_tick, "bid"),
+        tick_value(resolved_tick, "ask"),
+    )
+    if spread.get("spread_quality") != "two_sided":
+        return out
+
+    resolved_epoch = tick_epoch(resolved_tick)
+    out.update(
+        {
+            "bid": tick_value(resolved_tick, "bid"),
+            "ask": tick_value(resolved_tick, "ask"),
+            "epoch": raw_epoch if resolved_epoch is None else float(resolved_epoch),
+            "spread_quality": "two_sided",
+            "quote_source": quote_source.get("quote_source"),
+            "quote_source_state": quote_source.get("quote_source_state"),
+            "reconciled": True,
+        }
+    )
+    return out
+
+
 def analyze_microstructure(  # noqa: C901
     request: MarketMicrostructureRequest, gateway: Any
 ) -> Dict[str, Any]:
@@ -600,7 +658,7 @@ def analyze_microstructure(  # noqa: C901
             ).sum()
         ),
         "locked_quote_ticks": int((df["spread_quality"] == "locked").sum()),
-        "latest_spread_quality": str(df["spread_quality"].iloc[-1]),
+        "latest_raw_update_quality": str(df["spread_quality"].iloc[-1]),
         "truncated": truncated,
         "retained": "latest" if truncated else "complete_window",
         "requested_start": start.isoformat(),
@@ -633,11 +691,25 @@ def analyze_microstructure(  # noqa: C901
             spread_series = q["spread"]
         spread_series = pd.to_numeric(spread_series, errors="coerce")
         latest_tick = df.iloc[-1]
-        latest_spread_quality = str(latest_tick["spread_quality"])
-        latest_quote_epoch = float(latest_tick["epoch"])
+        raw_update_epoch = float(latest_tick["epoch"])
+        latest_quote = _microstructure_latest_quote(
+            gateway,
+            request.symbol,
+            latest_tick,
+            reconcile_live_quote=(
+                request.start is None
+                and request.end is None
+                and completed_session_context is None
+            ),
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        )
+        latest_spread_quality = str(latest_quote["spread_quality"])
+        latest_quote_epoch = float(latest_quote["epoch"])
         latest_spread = None
         if latest_spread_quality in {"two_sided", "locked"}:
-            latest_absolute_spread = float(latest_tick["ask"] - latest_tick["bid"])
+            latest_absolute_spread = float(latest_quote["ask"]) - float(
+                latest_quote["bid"]
+            )
             if spread_key == "spread_pips":
                 latest_spread = latest_absolute_spread / (point * float(points_per_pip))
             elif spread_key == "spread_points":
@@ -645,9 +717,7 @@ def analyze_microstructure(  # noqa: C901
             else:
                 latest_spread = latest_absolute_spread
         recent_mask = (
-            q["epoch"] >= latest_quote_epoch - 300.0
-            if latest_quote_epoch is not None
-            else pd.Series(False, index=q.index)
+            q["epoch"] >= raw_update_epoch - 300.0
         )
         recent_spreads = spread_series.loc[recent_mask].dropna()
         recent_median = (
@@ -668,14 +738,22 @@ def analyze_microstructure(  # noqa: C901
             else "unreliable_quote"
             if latest_spread_quality != "two_sided"
             else "wider_than_window"
-            if latest_to_window_ratio is not None and latest_to_window_ratio >= 2.0
+            if latest_to_window_ratio is not None
+            and latest_to_window_ratio >= 2.0 - 1e-9
             else "tighter_than_window"
-            if latest_to_window_ratio is not None and latest_to_window_ratio <= 0.5
+            if latest_to_window_ratio is not None
+            and latest_to_window_ratio <= 0.5 + 1e-9
             else "near_window_median"
             if latest_to_window_ratio is not None
             else "unknown"
         )
-        if latest_spread_quality == "locked":
+        if latest_quote.get("reconciled"):
+            warnings.append(
+                "The final raw tick-stream update was not executable; latest spread "
+                "uses the canonical reconciled live quote while raw update quality "
+                "remains in data_quality."
+            )
+        elif latest_spread_quality == "locked":
             warnings.append(
                 "Latest analyzed quote is locked (bid equals ask); its zero "
                 "spread is not usable for execution."
@@ -703,6 +781,10 @@ def analyze_microstructure(  # noqa: C901
                     "latest_as_of": format_epoch_utc(latest_quote_epoch),
                     "spread_valid": latest_spread_quality == "two_sided",
                     "spread_quality": latest_spread_quality,
+                    "raw_update_quality": latest_quote["raw_update_quality"],
+                    "raw_update_as_of": format_epoch_utc(
+                        float(latest_quote["raw_update_epoch"])
+                    ),
                     "recent_5m_median": _round_execution_stat(recent_median),
                     "window_median": _round_execution_stat(window_median),
                     "window_p95": _round_execution_stat(spread_stats.get("p95")),
@@ -711,8 +793,13 @@ def analyze_microstructure(  # noqa: C901
                     ),
                     "regime": spread_regime,
                     "unit": spread_unit,
-                    "basis": "historical_tick_window_distribution",
-                    "source": "mt5.copy_ticks_range",
+                    "basis": (
+                        "canonical_live_quote_against_historical_tick_window_distribution"
+                        if latest_quote.get("reconciled")
+                        else "historical_tick_window_distribution"
+                    ),
+                    "source": latest_quote.get("quote_source"),
+                    "source_state": latest_quote.get("quote_source_state"),
                 },
             },
             "observed_window": {
@@ -725,7 +812,7 @@ def analyze_microstructure(  # noqa: C901
                     "quote_coverage",
                     "invalid_partial_quote_ticks",
                     "locked_quote_ticks",
-                    "latest_spread_quality",
+                    "latest_raw_update_quality",
                     "truncated",
                     "retained",
                     "requested_start",

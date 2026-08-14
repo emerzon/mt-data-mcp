@@ -15,7 +15,12 @@ You do not need a second data vendor — these read the connected MetaTrader 5 t
 `market_microstructure_analyze` measures spread distributions, quote-update
 intensity, gaps, mid-price volatility, and liquidity-stress windows.
 Its compact spread summary marks locked, one-sided, and inverted latest quotes as
-unsafe rather than treating them as unusually tight execution spreads.
+unsafe rather than treating them as unusually tight execution spreads. For the
+default live window, a non-executable final stream update is reconciled with the
+same current-quote policy used by `market_ticker`. The summary keeps that raw
+event in `raw_update_quality` and `data_quality.latest_raw_update_quality` so a
+valid carried quote does not hide feed diagnostics. Explicit historical windows
+continue to report their final historical update without live reconciliation.
 
 ```bash
 mtdata-cli market_microstructure_analyze EURUSD --minutes-back 60 --json

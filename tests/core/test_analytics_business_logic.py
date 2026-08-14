@@ -275,7 +275,7 @@ def test_microstructure_compact_output_omits_research_events() -> None:
         "quote_coverage",
         "invalid_partial_quote_ticks",
         "locked_quote_ticks",
-        "latest_spread_quality",
+        "latest_raw_update_quality",
         "truncated",
         "retained",
         "requested_start",
@@ -507,11 +507,40 @@ def test_tick_frame_marks_locked_quotes_as_unusable() -> None:
     assert frame.iloc[2]["spread_quality"] == "locked"
 
 
-def test_microstructure_marks_latest_locked_quote_unsafe() -> None:
+def test_microstructure_reconciles_latest_locked_update_with_live_quote() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = _ticks()
     latest = gateway.tick_rows[-1]
     latest["ask"] = latest["bid"]
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
+        gateway,
+    )
+
+    spread = result["summary"]["spread"]
+    assert spread["latest"] == pytest.approx(2.0)
+    assert spread["spread_valid"] is True
+    assert spread["spread_quality"] == "two_sided"
+    assert spread["raw_update_quality"] == "locked"
+    assert spread["source"] == "mt5.symbol_info_tick"
+    assert spread["regime"] == "wider_than_window"
+    assert spread["latest_to_window_median_ratio"] == pytest.approx(2.0)
+    assert result["data_quality"]["locked_quote_ticks"] == 1
+    assert result["data_quality"]["latest_raw_update_quality"] == "locked"
+    assert any("canonical reconciled" in warning for warning in result["warnings"])
+
+
+def test_microstructure_keeps_locked_latest_when_no_executable_quote_exists() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks()
+    latest = gateway.tick_rows[-1]
+    latest["ask"] = latest["bid"]
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=latest["bid"],
+        ask=latest["bid"],
+        time=latest["time"],
+    )
 
     result = analyze_microstructure(
         MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
@@ -524,7 +553,6 @@ def test_microstructure_marks_latest_locked_quote_unsafe() -> None:
     assert spread["spread_quality"] == "locked"
     assert spread["regime"] == "locked_quote"
     assert spread["latest_to_window_median_ratio"] is None
-    assert result["data_quality"]["locked_quote_ticks"] == 1
     assert any("locked" in warning.lower() for warning in result["warnings"])
 
 
