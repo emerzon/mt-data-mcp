@@ -1531,12 +1531,21 @@ class TaskManager:
                 task_id,
                 grace_seconds=self._cancel_grace_seconds(),
             )
+            if not control.process.is_alive():
+                self._finalize_dead_process(task_id, control.process)
+
+        latest = self.get_status(task_id)
+        latest_status = getattr(latest, "status", None)
 
         return {
             "task_id": task_id,
             "cancel_requested": cancel_requested,
             "terminated": terminated,
-            "status": "cancelling" if cancel_requested else "not_cancelled",
+            "status": (
+                latest_status
+                if latest_status in _TERMINAL_STATUSES
+                else "cancelling" if cancel_requested else "not_cancelled"
+            ),
         }
 
     def cleanup_completed(self, max_age_seconds: Optional[float] = None) -> int:

@@ -332,6 +332,32 @@ class TestTaskManagerHeavyRuntime(_TaskManagerBusinessLogicCase):
         self.assertIsNotNone(status)
         self.assertFalse(status.cancel_requested)
 
+    def test_cancel_finalizes_a_stopped_heavy_worker_before_returning(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(
+            task.task_id,
+            status="running",
+            started_at=time.time(),
+            heartbeat_at=time.time(),
+        )
+        process = MagicMock()
+        process.is_alive.side_effect = [True, False]
+        control = SimpleNamespace(
+            process=process,
+            event_queue=MagicMock(),
+            cancel_event=MagicMock(),
+        )
+        self.tm._process_controls[task.task_id] = control
+
+        with patch.object(self.tm, "_stop_process", return_value=True):
+            result = self.tm.cancel(task.task_id)
+
+        status = self.tm.get_status(task.task_id)
+        self.assertEqual(result["status"], "cancelled")
+        self.assertTrue(result["terminated"])
+        self.assertIsNotNone(status)
+        self.assertEqual(status.status, "cancelled")
+
     def test_shutdown_marks_running_tasks_terminal(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         self.tm._mutate_task(

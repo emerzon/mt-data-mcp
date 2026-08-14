@@ -283,6 +283,11 @@ class TestForecastTaskCancel:
             "cancel_requested": True,
             "status": "cancelling",
         }
+        mock_tm.wait_for_status.side_effect = lambda task_id, **_kwargs: _make_task(
+            task_id,
+            status="cancelled",
+            cancel_requested=True,
+        )
 
         with patch(_PATCH_TM, return_value=mock_tm):
             result = _unwrap(forecast_task_cancel_all)(
@@ -295,6 +300,35 @@ class TestForecastTaskCancel:
         assert result["cancelled"] == 2
         assert result["matched_by_status"] == {"pending": 1, "running": 1}
         assert result["cancelled_by_status"] == {"pending": 1, "running": 1}
+        assert result["cancellation_complete"] is True
+        assert result["active_remaining"] == 0
+        assert {task["status"] for task in result["tasks"]} == {"cancelled"}
+        assert {item["status"] for item in result["results"]} == {"cancelled"}
+
+    def test_cancel_all_reports_async_teardown_when_wait_budget_expires(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_cancel_all
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.return_value = [_make_task("running", status="running")]
+        mock_tm.cancel.return_value = {
+            "task_id": "running",
+            "cancel_requested": True,
+            "status": "cancelling",
+        }
+        mock_tm.wait_for_status.return_value = _make_task(
+            "running",
+            status="running",
+            cancel_requested=True,
+        )
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_cancel_all)(
+                ForecastTaskCancelAllRequest(dry_run=False)
+            )
+
+        assert result["cancellation_complete"] is False
+        assert result["active_remaining"] == 1
+        assert "forecast_task_wait" in result["remediation"]
 
 
 class TestForecastTaskWait:

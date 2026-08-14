@@ -794,6 +794,41 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
                 result = tm.cancel(task.task_id)
                 if result.get("cancel_requested"):
                     cancelled.append(result)
+            wait_deadline = time.monotonic() + 2.0
+            latest_tasks: Dict[str, Any] = {}
+            for result in cancelled:
+                remaining = max(0.0, wait_deadline - time.monotonic())
+                latest = tm.wait_for_status(
+                    str(result.get("task_id")),
+                    timeout_seconds=remaining,
+                    poll_interval=0.05,
+                )
+                if latest is None:
+                    continue
+                task_id = str(latest.task_id)
+                latest_tasks[task_id] = latest
+                result["status"] = latest.status
+                result["terminal"] = latest.status in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }
+            matches = [
+                {
+                    **match,
+                    "status": latest_tasks[str(match["task_id"])].status,
+                    "cancel_requested": bool(
+                        getattr(
+                            latest_tasks[str(match["task_id"])],
+                            "cancel_requested",
+                            False,
+                        )
+                    ),
+                }
+                if str(match["task_id"]) in latest_tasks
+                else match
+                for match in matches
+            ]
         cancelled_ids = {str(result.get("task_id")) for result in cancelled}
         matched_by_status = {
             candidate: sum(task.status == candidate for task in tasks)
@@ -806,7 +841,7 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
             )
             for candidate in ("pending", "running")
         }
-        return {
+        out = {
             "success": True,
             "dry_run": bool(request.dry_run),
             "status_filter": status_value,
@@ -820,6 +855,20 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
             "tasks": matches,
             "results": cancelled,
         }
+        if not request.dry_run:
+            incomplete = [
+                result
+                for result in cancelled
+                if result.get("status") not in {"completed", "failed", "cancelled"}
+            ]
+            out["cancellation_complete"] = not incomplete
+            out["active_remaining"] = len(incomplete)
+            if incomplete:
+                out["remediation"] = (
+                    "Cancellation is still finishing for active_remaining tasks; "
+                    "use forecast_task_wait or forecast_task_status before restarting work."
+                )
+        return out
 
     return run_logged_operation(
         logger,
