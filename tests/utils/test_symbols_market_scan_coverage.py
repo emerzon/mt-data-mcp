@@ -977,6 +977,47 @@ class TestSymbolsTopMarkets:
         assert "highest_volume" not in result
         assert "highest_price_change_pct" not in result
 
+    @patch("mtdata.core.symbols._build_market_scan_spread_row")
+    @patch("mtdata.core.symbols._build_market_scan_bar_row")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_price_change_ranking_is_metric_first_when_freshness_differs(
+        self,
+        mock_symbols_get,
+        mock_bar_row,
+        mock_spread_row,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("FRESH", description="Fresh"),
+            _make_symbol("STALE", description="Stale"),
+        ]
+        mock_spread_row.side_effect = lambda symbol, *_args, **_kwargs: (
+            {"symbol": symbol.name},
+            None,
+        )
+        mock_bar_row.side_effect = lambda symbol, **_kwargs: (
+            {
+                "symbol": symbol.name,
+                "price_change_pct": 0.25 if symbol.name == "FRESH" else 0.75,
+                "data_stale": symbol.name == "STALE",
+                "bar_stale": symbol.name == "STALE",
+                "tick_volume": 10,
+            },
+            None,
+        )
+
+        result = _get_symbols_top_markets()(
+            rank_by="abs_price_change_pct",
+            limit=2,
+            timeframe="H1",
+        )
+
+        assert result["success"] is True
+        assert [row["symbol"] for row in result["data"]] == ["STALE", "FRESH"]
+        assert [abs(row["price_change_pct"]) for row in result["data"]] == [
+            0.75,
+            0.25,
+        ]
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")

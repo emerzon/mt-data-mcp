@@ -559,7 +559,7 @@ def analyze_microstructure(  # noqa: C901
     requested_duration = max(0.0, float((end - start).total_seconds()))
     temporal_coverage_pct = (
         min(100.0, (duration / requested_duration) * 100.0)
-        if truncated and requested_duration > 0.0
+        if requested_duration > 0.0
         else 100.0
     )
     bucket = ((df["epoch"] - start_epoch) // int(request.bucket_seconds)).astype(int)
@@ -644,6 +644,11 @@ def analyze_microstructure(  # noqa: C901
         warnings.append(
             "max_ticks truncated the requested window; every metric covers only "
             "the retained latest-tick tail described by data_quality."
+        )
+    if temporal_coverage_pct < 90.0:
+        warnings.append(
+            "Observed ticks span less than 90% of the requested elapsed window; "
+            "interpret temporal comparisons with caution."
         )
     warnings.append(
         "Metrics describe the connected broker's tick feed and do not establish centralized market-wide order flow or liquidity."
@@ -2951,16 +2956,6 @@ def rank_relative_strength(  # noqa: C901
         symbol_window = history_windows[symbol]
         if quote_quality.get("usable_for_live_trading") is not True:
             quote_excluded_symbols.append(symbol)
-            skipped.append(
-                {
-                    "symbol": symbol,
-                    "reason": "quote not live-ready",
-                    "quote_status": _relative_strength_quote_status(quote_quality),
-                    "quote_quality": quote_quality,
-                    "data_window": symbol_window,
-                }
-            )
-            continue
         if request.max_spread_pct is not None and (
             spread_pct is None or spread_pct > request.max_spread_pct
         ):
@@ -3089,12 +3084,19 @@ def rank_relative_strength(  # noqa: C901
             values = pd.Series({symbol: value for symbol, value in horizons_data[horizon].items() if symbol in row_by_symbol}, dtype=float)
             offset_score = offset_score.add(_robust_z(values) * weight, fill_value=0.0)
         offset_ranks[offset] = {symbol: rank for rank, symbol in enumerate(offset_score.sort_values(ascending=False).index, start=1)}
-    for rank, (symbol, score) in enumerate(ranked.items(), start=1):
+    score_tie_tolerance = 1e-12
+    previous_score: Optional[float] = None
+    shared_rank = 0
+    for position, (symbol, score) in enumerate(ranked.items(), start=1):
+        numeric_score = float(score)
+        if previous_score is None or abs(previous_score - numeric_score) > score_tie_tolerance:
+            shared_rank = position
+        previous_score = numeric_score
         row_by_symbol[symbol]["score"] = float(score)
-        row_by_symbol[symbol]["rank"] = rank
+        row_by_symbol[symbol]["rank"] = shared_rank
         if len(ranked) >= 10:
             row_by_symbol[symbol]["rank_percentile"] = float(
-                1.0 - (rank - 1) / max(1, len(ranked) - 1)
+                1.0 - (shared_rank - 1) / max(1, len(ranked) - 1)
             )
         observed_ranks = [mapping[symbol] for mapping in offset_ranks.values() if symbol in mapping]
         row_by_symbol[symbol]["rank_stability"] = float(max(0.0, 1.0 - np.std(observed_ranks) / max(1.0, len(ranked) - 1)))
@@ -3198,16 +3200,26 @@ def rank_relative_strength(  # noqa: C901
             }
         )
 
+    tied_universe = bool(ordered) and (
+        float(ranked.max()) - float(ranked.min()) <= score_tie_tolerance
+    )
     ranking_withheld = bool(ordered) and endpoint_alignment.get("comparable") is False
+    ranking_withheld = ranking_withheld or tied_universe
     published_leaders = [] if ranking_withheld else output_leaders
     published_laggards = [] if ranking_withheld else output_laggards
     published_rankings = [] if ranking_withheld else selected_rankings
     published_breadth: Dict[str, Any] = (
         {
-            "status": "withheld_incomparable_endpoints",
+            "status": (
+                "withheld_incomparable_endpoints"
+                if endpoint_alignment.get("comparable") is False
+                else "withheld_tied_scores"
+            ),
             "reason": (
                 "Cross-sectional breadth requires latest completed bars within "
                 "the endpoint-alignment tolerance."
+                if endpoint_alignment.get("comparable") is False
+                else "All composite scores are tied within the published tolerance."
             ),
         }
         if ranking_withheld
@@ -3219,7 +3231,9 @@ def rank_relative_strength(  # noqa: C901
         "success": True,
         "status": (
             "incomparable"
-            if ranking_withheld
+            if endpoint_alignment.get("comparable") is False
+            else "tied"
+            if tied_universe
             else "ranked" if ordered else "no_matches"
         ),
         "timeframe": request.timeframe,
@@ -3239,7 +3253,9 @@ def rank_relative_strength(  # noqa: C901
         "ranking_selection": {
             "method": (
                 "withheld_incomparable_endpoints"
-                if ranking_withheld
+                if endpoint_alignment.get("comparable") is False
+                else "withheld_tied_scores"
+                if tied_universe
                 else "strongest_and_weakest_tails"
             ),
             "leader_count": len(published_leaders),
@@ -3248,7 +3264,9 @@ def rank_relative_strength(  # noqa: C901
         },
         "rank_quality": (
             "incomparable_endpoints"
-            if ranking_withheld
+            if endpoint_alignment.get("comparable") is False
+            else "tied_scores"
+            if tied_universe
             else "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
         ),
         "score_definition": {
@@ -3256,6 +3274,7 @@ def rank_relative_strength(  # noqa: C901
             "horizons_bars": list(request.horizons),
             "weights": list(request.weights),
             "higher_is_stronger": True,
+            "score_tie_tolerance": score_tie_tolerance,
         },
         "leaders": published_leaders,
         "laggards": published_laggards,
@@ -3308,10 +3327,15 @@ def rank_relative_strength(  # noqa: C901
             "Candidate symbols do not share comparable latest-bar endpoints within "
             f"the {alignment_tolerance_seconds}s tolerance; no ranking was returned."
         )
+    elif tied_universe:
+        result_warnings.append(
+            "All composite scores are tied within the score tolerance; no "
+            "directional leader or laggard was returned."
+        )
     quote_not_live = result["data_quality"]["quote_not_live_ready_symbols"]
     if quote_not_live:
         result_warnings.append(
-            "Excluded symbols whose current quotes are not live-ready: "
+            "Current quotes are not live-ready for these historically ranked symbols: "
             + ", ".join(quote_not_live)
             + "."
         )

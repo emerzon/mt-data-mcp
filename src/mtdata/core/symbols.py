@@ -3797,7 +3797,6 @@ def symbols_top_markets(  # noqa: C901
             )
             price_change_rows.sort(
                 key=lambda row: (
-                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("price_change_pct") is None,
                     (
                         -abs(float(row.get("price_change_pct") or 0.0))
@@ -3810,7 +3809,6 @@ def symbols_top_markets(  # noqa: C901
             abs_price_change_rows = [dict(row) for row in price_change_rows]
             abs_price_change_rows.sort(
                 key=lambda row: (
-                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("price_change_pct") is None,
                     -abs(float(row.get("price_change_pct") or 0.0)),
                     row.get("symbol") or "",

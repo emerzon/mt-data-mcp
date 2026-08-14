@@ -19,6 +19,7 @@ from mtdata.analytics.engines import (
     _filtered_historical_returns,
     _observed_spread_bps,
     _portfolio_mark_context,
+    _relative_strength_quote_status,
     _tick_frame,
     analyze_execution_quality,
     analyze_microstructure,
@@ -305,6 +306,22 @@ def test_microstructure_compact_discloses_latest_tail_coverage() -> None:
     assert quality["observed_duration_seconds"] == pytest.approx(19.0)
     assert quality["temporal_coverage_pct"] == pytest.approx(19.0 / 3.0)
     assert any("retained latest-tick tail" in item for item in result["warnings"])
+
+
+def test_microstructure_untruncated_sparse_window_reports_elapsed_coverage() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(count=60, real_volume=True)
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=5, max_ticks=100),
+        gateway,
+    )
+
+    quality = result["data_quality"]
+    assert quality["truncated"] is False
+    assert quality["observed_duration_seconds"] == pytest.approx(59.0)
+    assert quality["temporal_coverage_pct"] == pytest.approx(59.0 / 3.0)
+    assert any("less than 90%" in item for item in result["warnings"])
 
 
 def test_microstructure_compact_distinguishes_latest_from_window_spread() -> None:
@@ -2248,7 +2265,7 @@ def test_relative_strength_uses_reconciled_quote_for_spread_filter() -> None:
     assert all(row["spread_pct"] < 0.005 for row in result["rankings"])
 
 
-def test_relative_strength_excludes_locked_quotes_from_rankings() -> None:
+def test_relative_strength_keeps_locked_quotes_in_historical_rankings() -> None:
     gateway = FakeGateway()
     now = _now()
     original_tick = gateway.symbol_info_tick
@@ -2277,48 +2294,23 @@ def test_relative_strength_excludes_locked_quotes_from_rankings() -> None:
         ),
         gateway,
     )
-    live_only_result = rank_relative_strength(
-        MarketRelativeStrengthRequest(
-            symbols="EURUSD,GBPUSD",
-            horizons=[5],
-            weights=[1.0],
-            volatility_lookback=30,
-            limit=3,
-        ),
-        gateway,
-    )
-
     assert result["status"] == "ranked"
-    assert result["universe_size"] == 2
-    assert result["returned_count"] == 2
+    assert result["universe_size"] == 3
+    assert result["returned_count"] == 3
     ranked_symbols = {
         row["symbol"] for row in [*result["leaders"], *result["laggards"]]
     }
-    assert ranked_symbols == {"EURUSD", "GBPUSD"}
+    assert ranked_symbols == {"EURUSD", "GBPUSD", "USDJPY"}
     assert result["data_quality"]["quote_not_live_ready_symbols"] == ["USDJPY"]
-    skipped = next(
-        row
-        for row in result["data_quality"]["skipped"]
+    locked = next(
+        row for row in [*result["leaders"], *result["laggards"]]
         if row["symbol"] == "USDJPY"
     )
-    assert skipped["reason"] == "quote not live-ready"
-    assert skipped["quote_status"] == "locked_quote"
-    scores = {
-        row["symbol"]: row["score"]
-        for row in [*result["leaders"], *result["laggards"]]
-    }
-    live_only_scores = {
-        row["symbol"]: row["score"]
-        for row in [
-            *live_only_result["leaders"],
-            *live_only_result["laggards"],
-        ]
-    }
-    assert scores == pytest.approx(live_only_scores)
+    assert locked["quote_status"] == "locked_quote"
     assert any("not live-ready" in warning for warning in result["warnings"])
 
 
-def test_relative_strength_excludes_stale_quote_with_fresh_history() -> None:
+def test_relative_strength_keeps_stale_quote_with_fresh_history() -> None:
     gateway = FakeGateway()
     gateway.bar_rows["XAUUSD"] = [
         {**row, "time": row["time"] + 3_600}
@@ -2353,21 +2345,42 @@ def test_relative_strength_excludes_stale_quote_with_fresh_history() -> None:
         gateway,
     )
 
-    assert result["universe_size"] == 3
+    assert result["universe_size"] == 4
     assert {row["symbol"] for row in result["rankings"]} == {
         "EURUSD",
         "GBPUSD",
         "USDJPY",
+        "XAUUSD",
     }
-    xau = next(
-        row
-        for row in result["data_quality"]["skipped"]
-        if row["symbol"] == "XAUUSD"
-    )
+    xau = next(row for row in result["rankings"] if row["symbol"] == "XAUUSD")
     assert xau["data_window"]["freshness"] == "fresh"
     assert xau["quote_quality"]["usable_for_live_trading"] is False
-    assert xau["quote_status"] == "stale"
+    assert _relative_strength_quote_status(xau["quote_quality"]) == "stale"
     assert result["data_quality"]["quote_not_live_ready_symbols"] == ["XAUUSD"]
+
+
+def test_relative_strength_withholds_directional_ranking_for_tied_scores() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows["GBPUSD"] = [dict(row) for row in gateway.bar_rows["EURUSD"]]
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=2,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["status"] == "tied"
+    assert result["rank_quality"] == "tied_scores"
+    assert result["leaders"] == []
+    assert result["laggards"] == []
+    assert result["rankings"] == []
+    assert result["score_definition"]["score_tie_tolerance"] == 1e-12
 
 
 def test_relative_strength_projects_rows_by_detail() -> None:
