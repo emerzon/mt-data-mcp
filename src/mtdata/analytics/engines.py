@@ -369,6 +369,12 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
         (flag_values & ask_flag) != 0
     )
     two_sided_quote = (df["bid"] > 0) & (df["ask"] > df["bid"])
+    has_quote_update_flags = bool(
+        ((flag_values & (bid_flag | ask_flag)) != 0).any()
+    )
+    spread_sample_eligible = two_sided_quote & (
+        ~one_sided_update if has_quote_update_flags else True
+    )
     incomplete_one_sided_update = one_sided_update & ~two_sided_quote
     locked_quote = (df["bid"] > 0) & (df["ask"] == df["bid"])
     inverted_quote = (df["bid"] > 0) & (df["ask"] > 0) & (df["ask"] < df["bid"])
@@ -379,6 +385,7 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     )
     df.loc[(df["bid"] <= 0) | (df["ask"] <= 0), "spread_quality"] = "one_sided"
     df["spread_valid"] = two_sided_quote
+    df["spread_sample_eligible"] = spread_sample_eligible
     df["mid"] = np.where(
         two_sided_quote,
         (df["bid"] + df["ask"]) / 2.0,
@@ -541,6 +548,7 @@ def analyze_microstructure(  # noqa: C901
     real_share = float(real_mask.sum() / trade_count) if trade_count else 0.0
     tier = "trade_volume" if trade_count and real_share >= 0.80 else "trade_ticks" if trade_count else "quote_only"
     q = df.loc[quote_mask].copy()
+    spread_q = df.loc[df["spread_sample_eligible"]].copy()
     q["dt"] = q["epoch"].diff()
     q["mid_return"] = np.log(q["mid"]).diff()
     q["bid_revision"] = np.sign(q["bid"].diff())
@@ -566,6 +574,7 @@ def analyze_microstructure(  # noqa: C901
     windows: List[Dict[str, Any]] = []
     for bucket_id, part in df.groupby(bucket):
         pq = part[np.isfinite(part["mid"])]
+        psq = part[part["spread_sample_eligible"]]
         bucket_start_epoch = float(part["epoch"].iloc[0])
         bucket_end_epoch = float(part["epoch"].iloc[-1])
         windows.append({
@@ -576,8 +585,8 @@ def analyze_microstructure(  # noqa: C901
             "end_epoch": bucket_end_epoch,
             "ticks": int(len(part)),
             "ticks_per_second": float(len(part) / max(1.0, part["epoch"].iloc[-1] - part["epoch"].iloc[0])),
-            "spread_median": float(pq["spread"].median()) if len(pq) else None,
-            "spread_p95": float(pq["spread"].quantile(0.95)) if len(pq) else None,
+            "spread_median": float(psq["spread"].median()) if len(psq) else None,
+            "spread_p95": float(psq["spread"].quantile(0.95)) if len(psq) else None,
             "mid_volatility": float(np.nanstd(np.log(pq["mid"]).diff())) if len(pq) > 2 else None,
         })
     windows.sort(key=lambda item: (-(item.get("spread_p95") or -1.0), -item["ticks"]))
@@ -586,16 +595,16 @@ def analyze_microstructure(  # noqa: C901
         "ticks": int(len(df)),
         "duration_seconds": duration,
         "ticks_per_second": float(len(df) / duration),
-        "spread": _percentiles(q["spread"]),
+        "spread": _percentiles(spread_q["spread"]),
         "quote_gap_seconds": _percentiles(q["dt"].dropna()),
         "mid_realized_volatility": float(np.sqrt(np.nansum(np.square(q["mid_return"])))) if len(q) > 1 else None,
         "broker_quote_revision_imbalance": revision_pressure,
     }
     if point > 0:
-        summary["spread_points"] = _percentiles(q["spread"] / point)
+        summary["spread_points"] = _percentiles(spread_q["spread"] / point)
         if points_per_pip:
             summary["spread_pips"] = _percentiles(
-                q["spread"] / (point * points_per_pip)
+                spread_q["spread"] / (point * points_per_pip)
             )
     applicability = {
         "quote_metrics": bool(len(q) >= 20),
@@ -664,6 +673,9 @@ def analyze_microstructure(  # noqa: C901
             ).sum()
         ),
         "locked_quote_ticks": int((df["spread_quality"] == "locked").sum()),
+        "executable_spread_ticks": int(df["spread_sample_eligible"].sum()),
+        "spread_ticks_excluded": int((~df["spread_sample_eligible"]).sum()),
+        "executable_spread_coverage": float(df["spread_sample_eligible"].mean()),
         "latest_raw_update_quality": str(df["spread_quality"].iloc[-1]),
         "truncated": truncated,
         "retained": "latest" if truncated else "complete_window",
@@ -690,11 +702,11 @@ def analyze_microstructure(  # noqa: C901
         }[spread_key]
         spread_stats = summary[spread_key]
         if spread_key == "spread_pips":
-            spread_series = q["spread"] / (point * float(points_per_pip))
+            spread_series = spread_q["spread"] / (point * float(points_per_pip))
         elif spread_key == "spread_points":
-            spread_series = q["spread"] / point
+            spread_series = spread_q["spread"] / point
         else:
-            spread_series = q["spread"]
+            spread_series = spread_q["spread"]
         spread_series = pd.to_numeric(spread_series, errors="coerce")
         latest_tick = df.iloc[-1]
         raw_update_epoch = float(latest_tick["epoch"])
@@ -722,9 +734,7 @@ def analyze_microstructure(  # noqa: C901
                 latest_spread = latest_absolute_spread / point
             else:
                 latest_spread = latest_absolute_spread
-        recent_mask = (
-            q["epoch"] >= raw_update_epoch - 300.0
-        )
+        recent_mask = spread_q["epoch"] >= raw_update_epoch - 300.0
         recent_spreads = spread_series.loc[recent_mask].dropna()
         recent_median = (
             float(recent_spreads.median()) if len(recent_spreads) else None
@@ -736,6 +746,7 @@ def analyze_microstructure(  # noqa: C901
             and latest_spread is not None
             and window_median is not None
             and float(window_median) > 0
+            and len(spread_q) >= 20
             else None
         )
         spread_regime = (
@@ -751,6 +762,8 @@ def analyze_microstructure(  # noqa: C901
             and latest_to_window_ratio <= 0.5 + 1e-9
             else "near_window_median"
             if latest_to_window_ratio is not None
+            else "insufficient_two_sided_history"
+            if latest_spread_quality == "two_sided" and len(spread_q) < 20
             else "unknown"
         )
         if latest_quote.get("reconciled"):
@@ -768,6 +781,11 @@ def analyze_microstructure(  # noqa: C901
             warnings.append(
                 "Latest analyzed quote is not a valid two-sided quote; do not "
                 "use it for execution."
+            )
+        if len(spread_q) < 20:
+            warnings.append(
+                "Fewer than 20 executable two-sided spread samples were available; "
+                "the latest-to-window comparison was omitted."
             )
         if spread_regime in {"wider_than_window", "tighter_than_window"}:
             warnings.append(
@@ -818,6 +836,9 @@ def analyze_microstructure(  # noqa: C901
                     "quote_coverage",
                     "invalid_partial_quote_ticks",
                     "locked_quote_ticks",
+                    "executable_spread_ticks",
+                    "spread_ticks_excluded",
+                    "executable_spread_coverage",
                     "latest_raw_update_quality",
                     "truncated",
                     "retained",

@@ -276,6 +276,9 @@ def test_microstructure_compact_output_omits_research_events() -> None:
         "quote_coverage",
         "invalid_partial_quote_ticks",
         "locked_quote_ticks",
+        "executable_spread_ticks",
+        "spread_ticks_excluded",
+        "executable_spread_coverage",
         "latest_raw_update_quality",
         "truncated",
         "retained",
@@ -286,6 +289,34 @@ def test_microstructure_compact_output_omits_research_events() -> None:
         "temporal_coverage_pct",
     }
     assert any("broker's tick feed" in warning for warning in result["warnings"])
+
+
+def test_microstructure_spread_distribution_excludes_non_executable_updates() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(count=60)
+    for index, row in enumerate(gateway.tick_rows):
+        mid = (row["bid"] + row["ask"]) / 2.0
+        if index < 30:
+            row["bid"] = mid
+            row["ask"] = mid
+            row["flags"] = 6
+        elif index < 40:
+            row["bid"] = mid - 0.000005
+            row["ask"] = mid + 0.000005
+            row["flags"] = 2
+        else:
+            row["bid"] = mid - 0.00004
+            row["ask"] = mid + 0.00004
+            row["flags"] = 6
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=5),
+        gateway,
+    )
+
+    assert result["summary"]["spread"]["window_median"] == pytest.approx(0.8)
+    assert result["data_quality"]["executable_spread_ticks"] == 20
+    assert result["data_quality"]["spread_ticks_excluded"] == 40
 
 
 def test_microstructure_compact_discloses_latest_tail_coverage() -> None:

@@ -1880,7 +1880,8 @@ def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     )
 
     assert "spread" not in row
-    assert "spread_valid" not in row
+    assert row["spread_valid"] is False
+    assert row["quote_update_type"] == "bid_ask_update"
     assert "spread_basis" not in row
     assert "mid" not in row
     assert spread_sample is None
@@ -1962,6 +1963,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "time": "2026-05-29 20:56",
                 "bid": 1.1659,
                 "ask": 1.16596,
+                "spread_valid": True,
                 "spread": 0.00006,
                 "mid": 1.16593,
                 "volume": 3.0,
@@ -1972,6 +1974,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "time": "2026-05-29 20:57",
                 "bid": 1.16591,
                 "ask": 1.16599,
+                "spread_valid": True,
                 "spread": 0.00008,
                 "mid": 1.16595,
                 "volume": 4.0,

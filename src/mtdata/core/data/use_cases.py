@@ -1753,6 +1753,7 @@ def _compact_tick_row(
         and ask > bid
         and numeric_spread > 0.0
     )
+    compact["spread_valid"] = spread_valid
     if spread_valid:
         compact["spread"] = numeric_spread
     if spread_valid:
@@ -1781,10 +1782,13 @@ def _compact_tick_row(
             compact["quote_update_type"] = (
                 "bid_only_update" if bid_updated else "ask_only_update"
             )
+        elif not spread_valid and bid_updated and ask_updated:
+            compact["quote_update_type"] = "bid_ask_update"
     elif str(row.get("quote_update_type") or "") in {
         "bid_only_update",
         "ask_only_update",
-    }:
+        "bid_ask_update",
+    } and (not spread_valid or row.get("quote_update_type") != "bid_ask_update"):
         compact["quote_update_type"] = row["quote_update_type"]
     return compact, numeric_spread if spread_valid else None
 
