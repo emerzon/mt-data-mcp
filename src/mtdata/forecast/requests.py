@@ -447,8 +447,19 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
         "auto",
         description="Objective direction. auto uses the standard direction for the selected metric.",
     )
-    n_trials: int = Field(40, ge=1)
-    timeout: Optional[float] = Field(None, gt=0.0)
+    n_trials: int = Field(
+        40,
+        ge=1,
+        description=(
+            "Optuna trial count. Each trial runs steps rolling backtests; the "
+            "defaults evaluate 40*5=200 rolling backtests."
+        ),
+    )
+    timeout: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="Optional wall-clock search limit in seconds.",
+    )
     n_jobs: int = Field(1, ge=1)
     sampler: Literal["tpe", "random", "cmaes"] = "tpe"
     pruner: Literal["median", "none", "hyperband", "percentile"] = "median"
@@ -582,6 +593,10 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     timeframes: List[TimeframeLiteral] = Field(
         default_factory=lambda: ["H1", "H4", "D1", "W1"],
         min_length=1,
+        description=(
+            "One or more MT5 timeframes to evaluate. The default searches H1, "
+            "H4, D1, and W1; pass one timeframe for a cheaper exploratory run."
+        ),
         json_schema_extra={"uniqueItems": True},
     )
     methods: Optional[List[str]] = None
@@ -595,9 +610,17 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
         8,
         ge=2,
         le=100,
-        description="Population size per generation (minimum 2).",
+        description=(
+            "Population size (minimum 2). With the default generations and "
+            "steps, the search evaluates about 190 rolling backtests."
+        ),
     )
-    generations: int = Field(5, ge=1, le=100)
+    generations: int = Field(
+        5,
+        ge=1,
+        le=100,
+        description="Generation count; work grows with population*generations*steps.",
+    )
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     fitness_metric: str = Field(
@@ -615,7 +638,11 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     )
     trade_threshold: float = Field(0.0, ge=0.0)
     seed: int = 42
-    max_search_time_seconds: Optional[float] = None
+    max_search_time_seconds: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="Optional wall-clock search limit in seconds.",
+    )
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
     include_feature_genes: bool = False

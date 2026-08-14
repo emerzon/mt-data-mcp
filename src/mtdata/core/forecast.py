@@ -110,6 +110,7 @@ _FORECAST_TIMESTAMP_OPERATIONS = frozenset(
 )
 _FORECAST_HEAVY_OPERATIONS = frozenset(
     {
+        "forecast_conformal_intervals",
         "forecast_tune_genetic",
         "forecast_tune_optuna",
         "forecast_optimize_hints",
@@ -130,6 +131,12 @@ def _forecast_compute_cost(operation: str, payload: Optional[Dict[str, Any]]) ->
         return None
     data = dict(payload or {})
     steps = _positive_int(data.get("steps"), 5)
+    if operation == "forecast_conformal_intervals":
+        return {
+            "unit": "rolling_backtest_anchors",
+            "estimated": _positive_int(data.get("steps"), 50),
+            "drivers": "steps (one forecast fit per calibration anchor)",
+        }
     if operation == "forecast_tune_optuna":
         trials = _positive_int(data.get("n_trials"), 40)
         return {

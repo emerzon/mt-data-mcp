@@ -112,6 +112,27 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "by default; interactive shell, MCP, and Web API calls submit in the "
         "background unless wait is true."
     ),
+    ("forecast_tune_optuna", "n_trials"): (
+        "Optuna trial count. Each trial runs --steps rolling backtests; the "
+        "defaults evaluate 40*5=200 rolling backtests."
+    ),
+    ("forecast_tune_optuna", "timeout"): (
+        "Optional wall-clock search limit in seconds."
+    ),
+    ("forecast_optimize_hints", "timeframes"): (
+        "Timeframes to evaluate. The default searches H1, H4, D1, and W1; "
+        "pass one timeframe for a cheaper exploratory run."
+    ),
+    ("forecast_optimize_hints", "population"): (
+        "Population size (minimum 2). With default generations and steps, "
+        "the search evaluates about 190 rolling backtests."
+    ),
+    ("forecast_optimize_hints", "generations"): (
+        "Generation count; work grows with population*generations*steps."
+    ),
+    ("forecast_optimize_hints", "max_search_time_seconds"): (
+        "Optional wall-clock search limit in seconds."
+    ),
     ("data_fetch_candles", "timestamp_format"): (
         "Format each candle's `time` value: iso for the UTC bar-open timestamp "
         "or epoch for UTC epoch seconds."

@@ -1432,6 +1432,40 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "expected"),
         [
+            ("forecast_tune_optuna", "n_trials", "200 rolling backtests"),
+            ("forecast_tune_optuna", "timeout", "wall-clock search limit"),
+            ("forecast_optimize_hints", "timeframes", "cheaper exploratory run"),
+            ("forecast_optimize_hints", "population", "190 rolling backtests"),
+            ("forecast_optimize_hints", "generations", "population*generations*steps"),
+            (
+                "forecast_optimize_hints",
+                "max_search_time_seconds",
+                "wall-clock search limit",
+            ),
+        ],
+    )
+    def test_forecast_search_help_quantifies_work(
+        self,
+        cmd_name,
+        param_name,
+        expected,
+    ):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": param_name,
+                "type": str,
+                "required": False,
+                "default": None,
+            },
+            None,
+            cmd_name=cmd_name,
+        )
+
+        assert expected in kwargs["help"]
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "param_name", "expected"),
+        [
             ("data_fetch_candles", "timestamp_format", "UTC bar-open timestamp"),
             ("data_fetch_ticks", "timestamp_format", "MT5 tick event"),
             ("market_ticker", "price_field", "default bid/ask/spread quote snapshot"),
