@@ -1034,7 +1034,7 @@ def forecast_volatility_estimate(
 @mcp.tool()
 def forecast_list_methods(
     detail: DetailLiteral = "compact",
-    limit: Annotated[Optional[int], Field(ge=1)] = None,
+    limit: Annotated[Optional[int], Field(ge=1)] = 20,
     offset: Annotated[int, Field(ge=0)] = 0,
     search_term: Optional[str] = None,
     category: Optional[
@@ -1064,8 +1064,9 @@ def forecast_list_methods(
 
     Compact output is the default. Standard adds descriptions, capability
     details, and related volatility methods; full adds parameter documentation.
-    The default ``all`` profile returns every registered method, including
-    unavailable methods with their missing requirements. Set
+    The default ``all`` profile searches every registered method, including
+    unavailable methods with their missing requirements, and returns the first
+    20. Increase ``limit`` to retrieve more rows. Set
     ``show_unavailable=false`` for installed methods only, or use
     profile='quickstart' for a small native baseline set.
     """
@@ -2314,6 +2315,10 @@ def _forecast_list_methods_impl(  # noqa: C901
                 offset=offset_value,
                 limit=effective_limit_value,
             ),
+            "count_by_category": {
+                category_name: len(rows)
+                for category_name, rows in sorted(by_category.items())
+            },
         }
         if unavailable_count and not show_unavailable:
             out["unavailable_hidden"] = unavailable_count

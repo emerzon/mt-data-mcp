@@ -13,7 +13,8 @@ Plain-language method families: [Theta](../GLOSSARY.md#theta-method) · [ARIMA](
 > ```
 > The catalog includes unavailable methods by default and marks them with
 > `available=false` plus the missing requirement. Pass
-> `--show-unavailable false` for installed methods only.
+> `--show-unavailable false` for installed methods only. The default page is
+> 20 methods; use `--limit 100` when you need the complete catalog.
 > Defaults below match the code; `"auto"` parameters are estimated from data unless you override them.
 
 **Related:** [Forecasting concepts](../FORECAST.md) · [Parameter optimization](../FORECAST.md#parameter-optimization) · [forecast_generate](FORECAST_GENERATE.md) · [Glossary](../GLOSSARY.md)
@@ -181,7 +182,7 @@ Deep models via NeuralForecast. Not installed by `requirements.txt` or any extra
 
 ```bash
 mtdata-cli forecast_generate EURUSD --method sf_autoets --params "season_length=24"
-mtdata-cli forecast_list_methods --library statsforecast --json    # full sf_* catalog
+mtdata-cli forecast_list_methods --library statsforecast --limit 100 --json  # full sf_* catalog
 ```
 
 ---

@@ -2407,13 +2407,16 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "filters" not in default_out
     assert default_out["pagination"] == {
         "total": 25,
-        "returned": 25,
+        "returned": 20,
         "offset": 0,
-        "limit": None,
-        "has_more": False,
-        "more_available": 0,
+        "limit": 20,
+        "has_more": True,
+        "more_available": 5,
     }
-    assert "truncation_reason" not in default_out
+    assert default_out["count_by_category"] == {"classical": 25}
+    assert default_out["truncation_reason"] == (
+        "Limit 20; set limit=25 for all filtered methods."
+    )
 
     page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5, profile="all")
     assert [row["method"] for row in page["methods"]] == [
@@ -2443,7 +2446,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "Limit 5 at offset 5; set offset=10 for more filtered methods."
     )
 
-    filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical", profile="all")
+    filtered_uncapped = _unwrap(cf.forecast_list_methods)(
+        category="classical", limit=25, profile="all"
+    )
     assert "filters" not in filtered_uncapped
     assert filtered_uncapped["pagination"]["returned"] == 25
     assert filtered_uncapped["pagination"]["more_available"] == 0
