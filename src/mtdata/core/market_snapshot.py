@@ -612,10 +612,24 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
             "is_tradable",
             "is_tradable_confidence",
             "can_open_new_positions",
+            "trade_mode_allows_opening",
             "reason",
         ):
             if status.get(key) is not None:
                 execution[key] = status[key]
+    if (
+        execution.get("usable_for_live_trading") is True
+        and execution.get("status") == "quote_not_live_ready"
+        and execution.get("trade_mode_allows_opening") is True
+    ):
+        execution["status"] = (
+            "probably_open"
+            if quote.get("freshness_state") == "live"
+            else "trade_mode_allows_opening"
+        )
+        execution["can_open_new_positions"] = True
+        execution["status_reconciled_from_final_quote"] = True
+        execution.pop("reason", None)
     if execution.get("usable_for_live_trading") is False:
         execution["can_open_new_positions"] = False
     if execution:

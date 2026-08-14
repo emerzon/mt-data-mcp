@@ -129,6 +129,48 @@ def test_snapshot_execution_cannot_open_when_quote_is_not_live_ready() -> None:
     assert result["execution"]["can_open_new_positions"] is False
 
 
+def test_snapshot_reconciles_earlier_quote_only_status_block() -> None:
+    result = snapshot_mod._snapshot_summary_payload(
+        {
+            "quote": {
+                "usable_for_live_trading": True,
+                "freshness_state": "live",
+            },
+            "status": {
+                "status": "quote_not_live_ready",
+                "is_tradable": True,
+                "can_open_new_positions": False,
+                "trade_mode_allows_opening": True,
+                "reason": "locked_quote",
+            },
+        }
+    )
+
+    execution = result["execution"]
+    assert execution["usable_for_live_trading"] is True
+    assert execution["status"] == "probably_open"
+    assert execution["can_open_new_positions"] is True
+    assert execution["status_reconciled_from_final_quote"] is True
+    assert "reason" not in execution
+
+
+def test_snapshot_preserves_non_quote_status_block() -> None:
+    result = snapshot_mod._snapshot_summary_payload(
+        {
+            "quote": {"usable_for_live_trading": True},
+            "status": {
+                "status": "weekend_closed",
+                "can_open_new_positions": False,
+                "trade_mode_allows_opening": True,
+                "reason": "weekend",
+            },
+        }
+    )
+
+    assert result["execution"]["status"] == "weekend_closed"
+    assert result["execution"]["can_open_new_positions"] is False
+
+
 def test_snapshot_summary_preserves_quote_price_precision() -> None:
     result = snapshot_mod._snapshot_summary_payload(
         {

@@ -1165,6 +1165,16 @@ def support_resistance_levels(
                 reference_price=reference_price,
                 reference_price_source=reference_price_source,
             )
+            current_price_source = str(
+                result.get("current_price_source")
+                or "last_completed_bar_close"
+            )
+            if current_price_source == "live_tick_mid":
+                result["current_price_as_of"] = reference_quote_as_of
+                result["current_price_time_basis"] = "quote_time"
+            else:
+                result["current_price_as_of"] = result.get("structure_as_of")
+                result["current_price_time_basis"] = "completed_bar_open_time"
             if reference_quote_as_of is not None:
                 result["reference_quote_as_of"] = reference_quote_as_of
             if reference_quote_context:
@@ -1189,8 +1199,12 @@ def support_resistance_levels(
                         result[f"reference_{key}"] = reference_quote_context[key]
                 if (
                     reference_price is None
-                    and _tick_reference_price(tick) is not None
+                    and result.get("current_price_source")
+                    == "last_completed_bar_close"
                 ):
+                    result["reference_price_warning_code"] = (
+                        "reference_price_fallback_last_close"
+                    )
                     result.setdefault("warnings", []).append(
                         "The latest quote was not usable for live trading, so distances "
                         "and nearest-level ordering use the latest completed bar close."

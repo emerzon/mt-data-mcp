@@ -147,6 +147,8 @@ def test_support_resistance_tool_uses_live_tick_as_level_reference():
 
     assert result["current_price"] == 111.1
     assert result["current_price_source"] == "live_tick_mid"
+    assert result["current_price_as_of"] == "2023-11-16T02:00Z"
+    assert result["current_price_time_basis"] == "quote_time"
     assert result["reference_quote_as_of"] == "2023-11-16T02:00Z"
     assert result["reference_quote_usable_for_live_trading"] is True
     assert result["reference_quote_freshness_state"] == "live"
@@ -186,6 +188,11 @@ def test_support_resistance_tool_rejects_non_live_tick_as_level_reference():
 
     assert result["current_price"] == 105.0
     assert result["current_price_source"] == "last_completed_bar_close"
+    assert result["current_price_as_of"] == result["structure_as_of"]
+    assert result["current_price_time_basis"] == "completed_bar_open_time"
+    assert result["reference_price_warning_code"] == (
+        "reference_price_fallback_last_close"
+    )
     assert result["reference_quote_as_of"] == "2023-11-16T02:00Z"
     assert result["reference_quote_usable_for_live_trading"] is False
     assert result["reference_quote_freshness_reason"] == "stale_age"
@@ -213,9 +220,14 @@ def test_support_resistance_tool_rejects_locked_live_tick_reference():
 
     assert result["current_price"] == 105.0
     assert result["current_price_source"] == "last_completed_bar_close"
+    assert result["current_price_as_of"] == result["structure_as_of"]
+    assert result["reference_price_warning_code"] == (
+        "reference_price_fallback_last_close"
+    )
     assert result["reference_quote_usable_for_live_trading"] is False
     assert result["reference_spread_quality"] == "locked"
     assert result["reference_execution_blockers"] == ["invalid_spread"]
+    assert "latest completed bar close" in result["warnings"][0]
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():
