@@ -1,4 +1,5 @@
 
+import errno
 import json
 import logging
 import math
@@ -135,6 +136,11 @@ _DATE_FORMAT_HINT = (
     "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
     "'2026-01-15T14:30:00Z', '2026-01-15 09:30 America/New_York', "
     "'yesterday', '2 days ago', 'last Friday'."
+)
+_MT5_HISTORY_QUERY_MIN = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
+_MT5_INVALID_DATE_RANGE_ERROR = (
+    "MT5 rejected the requested candle date range because one or more bounds "
+    "are outside its supported history window."
 )
 _CANDLE_PRICE_COLUMNS = frozenset({"open", "high", "low", "close", "spread"})
 _TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "mid", "spread", "last"})
@@ -632,6 +638,16 @@ def _fetch_rates_with_warmup(  # noqa: C901
             return None, from_date_error or to_date_error
         if from_date > to_date:
             return None, "start must be before or equal to end."
+        if from_date < _MT5_HISTORY_QUERY_MIN:
+            return None, (
+                f"start datetime {start_datetime} is before MT5's supported history "
+                "boundary (1970-01-01T00:00:00Z)."
+            )
+        if to_date < _MT5_HISTORY_QUERY_MIN:
+            return None, (
+                f"end datetime {end_datetime} is before MT5's supported history "
+                "boundary (1970-01-01T00:00:00Z)."
+            )
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
@@ -639,9 +655,9 @@ def _fetch_rates_with_warmup(  # noqa: C901
             timeframe in {"W1", "MN1"}
             and _is_calendar_query_bound(start_datetime)
         )
-        from_date_internal = from_date - timedelta(
-            seconds=seconds_per_bar
-            * (warmup_bars + extra_bars + overlap_periods)
+        from_date_internal = _mt5_history_start_with_warmup(
+            from_date,
+            seconds_per_bar * (warmup_bars + extra_bars + overlap_periods),
         )
         expected_end_ts = _utc_epoch_seconds(to_date)
         requested_rows = max(1, candles + warmup_bars + extra_bars)
@@ -716,24 +732,30 @@ def _fetch_rates_with_warmup(  # noqa: C901
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
             return None, timeframe_error
+        if from_date < _MT5_HISTORY_QUERY_MIN:
+            return None, (
+                f"start datetime {start_datetime} is before MT5's supported history "
+                "boundary (1970-01-01T00:00:00Z)."
+            )
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
         now_utc = datetime.now(dt_timezone.utc)
+        scan_start = max(from_date, _MT5_HISTORY_QUERY_MIN)
         overlap_periods = int(
             timeframe in {"W1", "MN1"}
             and _is_calendar_query_bound(start_datetime)
         )
-        from_date_internal = from_date - timedelta(
-            seconds=seconds_per_bar
-            * (warmup_bars + extra_bars + overlap_periods)
+        from_date_internal = _mt5_history_start_with_warmup(
+            scan_start,
+            seconds_per_bar * (warmup_bars + extra_bars + overlap_periods),
         )
         requested_rows = candles + extra_bars
         # A start-only query means "the first N bars from start", not "the
         # latest N bars, filtered by start".  Allow extra calendar space for
         # closed sessions while retaining a bounded provider request.
         span_seconds = seconds_per_bar * max(requested_rows * 3, requested_rows + 7)
-        to_date = min(now_utc, from_date + timedelta(seconds=span_seconds))
+        to_date = min(now_utc, scan_start + timedelta(seconds=span_seconds))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
@@ -743,7 +765,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
             # weekend/holiday allowance.
             candidate_end = to_date
             result = None
-            for _ in range(8):
+            while True:
                 result = _mt5_copy_rates_range(
                     symbol, mt5_timeframe, from_date_internal, candidate_end
                 )
@@ -757,13 +779,17 @@ def _fetch_rates_with_warmup(  # noqa: C901
                     return result
                 elapsed = max(
                     seconds_per_bar,
-                    (candidate_end - from_date).total_seconds(),
+                    (candidate_end - scan_start).total_seconds(),
                 )
-                candidate_end = min(
-                    now_utc,
-                    from_date + timedelta(seconds=elapsed * 2),
+                remaining = max(
+                    0.0,
+                    (now_utc - scan_start).total_seconds(),
                 )
-            return result
+                next_elapsed = min(remaining, elapsed * 2)
+                next_end = scan_start + timedelta(seconds=next_elapsed)
+                if next_end <= candidate_end:
+                    return result
+                candidate_end = next_end
 
     elif end_datetime:
         to_date, to_date_error = _parse_fetch_datetime_arg(
@@ -773,6 +799,11 @@ def _fetch_rates_with_warmup(  # noqa: C901
         )
         if to_date_error:
             return None, to_date_error
+        if to_date < _MT5_HISTORY_QUERY_MIN:
+            return None, (
+                f"end datetime {end_datetime} is before MT5's supported history "
+                "boundary (1970-01-01T00:00:00Z)."
+            )
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
             return None, timeframe_error
@@ -796,7 +827,12 @@ def _fetch_rates_with_warmup(  # noqa: C901
     stale_last_t: Optional[float] = None
     freshness_cutoff: Optional[float] = None
     for idx in range(attempts):
-        rates = _fetch()
+        try:
+            rates = _fetch()
+        except OSError as exc:
+            if exc.errno == errno.EINVAL:
+                return None, _MT5_INVALID_DATE_RANGE_ERROR
+            raise
         if rates is not None and len(rates) > 0:
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
@@ -1024,6 +1060,18 @@ def _future_start_error(
     except Exception:
         return None
     return None
+
+
+def _mt5_history_start_with_warmup(
+    start: datetime,
+    warmup_seconds: int,
+) -> datetime:
+    """Subtract warmup without crossing MT5's Unix-time query boundary."""
+    if start <= _MT5_HISTORY_QUERY_MIN:
+        return _MT5_HISTORY_QUERY_MIN
+    available_seconds = (start - _MT5_HISTORY_QUERY_MIN).total_seconds()
+    bounded_warmup = min(max(0.0, float(warmup_seconds)), available_seconds)
+    return start - timedelta(seconds=bounded_warmup)
 
 
 def _resolve_fetch_timeframe_seconds(timeframe: TimeframeLiteral) -> tuple[Optional[int], Optional[str]]:

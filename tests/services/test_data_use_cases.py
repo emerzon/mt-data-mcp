@@ -111,6 +111,11 @@ def test_candle_and_tick_results_share_broker_source_context() -> None:
             "Could not parse date 'tomorrowish'",
             "data_fetch_candles_invalid_date",
         ),
+        (
+            "MT5 rejected the requested candle date range because one or more bounds "
+            "are outside its supported history window.",
+            "data_fetch_candles_unsupported_date_range",
+        ),
     ],
 )
 def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):

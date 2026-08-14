@@ -481,6 +481,16 @@ def _normalize_candle_query_error(
     elif "in the future" in normalized and "start" in normalized:
         error_code = "data_fetch_candles_future_date_range"
         remediation = "Use a start timestamp at or before the current time."
+    elif (
+        "before mt5's supported history boundary" in normalized
+        or "mt5 rejected the requested candle date range" in normalized
+    ):
+        error_code = "data_fetch_candles_unsupported_date_range"
+        remediation = (
+            "Use start and end timestamps on or after 1970-01-01T00:00:00Z. "
+            "For an all-history query, use that boundary as start; MT5 will return "
+            "the first broker bars available on or after it."
+        )
     elif "data appears stale" in normalized:
         error_code = "data_fetch_candles_stale_data"
         remediation = (

@@ -493,6 +493,86 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertGreater(second_end, first_end)
 
     @patch(_PARSE_START)
+    def test_start_only_scans_past_old_eight_doubling_limit(self, mock_parse):
+        start = datetime(2025, 1, 4, tzinfo=_UTC)
+        first_bar = start + timedelta(hours=45)
+        mock_parse.return_value = start
+        rates = _make_rates(3, base_ts=first_bar.timestamp() + 120, step=60)
+        provider_ends = []
+
+        def copy_rates(_symbol, _timeframe, _start, end):
+            provider_ends.append(end)
+            return rates if end >= first_bar else []
+
+        with patch(_RATES_RANGE, side_effect=copy_rates):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'M1', 3, 0, '2025-01-04', None,
+                include_incomplete=True, retry=False, sanity_check=False,
+            )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, rates)
+        self.assertGreater(len(provider_ends), 8)
+        self.assertGreaterEqual(provider_ends[-1], first_bar)
+
+    @patch(_RATES_RANGE)
+    def test_range_warmup_never_crosses_mt5_epoch_boundary(self, mock_range):
+        first_bar = datetime(1970, 1, 1, tzinfo=_UTC)
+        rates = _make_rates(1, base_ts=first_bar.timestamp())
+        mock_range.return_value = rates
+
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'M1', 1, 0,
+            '1970-01-01T00:00:00Z', '1970-01-02T00:00:00Z',
+            retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, rates)
+        self.assertEqual(mock_range.call_args.args[2], first_bar)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_pre_epoch_start_only_is_rejected_before_mt5_call(
+        self, mock_parse, mock_range
+    ):
+        mock_parse.return_value = datetime(1969, 6, 1, tzinfo=_UTC)
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'M1', 1, 0, '1969-06-01', None,
+            include_incomplete=True, retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(result)
+        self.assertIn("before MT5's supported history boundary", err)
+        mock_range.assert_not_called()
+
+    @patch(_RATES_RANGE)
+    def test_pre_epoch_end_is_rejected_before_mt5_call(self, mock_range):
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'M1', 1, 0,
+            '1969-01-01T00:00:00Z', '1969-12-31T23:59:59Z',
+            retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(result)
+        self.assertIn("before MT5's supported history boundary", err)
+        mock_range.assert_not_called()
+
+    @patch(_RATES_RANGE, side_effect=OSError(22, 'Invalid argument'))
+    def test_mt5_invalid_range_error_does_not_leak_oserror(self, mock_range):
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'M1', 1, 0,
+            '1970-01-01T00:00:00Z', '1970-01-02T00:00:00Z',
+            retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(result)
+        self.assertIn('outside its supported history window', err)
+        self.assertNotIn('OSError', err)
+        self.assertNotIn('Invalid argument', err)
+        mock_range.assert_called_once()
+
+    @patch(_PARSE_START)
     def test_start_only_invalid(self, mock_parse):
         """start_datetime fails to parse (no end)."""
         mock_parse.return_value = None
