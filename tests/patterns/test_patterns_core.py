@@ -467,6 +467,28 @@ def test_build_pattern_response_shows_completed_harmonics_by_default():
     assert "completed_patterns_hidden" not in response
 
 
+def test_candlestick_completion_filter_reports_closed_bar_basis() -> None:
+    response = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "candlestick",
+        [{"name": "Engulfing", "status": "detected", "confidence": 0.8}],
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]}),
+        detail="compact",
+    )
+
+    assert response["n_patterns"] == 1
+    assert response["completion_filter"] == {
+        "applied": False,
+        "basis": "closed_bar_detections",
+        "recency_control": "last_n_bars",
+    }
+
+
 def test_build_pattern_response_hoists_repeated_regime_context():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     shared = {

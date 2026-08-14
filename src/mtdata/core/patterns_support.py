@@ -743,6 +743,7 @@ def _compact_patterns_payload(  # noqa: C901
         "n_patterns": total_i,
         "applied_last_n_bars": payload.get("applied_last_n_bars"),
         "effective_window": payload.get("effective_window"),
+        "completion_filter": payload.get("completion_filter"),
         "adaptation": _compact_elliott_adaptation(payload.get("adaptation")),
     }
     compact = {key: value for key, value in compact.items() if value is not None}

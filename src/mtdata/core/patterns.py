@@ -366,10 +366,13 @@ def _build_pattern_response(  # noqa: C901
     top_k: int = 8,
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
+    mode_value = str(mode).lower()
     # Harmonic candidates have both forming and completed lifecycle states.
-    # Treat both as the mode's primary findings rather than applying the
-    # forming-only visibility policy used by the other detectors.
-    include_completed = bool(include_completed or str(mode).lower() == "harmonic")
+    # Candlestick detections are intentionally computed from closed bars, so
+    # include_completed is not a meaningful lifecycle filter for that mode.
+    include_completed = bool(
+        include_completed or mode_value in {"candlestick", "harmonic"}
+    )
     # Filter patterns based on include_completed
     filtered = _visible_pattern_rows(patterns, include_completed=include_completed)
     hidden_status = "broken" if str(mode).lower() == "fractal" else "completed"
@@ -393,6 +396,12 @@ def _build_pattern_response(  # noqa: C901
         "patterns": filtered,
         "n_patterns": int(len(filtered)),
     }
+    if mode_value == "candlestick":
+        resp["completion_filter"] = {
+            "applied": False,
+            "basis": "closed_bar_detections",
+            "recency_control": "last_n_bars",
+        }
     if str(mode).lower() == "elliott":
         adaptation = df.attrs.get("elliott_adaptation")
         if isinstance(adaptation, dict):
@@ -1425,9 +1434,10 @@ def patterns_detect(
         Time format for series data
     
     include_completed : bool, optional (default=False)
-        Include completed structures alongside forming results. Harmonic mode
-        returns both forming and completed candidates because both are its
-        primary findings.
+        Include completed lifecycle structures alongside forming results.
+        Candlestick mode always scans closed-bar detections; use
+        `last_n_bars` to restrict their recency. Harmonic mode always returns
+        both forming and completed candidates because both are primary findings.
     
     Returns:
     --------

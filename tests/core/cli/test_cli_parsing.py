@@ -1110,6 +1110,11 @@ class TestResolveParamKwargs:
             ("volatility_term_structure", "horizons", "horizons in bars"),
             ("market_relative_strength", "weights", "matching --horizons"),
             ("market_relative_strength", "limit", "ranked symbols"),
+            (
+                "patterns_detect",
+                "include_completed",
+                "Candlestick mode always scans closed-bar detections",
+            ),
             ("options_chain", "limit", "option contracts"),
             ("volume_profile_levels", "lookback", "Historical bar count"),
             ("outliers_detect", "limit", "anomalous bars"),

@@ -259,7 +259,11 @@ PARAM_HINTS = {
     "whitelist": "Comma-separated pattern names to include.",
     "universe": "Symbol scan universe: visible (fast default) or all (includes hidden tradable symbols and may be slower).",
     "series_time": "Series timestamp format (string or epoch).",
-    "include_completed": "Include completed patterns (otherwise forming only).",
+    "include_completed": (
+        "Include completed lifecycle structures alongside forming results. "
+        "Candlestick mode always scans closed-bar detections; use last_n_bars "
+        "to restrict their recency. Harmonic mode always returns both states."
+    ),
     "include_series": "Include raw series in output.",
     "config": "Pattern-specific config overrides (JSON or k=v).",
     "top_k": "Return top-K results.",

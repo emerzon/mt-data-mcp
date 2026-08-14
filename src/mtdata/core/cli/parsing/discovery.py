@@ -149,6 +149,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Chart timeframe. When omitted, candlestick/classic/harmonic/fractal use "
         "H1, elliott scans H1/H4/D1, and all scans M30/H1/H4/D1/W1."
     ),
+    ("patterns_detect", "include_completed"): (
+        "Include completed lifecycle structures alongside forming results. "
+        "Candlestick mode always scans closed-bar detections; use --last-n-bars "
+        "to restrict their recency. Harmonic mode always returns both states."
+    ),
     ("symbols_list", "universe"): (
         "Symbol scan universe. When omitted, unfiltered listings use visible "
         "Market Watch symbols while searches use the full broker catalog."
