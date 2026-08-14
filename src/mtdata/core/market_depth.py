@@ -93,9 +93,15 @@ def _market_ticker_age_display(seconds: Any) -> Optional[str]:
 def _market_ticker_stale_warning(payload: Dict[str, Any], tick_time: Any) -> str:
     if payload.get("timestamp_in_future"):
         return str(payload.get("timestamp_warning"))
+    display_time = payload.get("time") or payload.get("time_display")
+    if display_time in (None, ""):
+        try:
+            display_time = _format_time_second_explicit(float(tick_time))
+        except (TypeError, ValueError, OverflowError, OSError):
+            display_time = "unavailable"
     return (
         "Tick data may be stale; last tick time is "
-        f"{payload.get('time_display') or tick_time}."
+        f"{display_time}."
     )
 
 

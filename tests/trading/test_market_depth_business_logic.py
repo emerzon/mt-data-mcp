@@ -423,7 +423,9 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["freshness_state"] == "stale"
     assert out["usable_for_live_trading"] is False
     assert "data_age_hours" not in out
-    assert out["warning"].startswith("Tick data may be stale")
+    assert out["warning"] == (
+        "Tick data may be stale; last tick time is 2023-11-14T22:13:20Z."
+    )
     assert "last" not in out
     assert "tick_volume" not in out
     assert "spread_cost_per_lot" not in out
@@ -530,7 +532,9 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["stale_after_seconds"] == 300
     assert "freshness_basis" not in out
     assert "data_age" not in out
-    assert out["warning"].startswith("Tick data may be stale")
+    assert out["warning"] == (
+        "Tick data may be stale; last tick time is 2023-11-14T22:13:20Z."
+    )
     assert "spread_cost_per_lot" not in out
     assert "spread_cost_currency" not in out
     assert "diagnostics" not in out
