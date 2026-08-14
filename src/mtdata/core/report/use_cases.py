@@ -1446,6 +1446,7 @@ def run_report_generate(  # noqa: C901
                 if price is not None:
                     summ.append(f"close={format_number(price)}")
                     market_summary["close"] = price
+                    market_summary["price_source"] = "last_completed_candle_close"
                 if price is not None and ema20 is not None and ema50 is not None:
                     trend_note = (
                         "above EMAs"
@@ -1588,6 +1589,9 @@ def run_report_generate(  # noqa: C901
                     method_name = str(fc.get("method"))
                     forecast_line = f"forecast={method_name}"
                     forecast_summary: Dict[str, Any] = {"method": method_name}
+                    last_price_source = fc.get("last_price_source")
+                    if last_price_source not in (None, ""):
+                        forecast_summary["last_price_source"] = last_price_source
                     nums = extract_report_forecast_values(fc)
                     if nums:
                         first = nums[0]

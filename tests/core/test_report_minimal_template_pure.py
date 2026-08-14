@@ -36,6 +36,7 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
                     {"time": "2026-03-29T13:00Z", "value": 1.1090},
                 ],
                 "last_observation_time": "2026-03-29T10:00Z",
+                "last_price_source": "candle_close",
                 "forecast_vs_last_price": {
                     "direction": "bullish",
                     "horizon_delta_pct": 0.36,
@@ -64,6 +65,7 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
     assert report["sections"]["forecast"]["timezone"] == "UTC"
     assert report["sections"]["forecast"]["forecast"][-1]["value"] == 1.1090
     assert report["sections"]["forecast"]["last_observation_time"] == "2026-03-29T10:00Z"
+    assert report["sections"]["forecast"]["last_price_source"] == "candle_close"
     assert report["sections"]["forecast"]["forecast_vs_last_price"]["direction"] == "bullish"
     assert report["sections"]["forecast"]["ci_status"] == "unavailable"
     assert "error" not in report["sections"]["forecast"]

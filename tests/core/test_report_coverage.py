@@ -1696,6 +1696,7 @@ class TestReportWarnings:
                     "context": {"last_snapshot": {"close": 1.1}},
                     "forecast": {
                         "method": "theta",
+                        "last_price_source": "candle_close",
                         "horizon": 3,
                         "forecast": [
                             {"time": "2026-01-01T01:00Z", "value": 1.101},
@@ -1728,7 +1729,12 @@ class TestReportWarnings:
             res = fn("EURUSD", template="minimal", detail="compact")
 
         forecast = res["summary_structured"]["forecast"]
+        assert res["summary_structured"]["market"] == {
+            "close": 1.1,
+            "price_source": "last_completed_candle_close",
+        }
         assert forecast["horizon"] == 3
+        assert forecast["last_price_source"] == "candle_close"
         assert forecast["terminal_value"] == 1.103
         assert forecast["direction"] == "up"
         assert forecast["direction_actionable"] is True

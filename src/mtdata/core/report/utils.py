@@ -131,6 +131,7 @@ _REPORT_FORECAST_FIELDS = (
     "data_window",
     "freshness",
     "last_price",
+    "last_price_source",
     "path_flat",
     "path_range",
     "volatility_per_bar",
