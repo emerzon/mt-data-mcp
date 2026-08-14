@@ -154,8 +154,14 @@ for both anchors and hits.
 Label preprocessing is causal by default. `zero_phase` filters use future bars
 and are rejected unless `--allow-noncausal-denoise` is supplied. That override
 is for exploratory offline analysis only: the response sets
-`lookahead_bias=true`, `suitable_for_backtest=false`, and records the effective
-method, causality, parameters, and entry column under `preprocessing.denoise`.
+`denoise_lookahead_bias=true`, `suitable_as_training_target=false`, and records
+the effective method, causality, parameters, and entry column under
+`preprocessing.denoise`.
+
+Every triple-barrier outcome uses later bars by design. Responses therefore set
+`label_uses_future_path=true`, `suitable_as_live_feature=false`, and separately
+state whether the result remains a valid historical training target. Join these
+labels as targets, never as same-timestamp live features.
 
 ### Usage
 

@@ -490,8 +490,10 @@ def labels_triple_barrier(  # noqa: C901
                         "allow_noncausal_denoise=true only for explicitly exploratory "
                         "offline analysis; such output is marked unsuitable for backtests."
                     ),
-                    "lookahead_bias": True,
-                    "suitable_for_backtest": False,
+                    "label_uses_future_path": True,
+                    "denoise_lookahead_bias": True,
+                    "suitable_as_training_target": False,
+                    "suitable_as_live_feature": False,
                 }
             mt5_gateway = create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise
@@ -589,10 +591,10 @@ def labels_triple_barrier(  # noqa: C901
                         "history with denoise_describe."
                     ),
                 }
-            lookahead_bias = bool(
+            denoise_lookahead_bias = bool(
                 denoise_applied and denoise_causality == "zero_phase"
             )
-            suitable_for_backtest = not lookahead_bias
+            suitable_as_training_target = not denoise_lookahead_bias
             preprocessing = {
                 "denoise": {
                     "applied": denoise_applied,
@@ -612,7 +614,7 @@ def labels_triple_barrier(  # noqa: C901
                     "source_column_overwritten": "close" in overwritten_columns,
                 }
             }
-            if lookahead_bias:
+            if denoise_lookahead_bias:
                 warnings_out.append(
                     "LOOK-AHEAD BIAS: zero_phase denoising used future observations to "
                     "construct entry prices. These labels are unsuitable for backtests, "
@@ -783,8 +785,10 @@ def labels_triple_barrier(  # noqa: C901
                 "direction": direction_value,
                 "horizon": horizon_bars,
                 "same_bar_policy": same_bar_policy_value,
-                "lookahead_bias": lookahead_bias,
-                "suitable_for_backtest": suitable_for_backtest,
+                "label_uses_future_path": True,
+                "denoise_lookahead_bias": denoise_lookahead_bias,
+                "suitable_as_training_target": suitable_as_training_target,
+                "suitable_as_live_feature": False,
                 "preprocessing": preprocessing,
                 "labeling_spec": {
                     "direction": direction_value,
@@ -798,8 +802,10 @@ def labels_triple_barrier(  # noqa: C901
                         if label_on == "high_low"
                         else ("denoised_close" if denoise_applied else "close")
                     ),
-                    "lookahead_bias": lookahead_bias,
-                    "suitable_for_backtest": suitable_for_backtest,
+                    "label_uses_future_path": True,
+                    "denoise_lookahead_bias": denoise_lookahead_bias,
+                    "suitable_as_training_target": suitable_as_training_target,
+                    "suitable_as_live_feature": False,
                     "same_bar_policy": same_bar_policy_value,
                     "horizon_bars": horizon_bars,
                     "barrier_unit": next(
@@ -983,8 +989,10 @@ def labels_triple_barrier(  # noqa: C901
                         "history_bars_fetched": history_bars_fetched,
                         "history_bars_used": history_bars_used,
                         "sample_limit": sample_limit,
-                        "lookahead_bias": lookahead_bias,
-                        "suitable_for_backtest": suitable_for_backtest,
+                        "label_uses_future_path": True,
+                        "denoise_lookahead_bias": denoise_lookahead_bias,
+                        "suitable_as_training_target": suitable_as_training_target,
+                        "suitable_as_live_feature": False,
                         "preprocessing": preprocessing,
                         "sample_quality_status": sample_quality["status"],
                         "summary": summary,

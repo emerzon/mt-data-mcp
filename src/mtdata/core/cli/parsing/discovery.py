@@ -455,7 +455,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("labels_triple_barrier", "allow_noncausal_denoise"): (
         "Allow explicitly requested zero-phase denoising. This uses future bars, "
-        "sets lookahead_bias=true, and makes labels unsuitable for backtests or training."
+        "sets denoise_lookahead_bias=true, and makes labels unsuitable as training targets."
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("news", "limit"): (

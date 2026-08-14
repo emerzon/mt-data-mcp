@@ -592,8 +592,10 @@ def _normalize_triple_barrier_payload(
     for key in (
         "direction",
         "same_bar_policy",
-        "lookahead_bias",
-        "suitable_for_backtest",
+        "label_uses_future_path",
+        "denoise_lookahead_bias",
+        "suitable_as_training_target",
+        "suitable_as_live_feature",
         "price_precision",
         "trade_tick_size",
         "label_legend",

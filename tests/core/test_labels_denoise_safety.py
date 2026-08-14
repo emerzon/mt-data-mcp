@@ -65,8 +65,10 @@ def test_zero_phase_denoise_is_blocked_without_explicit_override() -> None:
     )
 
     assert result["error_code"] == "noncausal_denoise_blocked"
-    assert result["lookahead_bias"] is True
-    assert result["suitable_for_backtest"] is False
+    assert result["label_uses_future_path"] is True
+    assert result["denoise_lookahead_bias"] is True
+    assert result["suitable_as_training_target"] is False
+    assert result["suitable_as_live_feature"] is False
 
 
 def test_zero_phase_override_is_prominent_and_machine_readable() -> None:
@@ -81,8 +83,10 @@ def test_zero_phase_override_is_prominent_and_machine_readable() -> None:
     )
 
     assert result["success"] is True
-    assert result["lookahead_bias"] is True
-    assert result["suitable_for_backtest"] is False
+    assert result["label_uses_future_path"] is True
+    assert result["denoise_lookahead_bias"] is True
+    assert result["suitable_as_training_target"] is False
+    assert result["suitable_as_live_feature"] is False
     assert result["labeling_spec"]["entry_price_source"] == "denoised_close"
     assert result["labeling_spec"]["entry_price_column"] == "close_dn"
     provenance = result["preprocessing"]["denoise"]
@@ -112,8 +116,10 @@ def test_causal_denoise_remains_backtest_safe_and_identified() -> None:
     )
 
     assert result["success"] is True
-    assert result["lookahead_bias"] is False
-    assert result["suitable_for_backtest"] is True
+    assert result["label_uses_future_path"] is True
+    assert result["denoise_lookahead_bias"] is False
+    assert result["suitable_as_training_target"] is True
+    assert result["suitable_as_live_feature"] is False
     assert result["preprocessing"]["denoise"]["causality"] == "causal"
     assert result["preprocessing"]["denoise"]["effective_entry_column"] == "close_filtered"
 

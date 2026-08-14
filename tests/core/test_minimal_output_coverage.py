@@ -539,8 +539,10 @@ class TestNormalizeTripleBarrierPayload:
             "sl_time": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
             "same_bar": [True, True],
             "same_bar_policy": "sl_first",
-            "lookahead_bias": False,
-            "suitable_for_backtest": True,
+            "label_uses_future_path": True,
+            "denoise_lookahead_bias": False,
+            "suitable_as_training_target": True,
+            "suitable_as_live_feature": False,
             "price_precision": 2,
             "trade_tick_size": 0.01,
             "labeling_spec": {
@@ -564,8 +566,10 @@ class TestNormalizeTripleBarrierPayload:
         assert result["labels"][0]["same_bar"] is True
         assert result["same_bar_count"] == 2
         assert result["same_bar_policy"] == "sl_first"
-        assert result["lookahead_bias"] is False
-        assert result["suitable_for_backtest"] is True
+        assert result["label_uses_future_path"] is True
+        assert result["denoise_lookahead_bias"] is False
+        assert result["suitable_as_training_target"] is True
+        assert result["suitable_as_live_feature"] is False
         assert result["labeling_spec"] == payload["labeling_spec"]
         assert result["labeling_coverage"] == 2 / 7
         assert result["history_bars_used"] == 7
