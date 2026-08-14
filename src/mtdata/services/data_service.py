@@ -2205,14 +2205,24 @@ def fetch_candles(  # noqa: C901
             # Determine warmup bars if technical indicators requested
             unknown_indicators = _find_unknown_ta_indicators(ti_spec or "")
             if unknown_indicators:
-                return {
-                    "error": (
+                return build_error_payload(
+                    (
                         "Unknown indicator(s): "
                         + ", ".join(unknown_indicators)
                         + ". Parameters use name(params) syntax, e.g. rsi(14) or "
                         "macd(12,26,9); use indicators_list to view valid indicator names."
-                    )
-                }
+                    ),
+                    code="indicator_not_found",
+                    operation="data_fetch_candles",
+                    remediation=(
+                        "Use indicators_list to inspect canonical names, then retry "
+                        "--indicators with name(params) syntax."
+                    ),
+                    related_tools=["indicators_list"],
+                    valid_values={"catalog": "indicators_list"},
+                    example="rsi(14)",
+                    details={"unknown_indicators": unknown_indicators},
+                )
             indicator_warmup_bars = _estimate_warmup_bars(ti_spec)
             denoise_history_context = _denoise_history_context(denoise)
             denoise_warmup_bars = int(

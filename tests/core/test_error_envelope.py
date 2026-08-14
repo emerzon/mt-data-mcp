@@ -85,6 +85,28 @@ def test_missing_forecast_task_id_points_to_task_discovery():
     assert out["related_tools"] == ["forecast_task_list"]
 
 
+def test_missing_forecast_model_id_points_to_model_store_discovery():
+    out = build_error_payload(
+        "Missing required argument: model_id",
+        code="cli_missing_required",
+        operation="forecast_models_delete",
+    )
+
+    assert "forecast_models_list" in out["remediation"]
+    assert out["related_tools"] == ["forecast_models_list"]
+
+
+def test_barrier_usage_errors_point_to_barrier_help():
+    out = build_error_payload(
+        "Invalid method: closed_form",
+        code="cli_invalid_arguments",
+        operation="forecast_barrier_optimize",
+    )
+
+    assert "forecast_barrier_optimize --help" in out["remediation"]
+    assert out["related_tools"] == ["forecast_barrier_prob"]
+
+
 def test_generic_method_errors_use_the_failing_operation_help():
     out = build_error_payload(
         "Invalid method. Valid options: pearson, spearman",

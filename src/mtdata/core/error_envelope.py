@@ -149,6 +149,27 @@ def _default_error_guidance(
             ),
             "related_tools": ["forecast_task_list"],
         }
+    if operation_text.startswith("forecast_models_"):
+        return {
+            "remediation": (
+                "Use forecast_models_list to inspect stored model IDs, then retry "
+                "the model-store operation with the intended scope."
+            ),
+            "related_tools": ["forecast_models_list"],
+        }
+    if operation_text in {"forecast_barrier_optimize", "forecast_barrier_prob"}:
+        related = (
+            ["forecast_barrier_prob"]
+            if operation_text == "forecast_barrier_optimize"
+            else ["forecast_barrier_optimize"]
+        )
+        return {
+            "remediation": (
+                f"Use {operation_text} --help and choose values documented for "
+                "that barrier workflow."
+            ),
+            "related_tools": related,
+        }
     if operation_text == "forecast_train":
         return {
             "remediation": (

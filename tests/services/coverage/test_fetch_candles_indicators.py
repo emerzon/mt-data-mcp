@@ -278,6 +278,13 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=10, indicators='nonexistent_indicator')
         self.assertIn('error', result)
         self.assertIn('Unknown indicator', result['error'])
+        self.assertEqual(result['error_code'], 'indicator_not_found')
+        self.assertEqual(result['related_tools'], ['indicators_list'])
+        self.assertEqual(
+            result['details']['unknown_indicators'],
+            ['nonexistent_indicator'],
+        )
+        self.assertEqual(result['example'], 'rsi(14)')
         mock_from.assert_not_called()
 
     @patch(_MT5_CONFIG)
