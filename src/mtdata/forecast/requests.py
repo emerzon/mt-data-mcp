@@ -232,6 +232,14 @@ class ForecastBacktestRequest(_PublicForecastRequest):
     )
     start: Optional[str] = None
     end: Optional[str] = None
+    lookback: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Training bars available at each anchor. When set, validation uses "
+            "a fixed rolling window matching forecast_generate lookback."
+        ),
+    )
     methods: Optional[List[str]] = Field(
         None,
         description=(
@@ -336,6 +344,13 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
     as_of: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
+    lookback: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Training bars per calibration anchor and for the final point forecast."
+        ),
+    )
     steps: int = Field(
         50,
         ge=1,

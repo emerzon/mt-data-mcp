@@ -250,6 +250,49 @@ class TestForecastBacktest:
         ]
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_fixed_lookback_caps_every_anchor_training_window(self, fetch):
+        fetch.return_value = _make_df(500)
+        captured = []
+
+        def fake_forecast(**kwargs):
+            captured.append(
+                {
+                    "lookback": kwargs.get("lookback"),
+                    "training_bars": len(kwargs["prefetched_df"]),
+                }
+            )
+            return {"forecast_price": [101.0] * 3}
+
+        with patch(
+            "mtdata.forecast.backtest.forecast",
+            side_effect=fake_forecast,
+        ):
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                horizon=3,
+                steps=2,
+                spacing=3,
+                lookback=50,
+                methods=["theta"],
+                detail="full",
+            )
+
+        assert result["success"] is True
+        assert captured == [
+            {"lookback": 50, "training_bars": 50},
+            {"lookback": 50, "training_bars": 50},
+        ]
+        assert result["backtest_plan"]["model"] == (
+            "rolling_origin_fixed_window"
+        )
+        assert result["backtest_plan"]["model_lookback_bars"] == 50
+        assert all(
+            row["training_bars_used"] == 50
+            for row in result["results"]["theta"]["details"]
+        )
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_rejects_overlapping_generated_backtest_windows(self, fetch):
         result = forecast_backtest(
             "EURUSD",

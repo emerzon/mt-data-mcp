@@ -74,6 +74,46 @@ def test_forecast_routes_to_volatility_endpoint(monkeypatch):
     assert out == {"volatility": True, "method": "vol_garch"}
 
 
+def test_forecast_volatility_uses_and_discloses_top_level_lookback(monkeypatch):
+    captured = {}
+
+    def fake_volatility(**kwargs):
+        captured.update(kwargs)
+        return {
+            "success": True,
+            "params_used": {"lookback": kwargs["params"]["lookback"]},
+            "data_window": {"bars_used": kwargs["params"]["lookback"]},
+        }
+
+    monkeypatch.setattr(fv, "forecast_volatility", fake_volatility)
+
+    out = ff.forecast(
+        symbol="EURUSD",
+        timeframe="H1",
+        quantity="volatility",
+        method="ewma",
+        lookback=50,
+    )
+
+    assert captured["params"]["lookback"] == 50
+    assert out["requested_lookback"] == 50
+    assert out["effective_lookback"] == 50
+    assert out["lookback_source"] == "forecast_generate.lookback"
+    assert out["data_window"]["lookback_source"] == "forecast_generate.lookback"
+
+
+def test_forecast_volatility_rejects_conflicting_lookbacks() -> None:
+    with pytest.raises(ForecastError, match="Conflicting volatility lookbacks"):
+        ff.forecast(
+            symbol="EURUSD",
+            timeframe="H1",
+            quantity="volatility",
+            method="ewma",
+            lookback=50,
+            params={"lookback": 500},
+        )
+
+
 def test_forecast_volatility_quantity_rejects_known_non_volatility_method(monkeypatch):
     monkeypatch.setattr(ff, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(ff, "TIMEFRAME_SECONDS", {"H1": 3600})

@@ -2337,14 +2337,10 @@ def _resolve_stored_model_execution_alias(
 ) -> tuple[str, Dict[str, Any]]:
     """Execute a compatible stored wrapper under its canonical model ID."""
     parts = str(model_id or "").split("/")
-    if (
-        len(parts) != 3
-        or library != "statsforecast"
-        or resolved_method != "statsforecast"
-    ):
+    if len(parts) != 3:
         return resolved_method, params
     stored_method = parts[0]
-    if not stored_method.startswith("sf_"):
+    if stored_method == resolved_method:
         return resolved_method, params
     try:
         stored_class = ForecastRegistry.get_class(stored_method)
@@ -2363,7 +2359,11 @@ def _resolve_stored_model_execution_alias(
         and selector_value
         and requested_selector.lower() == selector_value.lower()
     )
-    if not (method_matches or selector_matches):
+    execution_library = str(
+        getattr(stored_class, "CAPABILITY_EXECUTION_LIBRARY", "") or ""
+    ).lower()
+    library_matches = not execution_library or execution_library == library
+    if not library_matches or not (method_matches or selector_matches):
         return resolved_method, params
     alias_params = dict(params)
     if selector_key and selector_key not in original_params:
@@ -2623,6 +2623,7 @@ def run_forecast_backtest(
             horizon=request.horizon,
             steps=request.steps,
             spacing=request.spacing,
+            lookback=request.lookback,
             start=request.start,
             end=request.end,
             methods=request.methods,
@@ -2813,6 +2814,11 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            **(
+                {"lookback": int(request.lookback)}
+                if request.lookback is not None
+                else {}
+            ),
             **_analysis_time_kwargs(request),
             methods=[str(request.method)],
             denoise=request.denoise,
@@ -2865,6 +2871,11 @@ def run_forecast_conformal_intervals(
             timeframe=request.timeframe,
             method=request.method,
             horizon=int(request.horizon),
+            **(
+                {"lookback": int(request.lookback)}
+                if request.lookback is not None
+                else {}
+            ),
             params=request.params,
             denoise=request.denoise,
             **_analysis_time_kwargs(request),

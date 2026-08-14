@@ -2030,6 +2030,7 @@ def forecast_backtest(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    lookback: Optional[int] = None,
     as_of: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -2083,10 +2084,16 @@ def forecast_backtest(  # noqa: C901
             }
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors
+        model_lookback = int(lookback) if lookback is not None else None
+        history_context = model_lookback if model_lookback is not None else 400
         if anchors and isinstance(anchors, (list, tuple)) and len(anchors) > 0:
-            need = int(len(anchors)) * int(horizon) + 600
+            need = int(len(anchors)) * int(horizon) + history_context + 200
         else:
-            need = int(steps) * int(spacing) + int(horizon) + 400
+            need = (
+                int(steps) * int(spacing)
+                + int(horizon)
+                + history_context
+            )
         try:
             history_kwargs = {"as_of": as_of}
             if not as_of and (start or end):
@@ -2094,7 +2101,8 @@ def forecast_backtest(  # noqa: C901
             df = _fetch_history(symbol, timeframe, int(need), **history_kwargs)
         except Exception as ex:
             return {"error": str(ex)}
-        if len(df) < (int(horizon) + 50):
+        minimum_training_bars = max(3, model_lookback or 50)
+        if len(df) < (int(horizon) + minimum_training_bars):
             return {"error": "Not enough closed bars for backtest"}
 
         # Determine anchor indices (explicit anchors or rolling from end)
@@ -2193,7 +2201,7 @@ def forecast_backtest(  # noqa: C901
         data_contract = DataPreparationContract(
             symbol=symbol,
             timeframe=timeframe,
-            lookback=int(need),
+            lookback=int(model_lookback or need),
             denoise=_dn_used,
             features=dict(features) if isinstance(features, dict) else features,
             dimred_method=dimred_method,
@@ -2223,11 +2231,28 @@ def forecast_backtest(  # noqa: C901
                     continue
                 anchor_time = _format_time_minimal(times[idx])
                 truth, ts = actual_windows[idx]
+                anchor_history = df.iloc[: idx + 1]
+                if model_lookback is not None:
+                    anchor_history = anchor_history.iloc[-model_lookback:]
+                anchor_training_bars = int(len(anchor_history))
                 try:
                     if quantity == 'volatility':
                         # Volatility forecast: allow proxy in params map (params_map[method].get('proxy'))
                         pm_raw = params_map.get(method) or {}
                         pm = dict(pm_raw) if isinstance(pm_raw, dict) else {}
+                        if model_lookback is not None:
+                            nested_lookback = pm.get("lookback")
+                            if (
+                                nested_lookback is not None
+                                and int(nested_lookback) != model_lookback
+                            ):
+                                raise ValueError(
+                                    "Conflicting volatility lookbacks in backtest: "
+                                    f"lookback={model_lookback}, "
+                                    f"params_per_method[{method!r}].lookback="
+                                    f"{nested_lookback}."
+                                )
+                            pm["lookback"] = model_lookback
                         proxy = pm.pop('proxy', None) if isinstance(pm, dict) else None
                         if execution_contract is None:
                             execution_contract = ForecastExecutionContract(
@@ -2254,9 +2279,6 @@ def forecast_backtest(  # noqa: C901
                         pm = params_map.get(method)
                         if pm is None:
                             pm = params
-                        # The forecast boundary takes its own defensive copy.
-                        # Keep this anchor as a view so each evaluation copies once.
-                        anchor_history = df.iloc[: idx + 1]
                         if execution_contract is None:
                             execution_contract = ForecastExecutionContract(
                                 data_preparation=data_contract,
@@ -2272,6 +2294,7 @@ def forecast_backtest(  # noqa: C901
                             timeframe=timeframe,
                             method=method,  # type: ignore[arg-type]
                             horizon=int(horizon),
+                            lookback=model_lookback,
                             as_of=anchor_time,
                             params=pm,
                             quantity=quantity,  # type: ignore[arg-type]
@@ -2309,6 +2332,12 @@ def forecast_backtest(  # noqa: C901
                         "_error_count": 1,
                         "forecast_sigma": pred_sigma,
                         "realized_sigma": realized_sigma,
+                        "training_bars_used": int(
+                            (r.get("data_window") or {}).get(
+                                "bars_used",
+                                anchor_training_bars,
+                            )
+                        ),
                     })
                 else:
                     if target_mode == 'return':
@@ -2462,6 +2491,7 @@ def forecast_backtest(  # noqa: C901
                         "position": position,
                         "trade_return_gross": gross_return,
                         "trade_return": net_return,
+                        "training_bars_used": anchor_training_bars,
                     }
                     if da is None and directional_opportunities > 0 and directional_calls_made == 0:
                         detail_row["directional_accuracy_status"] = "no_directional_calls"
@@ -2590,13 +2620,19 @@ def forecast_backtest(  # noqa: C901
             else "rolling"
         )
         backtest_plan: Dict[str, Any] = {
-            "model": "rolling_origin_expanding_window",
+            "model": (
+                "rolling_origin_fixed_window"
+                if model_lookback is not None
+                else "rolling_origin_expanding_window"
+            ),
             "anchor_mode": anchor_mode,
             "runs_requested": int(len(anchors)) if anchor_mode == "explicit" else int(steps),
             "runs_used": int(len(anchor_indices)),
             "horizon_bars": int(horizon),
             "history_bars_used": int(len(df)),
         }
+        if model_lookback is not None:
+            backtest_plan["model_lookback_bars"] = model_lookback
         if anchor_mode == "rolling":
             backtest_plan["anchor_spacing_bars"] = int(spacing)
             backtest_plan["validation_span_bars"] = int(horizon) + max(

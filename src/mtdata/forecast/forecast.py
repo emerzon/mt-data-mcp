@@ -47,6 +47,20 @@ def execute_forecast(
         if quantity_l == 'volatility' or method_l.startswith('vol_'):
             from .volatility import forecast_volatility
             params_for_volatility = dict(params or {})
+            nested_lookback = params_for_volatility.get("lookback")
+            if lookback is not None and nested_lookback is not None:
+                try:
+                    lookbacks_match = int(nested_lookback) == int(lookback)
+                except (TypeError, ValueError):
+                    lookbacks_match = False
+                if not lookbacks_match:
+                    raise ForecastError(
+                        "Conflicting volatility lookbacks: top-level lookback="
+                        f"{lookback} and params.lookback={nested_lookback}. Use one "
+                        "value or make them equal."
+                    )
+            if lookback is not None:
+                params_for_volatility["lookback"] = int(lookback)
             proxy_value = proxy
             if proxy_value is None and isinstance(params, dict):
                 proxy_candidate = params_for_volatility.pop("proxy", None)
@@ -64,6 +78,17 @@ def execute_forecast(
                 end=end,
                 denoise=denoise,
             )
+            if lookback is not None and isinstance(result, dict):
+                result["requested_lookback"] = int(lookback)
+                result["effective_lookback"] = int(
+                    (result.get("params_used") or {}).get("lookback", lookback)
+                )
+                result["lookback_source"] = "forecast_generate.lookback"
+                data_window = result.get("data_window")
+                if isinstance(data_window, dict):
+                    data_window["requested_lookback"] = int(lookback)
+                    data_window["effective_lookback"] = result["effective_lookback"]
+                    data_window["lookback_source"] = result["lookback_source"]
             return raise_if_error_result(result)
 
         from .forecast_engine import forecast_engine

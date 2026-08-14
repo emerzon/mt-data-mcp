@@ -258,6 +258,19 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["method"] == "skt_theta"
     assert out["library"] == "sktime"
 
+    stored_sktime_model_id = "skt_naive/EURUSD_H1/abc123"
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            model_id=stored_sktime_model_id,
+            model_cache="require_existing",
+        )
+    )
+    assert out["ok"] is True
+    assert captured["method"] == "skt_naive"
+    assert "estimator" not in captured["params"]
+    assert captured["model_id"] == stored_sktime_model_id
+
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="sktime:theta", params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
@@ -692,9 +705,14 @@ def test_forecast_backtest_request_rejects_singular_method_alias():
 
 
 def test_forecast_backtest_request_accepts_methods():
-    request = ForecastBacktestRequest(symbol="EURUSD", methods=["theta"])
+    request = ForecastBacktestRequest(
+        symbol="EURUSD",
+        methods=["theta"],
+        lookback=50,
+    )
 
     assert request.methods == ["theta"]
+    assert request.lookback == 50
 
 
 def test_forecast_backtest_request_validates_anchor_spacing_up_front():
@@ -2950,6 +2968,42 @@ def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
             steps=2,
             spacing=10,
         )
+
+
+def test_conformal_intervals_forward_fixed_lookback_to_validation_and_forecast():
+    calls = {}
+
+    def fake_backtest(**kwargs):
+        calls["backtest"] = kwargs
+        return {
+            "results": {
+                "theta": {
+                    "details": [
+                        {"forecast": [10.0], "actual": [9.0]},
+                    ]
+                }
+            }
+        }
+
+    def fake_forecast(**kwargs):
+        calls["forecast"] = kwargs
+        return {"forecast_price": [100.0]}
+
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=1,
+            lookback=50,
+        ),
+        backtest_impl=fake_backtest,
+        forecast_impl=fake_forecast,
+    )
+
+    assert result["success"] is True
+    assert calls["backtest"]["lookback"] == 50
+    assert calls["forecast"]["lookback"] == 50
 
 
 def test_run_forecast_conformal_intervals_routes_method_params_consistently():

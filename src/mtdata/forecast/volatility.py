@@ -1537,6 +1537,11 @@ def forecast_volatility(  # noqa: C901
             timeframe=timeframe,
             live_window=True,
         )
+        requested_history_lookback = p.get("lookback")
+        if requested_history_lookback is not None:
+            history_bars = int(requested_history_lookback)
+            if len(df) > history_bars:
+                df = df.iloc[-history_bars:].copy()
         if len(df) < 3:
             return {"error": "Not enough closed bars"}
         bpy, _ = _volatility_annualization_context(
