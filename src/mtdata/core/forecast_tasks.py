@@ -175,6 +175,17 @@ class ForecastModelsCleanupRequest(BaseModel):
         "compact",
         description="Response detail level: compact returns model IDs; full includes age and size fields.",
     )
+    limit: int = Field(
+        10,
+        ge=1,
+        le=500,
+        description="Maximum matching model previews returned on this page.",
+    )
+    offset: int = Field(
+        0,
+        ge=0,
+        description="Zero-based offset into deterministic model-id order.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1183,7 +1194,12 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
 
 @mcp.tool()
 def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, Any]:
-    """Preview or delete stale stored forecast models."""
+    """Preview or delete stale stored forecast models.
+
+    Candidate output is deterministically paged with ``limit`` and ``offset``.
+    Pagination affects only the returned preview; a non-dry-run cleanup still
+    deletes the complete matching set.
+    """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(request.detail)
         store = _get_model_store()
@@ -1220,6 +1236,9 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
                 )
             matches.append(row)
 
+        matches = sorted(matches, key=lambda row: str(row.get("model_id") or ""))
+        total_matches = len(matches)
+        preview = matches[int(request.offset) : int(request.offset) + int(request.limit)]
         deleted = 0
         if not request.dry_run:
             for row in matches:
@@ -1233,9 +1252,17 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
             "method": request.method,
             "older_than_days": request.older_than_days,
             "ttl_days": _days(getattr(store, "ttl_seconds", 0.0)),
-            "matched": len(matches),
+            "matched": total_matches,
             "deleted": deleted,
-            "models": matches,
+            "count": len(preview),
+            "models": preview,
+            "row_key": "models",
+            "pagination": build_pagination_meta(
+                total=total_matches,
+                returned=len(preview),
+                limit=int(request.limit),
+                offset=int(request.offset),
+            ),
             "generated_at": format_epoch_utc(generated_at),
         }
 
@@ -1245,4 +1272,6 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
         func=_execute,
         method=request.method,
         dry_run=request.dry_run,
+        limit=request.limit,
+        offset=request.offset,
     )

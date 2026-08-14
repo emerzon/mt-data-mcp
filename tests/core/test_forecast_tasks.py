@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.mtdata.core.forecast_tasks import (
+    ForecastModelsCleanupRequest,
     ForecastModelsDeleteRequest,
     ForecastTaskCancelAllRequest,
     ForecastTaskCancelRequest,
@@ -586,6 +587,82 @@ class TestForecastModels:
         assert result["count"] == 15
         assert result["pagination"]["limit"] == 50
         assert result["pagination"]["has_more"] is False
+
+    def test_cleanup_preview_is_bounded_and_deterministically_paged(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_cleanup
+
+        handles = [
+            TrainedModelHandle(
+                f"m/S{i:02d}/h",
+                "m",
+                f"S{i:02d}",
+                "h",
+                float(i),
+            )
+            for i in range(15)
+        ]
+        mock_store = MagicMock(ttl_seconds=86_400.0)
+        mock_store.list_models.return_value = list(reversed(handles))
+        mock_store.describe_model.return_value = {
+            "idle_seconds": 2 * 86_400.0,
+            "expired": True,
+        }
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_cleanup)(
+                ForecastModelsCleanupRequest(
+                    older_than_days=0,
+                    dry_run=True,
+                    limit=4,
+                    offset=3,
+                )
+            )
+
+        assert result["matched"] == 15
+        assert result["count"] == 4
+        assert result["pagination"] == {
+            "total": 15,
+            "returned": 4,
+            "limit": 4,
+            "offset": 3,
+            "has_more": True,
+            "more_available": 8,
+        }
+        assert [row["model_id"] for row in result["models"]] == [
+            "m/S03/h",
+            "m/S04/h",
+            "m/S05/h",
+            "m/S06/h",
+        ]
+
+    def test_cleanup_pagination_does_not_narrow_deletion_scope(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_cleanup
+
+        handles = [
+            TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
+            for i in range(5)
+        ]
+        mock_store = MagicMock(ttl_seconds=86_400.0)
+        mock_store.list_models.return_value = handles
+        mock_store.describe_model.return_value = {
+            "idle_seconds": 2 * 86_400.0,
+            "expired": True,
+        }
+        mock_store.delete.return_value = True
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_cleanup)(
+                ForecastModelsCleanupRequest(
+                    older_than_days=0,
+                    dry_run=False,
+                    limit=2,
+                )
+            )
+
+        assert result["matched"] == 5
+        assert result["deleted"] == 5
+        assert result["count"] == 2
+        assert mock_store.delete.call_count == 5
 
     def test_lists_models_distinguishes_empty_page_from_empty_store(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
