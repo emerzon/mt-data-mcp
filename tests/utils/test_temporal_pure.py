@@ -748,7 +748,7 @@ class TestTemporalAnalyze:
             "Thu",
             "Fri",
         ]
-        assert r["bars"] == 240
+        assert r["bars"] == 236
         assert r["filters"]["min_bars"] == {
             "value": 12,
             "auto": True,
@@ -756,6 +756,13 @@ class TestTemporalAnalyze:
             "purpose": "exclude grouped rows below this sample size",
         }
         assert r["excluded_groups"] == [
+            {
+                "group": 5,
+                "group_label": "Sat",
+                "bars": 4,
+                "min_bars": 12,
+                "auto": True,
+            },
             {
                 "group": 6,
                 "group_label": "Sun",
@@ -788,7 +795,7 @@ class TestTemporalAnalyze:
             min_bars=0,
         )
 
-        assert [row["group"] for row in result["groups"]] == [0, 1, 2, 3, 4, 6]
+        assert [row["group"] for row in result["groups"]] == [0, 1, 2, 3, 4, 5, 6]
         labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         for row in result["groups"]:
             assert _parse_weekday(str(row["group"])) == row["group"]

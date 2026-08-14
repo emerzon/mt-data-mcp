@@ -1,6 +1,7 @@
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -81,6 +82,13 @@ _SESSION_ORDER = {
     "ny": 3,
     "off_session": 4,
 }
+
+
+def _fx_trading_weekday(value: Any) -> int:
+    """Label the 17:00 New York FX session as the following trading day."""
+    local = value.tz_convert(ZoneInfo("America/New_York"))
+    weekday = int(local.weekday())
+    return (weekday + (1 if int(local.hour) >= 17 else 0)) % 7
 
 
 def _error_response(
@@ -541,6 +549,8 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "session_calendar",
             "session_calendar_source",
             "session_definition",
+            "weekday_calendar",
+            "weekday_definition",
             "lookback",
             "lookback_source",
             "lookback_note",
@@ -852,6 +862,8 @@ def temporal_analyze(  # noqa: C901
       timezone if configured via client timezone, wraps midnight like 22:00-02:00)
     - min_bars: exclude grouped rows below this sample size. When omitted for
       day-of-week analysis, sparse weekend groups are auto-filtered.
+    - session_calendar: with auto/fx, day-of-week uses the FX trading day that
+      rolls at 17:00 America/New_York; equity uses civil analysis-timezone days.
     - limit/offset: page grouped output rows; does not change the analysis
       window or overall statistics.
     - volume: uses real_volume when available and non-zero, else tick_volume
@@ -1103,6 +1115,17 @@ def temporal_analyze(  # noqa: C901
             dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
             dt = dt_utc.dt.tz_convert(client_tz) if use_client_tz else dt_utc
             df["__dt"] = dt
+            if resolved_session_calendar == "fx":
+                df["__dow"] = dt_utc.map(_fx_trading_weekday)
+                weekday_calendar = "fx_trading_day"
+                weekday_definition = (
+                    "17:00 America/New_York session rollover; the Sunday open "
+                    "belongs to Monday"
+                )
+            else:
+                df["__dow"] = dt.dt.weekday
+                weekday_calendar = "civil_analysis_timezone"
+                weekday_definition = f"civil weekday in {analysis_tz}"
             session_boundary_cache: Dict[date, Dict[str, datetime]] = {}
             df["__session"] = dt.map(
                 lambda value: _market_session_label(
@@ -1145,7 +1168,7 @@ def temporal_analyze(  # noqa: C901
                 volume_col = "tick_volume"
 
             if dow_val is not None:
-                df = df[df["__dt"].dt.weekday == dow_val]
+                df = df[df["__dow"] == dow_val]
             if month_val is not None:
                 df = df[df["__dt"].dt.month == month_val]
             if tr_start is not None and tr_end is not None:
@@ -1168,7 +1191,7 @@ def temporal_analyze(  # noqa: C901
             def _groups_for_dimension(dimension: str) -> List[Dict[str, Any]]:
                 grouped = df.copy()
                 if dimension == "dow":
-                    grouped["__group"] = grouped["__dt"].dt.weekday
+                    grouped["__group"] = grouped["__dow"]
                 elif dimension == "month":
                     grouped["__group"] = grouped["__dt"].dt.month
                 elif dimension == "hour":
@@ -1218,7 +1241,7 @@ def temporal_analyze(  # noqa: C901
                 groups_out = _groups_for_dimension(group_norm)
                 if groups_out:
                     if group_norm == "dow":
-                        df["__group"] = df["__dt"].dt.weekday
+                        df["__group"] = df["__dow"]
                     elif group_norm == "month":
                         df["__group"] = df["__dt"].dt.month
                     elif group_norm == "hour":
@@ -1416,6 +1439,9 @@ def temporal_analyze(  # noqa: C901
                 ),
                 "volume_source": volume_col,
             }
+            if group_norm in {"dow", "all"}:
+                payload["weekday_calendar"] = weekday_calendar
+                payload["weekday_definition"] = weekday_definition
             if no_qualifying_groups:
                 payload["analysis_status"] = "insufficient_group_samples"
                 payload["message"] = (

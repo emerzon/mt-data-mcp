@@ -155,3 +155,35 @@ def test_temporal_auto_calendar_uses_broker_path_for_index_cfd() -> None:
     assert result["success"] is True, result
     assert result["session_calendar"] == "fx"
     assert result["session_calendar_source"] == "symbol_and_broker_metadata"
+
+
+def test_temporal_fx_weekday_assigns_sunday_open_to_monday() -> None:
+    rates = _make_rates_from_epochs(
+        [
+            int(datetime(2026, 7, 19, 21, 0, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 19, 22, 0, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 20, 16, 0, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 20, 22, 0, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    with patch(_P + "_fetch_rates", return_value=(rates, None)), patch(
+        _P + "_symbol_ready_guard", new=_guard_stub
+    ), patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None), patch(
+        _P + "get_symbol_info_cached",
+        return_value=SimpleNamespace(path="Forex\\Majors"),
+    ):
+        result = _raw_temporal_analyze(
+            symbol="EURUSD",
+            timeframe="H1",
+            lookback=100,
+            group_by="dow",
+            min_bars=1,
+            detail="compact",
+        )
+
+    assert result["success"] is True
+    assert result["weekday_calendar"] == "fx_trading_day"
+    assert "17:00 America/New_York" in result["weekday_definition"]
+    assert {row["group_label"] for row in result["groups"]} == {"Mon", "Tue"}
+    monday = next(row for row in result["groups"] if row["group_label"] == "Mon")
+    assert monday["bars"] == 3
