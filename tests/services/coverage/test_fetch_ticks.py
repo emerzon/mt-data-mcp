@@ -231,7 +231,10 @@ class TestFetchTicks(unittest.TestCase):
     def test_explicit_range_uses_bounded_backward_pages(
         self, mock_ctz, mock_info, mock_ticks
     ):
-        mock_ticks.return_value = _make_ticks(5)
+        mock_ticks.return_value = _make_ticks(
+            5,
+            base_ts=datetime(2025, 12, 31, 12, tzinfo=timezone.utc).timestamp(),
+        )
 
         result = fetch_ticks(
             'EURUSD',

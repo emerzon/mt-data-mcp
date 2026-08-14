@@ -8,7 +8,7 @@ Covers:
 """
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -117,6 +117,45 @@ def test_forward_tick_filter_treats_naive_query_bounds_as_utc(monkeypatch) -> No
     )
 
     assert result == [{"time": tick_epoch}]
+
+
+def test_forward_tick_fetch_encloses_fractional_bounds_then_filters_exactly(
+    monkeypatch,
+) -> None:
+    start = datetime(2026, 8, 13, 20, 0, 0, 108_000, tzinfo=timezone.utc)
+    end = datetime(2026, 8, 13, 20, 0, 0, 110_000, tzinfo=timezone.utc)
+    containing_epoch = start.replace(microsecond=109_000).timestamp()
+    before_epoch = start.replace(microsecond=107_000).timestamp()
+    after_epoch = start.replace(microsecond=111_000).timestamp()
+    calls = []
+
+    def fake_fetch(symbol, from_date, to_date):
+        calls.append((from_date, to_date))
+        return [
+            {"time_msc": int(before_epoch * 1000)},
+            {"time_msc": int(containing_epoch * 1000)},
+            {"time_msc": int(after_epoch * 1000)},
+        ]
+
+    monkeypatch.setattr(
+        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        fake_fetch,
+    )
+
+    result = _fetch_ticks_forward(
+        "EURUSD",
+        from_date=start,
+        to_date=end,
+        limit=10,
+    )
+
+    assert calls == [
+        (
+            start.replace(microsecond=0),
+            start.replace(microsecond=0) + timedelta(seconds=1),
+        )
+    ]
+    assert result == [{"time_msc": int(containing_epoch * 1000)}]
 
 
 def test_candle_freshness_diagnostics_rounds_machine_age() -> None:

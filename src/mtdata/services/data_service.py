@@ -1207,16 +1207,24 @@ def _fetch_ticks_forward(
     if from_is_aware != to_is_aware:
         to_date = to_date.replace(tzinfo=from_date.tzinfo if from_is_aware else None)
 
+    requested_end_epoch = float(_utc_epoch_seconds(to_date))
     cursor_start = from_date
     chunk_seconds = 3600.0
     saw_response = False
     collected: List[Any] = []
     while cursor_start <= to_date and len(collected) < limit:
         cursor_end = min(to_date, cursor_start + timedelta(seconds=chunk_seconds))
+        # MT5 range retrieval is not reliable for fractional datetime bounds.
+        # Query an enclosing whole-second superset, then enforce the exact
+        # advertised inclusive bounds from each tick's millisecond epoch.
+        provider_start = cursor_start.replace(microsecond=0)
+        provider_end = cursor_end.replace(microsecond=0)
+        if cursor_end.microsecond:
+            provider_end += timedelta(seconds=1)
         ticks_candidate = _fetch_ticks_range_with_retry(
             symbol,
-            cursor_start,
-            cursor_end,
+            provider_start,
+            provider_end,
         )
         if ticks_candidate is not None:
             saw_response = True
@@ -1224,10 +1232,8 @@ def _fetch_ticks_forward(
             candidate_rows = [
                 tick
                 for tick in list(ticks_candidate)
-                if (
-                    (tick_epoch_value := _tick_epoch_seconds_from_row(tick)) is None
-                    or tick_epoch_value >= boundary_epoch
-                )
+                if (tick_epoch_value := _tick_epoch_seconds_from_row(tick)) is not None
+                and boundary_epoch <= tick_epoch_value <= requested_end_epoch
             ]
             collected.extend(candidate_rows)
             if len(collected) >= limit:
