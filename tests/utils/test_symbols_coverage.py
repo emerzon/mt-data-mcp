@@ -594,6 +594,41 @@ class TestSymbolsListSearch:
             "group": "Forex\\Majors",
         }
 
+    @patch(_NORM_LIMIT, return_value=5)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_metal_alias_search_promotes_usd_spot_contract(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        mock_get.return_value = [
+            _make_symbol(
+                "GOLD.NYSE-24",
+                path="Stock CFD's\\NYSE\\24HR NYSE",
+                description="GOLD.COM INC 24/5 CFD",
+            ),
+            _make_symbol(
+                "XAUAUD", path="Commodities\\Metals", description="Gold vs AUD"
+            ),
+            _make_symbol(
+                "XAUCHF", path="Commodities\\Metals", description="Gold vs CHF"
+            ),
+            _make_symbol(
+                "XAUJPY", path="Commodities\\Metals", description="Gold vs JPY"
+            ),
+            _make_symbol(
+                "XAUUSD", path="Commodities\\Metals", description="Gold vs US Dollar"
+            ),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            gold = fn(search_term="gold", limit=5)
+            xau = fn(search_term="XAU", limit=5)
+
+        assert gold["data"][0][0] == "XAUUSD"
+        assert "top_match" not in gold
+        assert xau["data"][0][0] == "XAUUSD"
+        assert xau["top_match"]["symbol"] == "XAUUSD"
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")
@@ -706,7 +741,7 @@ class TestSymbolsListSearch:
         with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", search_mode="all", limit=25)
-        assert [row[0] for row in res["data"]] == ["GOLDMICRO", "XAUUSD", "SILVER"]
+        assert [row[0] for row in res["data"]] == ["XAUUSD", "GOLDMICRO", "SILVER"]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})

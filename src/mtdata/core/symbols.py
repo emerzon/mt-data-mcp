@@ -356,6 +356,22 @@ _SYMBOL_SEARCH_REASON_RANK: Dict[str, int] = {
     "matched": 9,
 }
 
+_METAL_SEARCH_ALIASES = {
+    "GOLD": "XAU",
+    "XAU": "XAU",
+    "SILVER": "XAG",
+    "XAG": "XAG",
+}
+_METAL_QUOTE_PRIORITY = {
+    "USD": 0,
+    "EUR": 1,
+    "GBP": 2,
+    "JPY": 3,
+    "CHF": 4,
+    "AUD": 5,
+    "CAD": 6,
+}
+
 _SYMBOL_CATEGORY_ALIASES = {
     "fx": "forex",
     "forex": "forex",
@@ -536,14 +552,16 @@ def _symbol_search_sort_key(
     symbol: Any,
     search_term: str,
     search_mode: str,
-) -> tuple[int, int, int, str, str]:
+) -> tuple[int, int, int, int, str, str]:
     reason = _symbol_search_match_reason(symbol, search_term, search_mode)
+    metal_rank = _symbol_search_metal_rank(symbol, search_term)
     forex_rank = _symbol_search_forex_rank(symbol, search_term)
     reason_rank = _SYMBOL_SEARCH_REASON_RANK.get(reason, 9)
-    if forex_rank < 100:
+    if forex_rank < 100 or metal_rank < 100:
         reason_rank = min(reason_rank, _SYMBOL_SEARCH_REASON_RANK["name_prefix"])
     return (
         reason_rank,
+        metal_rank,
         forex_rank,
         symbol_shorthand_rank(symbol, search_term),
         *_case_insensitive_sort_key(getattr(symbol, "name", "")),
@@ -591,6 +609,10 @@ def _symbol_top_match(
             )
             if query in _FOREX_CURRENCY_CODES and len(symbol_name) >= 6:
                 return _FOREX_SEARCH_PAIR_PRIORITY.get(symbol_name[:6], 50)
+            metal_base = _METAL_SEARCH_ALIASES.get(query)
+            if metal_base and symbol_name.startswith(metal_base):
+                quote = symbol_name[len(metal_base) : len(metal_base) + 3]
+                return _METAL_QUOTE_PRIORITY.get(quote, 50)
             return 0
 
         first_rank = _semantic_rank(row)
@@ -906,6 +928,18 @@ def _attach_symbol_currency_anomaly_summary(
         f"conflicts with the symbol name: {named_symbols}."
     ]
     payload["trust"] = "verify_broker_metadata"
+
+
+def _symbol_search_metal_rank(symbol: Any, search_term: str) -> int:
+    query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
+    base = _METAL_SEARCH_ALIASES.get(query)
+    if base is None:
+        return 100
+    letters = _symbol_name_letters(symbol)
+    if not letters.startswith(base) or len(letters) < len(base) + 3:
+        return 100
+    quote = letters[len(base) : len(base) + 3]
+    return _METAL_QUOTE_PRIORITY.get(quote, 50)
 
 
 def _symbol_session_type(
@@ -2433,6 +2467,7 @@ _MARKET_SCAN_UNITS = {
     "close": "price",
     "previous_close": "price",
     "price_change_pct": "percent (1.0 = 1%)",
+    "live_price_change_pct": "percent (1.0 = 1%)",
     "gap_pct": "percent (1.0 = 1%)",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
@@ -2700,6 +2735,20 @@ def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
     row["price_freshness"] = row.get("bar_freshness")
 
 
+def _attach_market_scan_live_change(row: Dict[str, Any]) -> None:
+    previous_close = _market_scan_float(row.get("previous_close"))
+    live_mid = _market_scan_float(row.get("mid"))
+    if previous_close is None or previous_close == 0.0 or live_mid is None:
+        return
+    row["live_price_change_pct"] = _market_scan_round(
+        ((live_mid - previous_close) / previous_close) * 100.0,
+        digits=6,
+    )
+    row["live_price_change_basis"] = (
+        "previous_completed_close_to_live_quote_mid"
+    )
+
+
 def _market_scan_quote_exclusion_reason(row: Dict[str, Any]) -> str:
     if isinstance(row.get("quote_source_conflict"), dict):
         return "quote_source_conflict"
@@ -2750,6 +2799,7 @@ _TOP_MARKETS_COMPACT_BAR_HEADERS = [
     "mid",
     "tick_volume",
     "price_change_pct",
+    "live_price_change_pct",
 ]
 
 _TOP_MARKETS_COMPACT_HEADERS = [
@@ -2765,6 +2815,7 @@ _TOP_MARKETS_COMPACT_HEADERS = [
     "spread_points",
     "tick_volume",
     "price_change_pct",
+    "live_price_change_pct",
 ]
 
 _TOP_MARKETS_FULL_BASE_HEADERS = [
@@ -2842,6 +2893,8 @@ _TOP_MARKETS_FULL_BAR_HEADERS = [
     "tick_volume",
     "real_volume",
     "price_change_pct",
+    "live_price_change_pct",
+    "live_price_change_basis",
 ]
 
 _TOP_MARKETS_FULL_HEADERS = [
@@ -3750,6 +3803,7 @@ def symbols_top_markets(  # noqa: C901
                     elif bar_row is not None:
                         combined_bar_row = dict(spread_row or {})
                         combined_bar_row.update(bar_row)
+                        _attach_market_scan_live_change(combined_bar_row)
                         if rank_kind in {"all", "volume"}:
                             volume_rows.append(dict(combined_bar_row))
                         if rank_kind in {
@@ -4613,6 +4667,7 @@ def market_scan(  # noqa: C901
                 row = dict(spread_row)
                 row.update(signal_row)
                 _namespace_market_scan_quote_freshness(row)
+                _attach_market_scan_live_change(row)
                 metric_error = _market_scan_missing_required_metric(
                     row,
                     rank_by=rank_by_value,
@@ -4735,6 +4790,8 @@ def market_scan(  # noqa: C901
                 "price_basis",
                 "price_point",
                 "price_change_pct",
+                "live_price_change_pct",
+                "live_price_change_basis",
                 "gap_pct",
                 "tick_volume",
                 "spread_pct",
@@ -4755,6 +4812,7 @@ def market_scan(  # noqa: C901
                 "spread_quality",
                 "quote_usable_for_live_trading",
                 "price_change_pct",
+                "live_price_change_pct",
                 "spread_pips",
                 "spread_pct",
             ]

@@ -541,7 +541,9 @@ mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03
 `market_scan` and `symbols_top_markets` keep completed-bar values such as
 `close` separate from the current executable quote. When a quote is available,
 rows expose `bid`, `ask`, `mid`, and `quote_as_of`; use those fields for a live
-mark and the bar fields for ranking and indicator context. Spread-ranked scans
+mark and the bar fields for ranking and indicator context. Price-change rows
+also expose `live_price_change_pct`, measured from the previous completed close
+to the current midpoint, so a forming-bar reversal is explicit. Spread-ranked scans
 and the `tight_spread` preset exclude quotes that are not usable for live
 trading before pagination; pass `--quote-usable-only false` only when inspecting
 stale or otherwise non-executable snapshots intentionally. Other rankings keep

@@ -678,6 +678,25 @@ def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):
     }
 
 
+def test_market_scan_live_change_discloses_forming_bar_reversal() -> None:
+    from mtdata.core.symbols import _attach_market_scan_live_change
+
+    row = {
+        "previous_close": 100.0,
+        "close": 105.0,
+        "price_change_pct": 5.0,
+        "mid": 98.0,
+    }
+
+    _attach_market_scan_live_change(row)
+
+    assert row["price_change_pct"] == 5.0
+    assert row["live_price_change_pct"] == -2.0
+    assert row["live_price_change_basis"] == (
+        "previous_completed_close_to_live_quote_mid"
+    )
+
+
 def test_market_scan_rsi_is_independent_of_generic_lookback(monkeypatch):
     from mtdata.core import symbols as symbols_mod
 
@@ -980,6 +999,12 @@ class TestSymbolsTopMarkets:
         assert result["data"][0]["bid"] == 1.0448
         assert result["data"][0]["ask"] == 1.045
         assert result["data"][0]["mid"] == 1.0449
+        assert result["data"][0]["live_price_change_pct"] == pytest.approx(
+            -5.009091
+        )
+        assert result["units"]["live_price_change_pct"] == (
+            "percent (1.0 = 1%)"
+        )
         assert "spread_points" not in result["data"][0]
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
@@ -1671,6 +1696,7 @@ class TestMarketScan:
             "ask",
             "spread_quality",
             "price_change_pct",
+            "live_price_change_pct",
             "spread_pct",
             "spread_pips",
         } == set(row)
