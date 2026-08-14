@@ -42,6 +42,7 @@ from ..utils.quote import (
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import bar_close_epoch, format_datetime_utc, format_epoch_utc
+from ..utils.utils import validate_historical_range
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -949,6 +950,9 @@ def _execution_session_definition(calendar: str) -> Dict[str, Any]:
 def analyze_execution_quality(  # noqa: C901
     request: TradeExecutionQualityRequest, gateway: Any
 ) -> Dict[str, Any]:
+    range_error = validate_historical_range(request.start, request.end)
+    if range_error is not None:
+        return range_error
     start, end = _window(request.start, request.end, request.minutes_back)
     account_currency = None
     account_info = getattr(gateway, "account_info", None)

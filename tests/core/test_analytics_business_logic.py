@@ -1457,6 +1457,23 @@ def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
         )
 
 
+def test_execution_quality_rejects_future_only_history_window() -> None:
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            start="2030-01-01",
+            end="2030-01-02",
+        ),
+        FakeGateway(),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    assert result["details"]["resolved_start"].startswith("2030-01-01")
+    assert result["details"]["resolved_end"].startswith("2030-01-02")
+    assert result["details"]["current_time"]
+    assert "at or before" in result["remediation"]
+
+
 def test_strategy_validation_historical_model_rejects_explicit_spread() -> None:
     with pytest.raises(ValueError, match="spread_bps is only valid"):
         StrategyValidateRequest(
