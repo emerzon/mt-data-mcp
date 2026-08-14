@@ -87,6 +87,9 @@ mtdata-cli regime_detect --help
 
 # Tool catalog (filter / paginate)
 mtdata-cli tools_list --category forecast --json
+
+# Machine-usable input schemas, constraints, defaults, and CLI forms
+mtdata-cli tools_list --search portfolio_risk_decompose --detail full --json
 ```
 
 The broad headings in root help are navigation sections. The machine-readable
@@ -94,6 +97,12 @@ catalog uses the narrower category identifiers accepted by `tools_list`:
 `analysis`, `data`, `forecast`, `market`, `methods`, `options`,
 `pattern_regime`, `report`, `research`, `symbols`, and `trading`. Command help
 lists these as choices and rejects unknown categories.
+
+Compact catalog output points to the versioned full parameter schema. In
+`--detail full`, each tool includes its canonical `input_schema` plus per-field
+`parameters` metadata with requiredness, defaults, descriptions, constraints,
+and positional/option CLI forms. Nested request objects remain linked through
+the schema's `$defs` references.
 
 ---
 

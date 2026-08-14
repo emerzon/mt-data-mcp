@@ -38,6 +38,7 @@ _ORIG_TOOL_DECORATOR: Any = None
 _REGISTRY_UNSET = object()
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
 _MARKET_DEPTH_FETCH_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+_TOOL_CATALOG_SCHEMA_VERSION = "1.0"
 logger = logging.getLogger(__name__)
 
 
@@ -249,6 +250,148 @@ def _tool_catalog_parameters(func: Any) -> Dict[str, str]:
     return out
 
 
+def _tool_catalog_input_schema(name: str, func: Any) -> Dict[str, Any]:
+    from .schema_attach import get_public_tool_schema
+
+    schema = get_public_tool_schema(name)
+    if schema:
+        return schema
+
+    # Gated tools are intentionally absent from the public MCP registry. Build
+    # their discoverability schema from the callable when they appear in the
+    # catalog as disabled rows.
+    from ..shared.schema import build_minimal_schema, get_function_info
+
+    fallback = build_minimal_schema(get_function_info(func))
+    parameters = fallback.get("parameters")
+    return parameters if isinstance(parameters, dict) else fallback
+
+
+def _tool_catalog_schema_value_format(
+    property_schema: Dict[str, Any],
+    *,
+    definitions: Dict[str, Any],
+) -> str:
+    ref = property_schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        resolved = definitions.get(ref.rsplit("/", 1)[-1])
+        if isinstance(resolved, dict):
+            return _tool_catalog_schema_value_format(
+                resolved,
+                definitions=definitions,
+            )
+    for branch_key in ("anyOf", "oneOf"):
+        branches = property_schema.get(branch_key)
+        if isinstance(branches, list):
+            formats = {
+                _tool_catalog_schema_value_format(branch, definitions=definitions)
+                for branch in branches
+                if isinstance(branch, dict) and branch.get("type") != "null"
+            }
+            if len(formats) == 1:
+                return formats.pop()
+    schema_type = property_schema.get("type")
+    if schema_type == "object" or isinstance(property_schema.get("properties"), dict):
+        return "json_object"
+    if schema_type == "array":
+        return "repeatable_values"
+    if schema_type == "boolean":
+        return "boolean"
+    return "scalar"
+
+
+def _tool_catalog_cli_binding(
+    tool_name: str,
+    parameter_name: str,
+    *,
+    index: int,
+    required: bool,
+    property_schema: Dict[str, Any],
+    definitions: Dict[str, Any],
+) -> Dict[str, Any]:
+    from .cli.parsing.discovery import (
+        _NAMED_ONLY_REQUIRED_PARAMS,
+        _OPTIONAL_POSITIONAL_PARAMS,
+        should_expose_cli_param,
+    )
+
+    key = (tool_name, parameter_name)
+    exposed = should_expose_cli_param(
+        cmd_name=tool_name,
+        param_name=parameter_name,
+    )
+    first_required = required and index == 0 and key not in _NAMED_ONLY_REQUIRED_PARAMS
+    symbol_alias = first_required and parameter_name in {"symbol", "symbols"}
+    positional = first_required or key in _OPTIONAL_POSITIONAL_PARAMS
+    option = exposed and (not first_required or symbol_alias)
+    forms: List[Dict[str, str]] = []
+    if positional:
+        forms.append(
+            {
+                "kind": "positional",
+                "token": parameter_name.upper(),
+            }
+        )
+    if option:
+        forms.append(
+            {
+                "kind": "option",
+                "token": f"--{parameter_name.replace('_', '-')}",
+            }
+        )
+    binding: Dict[str, Any] = {
+        "available": exposed,
+        "forms": forms,
+        "value_format": _tool_catalog_schema_value_format(
+            property_schema,
+            definitions=definitions,
+        ),
+    }
+    if (
+        binding["value_format"] == "boolean"
+        and option
+        and parameter_name != "json"
+    ):
+        binding["negated_option"] = f"--no-{parameter_name.replace('_', '-')}"
+    return binding
+
+
+def _tool_catalog_full_parameters(
+    tool_name: str,
+    input_schema: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    properties = input_schema.get("properties")
+    if not isinstance(properties, dict):
+        return {}
+    definitions = input_schema.get("$defs")
+    if not isinstance(definitions, dict):
+        definitions = {}
+    required_names = {
+        str(item) for item in input_schema.get("required", []) if item is not None
+    }
+    parameters: Dict[str, Dict[str, Any]] = {}
+    for index, (name, raw_schema) in enumerate(properties.items()):
+        property_schema = dict(raw_schema) if isinstance(raw_schema, dict) else {}
+        is_required = str(name) in required_names
+        property_schema["required"] = is_required
+        if not is_required and "default" not in property_schema:
+            property_schema["default"] = None
+        property_schema.setdefault(
+            "description",
+            f"Value for {str(name).replace('_', ' ')}.",
+        )
+        property_schema["cli"] = _tool_catalog_cli_binding(
+            tool_name,
+            str(name),
+            index=index,
+            required=is_required,
+            property_schema=property_schema,
+            definitions=definitions,
+        )
+        parameters[str(name)] = property_schema
+    return parameters
+
+
 def _market_depth_fetch_catalog_state() -> Dict[str, Any]:
     enabled = str(os.getenv(_MARKET_DEPTH_FETCH_ENV) or "").strip().lower() in {
         "1",
@@ -280,13 +423,25 @@ def _market_depth_fetch_catalog_row(*, detail_mode: str) -> Dict[str, Any]:
         ),
     }
     row.update(_market_depth_fetch_catalog_state())
-    if detail_mode in {"standard", "full"}:
+    if detail_mode == "standard":
         row["parameters"] = {
             "symbol": "required",
             "spread": "optional",
             "require_dom": "optional",
         }
     if detail_mode == "full":
+        from .market_depth import market_depth_fetch
+
+        input_schema = _tool_catalog_input_schema(
+            "market_depth_fetch",
+            market_depth_fetch,
+        )
+        row["schema_version"] = _TOOL_CATALOG_SCHEMA_VERSION
+        row["input_schema"] = input_schema
+        row["parameters"] = _tool_catalog_full_parameters(
+            "market_depth_fetch",
+            input_schema,
+        )
         row["module"] = "mtdata.core.market_depth"
     return row
 
@@ -318,9 +473,16 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
             row["related_tools"] = related
         if name == "market_depth_fetch":
             row.update(_market_depth_fetch_catalog_state())
-        if detail_mode in {"standard", "full"}:
+        if detail_mode == "standard":
             row["parameters"] = _tool_catalog_parameters(func)
         if detail_mode == "full":
+            input_schema = _tool_catalog_input_schema(name, func)
+            row["schema_version"] = _TOOL_CATALOG_SCHEMA_VERSION
+            row["input_schema"] = input_schema
+            row["parameters"] = _tool_catalog_full_parameters(
+                name,
+                input_schema,
+            )
             row["module"] = str(getattr(func, "__module__", "") or "")
         tools.append(row)
     if "market_depth_fetch" not in seen:
@@ -329,6 +491,11 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
         categories.setdefault("market", []).append("market_depth_fetch")
     return {
         "success": True,
+        "schema_version": _TOOL_CATALOG_SCHEMA_VERSION,
+        "parameter_schema": {
+            "available_in_detail": "full",
+            "format": "JSON Schema Draft 2020-12 with CLI bindings",
+        },
         "detail": detail_mode,
         "count": len(tools),
         "categories": categories,

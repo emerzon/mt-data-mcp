@@ -227,8 +227,115 @@ def test_tools_catalog_standard_detail_includes_parameter_summaries():
     assert "parameters" not in compact_market_scan
     assert standard_market_scan["parameters"]["timeframe"] == "optional"
     assert "module" not in standard_market_scan
-    assert full_market_scan["parameters"]["timeframe"] == "optional"
+    assert full["schema_version"] == "1.0"
+    assert compact["parameter_schema"]["available_in_detail"] == "full"
+    assert full_market_scan["schema_version"] == "1.0"
+    assert full_market_scan["parameters"]["timeframe"]["required"] is False
+    assert full_market_scan["parameters"]["timeframe"]["type"] == "string"
+    assert full_market_scan["parameters"]["timeframe"]["default"] == "H1"
+    assert full_market_scan["parameters"]["timeframe"]["cli"]["forms"] == [
+        {"kind": "option", "token": "--timeframe"}
+    ]
     assert full_market_scan["module"] == "mtdata.core.symbols"
+
+
+def test_tools_list_full_exposes_nested_invocation_schema_and_cli_forms():
+    from mtdata.core.analytics_requests import PortfolioRiskDecomposeRequest
+
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    out = raw_tools_list(
+        search="portfolio_risk_decompose",
+        detail="full",
+    )
+
+    assert out["schema_version"] == "1.0"
+    assert out["count"] == 1
+    row = out["tools"][0]
+    proposed = row["parameters"]["proposed_trade"]
+    assert proposed["$ref"] == "#/$defs/ProposedTrade"
+    assert proposed["required"] is False
+    assert proposed["default"] is None
+    assert proposed["cli"] == {
+        "available": True,
+        "forms": [{"kind": "option", "token": "--proposed-trade"}],
+        "value_format": "json_object",
+    }
+    proposed_schema = row["input_schema"]["$defs"]["ProposedTrade"]
+    assert proposed_schema["required"] == ["symbol", "side", "volume"]
+    assert proposed_schema["properties"]["side"]["enum"] == ["buy", "sell"]
+    assert proposed_schema["properties"]["volume"]["exclusiveMinimum"] == 0.0
+
+    # Construct a representative invocation using only discoverable schema data.
+    invocation = {
+        "proposed_trade": {
+            "symbol": "EURUSD",
+            "side": proposed_schema["properties"]["side"]["enum"][0],
+            "volume": proposed_schema["properties"]["volume"]["exclusiveMinimum"]
+            + 0.01,
+        }
+    }
+    request = PortfolioRiskDecomposeRequest(**invocation)
+    assert request.proposed_trade is not None
+    assert request.proposed_trade.side == "buy"
+    assert request.proposed_trade.volume == 0.01
+
+
+def test_tools_catalog_full_exposes_trading_defaults_and_venue_namespace():
+    bootstrap_tools()
+    full = registered_tool_catalog(detail="full")
+
+    trade_place = next(
+        row for row in full["tools"] if row["name"] == "trade_place"
+    )
+    assert trade_place["parameters"]["dry_run"]["default"] is True
+    assert trade_place["parameters"]["require_sl_tp"]["default"] is True
+    assert "Preview" in trade_place["parameters"]["dry_run"]["description"]
+    assert trade_place["parameters"]["volume"]["exclusiveMinimum"] == 0.0
+    assert trade_place["parameters"]["symbol"]["cli"]["forms"] == [
+        {"kind": "positional", "token": "SYMBOL"},
+        {"kind": "option", "token": "--symbol"},
+    ]
+
+    market_status = next(
+        row for row in full["tools"] if row["name"] == "market_status"
+    )
+    assert market_status["parameters"]["venue"]["enum"] == [
+        "NYSE",
+        "NASDAQ",
+        "LSE",
+        "XETRA",
+        "EURONEXT",
+        "TSE",
+        "HKEX",
+        "SSE",
+        "ASX",
+    ]
+    assert market_status["parameters"]["venue"]["cli"]["forms"] == [
+        {"kind": "option", "token": "--venue"}
+    ]
+
+
+def test_tools_catalog_full_parameter_contracts_are_machine_described():
+    bootstrap_tools()
+    full = registered_tool_catalog(detail="full")
+
+    issues = []
+    for row in full["tools"]:
+        properties = row["input_schema"].get("properties", {})
+        for name, parameter in row["parameters"].items():
+            if name not in properties:
+                issues.append(f"{row['name']}.{name}: absent from input_schema")
+            if not isinstance(parameter.get("required"), bool):
+                issues.append(f"{row['name']}.{name}: required is not boolean")
+            if not str(parameter.get("description") or "").strip():
+                issues.append(f"{row['name']}.{name}: description missing")
+            cli = parameter.get("cli")
+            if not isinstance(cli, dict) or "value_format" not in cli:
+                issues.append(f"{row['name']}.{name}: CLI binding missing")
+
+    assert not issues, "Invalid full catalog parameter contracts:\n" + "\n".join(issues)
 
 
 def test_tools_list_filters_and_paginates_rows():
