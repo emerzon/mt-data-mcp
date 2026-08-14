@@ -374,12 +374,11 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
         le=DATA_FETCH_CANDLES_MAX_LIMIT,
         description=(
             "Maximum bars to return. Unbounded and end-only queries select the "
-            "latest bars; any query with start selects the earliest bars at or "
-            "after start (default "
+            "latest bars (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
-            "Start/end range queries use the same small default page; pass an "
-            f"explicit limit to request more bars, up to {DATA_FETCH_CANDLES_MAX_LIMIT:,}. "
-            "Use bounded start/end ranges to retrieve longer histories in pages. "
+            "Any query with start selects the earliest bars at or after start. "
+            "Omitted limit on an explicit start/end range returns the full "
+            f"matching window up to {DATA_FETCH_CANDLES_MAX_LIMIT:,}. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),
@@ -476,11 +475,12 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
         le=DATA_FETCH_TICKS_MAX_LIMIT,
         description=(
             "Max ticks to return. Unbounded and end-only queries select the latest "
-            "ticks; any query with start selects the earliest ticks at or after "
-            f"start (default {DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
-            "echoes requested_limit and sets limit_reached=true when the cap is hit; "
-            "this does not assert that another page exists. "
-            f"Maximum {DATA_FETCH_TICKS_MAX_LIMIT} per request."
+            f"ticks (default {DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). "
+            "Any query with start selects the earliest ticks at or after start. "
+            "Omitted limit on an explicit start/end range returns matching ticks "
+            f"up to {DATA_FETCH_TICKS_MAX_LIMIT}. The response echoes requested_limit "
+            "and sets limit_reached=true when the cap is hit; this does not assert "
+            "that another page exists."
         ),
     )
     start: Optional[str] = None
@@ -884,6 +884,18 @@ class WaitEventRequest(BaseModel):
         if not has_boundary and not has_duration:
             raise ValueError(
                 "Provide timeframe and/or max_wait_seconds."
+            )
+        has_symbol_scope = self.symbol is not None or self.symbols is not None
+        if (
+            has_symbol_scope
+            and not has_boundary
+            and has_duration
+            and not self.watch_for
+        ):
+            raise ValueError(
+                "A symbol with max_wait_seconds and no timeframe or watch_for "
+                "is a timer, not a market wait. Omit the symbol for a timer, "
+                "or pass --timeframe / --watch-for."
             )
         if self.timeframe is not None:
             conflicting_timeframes = sorted(

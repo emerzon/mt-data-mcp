@@ -36,6 +36,9 @@ from ..runtime_metadata import attach_mt5_source
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     DATA_FETCH_CANDLES_DEFAULT_LIMIT,
+    DATA_FETCH_CANDLES_MAX_LIMIT,
+    DATA_FETCH_TICKS_DEFAULT_LIMIT,
+    DATA_FETCH_TICKS_MAX_LIMIT,
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
     WaitCandleRequest,
@@ -105,7 +108,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
-_RANGE_CANDLE_DEFAULT_LIMIT = DATA_FETCH_CANDLES_DEFAULT_LIMIT
+_RANGE_CANDLE_DEFAULT_LIMIT = DATA_FETCH_CANDLES_MAX_LIMIT
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -134,22 +137,35 @@ def run_data_fetch_candles(
     )
 
 
+def _effective_tick_limit(request: DataFetchTicksRequest) -> int:
+    try:
+        limit = max(1, int(request.limit))
+    except Exception:
+        limit = DATA_FETCH_TICKS_DEFAULT_LIMIT
+    fields_set = getattr(request, "model_fields_set", set())
+    if (request.start or request.end) and "limit" not in fields_set:
+        return DATA_FETCH_TICKS_MAX_LIMIT
+    return limit
+
+
 def run_data_fetch_ticks(
     request: DataFetchTicksRequest,
     *,
     gateway: Any,
     fetch_ticks_impl: Any,
 ) -> Dict[str, Any]:
+    effective_limit = _effective_tick_limit(request)
     return run_logged_operation(
         logger,
         operation="data_fetch_ticks",
         symbol=request.symbol,
-        limit=request.limit,
+        limit=effective_limit,
         detail=request.detail,
         func=lambda: _run_data_fetch_ticks_impl(
             request=request,
             gateway=gateway,
             fetch_ticks_impl=fetch_ticks_impl,
+            effective_limit=effective_limit,
         ),
     )
 
@@ -1472,13 +1488,17 @@ def _run_data_fetch_ticks_impl(
     request: DataFetchTicksRequest,
     gateway: Any,
     fetch_ticks_impl: Any,
+    effective_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
         return connection_error
+    applied_limit = (
+        effective_limit if effective_limit is not None else request.limit
+    )
     result = fetch_ticks_impl(
         symbol=request.symbol,
-        limit=request.limit,
+        limit=applied_limit,
         start=request.start,
         end=request.end,
         simplify=request.simplify,
@@ -1497,7 +1517,13 @@ def _run_data_fetch_ticks_impl(
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
     _attach_tick_freshness_contract(result)
-    _attach_tick_pagination(result, requested_limit=request.limit)
+    _attach_tick_pagination(
+        result,
+        requested_limit=applied_limit,
+        start=request.start,
+        end=request.end,
+        limit_explicit="limit" in getattr(request, "model_fields_set", set()),
+    )
     return attach_mt5_source(result, gateway=gateway)
 
 
@@ -1598,7 +1624,14 @@ def _tick_request_is_future_only(request: DataFetchTicksRequest) -> bool:
         return False
 
 
-def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
+def _attach_tick_pagination(
+    payload: Any,
+    *,
+    requested_limit: int,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    limit_explicit: bool = True,
+) -> None:
     """Echo the requested limit and disclose whether the source cap was reached."""
     if not isinstance(payload, dict) or payload.get("error"):
         return
@@ -1610,7 +1643,23 @@ def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
     except (TypeError, ValueError):
         return
     payload["requested_limit"] = limit_value
-    payload["limit_reached"] = bool(count >= limit_value)
+    limit_reached = bool(count >= limit_value)
+    payload["limit_reached"] = limit_reached
+    if start or end:
+        query_applied = payload.get("query_applied")
+        if not isinstance(query_applied, dict):
+            query_applied = {}
+            payload["query_applied"] = query_applied
+        query_applied["limit"] = limit_value
+        query_applied["limit_source"] = "user" if limit_explicit else "range_cap"
+        if limit_reached:
+            payload["pagination"] = {
+                "returned": count,
+                "limit": limit_value,
+                "has_more": True,
+                "selection": query_applied.get("selection")
+                or ("first_n" if start else "last_n"),
+            }
 
 
 def _attach_tick_freshness_contract(payload: Any) -> None:

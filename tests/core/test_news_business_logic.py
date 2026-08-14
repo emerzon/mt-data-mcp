@@ -194,6 +194,28 @@ def test_compact_empty_news_discloses_provider_attempts_and_fallback() -> None:
     assert "finviz_market_news" in compact["hint"]
 
 
+def test_news_tool_limit_reserves_recent_event_when_upcoming_empty(
+    monkeypatch,
+) -> None:
+    raw = _unwrap(news)
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "general_news": [{"title": f"g{i}"} for i in range(8)],
+        "related_news": [],
+        "impact_news": [],
+        "upcoming_events": [],
+        "recent_events": [{"title": "Retail Sales"}, {"title": "Michigan"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    limited = raw(symbol="EURUSD", limit=5)
+
+    assert limited["recent_events"] == [{"title": "Retail Sales"}]
+    assert "recent_events" in limited["row_keys"]
+    assert limited["bucket_truncation"]["recent_events"] is True
+
+
 def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> None:
     raw = _unwrap(news)
 

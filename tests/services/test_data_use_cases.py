@@ -838,7 +838,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["query_type"] == "historical"
 
 
-def test_run_data_fetch_candles_range_uses_small_default_page():
+def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
     rows = [{"time": f"t{i}", "close": i} for i in range(25)]
     observed = {}
     request = DataFetchCandlesRequest(
@@ -862,21 +862,14 @@ def test_run_data_fetch_candles_range_uses_small_default_page():
         fetch_candles_impl=_fetch,
     )
 
-    assert observed["limit"] == 20
-    assert result["data"] == rows[:20]
-    assert result["count"] == 20
-    assert result["truncated"] is True
-    assert result["range_complete"] is False
-    assert result["default_limit"] == 20
+    assert observed["limit"] == 100_000
+    assert result["data"] == rows
+    assert result["count"] == 25
+    assert result.get("truncated") is not True
+    assert result["range_complete"] is True
+    assert result["default_limit"] == 100_000
     assert result["query_applied"]["limit_source"] == "default"
-    assert result["pagination"] == {
-        "total": 25,
-        "returned": 20,
-        "offset": 0,
-        "limit": 20,
-        "has_more": True,
-        "more_available": 5,
-    }
+    assert "pagination" not in result
     assert "requested_limit" not in result
 
 
@@ -1874,6 +1867,42 @@ def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
     assert simplified["limit_reached"] is True
 
 
+def test_run_data_fetch_ticks_range_uses_safety_cap_and_pagination():
+    observed = {}
+
+    def _fetch(**kwargs):
+        observed.update(kwargs)
+        return {
+            "success": True,
+            "count": 50_000,
+            "tick_count": 50_000,
+            "data": [],
+            "query_applied": {
+                "mode": "historical",
+                "selection": "first_n",
+                "start": "2026-08-14 19:00",
+                "end": "2026-08-14 19:10",
+            },
+        }
+
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD",
+            start="2026-08-14 19:00",
+            end="2026-08-14 19:10",
+            detail="standard",
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=_fetch,
+    )
+
+    assert observed["limit"] == 50_000
+    assert result["limit_reached"] is True
+    assert result["query_applied"]["limit_source"] == "range_cap"
+    assert result["pagination"]["has_more"] is True
+    assert result["pagination"]["limit"] == 50_000
+
+
 def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     row, spread_sample = _compact_tick_row(
         {"time": "2026-07-17T01:53:23Z", "bid": 1.14396, "ask": 1.14396},
@@ -2111,7 +2140,7 @@ def test_run_data_fetch_ticks_maps_empty_historical_window_to_success() -> None:
     assert result["data"] == []
     assert result["empty"] is True
     assert result["empty_reason"] == "no_ticks_in_range"
-    assert result["requested_limit"] == 20
+    assert result["requested_limit"] == 50_000
     assert result["limit_reached"] is False
     assert "error_code" not in result
 

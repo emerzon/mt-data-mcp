@@ -3737,7 +3737,7 @@ def fetch_ticks(  # noqa: C901
                 "valid_spread_ticks": int(sum(spread_sample_eligible_flags)),
                 "spread_sample_basis": "coherent_bid_ask_updates",
                 "zero_spread_ticks": int(zero_spread_count),
-                "incomplete_quote_warning_ratio": _INCOMPLETE_TICK_WARNING_RATIO,
+                "incomplete_quote_warning_threshold": _INCOMPLETE_TICK_WARNING_RATIO,
                 "quote_type_counts": quote_type_counts,
             }
             if one_sided_update_count > 0:

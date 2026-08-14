@@ -533,6 +533,19 @@ def test_wait_event_duration_without_scope_is_timer_only(_mock_gateway) -> None:
     assert result["watcher_types"] == []
 
 
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_rejects_symbol_timer_without_watch(
+    mock_run_wait,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(symbol="EURUSD", max_wait_seconds=1)
+
+    assert result["error_code"] == "wait_event_invalid_request"
+    assert "timer, not a market wait" in str(result.get("error") or "")
+    mock_run_wait.assert_not_called()
+
+
 def test_wait_event_request_rejects_instrument_as_extra_field() -> None:
     with pytest.raises(ValidationError) as exc_info:
         WaitEventRequest.model_validate(
