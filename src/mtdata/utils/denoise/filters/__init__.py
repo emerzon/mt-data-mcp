@@ -4,6 +4,7 @@
 from . import (
     adaptive,
     decomposition,
+    microstructure,
     moving_average,
     polynomial,
     specialized,

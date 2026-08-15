@@ -520,8 +520,12 @@ _DENOISE_METHODS = (
     "butterworth", # Butterworth IIR filter
     "hp",          # Hodrick-Prescott trend filter
     "savgol",      # Savitzky-Golay smoothing
+    "supersmoother",  # Ehlers 2-pole SuperSmoother
+    "kama",        # Kaufman adaptive moving average
     "tv",          # total variation denoising
     "kalman",      # 1D Kalman filter smoothing
+    "kalman_robust",  # Student-t robust Kalman
+    "preaverage",  # Jacod-style pre-averaging
     "hampel",      # Hampel outlier filter
     "bilateral",   # bilateral smoothing
     "wavelet_packet", # wavelet packet denoise

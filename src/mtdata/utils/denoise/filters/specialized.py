@@ -185,6 +185,117 @@ def _denoise_kalman_series(
     return _series_like(s, y)
 
 
+def _kalman_robust_1d(
+    x: np.ndarray,
+    *,
+    process_var: Optional[float],
+    measurement_var: Optional[float],
+    nu: float,
+    initial_state: Optional[float] = None,
+    initial_cov: Optional[float] = None,
+    prefix_auto: bool = False,
+) -> np.ndarray:
+    """Random-walk Kalman with Student-t inflation of the measurement variance."""
+    n = len(x)
+    xhat = np.zeros(n, dtype=float)
+    covariance = np.zeros(n, dtype=float)
+    if n == 0:
+        return xhat
+    values = np.asarray(x, dtype=float)
+    nu_val = max(float(nu), 1.0)
+    series_var = float(np.var(values)) if n > 1 else 1.0
+    fallback_meas = series_var if series_var > 0.0 else 1.0
+    xhat[0] = float(initial_state) if initial_state is not None else float(values[0])
+    initial_measurement = max(
+        float(measurement_var) if measurement_var is not None else fallback_meas,
+        1e-12,
+    )
+    covariance[0] = (
+        float(initial_cov) if initial_cov is not None else initial_measurement
+    )
+    running_mean = float(values[0])
+    running_m2 = 0.0
+    for t in range(1, n):
+        value = float(values[t])
+        if prefix_auto:
+            count = t + 1
+            delta = value - running_mean
+            running_mean += delta / count
+            running_m2 += delta * (value - running_mean)
+            prefix_variance = running_m2 / count
+            measurement = max(
+                float(measurement_var)
+                if measurement_var is not None
+                else (prefix_variance if prefix_variance > 0.0 else 1.0),
+                1e-12,
+            )
+            process = max(
+                float(process_var)
+                if process_var is not None
+                else measurement * 0.01,
+                1e-12,
+            )
+        else:
+            measurement = max(
+                float(measurement_var) if measurement_var is not None else fallback_meas,
+                1e-12,
+            )
+            process = max(
+                float(process_var) if process_var is not None else measurement * 0.01,
+                1e-12,
+            )
+        predicted = xhat[t - 1]
+        predicted_covariance = covariance[t - 1] + process
+        innovation = value - predicted
+        scale = max(predicted_covariance + measurement, 1e-12)
+        weight = (nu_val + 1.0) / (nu_val + (innovation * innovation) / scale)
+        measurement_eff = measurement / max(weight, 1e-12)
+        gain = predicted_covariance / max(predicted_covariance + measurement_eff, 1e-12)
+        xhat[t] = predicted + gain * innovation
+        covariance[t] = (1.0 - gain) * predicted_covariance
+    return xhat
+
+
+@register_filter('kalman_robust')
+def _denoise_kalman_robust_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    measurement_var = params.get('measurement_var', params.get('r', 'auto'))
+    process_var = params.get('process_var', params.get('q', 'auto'))
+    measurement_auto = measurement_var == 'auto' or measurement_var is None
+    process_auto = process_var == 'auto' or process_var is None
+    nu = float(params.get('nu', 4.0))
+    init_state = params.get('initial_state')
+    init_cov = params.get('initial_cov')
+    prefix_auto = causality == 'causal' and (measurement_auto or process_auto)
+    y = _kalman_robust_1d(
+        x,
+        process_var=None if process_auto else float(process_var),
+        measurement_var=None if measurement_auto else float(measurement_var),
+        nu=nu,
+        initial_state=init_state,
+        initial_cov=init_cov,
+        prefix_auto=prefix_auto,
+    )
+    if causality == 'zero_phase':
+        y = 0.5 * (
+            y
+            + _kalman_robust_1d(
+                x[::-1],
+                process_var=None if process_auto else float(process_var),
+                measurement_var=None if measurement_auto else float(measurement_var),
+                nu=nu,
+                initial_state=init_state,
+                initial_cov=init_cov,
+                prefix_auto=False,
+            )[::-1]
+        )
+    return _series_like(s, y)
+
+
 def _hampel_filter(
     x: np.ndarray,
     window: int,

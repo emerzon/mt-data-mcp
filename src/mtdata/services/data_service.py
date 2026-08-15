@@ -1750,9 +1750,17 @@ def _denoise_history_context(
         )
         context["minimum_bars"] = padlen + 1
         context["warmup_bars"] = padlen + 1
-    elif method == "kalman":
+    elif method in {"kalman", "kalman_robust"}:
         context["recommended_bars"] = 20
         context["warmup_bars"] = 20
+    elif method in {"savgol", "kama", "preaverage"}:
+        window = max(2, int(params.get("window", 10)))
+        context["warmup_bars"] = window
+        context["recommended_bars"] = window
+    elif method == "supersmoother":
+        period = max(2, int(params.get("period", 10)))
+        context["warmup_bars"] = period
+        context["recommended_bars"] = period
     return context
 
 

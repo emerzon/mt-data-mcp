@@ -1,4 +1,5 @@
-"""Spectral/frequency domain filters: FFT, Butterworth."""
+"""Spectral/frequency domain filters: FFT, Butterworth, SuperSmoother."""
+import math
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -70,6 +71,42 @@ def _butterworth_filter(
     if _lfilter is None:
         return x
     return _lfilter(b, a, x)
+
+
+def _supersmoother_1d(x: np.ndarray, period: float) -> np.ndarray:
+    n = len(x)
+    y = np.empty(n, dtype=float)
+    if n == 0:
+        return y
+    values = np.asarray(x, dtype=float)
+    y[0] = values[0]
+    if n == 1:
+        return y
+    y[1] = values[1]
+    period_val = max(2.0, float(period))
+    decay = math.exp(-math.sqrt(2.0) * math.pi / period_val)
+    c2 = 2.0 * decay * math.cos(math.sqrt(2.0) * math.pi / period_val)
+    c3 = -decay * decay
+    c1 = 1.0 - c2 - c3
+    for t in range(2, n):
+        y[t] = c1 * 0.5 * (values[t] + values[t - 1]) + c2 * y[t - 1] + c3 * y[t - 2]
+    return y
+
+
+@register_filter('supersmoother')
+def _denoise_supersmoother_series(
+    s: pd.Series,
+    x: np.ndarray,
+    params: Dict[str, Any],
+    causality: str,
+) -> pd.Series:
+    period = float(params.get('period', 10))
+    if period < 2:
+        raise ValueError("SuperSmoother period must be at least 2.")
+    y = _supersmoother_1d(x, period=period)
+    if causality == 'zero_phase':
+        y = 0.5 * (y + _supersmoother_1d(x[::-1], period=period)[::-1])
+    return _series_like(s, y)
 
 
 @register_filter('butterworth')

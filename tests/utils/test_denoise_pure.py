@@ -120,8 +120,30 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "butterworth"
 
     def test_string_savgol(self):
-        out = normalize_denoise_spec({"method": "savgol", "causality": "zero_phase"})
+        out = normalize_denoise_spec("savgol")
         assert out["method"] == "savgol"
+        assert out["causality"] == "causal"
+
+    def test_string_supersmoother(self):
+        out = normalize_denoise_spec("supersmoother")
+        assert out["method"] == "supersmoother"
+        assert out["causality"] == "causal"
+        assert out["params"]["period"] == 10
+
+    def test_string_kama(self):
+        out = normalize_denoise_spec("kama")
+        assert out["method"] == "kama"
+        assert out["params"]["window"] == 10
+
+    def test_string_kalman_robust(self):
+        out = normalize_denoise_spec("kalman_robust")
+        assert out["method"] == "kalman_robust"
+        assert out["params"]["nu"] == 4.0
+
+    def test_string_preaverage(self):
+        out = normalize_denoise_spec("preaverage")
+        assert out["method"] == "preaverage"
+        assert out["params"]["space"] == "level"
 
     def test_string_tv(self):
         out = normalize_denoise_spec({"method": "tv", "causality": "zero_phase"})
@@ -418,6 +440,52 @@ class TestDenoiseSeriesDispatch:
         _check_basic(result.values, N)
         assert _smoothness(result.values) <= _smoothness(NOISY_SIGNAL)
 
+    def test_savgol_causal(self):
+        s = _make_series(NOISY_SIGNAL)
+        result = denoise_series(
+            s,
+            method="savgol",
+            params={"window": 11, "polyorder": 2},
+            causality="causal",
+        )
+        _check_basic(result.values, N)
+
+    def test_supersmoother(self):
+        s = _make_series(NOISY_SIGNAL)
+        result = denoise_series(s, method="supersmoother", params={"period": 10})
+        _check_basic(result.values, N)
+        zp = denoise_series(
+            s, method="supersmoother", params={"period": 10}, causality="zero_phase"
+        )
+        _check_basic(zp.values, N)
+
+    def test_kama(self):
+        s = _make_series(NOISY_SIGNAL)
+        result = denoise_series(s, method="kama")
+        _check_basic(result.values, N)
+        zp = denoise_series(s, method="kama", causality="zero_phase")
+        _check_basic(zp.values, N)
+
+    def test_kalman_robust(self):
+        s = _make_series(NOISY_SIGNAL)
+        result = denoise_series(s, method="kalman_robust")
+        _check_basic(result.values, N)
+        zp = denoise_series(s, method="kalman_robust", causality="zero_phase")
+        _check_basic(zp.values, N)
+
+    def test_preaverage(self):
+        s = _make_series(np.abs(NOISY_SIGNAL) + 1.0)
+        result = denoise_series(s, method="preaverage", params={"window": 8})
+        _check_basic(result.values, N)
+        zp = denoise_series(
+            s, method="preaverage", params={"window": 8}, causality="zero_phase"
+        )
+        _check_basic(zp.values, N)
+        logged = denoise_series(
+            s, method="preaverage", params={"window": 8, "space": "log"}
+        )
+        _check_basic(logged.values, N)
+
     def test_savgol_rejects_window_longer_than_series(self):
         pytest.importorskip("scipy.signal")
         s = _make_series(np.array([1.0, 2.0, 3.0, 4.0, 5.0]))
@@ -650,6 +718,44 @@ class TestDenoiseSeriesDispatch:
         )
 
         np.testing.assert_allclose(prefix_result, extended_result.iloc[: len(prefix)])
+
+    @pytest.mark.parametrize(
+        ("method", "params"),
+        [
+            ("savgol", {"window": 7, "polyorder": 2}),
+            ("supersmoother", {"period": 8}),
+            ("kama", {"window": 5, "fast": 2, "slow": 20}),
+            ("kalman_robust", {"process_var": 0.01, "measurement_var": 1.0}),
+            ("preaverage", {"window": 6}),
+        ],
+    )
+    def test_new_causal_methods_are_prefix_invariant(self, method, params):
+        prefix = pd.Series([1.0, 1.2, 0.9, 1.1, 1.0, 1.05, 0.95, 1.02], name="close")
+        extended = pd.concat(
+            [prefix, pd.Series([100.0, -100.0], name="close")],
+            ignore_index=True,
+        )
+        prefix_result = denoise_series(
+            prefix, method=method, params=params, causality="causal"
+        )
+        extended_result = denoise_series(
+            extended, method=method, params=params, causality="causal"
+        )
+        np.testing.assert_allclose(
+            prefix_result.to_numpy(dtype=float),
+            extended_result.iloc[: len(prefix)].to_numpy(dtype=float),
+        )
+
+    def test_kalman_robust_resists_a_spike_more_than_kalman(self):
+        values = np.ones(25, dtype=float)
+        values[12] = 20.0
+        series = pd.Series(values, name="close")
+        params = {"process_var": 0.01, "measurement_var": 1.0}
+        gaussian = denoise_series(series, method="kalman", params=params, causality="causal")
+        robust = denoise_series(
+            series, method="kalman_robust", params={**params, "nu": 4.0}, causality="causal"
+        )
+        assert abs(robust.iloc[12] - 1.0) < abs(gaussian.iloc[12] - 1.0)
 
     def test_causal_denoise_does_not_backfill_leading_missing_values(self):
         series = pd.Series([np.nan, np.nan, 1.0, 1.2, 0.9], name="close")
@@ -1446,6 +1552,11 @@ class TestGetDenoiseMethodsData:
         assert methods["wavelet"]["supports"]["causality"] == ["zero_phase"]
         assert methods["ema"]["requires_causality_opt_in"] is False
         assert methods["wavelet"]["requires_causality_opt_in"] is True
+        assert methods["savgol"]["supports"]["causality"] == ["causal", "zero_phase"]
+        assert methods["savgol"]["requires_causality_opt_in"] is False
+        for name in ("supersmoother", "kama", "kalman_robust", "preaverage"):
+            assert methods[name]["supports"]["causality"] == ["causal", "zero_phase"]
+            assert methods[name]["requires_causality_opt_in"] is False
 
     def test_reports_tv_unavailable_when_scikit_image_missing(self, monkeypatch):
         monkeypatch.setattr(denoise_api, "_skimage_tv_chambolle", None)

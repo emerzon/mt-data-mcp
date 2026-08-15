@@ -13,7 +13,6 @@ export const ZERO_PHASE_ONLY_METHODS = new Set([
   'whittaker',
   'l1_trend',
   'gaussian',
-  'savgol',
   'loess',
   'stl',
   'tv',

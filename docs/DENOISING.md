@@ -87,6 +87,7 @@ General-purpose smoothing.
 |--------|-------------|------------|
 | `ema` | Exponential Moving Average | `span` (default 10) or `alpha` (0–1; overrides span) |
 | `sma` | Simple Moving Average | `window` |
+| `kama` | Kaufman Adaptive Moving Average | `window` (default 10), `fast` (2), `slow` (30) |
 
 **Example:**
 ```bash
@@ -115,6 +116,7 @@ Separate high-frequency noise from low-frequency trend.
 |--------|-------------|------------|
 | `lowpass_fft` | FFT low-pass filter | `cutoff_ratio` |
 | `butterworth` | Butterworth filter | `order`, `cutoff` |
+| `supersmoother` | Ehlers two-pole SuperSmoother | `period` (default 10) |
 
 **Example:**
 ```bash
@@ -143,6 +145,7 @@ Automatically adjust smoothing based on data.
 | Method | Description | Parameters |
 |--------|-------------|------------|
 | `kalman` | Kalman filter | `process_var`, `measurement_var` |
+| `kalman_robust` | Student-t robust Kalman | `process_var`, `measurement_var`, `nu` (default 4) |
 | `lms` | Least Mean Squares | `mu`, `order`, `eps`, `leak` |
 | `rls` | Recursive Least Squares | `delta`, `lambda_`, `order` |
 
@@ -157,7 +160,7 @@ Fit local curves to smooth the data.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `savgol` | Savitzky-Golay smoothing | `window`, `polyorder` |
+| `savgol` | Savitzky-Golay smoothing (causal trailing window, or zero-phase) | `window`, `polyorder` |
 | `loess` | Local polynomial regression | `frac`, `it` |
 
 **Example:**
@@ -192,7 +195,8 @@ Split into components and reconstruct smoother parts.
 | `gaussian` | Gaussian kernel smoothing | `sigma` |
 | `bilateral` | Bilateral filter (edge-preserving) | `sigma_s`, `sigma_r` |
 | `whittaker` | Whittaker smoother | `lamb`, `order` |
-| `beta` | Robust beta smoother | `alpha`, `beta` |
+| `beta` | Robust beta smoother | `window`, `beta` |
+| `preaverage` | Jacod-style pre-averaging of increments | `window` (default 10), `space` (`level` or `log`) |
 
 ---
 
@@ -214,10 +218,10 @@ Split into components and reconstruct smoother parts.
 **Critical for backtesting:** Some filters use future data to smooth each point (zero-phase filtering). This looks great on charts but creates unrealistic results.
 
 **Causal-capable filters** (default to past-only processing):
-- `ema`, `sma`, `median`, `butterworth`, `kalman`, `hampel`, `bilateral`, `lms`, `rls`, `beta`
+- `ema`, `sma`, `median`, `butterworth`, `kalman`, `kalman_robust`, `hampel`, `bilateral`, `lms`, `rls`, `beta`, `savgol`, `supersmoother`, `kama`, `preaverage`
 
 **Non-causal-only filters** (use past and future):
-- `lowpass_fft`, `wavelet`, `wavelet_packet`, `hp`, `whittaker`, `l1_trend`, `gaussian`, `savgol`, `loess`, `stl`, `tv`, `ssa`, `vmd`, `emd`, `eemd`, `ceemdan`
+- `lowpass_fft`, `wavelet`, `wavelet_packet`, `hp`, `whittaker`, `l1_trend`, `gaussian`, `loess`, `stl`, `tv`, `ssa`, `vmd`, `emd`, `eemd`, `ceemdan`
 
 Causal-capable filters and the public `denoise_series` helper default to causal
 operation. Non-causal-only presets are rejected unless the request explicitly
@@ -235,9 +239,9 @@ retrospective analysis, not backtesting or live trading.
 |------------|-------------------|
 | General high-frequency noise | `ema`, `sma` |
 | Spikes/outliers | `median`, `hampel` |
-| Microstructure noise | `kalman` |
+| Microstructure noise | `preaverage`, `kalman_robust`, `kalman` |
 | Seasonal patterns | `stl` |
-| Unknown/complex | Start with `ema`, try `kalman` |
+| Unknown/complex | Start with `ema`, try `kalman` or `kama` |
 
 ---
 

@@ -57,6 +57,11 @@ describe('chartDenoiseFromMethod', () => {
 describe('defaultDenoiseCausality', () => {
   it('uses causal for dual-mode methods without metadata', () => {
     expect(defaultDenoiseCausality('kalman')).toBe('causal')
+    expect(defaultDenoiseCausality('savgol')).toBe('causal')
+    expect(defaultDenoiseCausality('supersmoother')).toBe('causal')
+    expect(defaultDenoiseCausality('kama')).toBe('causal')
+    expect(defaultDenoiseCausality('kalman_robust')).toBe('causal')
+    expect(defaultDenoiseCausality('preaverage')).toBe('causal')
   })
 
   it('uses zero_phase for known non-causal methods without metadata', () => {

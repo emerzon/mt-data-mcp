@@ -727,6 +727,10 @@ Removing random fluctuations ("noise") to reveal the underlying trend ("signal")
 | `ema` | General smoothing |
 | `median` | Spike removal |
 | `kalman` | Adaptive filtering |
+| `kalman_robust` | Adaptive filtering that down-weights spikes |
+| `kama` | Adaptive moving average (fast in trends, slow in chop) |
+| `supersmoother` | Low-lag causal smoother for bar data |
+| `preaverage` | Microstructure noise on increments |
 | `wavelet` | Frequency-based separation |
 
 **Example:**
@@ -788,7 +792,22 @@ A **downsampling** algorithm that keeps a small number of points while preservin
 ### Kalman filter
 A recursive estimator that blends a simple process model with noisy observations — often used as an **adaptive smoother** for price or indicators.
 
-**In mtdata:** `--denoise kalman`. See [DENOISING.md](DENOISING.md).
+**In mtdata:** `--denoise kalman` or `--denoise kalman_robust`. See [DENOISING.md](DENOISING.md).
+
+### SuperSmoother
+John Ehlers’ two-pole smoother: a causal low-pass tuned for bar data, with less lag than a simple moving average at a similar cutoff.
+
+**In mtdata:** `--denoise supersmoother`. See [DENOISING.md](DENOISING.md).
+
+### KAMA (Kaufman Adaptive Moving Average)
+A moving average that speeds up when price is trending (high efficiency ratio) and slows down in chop.
+
+**In mtdata:** `--denoise kama` (also an indicator). See [DENOISING.md](DENOISING.md) and [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md).
+
+### Pre-averaging
+A high-frequency trick: smooth *increments* with a short kernel, then rebuild the price path. Helps when bounce and spread dominate the last few ticks.
+
+**In mtdata:** `--denoise preaverage`. See [DENOISING.md](DENOISING.md).
 
 ### Wavelet (denoise / regimes)
 Decomposes a series into frequency bands (detail vs trend). Used for **denoising** (drop noisy bands) and, in some regime modes, **energy-profile** style state labels.
