@@ -523,7 +523,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "use native; invalid for other modes."
     ),
     ("report_generate", "template"): (
-        "Report template: minimal fast context+forecast (default), basic balanced research, "
+        "Report template: minimal fast context+forecast (default), basic research with confluence, "
         "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
         "or position D1/W1. Typical warm runtimes: minimal 3-10s, scalping "
         "15-60s, basic/style templates 30-120s, advanced 60-180s; broker "

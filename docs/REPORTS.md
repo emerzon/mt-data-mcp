@@ -4,13 +4,13 @@
 
 `report_generate` packages several read-only analysis steps into one structured
 market summary. Use it when you want a repeatable overview rather than calling
-context, forecast, level, pattern, barrier, and regime tools separately.
+context, forecast, level, pattern, barrier, news, and regime tools separately.
 
 Reports are research output, not trade instructions. A report can also be
 partial when a provider, optional dependency, or sub-analysis is unavailable;
 inspect its section statuses and diagnostics before relying on it.
 
-**Related:** [CLI](CLI.md) · [Output contract](OUTPUT.md) · [Forecasting](FORECAST.md) · [Regimes](forecast/REGIMES.md) · [Barriers](BARRIER_FUNCTIONS.md)
+**Related:** [CLI](CLI.md) · [Output contract](OUTPUT.md) · [Forecasting](FORECAST.md) · [Levels](LEVELS.md) · [Regimes](forecast/REGIMES.md) · [Barriers](BARRIER_FUNCTIONS.md) · [News](NEWS.md)
 
 ---
 
@@ -21,28 +21,34 @@ mtdata-cli report_generate EURUSD --timeframe H1
 ```
 
 The command defaults to the fast `minimal` template (context and forecast only)
-and compact TOON text. Use `--template basic` for levels, patterns, barriers,
-and broader risk context; use `--json` for a machine-readable payload or
+and compact TOON text. Use `--template basic` for confluence levels, patterns,
+barriers, and broader risk context; use `--json` for a machine-readable payload or
 `--detail full` for all content supported by the selected template. CLI and MCP
 preserve the same canonical report payload; output format only changes its final
-presentation.
+presentation. Compact output is a one-screen brief: last price, a short narrative,
+nearest levels, forecast, and risk. Pass `--detail standard` or `--detail full`
+when you need the full section dump.
 
 ## Choose a template
 
 | Template | Typical warm runtime | Design and intended use |
 |----------|----------------------|-------------------------|
 | `minimal` | 3-10 seconds | Default fast path: context and direct forecast only |
-| `basic` | 30-120 seconds | Shared general-purpose research pipeline; opt in explicitly |
-| `advanced` | 60-180 seconds | Extends `basic` with regime, HAR-RV, and conformal sections |
-| `scalping` | 15-60 seconds | Specialized short-horizon M5 path with tick-aware barrier logic |
-| `intraday` | 30-120 seconds | `basic` preset with H1-oriented defaults |
-| `swing` | 30-120 seconds | `basic` preset with H4/D1-oriented defaults |
-| `position` | 30-120 seconds | `basic` preset with D1/W1-oriented defaults |
+| `basic` | 30-120 seconds | Research pipeline: context, daily pivots, confluence, one volatility estimate, forecast, fast barrier search, recent patterns |
+| `advanced` | 60-180 seconds | Extends `basic` with regime, HAR-RV, classic/Elliott patterns, and conformal intervals when the forecast has none |
+| `scalping` | 15-60 seconds | M5 path with live quote, session status, execution gates, and tick-aware barriers |
+| `intraday` | 30-120 seconds | H1 path plus session status, news, and session seasonality |
+| `swing` | 30-120 seconds | H4/D1 path plus volume-profile value area and news |
+| `position` | 30-120 seconds | D1/W1 path plus weekly confluence, volume profile, news, and Elliott context |
 
-`intraday`, `swing`, and `position` select different default timeframes,
-lookbacks, backtest sampling, barrier ranges, and multi-timeframe inputs. They
-do not define different analytics or section schemas: each runs the `basic`
-pipeline with its preset parameters.
+Style templates still choose different default timeframes, lookbacks, and
+barrier grids. They now also change which extra tools run: session and news on
+intraday, volume profile and news on swing/position, and live quote/session
+gates on scalping.
+
+A single `--methods` value skips the ranking backtest and forecasts that method
+directly. Denoising, when requested, is applied to candles, forecast, backtest,
+volatility, and barrier searches.
 
 `minimal` is the bounded interactive default. The other templates may perform several MT5
 fetches and invoke pivots, patterns, backtests, barriers, or regime checks.
@@ -97,12 +103,14 @@ Useful controls:
 - `--allow-partial` defaults to `true`: a report with at least one usable
   section returns `success:true` and `section_run_status:partial`. Set it to
   `false` when a caller requires every selected section to complete cleanly.
-- `--denoise` and `--denoise-params` configure optional input smoothing.
+- `--denoise` and `--denoise-params` configure optional input smoothing for
+  candles and the forecast / volatility / barrier stack.
 - `--params` supplies template and sub-tool overrides such as context limits,
   backtest settings, barrier grids, or additional timeframes.
 - Scalping and intraday `market` sections always obtain Level 1 bid/ask/spread
   from `market_ticker`; broker DOM is optional and reports `depth_status` as
-  `available`, `quote_only`, `disabled`, or `unavailable`. The
+  `available`, `quote_only`, `disabled`, or `unavailable`. The `session`
+  section reports whether the symbol is open. The
   `execution_gates` section always returns a gate decision. Configure an
   additional spread cap with `params.spread_max_ticks` or
   `params.spread_max_pips`; without one, the gate checks quote readiness and a
@@ -117,8 +125,8 @@ template descriptions.
 
 Full reports contain a `sections` mapping plus summary and status information.
 Section names depend on the template and may include context, forecast,
-backtest, volatility, pivot, patterns, barriers, regime, or multi-timeframe
-variants. Check the report-level and per-section status before consuming a
+backtest, volatility, pivot, confluence, volume profile, patterns, barriers,
+session, news, temporal seasonality, regime, or multi-timeframe variants. Check the report-level and per-section status before consuming a
 value: a successful report envelope can still describe omitted or partial
 sections.
 

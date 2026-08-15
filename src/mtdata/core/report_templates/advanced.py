@@ -29,6 +29,11 @@ def template_advanced(
     start = p.get('start')
     end = p.get('end')
     p['timeframe'] = tf
+    p.setdefault('barrier_method', 'hmm_mc')
+    p.setdefault('search_profile', 'medium')
+    p.setdefault('forecast_ci_alpha', 0.1)
+    p.setdefault('patterns_mode', 'classic')
+    p.setdefault('patterns_extra_modes', ['elliott'])
     
     base = template_basic(symbol, horizon, denoise, p)
     
@@ -47,18 +52,20 @@ def template_advanced(
         bocpd = _get_raw_result(regime_detect,
             symbol=symbol,
             timeframe=tf,
-            limit=int(p.get('regime_limit', 1500)),
+            fetch_limit=int(p.get('regime_limit', 1500)),
             start=start,
             end=end,
-            method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300))
+            method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300)),
+            denoise=denoise,
         )
         hmm = _get_raw_result(regime_detect,
             symbol=symbol,
             timeframe=tf,
-            limit=int(p.get('regime_limit', 1500)),
+            fetch_limit=int(p.get('regime_limit', 1500)),
             start=start,
             end=end,
-            method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300))
+            method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300)),
+            denoise=denoise,
         )
         base.setdefault('sections', {})['regime'] = {
             'bocpd': bocpd if 'error' in bocpd else {'summary': bocpd.get('summary')},
@@ -77,6 +84,7 @@ def template_advanced(
             start=start,
             end=end,
             params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22},
+            denoise=denoise,
         )
         if 'error' in har:
             base['sections']['volatility_har_rv'] = {'error': har['error']}
@@ -97,22 +105,40 @@ def template_advanced(
         best_method = base.get('sections', {}).get('backtest', {}).get('best_method', {}).get('method')
     except Exception:
         best_method = None
+    if not best_method:
+        forecast_section = base.get('sections', {}).get('forecast')
+        if isinstance(forecast_section, dict):
+            best_method = forecast_section.get('method')
+    forecast_section = base.get('sections', {}).get('forecast')
+    has_native_interval = (
+        isinstance(forecast_section, dict)
+        and forecast_section.get('lower_price') not in (None, "", [], {})
+        and forecast_section.get('upper_price') not in (None, "", [], {})
+    )
     if not report_section_enabled(p, 'forecast_conformal'):
         pass
     elif _is_bounded_report_window(start, end):
         base['sections']['forecast_conformal'] = _current_only_section_omission(
             'forecast_conformal', start=start, end=end
         )
+    elif has_native_interval:
+        base['sections']['forecast_conformal'] = {
+            'status': 'omitted',
+            'reason': 'native_forecast_interval_available',
+            'method': best_method,
+        }
     elif best_method:
         from ..forecast import forecast_conformal_intervals
+        conformal_spacing = max(int(horizon), int(p.get('conformal_spacing', 10)))
         conf = _get_raw_result(forecast_conformal_intervals,
             symbol=symbol,
             timeframe=tf,
             method=best_method,
             horizon=int(horizon),
             steps=int(p.get('conformal_steps', 25)),
-            spacing=int(p.get('conformal_spacing', 10)),
+            spacing=conformal_spacing,
             ci_alpha=float(p.get('conformal_alpha', 0.1)),
+            denoise=denoise,
         )
         if 'error' in conf:
             base['sections']['forecast_conformal'] = {'error': conf['error'], 'method': best_method}

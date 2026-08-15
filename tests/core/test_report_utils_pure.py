@@ -25,15 +25,16 @@ from mtdata.core.report.utils import (
     attach_candle_freshness_diagnostics,
     attach_market_and_timeframes,
     attach_multi_timeframes,
+    attach_report_timeframes,
     context_for_tf,
     extract_candle_freshness_diagnostics,
     format_number,
-    market_snapshot,
     merge_params,
     normalize_report_methods,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
+    report_market_quote,
     summarize_barrier_grid,
 )
 from mtdata.utils.formatting import format_number as util_format_number
@@ -73,7 +74,7 @@ def test_normalize_report_methods_accepts_documented_input_shapes(value, expecte
 def test_bounded_market_sections_are_omitted_without_live_snapshot():
     report = {"sections": {}}
     with (
-        patch("mtdata.core.report.utils.market_snapshot") as snapshot,
+        patch("mtdata.core.report.utils.report_market_quote") as snapshot,
         patch("mtdata.core.report.utils.attach_report_timeframes"),
     ):
         result = attach_market_and_timeframes(
@@ -97,7 +98,7 @@ def test_unbounded_market_sections_still_use_live_snapshot():
     report = {"sections": {}}
     live = {"bid": 1.1, "ask": 1.2, "spread_ticks": 2.0}
     with (
-        patch("mtdata.core.report.utils.market_snapshot", return_value=live) as snapshot,
+        patch("mtdata.core.report.utils.report_market_quote", return_value=live) as snapshot,
         patch("mtdata.core.report.utils.attach_report_timeframes"),
     ):
         result = attach_market_and_timeframes(
@@ -111,6 +112,22 @@ def test_unbounded_market_sections_still_use_live_snapshot():
     assert result == live
     snapshot.assert_called_once_with("EURUSD")
     assert report["sections"]["market"] == live
+
+
+def test_attach_report_timeframes_forwards_resolved_indicators():
+    report = {"sections": {}}
+    with patch("mtdata.core.report.utils.attach_multi_timeframes") as attach:
+        attach_report_timeframes(
+            report,
+            "EURUSD",
+            None,
+            {"context_indicators": "ema(20),rsi(14)"},
+            default_extra=["H4"],
+            default_pivots=["D1"],
+        )
+
+    assert attach.call_args.kwargs["context_indicators"] == "ema(20),rsi(14)"
+    assert attach.call_args.kwargs["extra_timeframes"] == ["H4"]
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +673,7 @@ class TestMarketSnapshot:
                 },
             ),
         ):
-            snap = market_snapshot("EURUSD")
+            snap = report_market_quote("EURUSD")
 
         assert snap["spread_ticks"] == pytest.approx(15.0)
         assert snap["spread_points"] == pytest.approx(15.0)
@@ -689,7 +706,7 @@ class TestMarketSnapshot:
                 },
             ),
         ):
-            snap = market_snapshot("US30")
+            snap = report_market_quote("US30")
 
         assert snap["spread_ticks"] == pytest.approx(2.0)
         assert snap["spread_points"] == pytest.approx(10.0)

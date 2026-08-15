@@ -518,10 +518,10 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
     return p
 
 
-def market_snapshot(  # noqa: C901
+def report_market_quote(  # noqa: C901
     symbol: str, timezone: str = 'UTC'
 ) -> Dict[str, Any]:
-    operation = "market_snapshot"
+    operation = "report_market_quote"
     if report_runtime_expired():
         emit_report_progress(operation, "skipped_runtime_budget")
         return report_runtime_error(operation)
@@ -1150,6 +1150,7 @@ def attach_report_timeframes(
         denoise,
         extra_timeframes=extra,
         pivot_timeframes=pivots,
+        context_indicators=resolve_report_context_indicators(params),
         start=start,
         end=end,
         _fetch_cache=_fetch_cache,
@@ -1184,7 +1185,7 @@ def attach_market_and_timeframes(
                     'execution_gates', start=start, end=end
                 )
         else:
-            snap = snapshot if snapshot is not None else market_snapshot(symbol)
+            snap = snapshot if snapshot is not None else report_market_quote(symbol)
             sections['market'] = snap
             gates = apply_market_gates(
                 snap if isinstance(snap, dict) else {}, params or {}
@@ -1201,62 +1202,5 @@ def attach_market_and_timeframes(
         _fetch_cache=_fetch_cache,
     )
     return snap
-def _needs_yaml_quotes(text: str) -> bool:
-    if text == '':
-        return True
-    if text != text.strip():
-        return True
-    if text[0] in {'-', '?', ':', '#', '!', '*', '&', '%', '@', '`', '{', '}', '[', ']', ',', '|', '>'}:
-        return True
-    for ch in (':', ',', '#'):
-        if ch in text:
-            return True
-    return any(c in text for c in ('\n', '\r', '\t'))
-
-
-def _escape_yaml_string(text: str) -> str:
-    escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\r', ' ').replace('\n', ' ')
-    return escaped
-
-
-def _compact_scalar(value: Any) -> str:
-    if value is None:
-        return 'null'
-    if isinstance(value, bool):
-        return format_number(value)
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return format_number(value)
-    text = str(value)
-    if _needs_yaml_quotes(text):
-        return f'"{_escape_yaml_string(text)}"'
-    return text
-
-
-def _compact_yaml(value: Any, indent: int = 0) -> str:
-    prefix = '  ' * indent
-    if isinstance(value, dict):
-        if not value:
-            return f"{prefix}{{}}"
-        lines: List[str] = []
-        for key, val in value.items():
-            key_str = str(key)
-            if isinstance(val, (dict, list)):
-                lines.append(f"{prefix}{key_str}:")
-                lines.append(_compact_yaml(val, indent + 1))
-            else:
-                lines.append(f"{prefix}{key_str}: {_compact_scalar(val)}")
-        return "\n".join(lines)
-    if isinstance(value, list):
-        if not value:
-            return f"{prefix}[]"
-        lines: List[str] = []
-        for item in value:
-            if isinstance(item, (dict, list)):
-                lines.append(f"{prefix}-")
-                lines.append(_compact_yaml(item, indent + 1))
-            else:
-                lines.append(f"{prefix}- {_compact_scalar(item)}")
-        return "\n".join(lines)
-    return f"{prefix}{_compact_scalar(value)}"
 
 

@@ -4,8 +4,8 @@ from ...shared.schema import DenoiseSpec
 from ...utils.barriers import get_tick_size as _get_tick_size
 from ..report.utils import (
     is_bounded_report_window,
-    market_snapshot,
     merge_params,
+    report_market_quote,
     report_section_enabled,
 )
 from .common import build_report_with_market
@@ -25,6 +25,8 @@ def template_scalping(
         'backtest_spacing': 6,
         'backtest_rmse_tolerance': 0.10,
         'patterns_limit': 120,
+        'patterns_mode': 'candlestick',
+        'patterns_last_n_bars': 3,
         'mode': 'ticks',
         'grid_style': 'fixed',
         'tp_min': 2.0, 'tp_max': 15.0, 'tp_steps': 3,
@@ -46,7 +48,7 @@ def template_scalping(
         or report_section_enabled(p, 'barriers')
     )
     bounded_window = is_bounded_report_window(p.get('start'), p.get('end'))
-    snap = market_snapshot(symbol) if needs_snapshot and not bounded_window else {}
+    snap = report_market_quote(symbol) if needs_snapshot and not bounded_window else {}
     if str(p.get('mode', '')).lower() == 'ticks':
         last_price = None
         spread_ticks = None

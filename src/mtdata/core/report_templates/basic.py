@@ -2,6 +2,10 @@ from math import isfinite
 from typing import Any, Dict, List, Optional
 
 from ...shared.schema import DenoiseSpec
+from ..report.extras import (
+    attach_optional_report_sections,
+    extract_report_pattern_rows,
+)
 from ..report.trend import (
     _TREND_COMPACT_LEGEND,
     _compute_compact_trend,
@@ -12,6 +16,7 @@ from ..report.utils import (
     attach_multi_timeframes,
     emit_report_progress,
     extract_report_forecast_values,
+    normalize_report_methods,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
@@ -70,19 +75,6 @@ def _first_volatility_value(payload: Dict[str, Any], keys: tuple[str, ...]) -> A
     return None
 
 
-def _ema(values: List[float], length: int) -> List[float]:
-    if length <= 1 or not values:
-        return list(values)
-    k = 2.0 / (length + 1.0)
-    out: List[float] = []
-    ema_val = values[0]
-    out.append(ema_val)
-    for v in values[1:]:
-        ema_val = ema_val + k * (v - ema_val)
-        out.append(ema_val)
-    return out
-
-
 def _extract_forecast_values(payload: Dict[str, Any]) -> Optional[List[float]]:
     values = extract_report_forecast_values(payload)
     return values or None
@@ -129,10 +121,7 @@ def template_basic(  # noqa: C901
     _fetch_cache: Dict = {}
 
     # Context
-    indicators = resolve_report_context_indicators(
-        p,
-        default="ema(20),ema(50),rsi(14),macd(12,26,9)",
-    )
+    indicators = resolve_report_context_indicators(p)
     from ..data import data_fetch_candles
     
     ctx = (
@@ -251,23 +240,27 @@ def template_basic(  # noqa: C901
 
     # Volatility (EWMA)
     from ..forecast import forecast_volatility_estimate
-    # Sensible default horizons: short/base/long without requiring params
     try:
         base_h = int(horizon)
     except Exception:
         base_h = 12
-    short_h = max(1, int(round(base_h / 3)))
-    long_h = max(base_h + 1, int(base_h * 2))
-    # Clamp very large long horizon to avoid heavy calls
-    long_h = min(long_h, base_h * 3)
     vol_horizons = []
     if report_section_enabled(p, 'volatility'):
-        for hh in (short_h, base_h, long_h):
-            if hh not in vol_horizons:
-                vol_horizons.append(hh)
+        requested_horizons = p.get('vol_horizons')
+        if isinstance(requested_horizons, (list, tuple)) and requested_horizons:
+            for hh in requested_horizons:
+                try:
+                    horizon_value = int(hh)
+                except Exception:
+                    continue
+                if horizon_value > 0 and horizon_value not in vol_horizons:
+                    vol_horizons.append(horizon_value)
+        else:
+            vol_horizons.append(max(1, base_h))
 
     # Build method x horizon matrix (Horizon σ); keep per-bar for potential future use
-    methods = ['ewma', 'parkinson', 'gk', 'yang_zhang']
+    vol_method = str(p.get('vol_method') or 'yang_zhang').strip() or 'yang_zhang'
+    methods = [vol_method]
     matrix_rows: List[Dict[str, Any]] = []
     vol_errors: List[Dict[str, Any]] = []
     for hh in vol_horizons:
@@ -283,6 +276,7 @@ def template_basic(  # noqa: C901
                 params={'lambda_': 0.94} if m == 'ewma' else None,
                 start=start,
                 end=end,
+                denoise=denoise,
                 detail='full',
             )
             if 'error' in vres:
@@ -339,6 +333,7 @@ def template_basic(  # noqa: C901
                 method='rolling_std',
                 start=start,
                 end=end,
+                denoise=denoise,
                 detail='full',
             )
             proxy_value = _first_volatility_value(
@@ -405,8 +400,17 @@ def template_basic(  # noqa: C901
             min_dir_acc = max(0.0, min(1.0, float(min_dir_acc)))
     from ..forecast import forecast_backtest_run
     methods = p.get('methods')
+    requested_methods = normalize_report_methods(methods)
+    single_method = requested_methods[0] if len(requested_methods) == 1 else None
+    skip_backtest = bool(single_method) and report_section_enabled(p, 'forecast')
     bt = (
-        _get_raw_result(
+        {
+            'status': 'omitted',
+            'reason': 'single_method_direct_forecast',
+            'method': single_method,
+        }
+        if skip_backtest and report_section_enabled(p, 'backtest')
+        else _get_raw_result(
             forecast_backtest_run,
             symbol=symbol,
             timeframe=tf,
@@ -416,17 +420,21 @@ def template_basic(  # noqa: C901
             start=start,
             end=end,
             methods=methods,
+            denoise=denoise,
             detail='full',
         )
         if report_section_enabled(p, 'backtest')
         else {'error': 'backtest section not requested'}
     )
     sec_bt: Dict[str, Any]
-    if 'error' in bt:
+    ranking: List[Dict[str, Any]] = []
+    if bt.get('status') == 'omitted':
+        sec_bt = dict(bt)
+        best = None
+    elif 'error' in bt:
         sec_bt = {'error': bt['error']}
         best = None
     else:
-        ranking: List[Dict[str, Any]] = []
         try:
             res = bt.get('results', {})
             for m, r in res.items():
@@ -533,15 +541,18 @@ def template_basic(  # noqa: C901
             candidate_methods = []
 
         for method_name in candidate_methods:
-            fc = _get_raw_result(
-                forecast_generate,
-                symbol=symbol,
-                timeframe=tf,
-                method=method_name,
-                horizon=int(horizon),
-                start=start,
-                end=end,
-            )
+            forecast_kwargs: Dict[str, Any] = {
+                "symbol": symbol,
+                "timeframe": tf,
+                "method": method_name,
+                "horizon": int(horizon),
+                "start": start,
+                "end": end,
+                "denoise": denoise,
+            }
+            if p.get("forecast_ci_alpha") not in (None, ""):
+                forecast_kwargs["ci_alpha"] = float(p.get("forecast_ci_alpha"))
+            fc = _get_raw_result(forecast_generate, **forecast_kwargs)
             if 'error' in fc:
                 if first_error is None:
                     first_error = str(fc.get('error') or '')
@@ -646,9 +657,33 @@ def template_basic(  # noqa: C901
         report['sections']['backtest']['best_method'] = best_method_payload
 
     if report_section_enabled(p, 'forecast') and 'forecast' not in report['sections']:
-        report['sections']['forecast'] = {
-            'error': 'No usable forecast method was selected by the backtest.',
+        from ..forecast import forecast_generate
+
+        direct_method = single_method or (requested_methods[0] if requested_methods else "theta")
+        forecast_kwargs = {
+            "symbol": symbol,
+            "timeframe": tf,
+            "method": direct_method,
+            "horizon": int(horizon),
+            "start": start,
+            "end": end,
+            "denoise": denoise,
         }
+        if p.get("forecast_ci_alpha") not in (None, ""):
+            forecast_kwargs["ci_alpha"] = float(p.get("forecast_ci_alpha"))
+        fc = _get_raw_result(forecast_generate, **forecast_kwargs)
+        if "error" in fc:
+            report["sections"]["forecast"] = {
+                "error": fc.get("error") or "Direct forecast generation failed.",
+                "method": direct_method,
+                "selection_mode": "direct",
+            }
+        else:
+            report["sections"]["forecast"] = {
+                "method": direct_method,
+                "selection_mode": "direct",
+                **adapt_forecast_payload_for_report(fc),
+            }
 
     # Barriers (grid)
     from ..forecast import forecast_barrier_optimize
@@ -708,7 +743,7 @@ def template_basic(  # noqa: C901
     p['params'] = base_params
 
     mode_val = str(p.get('mode', 'pct'))
-    barrier_method = str(p.get('barrier_method', 'hmm_mc'))
+    barrier_method = str(p.get('barrier_method', 'auto'))
     if bounded_window or not report_section_enabled(p, 'barriers'):
         grid_long = grid_short = None
     else:
@@ -723,7 +758,8 @@ def template_basic(  # noqa: C901
             top_k=int(p.get('top_k', 5)),
             grid_style=str(p.get('grid_style', 'fixed')),
             preset=p.get('grid_preset', p.get('preset')),
-            search_profile=str(p.get('search_profile', 'medium')),
+            search_profile=str(p.get('search_profile', 'fast')),
+            denoise=denoise,
             direction='long',
         )
         grid_short = _get_raw_result(forecast_barrier_optimize,
@@ -737,7 +773,8 @@ def template_basic(  # noqa: C901
             top_k=int(p.get('top_k', 5)),
             grid_style=str(p.get('grid_style', 'fixed')),
             preset=p.get('grid_preset', p.get('preset')),
-            search_profile=str(p.get('search_profile', 'medium')),
+            search_profile=str(p.get('search_profile', 'fast')),
+            denoise=denoise,
             direction='short',
         )
     sec_bar: Dict[str, Any] = {}
@@ -779,7 +816,7 @@ def template_basic(  # noqa: C901
                 )
     sec_bar['mode'] = mode_val
     sec_bar['method'] = barrier_method
-    sec_bar['search_profile'] = str(p.get('search_profile', 'medium'))
+    sec_bar['search_profile'] = str(p.get('search_profile', 'fast'))
     sec_bar['note'] = (
         "Report barriers are produced by an independent optimization run; "
         "standalone forecast_barrier_optimize may yield different candidates. "
@@ -789,30 +826,66 @@ def template_basic(  # noqa: C901
 
     # Patterns
     from ..patterns import patterns_detect
-    pats = (
-        _get_raw_result(
-            patterns_detect,
-            symbol=symbol,
-            timeframe=tf,
-            mode='candlestick',
-            detail='compact',
-            lookback=int(p.get('patterns_limit', 120)),
-            start=start,
-            end=end,
-        )
-        if report_section_enabled(p, 'patterns')
-        else {'error': 'patterns section not requested'}
-    )
-    if 'error' in pats:
-        report['sections']['patterns'] = {'error': pats['error']}
-    else:
-        recent_patterns = pats.get('recent_patterns') if isinstance(pats, dict) else None
-        if isinstance(recent_patterns, list):
-            detections = [row for row in recent_patterns[:5] if isinstance(row, dict)]
+    pattern_mode = str(p.get('patterns_mode') or 'candlestick').strip() or 'candlestick'
+    extra_modes = p.get('patterns_extra_modes') or []
+    if isinstance(extra_modes, str):
+        extra_modes = [item.strip() for item in extra_modes.replace(',', ' ').split() if item.strip()]
+    pattern_modes = [pattern_mode]
+    for extra_mode in extra_modes:
+        extra_name = str(extra_mode).strip()
+        if extra_name and extra_name not in pattern_modes:
+            pattern_modes.append(extra_name)
+    last_n_bars = p.get('patterns_last_n_bars', 5 if pattern_mode == 'candlestick' else None)
+    try:
+        last_n_value = int(last_n_bars) if last_n_bars is not None else None
+    except Exception:
+        last_n_value = None
+    detections: List[Dict[str, Any]] = []
+    pattern_errors: List[Dict[str, str]] = []
+    if report_section_enabled(p, 'patterns'):
+        for mode_name in pattern_modes:
+            pattern_kwargs: Dict[str, Any] = {
+                "symbol": symbol,
+                "timeframe": tf,
+                "mode": mode_name,
+                "detail": "compact",
+                "lookback": int(p.get("patterns_limit", 120)),
+                "start": start,
+                "end": end,
+                "top_k": int(p.get("patterns_top_k", 5)),
+            }
+            if last_n_value is not None and mode_name == "candlestick":
+                pattern_kwargs["last_n_bars"] = last_n_value
+            pats = _get_raw_result(patterns_detect, **pattern_kwargs)
+            if "error" in pats:
+                pattern_errors.append(
+                    {"mode": mode_name, "error": str(pats.get("error") or "pattern detection failed")}
+                )
+                continue
+            detections.extend(extract_report_pattern_rows(pats, limit=5))
+        if detections:
+            report["sections"]["patterns"] = {
+                "modes": pattern_modes,
+                "recent": detections[:5],
+            }
+        elif pattern_errors:
+            report["sections"]["patterns"] = {
+                "error": pattern_errors[0]["error"],
+                "modes": pattern_modes,
+                "errors": pattern_errors,
+            }
         else:
-            rows = parse_table_tail(pats, tail=20)
-            detections = rows[-5:] if rows else []
-        report['sections']['patterns'] = {'recent': detections}
+            report["sections"]["patterns"] = {"modes": pattern_modes, "recent": []}
+
+    attach_optional_report_sections(
+        report,
+        call=_get_raw_result,
+        symbol=symbol,
+        timeframe=tf,
+        params=p,
+        start=start,
+        end=end,
+    )
 
     for section_name in list(report['sections']):
         if not report_section_enabled(p, section_name):

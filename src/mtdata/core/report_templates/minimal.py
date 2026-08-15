@@ -60,10 +60,7 @@ def template_minimal(
         "sections": {},
     }
 
-    indicators = resolve_report_context_indicators(
-        p,
-        default="ema(20),ema(50),rsi(14),macd(12,26,9)",
-    )
+    indicators = resolve_report_context_indicators(p)
     from ..data import data_fetch_candles
 
     ctx = (

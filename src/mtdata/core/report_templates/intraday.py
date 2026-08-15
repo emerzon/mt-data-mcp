@@ -18,6 +18,8 @@ def template_intraday(
         'backtest_spacing': 10,
         'backtest_rmse_tolerance': 0.05,
         'patterns_limit': 150,
+        'patterns_mode': 'candlestick',
+        'patterns_last_n_bars': 5,
         'mode': 'pct',
         # Dynamic defaults for volatility grid
         'grid_style': 'volatility',

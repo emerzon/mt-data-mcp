@@ -18,6 +18,7 @@ def template_swing(
         'backtest_spacing': 20,
         'backtest_rmse_tolerance': 0.05,
         'patterns_limit': 250,
+        'patterns_mode': 'classic',
         'mode': 'pct',
         'tp_min': 0.5, 'tp_max': 3.0, 'tp_steps': 6,
         'sl_min': 0.5, 'sl_max': 3.0, 'sl_steps': 6,

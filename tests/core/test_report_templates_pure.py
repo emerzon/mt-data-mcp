@@ -26,7 +26,6 @@ from mtdata.core.report.trend import (
 )
 from mtdata.core.report.utils import report_execution_scope
 from mtdata.core.report_templates.basic import (
-    _ema,
     _get_raw_result,
 )
 from mtdata.utils.coercion import safe_float as _safe_float
@@ -108,49 +107,6 @@ class TestSafeFloat:
     )
     def test_rejects_or_defaults_uncoercible_values(self, value, default, expected):
         assert _safe_float(value, default=default) == expected
-
-
-# ===== _ema =================================================================
-
-class TestEma:
-    def test_empty(self):
-        assert _ema([], 10) == []
-
-    def test_single_value(self):
-        assert _ema([5.0], 10) == [5.0]
-
-    def test_length_one_passthrough(self):
-        vals = [1.0, 2.0, 3.0]
-        assert _ema(vals, 1) == vals
-
-    def test_length_zero_passthrough(self):
-        vals = [1.0, 2.0, 3.0]
-        assert _ema(vals, 0) == vals
-
-    def test_constant_series(self):
-        vals = [5.0] * 10
-        result = _ema(vals, 5)
-        assert len(result) == 10
-        for v in result:
-            assert abs(v - 5.0) < 1e-9
-
-    def test_increasing_series_smoothing(self):
-        vals = [float(i) for i in range(20)]
-        result = _ema(vals, 5)
-        assert len(result) == 20
-        # EMA of increasing series should lag behind actual values
-        assert result[-1] < vals[-1]
-        assert result[-1] > vals[0]
-
-    def test_output_length_matches_input(self):
-        vals = [1.0, 3.0, 2.0, 4.0, 3.5]
-        result = _ema(vals, 3)
-        assert len(result) == len(vals)
-
-    def test_first_value_equals_input(self):
-        vals = [10.0, 20.0, 30.0]
-        result = _ema(vals, 5)
-        assert result[0] == 10.0
 
 
 # ===== _compute_tr ===========================================================
@@ -598,10 +554,10 @@ def _mock_barrier_data():
 
 def _mock_patterns_data():
     return {
-        "rows": [
-            {"pattern": "hammer", "signal": "bullish", "time": "2024-01-10"},
+        "top_patterns": [
+            {"name": "hammer", "direction": "bullish", "match_score": 0.8, "time": "2024-01-10"},
         ],
-        "count": 1,
+        "n_patterns": 1,
     }
 
 
@@ -1408,6 +1364,57 @@ class TestTemplateBasic:
 
         pats = report["sections"].get("patterns", {})
         assert "recent" in pats or "error" in pats
+        assert pats.get("recent")
+        assert pats["recent"][0]["name"] == "hammer"
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_basic_single_method_skips_backtest_and_forwards_denoise(
+        self, mock_mtf, mock_now, mock_raw,
+    ):
+        denoise = {"method": "kalman"}
+        called = []
+
+        def raw_side_effect(func, *args, **kwargs):
+            name = getattr(func, "__name__", "")
+            called.append((name, dict(kwargs)))
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "generate" in name.lower():
+                return _mock_forecast_data()
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "barrier" in name.lower():
+                return _mock_barrier_data()
+            if "confluence" in name.lower():
+                return {"levels": []}
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic(
+            "EURUSD",
+            12,
+            denoise,
+            {"methods": "theta"},
+        )
+
+        assert not any(name == "forecast_backtest_run" for name, _kwargs in called)
+        assert report["sections"]["backtest"]["reason"] == "single_method_direct_forecast"
+        assert report["sections"]["forecast"]["method"] == "theta"
+        forecast_call = next(kwargs for name, kwargs in called if name == "forecast_generate")
+        vol_call = next(kwargs for name, kwargs in called if name == "forecast_volatility_estimate")
+        barrier_call = next(kwargs for name, kwargs in called if "barrier" in name)
+        assert forecast_call["denoise"] == denoise
+        assert vol_call["denoise"] == denoise
+        assert barrier_call["denoise"] == denoise
+        pattern_call = next(kwargs for name, kwargs in called if name == "patterns_detect")
+        assert pattern_call["last_n_bars"] == 5
 
 
 # ===== template_advanced (mocked) ============================================
@@ -1480,6 +1487,13 @@ class TestTemplateAdvanced:
 
         conf = report["sections"].get("forecast_conformal", {})
         assert "method" in conf or "error" in conf
+        conformal_call = next(
+            call
+            for call in mock_raw.call_args_list
+            if "conformal" in getattr(call.args[0], "__name__", "").lower()
+        )
+        assert conformal_call.kwargs["spacing"] == 12
+        assert conformal_call.kwargs["denoise"] is None
 
     @patch(f"{_ADV_MODULE}.template_basic")
     @patch(f"{_ADV_MODULE}._get_raw_result")
@@ -1586,7 +1600,7 @@ _COMMON_MODULE = "mtdata.core.report_templates.common"
 
 class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}._get_tick_size")
     def test_bounded_scalping_skips_live_market_calls(
         self, mock_tick_size, mock_snapshot, mock_build
@@ -1607,7 +1621,7 @@ class TestTemplateScalping:
         assert mock_build.call_args.kwargs["snapshot"] == {}
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_returns_report(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1630,7 +1644,7 @@ class TestTemplateScalping:
         assert params["sl_max"] == 160.0
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.00001)
     def test_scalping_preserves_user_barriers(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1644,7 +1658,7 @@ class TestTemplateScalping:
         assert mock_build.call_args.args[3]["tp_min"] == 7.0
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_default_timeframe_m5(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1662,7 +1676,7 @@ class TestTemplateScalping:
         assert mock_build.called
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=1.0)
     def test_scalping_high_price_adjusts_pip_levels(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1678,7 +1692,7 @@ class TestTemplateScalping:
         assert mock_build.called
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_pct_mode_no_adjustment(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1692,7 +1706,7 @@ class TestTemplateScalping:
         assert mock_build.called
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_snapshot_error_still_runs(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1706,7 +1720,7 @@ class TestTemplateScalping:
         assert mock_build.called
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
-    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.report_market_quote")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=1.0)
     def test_scalping_no_spread_ticks_uses_price_based(self, mock_pip, mock_merge, mock_snap, mock_build):
@@ -1721,22 +1735,6 @@ class TestTemplateScalping:
 
 
 # ===== Edge cases and additional coverage ====================================
-
-class TestEmaEdge:
-    def test_two_values(self):
-        result = _ema([10.0, 20.0], 3)
-        assert len(result) == 2
-        assert result[0] == 10.0
-        k = 2.0 / 4.0  # 2/(3+1)
-        expected = 10.0 + k * (20.0 - 10.0)
-        assert abs(result[1] - expected) < 1e-9
-
-    def test_large_length(self):
-        vals = [100.0 + i for i in range(5)]
-        result = _ema(vals, 100)
-        # Very large length → very slow decay, stays close to first value
-        assert result[-1] < vals[-1]
-
 
 class TestComputeTrEdge:
     def test_all_none_close_raises(self):

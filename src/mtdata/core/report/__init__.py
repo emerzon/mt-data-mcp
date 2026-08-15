@@ -76,18 +76,19 @@ def report_generate(
 ) -> Union[str, Dict[str, Any]]:
     """Generate fast context+forecast; use template=basic for broader analysis.
 
-    - template: 'minimal' (default fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
-                'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns),
-                'advanced' (adds regimes, HAR-RV, conformal),
-                'scalping' (specialized short-horizon barrier logic), or a basic-pipeline preset:
-                'intraday' | 'swing' | 'position' (different timeframe, lookback, backtest, and barrier defaults;
-                the same section contract as basic).
+    - template: 'minimal' (default fast path: context + direct forecast),
+                'basic' (context, daily pivots, confluence, one vol estimator, optional backtest,
+                forecast, fast barrier search, recent patterns),
+                'advanced' (adds regimes, HAR-RV, conformal unless the forecast already has intervals),
+                'scalping' (M5 quote/DOM/session gates and short-horizon barriers),
+                'intraday' (H1 plus session, news, and session seasonality),
+                'swing' | 'position' (higher-timeframe confluence, volume profile, and news).
     - params: optional dict for template/sub-tool overrides:
               timeframe, methods, context_limit/context_tail, backtest_steps/backtest_spacing,
-              barrier_method/search_profile/grid_style/TP-SL grid keys, patterns_limit,
+              barrier_method/search_profile/grid_style/TP-SL grid keys, patterns_mode/patterns_limit,
               extra_timeframes/pivot_timeframes, and advanced regime/conformal keys
               (regime_limit, regime_lookback, cp_threshold, hmm_states, conformal_*).
-    - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
+    - denoise: pass-through to candles, forecast, backtest, volatility, and barriers.
     - max_runtime: cooperative seconds budget; expensive sections that do not fit are omitted.
     - allow_partial: defaults true so usable sections survive nested failures; set false for strict runs.
     - progress: emit sub-tool start/finish lines to stderr.
