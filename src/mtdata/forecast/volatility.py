@@ -15,7 +15,7 @@ from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
 )
-from ..utils.denoise import apply_denoise
+from ..utils.denoise import apply_denoise, effective_denoise_base_col
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.freshness import (
     closed_session_context,
@@ -475,12 +475,42 @@ def _bars_per_session_from_annualization(
     return float(bars_per_year_value) / sessions_per_year
 
 
-def _daily_realized_variance(frame: pd.DataFrame) -> tuple[pd.Series, int]:
+_OHLC_VOLATILITY_METHODS = frozenset({"parkinson", "gk", "rs", "yang_zhang", "har_rv"})
+
+
+def _volatility_denoise_spec(
+    spec: Optional[Dict[str, Any]],
+    *,
+    method: str,
+    user_columns: Any,
+) -> Optional[Dict[str, Any]]:
+    if not spec:
+        return spec
+    if method in _OHLC_VOLATILITY_METHODS and user_columns is None:
+        widened = dict(spec)
+        widened["columns"] = "ohlc"
+        return widened
+    return spec
+
+
+def _volatility_price_column(
+    frame: pd.DataFrame,
+    spec: Optional[Dict[str, Any]],
+    name: str,
+) -> str:
+    return effective_denoise_base_col(frame, spec, base_col=name)
+
+
+def _daily_realized_variance(
+    frame: pd.DataFrame,
+    *,
+    close_col: str = "close",
+) -> tuple[pd.Series, int]:
     """Calculate intraday RV without treating an overnight gap as an intraday return."""
     values = pd.DataFrame(
         {
             "time": pd.to_numeric(frame.get("time"), errors="coerce"),
-            "close": pd.to_numeric(frame.get("close"), errors="coerce"),
+            "close": pd.to_numeric(frame.get(close_col), errors="coerce"),
         }
     ).dropna()
     values = values.sort_values("time", kind="stable")
@@ -901,6 +931,9 @@ def forecast_volatility(  # noqa: C901
     Meta: ensemble aggregates multiple successful component volatility forecasts.
     """
     try:
+        user_denoise_columns = (
+            denoise.get("columns") if isinstance(denoise, dict) and "columns" in denoise else None
+        )
         try:
             denoise = _normalize_denoise_spec(
                 denoise,
@@ -1206,7 +1239,8 @@ def forecast_volatility(  # noqa: C901
             )
             if denoise:
                 apply_denoise(df, denoise, default_when='pre_ti')
-            r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
+            close_col = _volatility_price_column(df, denoise, "close")
+            r = _log_returns_from_prices(df[close_col].astype(float).to_numpy())
             r = r[np.isfinite(r)]
             if r.size < 10:
                 return {"error": "Insufficient returns to estimate volatility proxy"}
@@ -1393,14 +1427,16 @@ def forecast_volatility(  # noqa: C901
 
         if method_l == 'har_rv':
             dn_spec_used = None
-            denoise_columns_provided = isinstance(denoise, dict) and 'columns' in denoise
             if denoise is not None:
                 try:
                     dn_spec_used = _normalize_denoise_spec(denoise, default_when='pre_ti')
                 except Exception:
                     dn_spec_used = None
-                if dn_spec_used and not denoise_columns_provided:
-                    dn_spec_used['columns'] = ['open', 'high', 'low', 'close']
+                dn_spec_used = _volatility_denoise_spec(
+                    dn_spec_used,
+                    method=method_l,
+                    user_columns=user_denoise_columns,
+                )
 
             try:
                 rv_tf = str(p.get('rv_timeframe', 'M5')).upper()
@@ -1445,7 +1481,10 @@ def forecast_volatility(  # noqa: C901
                 )
                 if len(dfrv) < 10:
                     return {"error": "Insufficient intraday bars for RV"}
-                daily_rv, realized_returns = _daily_realized_variance(dfrv)
+                daily_rv, realized_returns = _daily_realized_variance(
+                    dfrv,
+                    close_col=_volatility_price_column(dfrv, dn_spec_used, "close"),
+                )
                 if len(daily_rv) < max(30, m + 5):
                     return {"error": "Not enough daily RV observations for HAR-RV"}
                 RV = daily_rv.to_numpy(dtype=float)
@@ -1556,13 +1595,17 @@ def forecast_volatility(  # noqa: C901
                 dn_spec_used = _normalize_denoise_spec(denoise, default_when='pre_ti')
             except Exception:
                 dn_spec_used = None
+            dn_spec_used = _volatility_denoise_spec(
+                dn_spec_used,
+                method=method_l,
+                user_columns=user_denoise_columns,
+            )
             if dn_spec_used:
-                if method_l in {'parkinson','gk','rs','yang_zhang'} and not dn_spec_used.get('columns'):
-                    dn_spec_used['columns'] = ['open','high','low','close']
                 apply_denoise(df, dn_spec_used, default_when='pre_ti')
 
         # Compute returns and helpers
-        r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
+        close_col = _volatility_price_column(df, dn_spec_used, "close")
+        r = _log_returns_from_prices(df[close_col].astype(float).to_numpy())
         r = r[np.isfinite(r)]
         if r.size < 5:
             return {"error": "Insufficient returns to estimate volatility"}
@@ -1615,7 +1658,10 @@ def forecast_volatility(  # noqa: C901
             window = int(p.get('window', 20))
             if window < 1:
                 return {"error": "window must be at least 1 bar."}
-            o = df['open'].astype(float).to_numpy(); h = df['high'].astype(float).to_numpy(); l = df['low'].astype(float).to_numpy(); c = df['close'].astype(float).to_numpy()
+            o = df[_volatility_price_column(df, dn_spec_used, "open")].astype(float).to_numpy()
+            h = df[_volatility_price_column(df, dn_spec_used, "high")].astype(float).to_numpy()
+            l = df[_volatility_price_column(df, dn_spec_used, "low")].astype(float).to_numpy()
+            c = df[_volatility_price_column(df, dn_spec_used, "close")].astype(float).to_numpy()
             if method_l == 'parkinson':
                 v = _parkinson_sigma_sq(h, l)
             elif method_l == 'gk':

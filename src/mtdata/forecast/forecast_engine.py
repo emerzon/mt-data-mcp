@@ -21,6 +21,7 @@ from ..shared.validators import (
 from ..utils.denoise import (
     apply_denoise,
     consume_denoise_warnings,
+    effective_denoise_base_col,
 )
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
@@ -324,7 +325,6 @@ def _resolve_history_context(
         df = prefetched_df.copy()
         if cap_explicit_range and (start or end) and len(df) > int(need):
             df = df.iloc[-int(need):].reset_index(drop=True)
-        base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
         dn_spec_used = None
         if prefetched_denoise_spec:
             dn_spec_used = _normalize_denoise_spec(
@@ -335,8 +335,22 @@ def _resolve_history_context(
             normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
             added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
             dn_spec_used = normalized
-            if len(added) > 0 and base_col == 'close' and f"{base_col}_dn" in added:
-                base_col = f"{base_col}_dn"
+            if not prefetched_base_col:
+                base_col = effective_denoise_base_col(
+                    df,
+                    normalized,
+                    base_col='close',
+                    added_columns=added,
+                )
+                return df, base_col, dn_spec_used
+        if prefetched_base_col:
+            base_col = prefetched_base_col
+        else:
+            base_col = effective_denoise_base_col(
+                df, dn_spec_used, base_col='close'
+            )
+            if base_col == 'close' and 'close_dn' in df.columns:
+                base_col = 'close_dn'
         return df, base_col, dn_spec_used
 
     history_kwargs: Dict[str, Any] = {}
@@ -354,8 +368,12 @@ def _resolve_history_context(
         normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
         added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
         dn_spec_used = normalized
-        if len(added) > 0 and f"{base_col}_dn" in added:
-            base_col = f"{base_col}_dn"
+        base_col = effective_denoise_base_col(
+            df,
+            normalized,
+            base_col='close',
+            added_columns=added,
+        )
     return df, base_col, dn_spec_used
 
 

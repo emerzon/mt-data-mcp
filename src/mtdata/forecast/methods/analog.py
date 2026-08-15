@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ...utils.denoise import is_close_based_denoise_column
 from ...utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ...utils.mt5 import _mt5_epoch_to_utc
 from ..forecast_registry import ForecastRegistry
@@ -836,10 +837,15 @@ class AnalogMethod(ForecastMethod):
             for key, value in (raw_history_denoise_specs_by_timeframe.items() if isinstance(raw_history_denoise_specs_by_timeframe, dict) else [])
         }
 
-        if base_col and base_col not in {"close", "close_dn"}:
+        if base_col and not is_close_based_denoise_column(str(base_col), denoise_spec if isinstance(denoise_spec, dict) else None):
             raise ValueError(f"Analog method requires a close-based price series; unsupported base column '{base_col}'")
-        if base_col == "close_dn" and not denoise_spec and history_df is None:
-            raise ValueError("Analog method requires a denoise spec when using 'close_dn' query series")
+        if (
+            base_col
+            and str(base_col) != "close"
+            and not denoise_spec
+            and history_df is None
+        ):
+            raise ValueError("Analog method requires a denoise spec when using a denoised close series")
         if len(series) < window_size:
             raise ValueError(
                 f"Analog method requires at least {window_size} price points for the primary query; received {len(series)}"

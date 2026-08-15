@@ -788,7 +788,7 @@ def run_patterns_detect(  # noqa: C901
         except ValueError as exc:
             return {"error": f"Invalid Elliott config: {exc}"}
         cfg.top_k = max(int(cfg.top_k), int(request.top_k))
-        cfg._external_denoise_applied = bool(request.denoise)
+        cfg._external_denoise_applied = False
         elliott_user_cfg = request.config if isinstance(request.config, dict) else {}
         if "recent_bars" not in elliott_user_cfg:
             cfg.recent_bars = max(3, min(20, round(int(request.lookback) * 0.05)))
@@ -808,6 +808,9 @@ def run_patterns_detect(  # noqa: C901
             )
             if err:
                 return err
+            cfg._external_denoise_applied = bool(
+                getattr(df, "attrs", {}).get("pattern_denoise_applied")
+            )
 
             out_list = deps.format_elliott_patterns(df, cfg)
             resp = deps.build_pattern_response(
@@ -1063,7 +1066,7 @@ def run_patterns_detect(  # noqa: C901
                 tf: f"Invalid Elliott config: {exc}" for tf in timeframes
             }
         elliott_cfg.top_k = max(int(elliott_cfg.top_k), int(request.top_k))
-        elliott_cfg._external_denoise_applied = bool(request.denoise)
+        elliott_cfg._external_denoise_applied = False
 
         classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
         classic_config_error_msg: Optional[str] = None

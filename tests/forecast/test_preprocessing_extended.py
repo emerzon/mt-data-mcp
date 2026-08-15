@@ -694,6 +694,14 @@ class TestApplyPreprocessing:
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close_dn"
 
+    def test_denoise_custom_suffix(self):
+        df = _make_df(20)
+        spec = {"method": "ema", "suffix": "_filtered", "keep_original": True}
+        with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value=spec), \
+             patch("mtdata.forecast.forecast_preprocessing.apply_denoise", return_value=["close_filtered"]):
+            col = apply_preprocessing(df, "price", "close", spec)
+        assert col == "close_filtered"
+
     def test_denoise_normalize_exception(self):
         """Invalid denoise configuration is not replaced by raw data."""
         df = _make_df(20)

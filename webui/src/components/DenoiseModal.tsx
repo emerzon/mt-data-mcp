@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getDenoiseMethods, getWavelets } from '../api/client'
 import type { DenoiseSpecUI, ParamDef } from '../types'
+import { defaultDenoiseCausality } from '../lib/denoiseSpec'
 import { coerce } from '../lib/utils'
 import { useEscapeKey } from '../lib/useEscapeKey'
 
@@ -23,14 +24,18 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
     Array.isArray(value?.columns) ? value?.columns.join(',') : (value?.columns as string) || 'close'
   )
   const [when, setWhen] = useState<'pre_ti' | 'post_ti'>(value?.when || 'post_ti')
-  const [causality, setCausality] = useState<'zero_phase' | 'causal'>(value?.causality || 'zero_phase')
+  const [causality, setCausality] = useState<'zero_phase' | 'causal'>('causal')
   const [keepOriginal, setKeepOriginal] = useState<boolean>(value?.keep_original ?? true)
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
   useEscapeKey(open, onClose)
 
-  const paramDefs: ParamDef[] = useMemo(
-    () => methods.find(m => m.method === method)?.params || [],
+  const selectedMeta = useMemo(
+    () => methods.find(m => m.method === method),
     [methods, method]
+  )
+  const paramDefs: ParamDef[] = useMemo(
+    () => selectedMeta?.params || [],
+    [selectedMeta]
   )
 
   const waveletEnabled = method === 'wavelet'
@@ -39,20 +44,26 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
 
   useEffect(() => {
     if (!open) return
-    setMethod(value?.method || '')
+    const nextMethod = value?.method || ''
+    const meta = (methodData?.methods ?? []).find(item => item.method === nextMethod)
+    const nextCausality =
+      value?.causality === 'causal' || value?.causality === 'zero_phase'
+        ? value.causality
+        : defaultDenoiseCausality(nextMethod, meta)
+    setMethod(nextMethod)
     setParams(value?.params || {})
     setColumns(Array.isArray(value?.columns) ? value?.columns.join(',') : (value?.columns as string) || 'close')
     setWhen(value?.when || 'post_ti')
-    setCausality(value?.causality || 'zero_phase')
+    setCausality(nextCausality)
     setKeepOriginal(value?.keep_original ?? true)
     const advancedActive = Boolean(
       value?.columns ||
         (value?.when && value?.when !== 'post_ti') ||
-        (value?.causality && value?.causality !== 'zero_phase') ||
+        (value?.causality && value.causality !== defaultDenoiseCausality(nextMethod, meta)) ||
         value?.keep_original === false
     )
     setShowAdvanced(advancedActive)
-  }, [open, value?.method, value?.params, value?.columns, value?.when, value?.causality, value?.keep_original])
+  }, [open, methodData, value?.method, value?.params, value?.columns, value?.when, value?.causality, value?.keep_original])
 
   if (!open) return null
 
@@ -111,8 +122,11 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
               className="select"
               value={method}
               onChange={e => {
-                setMethod(e.target.value)
+                const next = e.target.value
+                const meta = methods.find(item => item.method === next)
+                setMethod(next)
                 setParams({})
+                setCausality(defaultDenoiseCausality(next, meta))
                 setShowAdvanced(false)
               }}
             >
@@ -163,8 +177,8 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
                     <label className="flex flex-col gap-1">
                       <span className="label">Causality</span>
                       <select className="select" value={causality} onChange={e => setCausality(e.target.value as 'zero_phase' | 'causal')}>
-                        <option value="zero_phase">zero_phase</option>
                         <option value="causal">causal</option>
+                        <option value="zero_phase">zero_phase</option>
                       </select>
                     </label>
                     <label className="flex items-center gap-2">

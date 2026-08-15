@@ -232,6 +232,29 @@ class TestFetchPatternData:
 
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_denoise_is_materialized_onto_close(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        rates = _make_rates_array(200)
+        mock_rates.return_value = rates
+
+        df, err = self._call(
+            "EURUSD",
+            "H1",
+            100,
+            denoise={"method": "sma", "params": {"window": 5}},
+        )
+
+        assert err is None
+        assert df is not None
+        assert df.attrs.get("pattern_denoise_applied") is True
+        assert "close_dn" in df.columns
+        np.testing.assert_allclose(
+            df["close"].to_numpy(dtype=float),
+            df["close_dn"].to_numpy(dtype=float),
+        )
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
     def test_data_quality_warnings_are_attached(self, mock_rates, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
         rates = _make_rates_array(200)

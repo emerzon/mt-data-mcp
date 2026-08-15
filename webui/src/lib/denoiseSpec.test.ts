@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartDenoiseFromMethod } from './denoiseSpec'
+import { chartDenoiseFromMethod, defaultDenoiseCausality } from './denoiseSpec'
 
 describe('chartDenoiseFromMethod', () => {
   it('clears denoise for empty/none', () => {
@@ -45,6 +45,22 @@ describe('chartDenoiseFromMethod', () => {
     const spec = chartDenoiseFromMethod('l1_trend')
     expect(spec?.method).toBe('l1_trend')
     expect(spec?.causality).toBe('zero_phase')
+  })
+
+  it('without metadata defaults dual-mode methods to causal', () => {
+    const spec = chartDenoiseFromMethod('ema')
+    expect(spec?.method).toBe('ema')
+    expect(spec?.causality).toBe('causal')
+  })
+})
+
+describe('defaultDenoiseCausality', () => {
+  it('uses causal for dual-mode methods without metadata', () => {
+    expect(defaultDenoiseCausality('kalman')).toBe('causal')
+  })
+
+  it('uses zero_phase for known non-causal methods without metadata', () => {
+    expect(defaultDenoiseCausality('wavelet')).toBe('zero_phase')
   })
 })
 

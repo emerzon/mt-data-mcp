@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils.denoise import apply_denoise
+from ..utils.denoise import apply_denoise, effective_denoise_base_col
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.indicators import (
     _apply_ta_indicators,
@@ -708,8 +708,12 @@ def apply_preprocessing(
             if denoise_spec
             else []
         )
-        if f"{base_col}_dn" in added:
-            return f"{base_col}_dn"
+        return effective_denoise_base_col(
+            df,
+            denoise_spec,
+            base_col=base_col,
+            added_columns=added,
+        )
     return base_col
 
 

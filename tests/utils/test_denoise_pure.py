@@ -9,6 +9,7 @@ from mtdata.utils.denoise import (
     apply_denoise,
     denoise_list_methods,
     denoise_series,
+    effective_denoise_base_col,
     get_denoise_methods_data,
     normalize_denoise_spec,
     resolve_denoise_base_col,
@@ -20,7 +21,11 @@ from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_lms_filter,
     _adaptive_rls_filter,
 )
-from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
+from mtdata.utils.denoise.filters.decomposition import (
+    _coerce_mode_indices,
+    _ssa_denoise,
+    _vmd_denoise,
+)
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
@@ -202,6 +207,18 @@ class TestNormalizeDenoiseSec:
     def test_dict_columns_string(self):
         out = normalize_denoise_spec({"method": "sma", "columns": "open, high"})
         assert out["columns"] == ["open", "high"]
+
+    def test_preserves_ohlcv_alias(self):
+        out = normalize_denoise_spec({"method": "sma", "columns": "ohlcv"})
+        assert out["columns"] == "ohlcv"
+
+    def test_preserves_list_wrapped_alias(self):
+        out = normalize_denoise_spec({"method": "sma", "columns": ["ohlc"]})
+        assert out["columns"] == "ohlc"
+
+    def test_preserves_all_alias(self):
+        out = normalize_denoise_spec({"method": "sma", "columns": "all"})
+        assert out["columns"] == "all"
 
     def test_none_returns_none(self):
         assert normalize_denoise_spec(None) is None
@@ -547,6 +564,13 @@ class TestDenoiseSeriesDispatch:
         )
         _check_basic(result.values, N)
 
+    def test_emd_missing_backend_raises(self, monkeypatch):
+        s = _make_series(NOISY_SIGNAL)
+        monkeypatch.setattr("mtdata.utils.denoise.filters.decomposition._EMD", None)
+        monkeypatch.setattr("mtdata.utils.denoise.api._EMD", None)
+        with pytest.raises(RuntimeError, match="EMD-signal"):
+            denoise_series(s, method="emd", causality="zero_phase")
+
     def test_loess(self):
         pytest.importorskip("statsmodels")
         s = _make_series(NOISY_SIGNAL)
@@ -710,6 +734,32 @@ class TestApplyDenoise:
         for col in ("open_dn", "high_dn", "low_dn", "close_dn", "volume_dn"):
             assert col in added
 
+    def test_normalize_then_apply_expands_ohlcv_alias(self):
+        df = self._make_df()
+        spec = normalize_denoise_spec(
+            {"method": "sma", "columns": "ohlcv", "params": {"window": 5}}
+        )
+        added = apply_denoise(df, spec)
+        for col in ("open_dn", "high_dn", "low_dn", "close_dn", "volume_dn"):
+            assert col in added
+
+    def test_ohlc_alias_does_not_denoise_volume(self):
+        df = self._make_df()
+        added = apply_denoise(
+            df,
+            {"method": "sma", "params": {"window": 5}, "columns": "ohlc", "keep_original": True},
+        )
+        assert "volume_dn" not in added
+        assert {"open_dn", "high_dn", "low_dn", "close_dn"} <= set(added)
+
+    def test_missing_columns_defaults_to_close_only(self):
+        df = self._make_df()
+        added = apply_denoise(
+            df,
+            {"method": "sma", "params": {"window": 5}, "keep_original": True},
+        )
+        assert added == ["close_dn"]
+
     def test_overwritten_ohlc_geometry_is_repaired(self, monkeypatch):
         df = pd.DataFrame(
             {
@@ -752,6 +802,7 @@ class TestApplyDenoise:
         spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": True, "suffix": "_smooth"}
         added = apply_denoise(df, spec)
         assert "close_smooth" in added
+        assert effective_denoise_base_col(df, spec, added_columns=added) == "close_smooth"
 
     def test_missing_column_skipped(self):
         df = self._make_df()
@@ -892,6 +943,19 @@ class TestResolveDenoisBaseCol:
         spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": False}
         result = resolve_denoise_base_col(df, spec)
         assert result == "close"
+
+    def test_custom_suffix_is_returned(self):
+        df = pd.DataFrame({"close": NOISY_SIGNAL})
+        spec = {
+            "method": "sma",
+            "params": {"window": 5},
+            "columns": ["close"],
+            "keep_original": True,
+            "suffix": "_filtered",
+        }
+        result = resolve_denoise_base_col(df, spec)
+        assert result == "close_filtered"
+        assert "close_filtered" in df.columns
 
 
 def test_run_denoise_handler_rejects_all_nan_series():
@@ -1257,6 +1321,16 @@ class TestWaveletPacketDenoise:
         y = _wavelet_packet_denoise(NOISY_SIGNAL, wavelet="INVALID_WAVELET", level=2,
                                     threshold="auto", mode="soft")
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
+
+
+class TestModeIndexCoercion:
+    def test_scalar_int_and_float(self):
+        assert _coerce_mode_indices(-1) == [-1]
+        assert _coerce_mode_indices(-1.0) == [-1]
+        assert _coerce_mode_indices(0) == [0]
+
+    def test_csv_string(self):
+        assert _coerce_mode_indices("0, 2") == [0, 2]
 
 
 class TestVmdDenoise:

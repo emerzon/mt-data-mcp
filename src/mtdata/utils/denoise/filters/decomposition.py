@@ -1,7 +1,7 @@
 """Signal decomposition filters: EMD, EEMD, CEEMDAN, VMD, SSA."""
 import logging
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,37 @@ except Exception:
 from ..base import _series_like, register_filter
 
 _SSA_DEFAULT_MAX_WINDOW = 256
+
+
+def _coerce_mode_indices(value: Any) -> Optional[List[int]]:
+    """Accept a list, tuple, or scalar index (CLI k=v often yields a float)."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        values = list(value)
+    elif isinstance(value, (bool, np.bool_)):
+        return None
+    elif isinstance(value, (int, np.integer)):
+        values = [int(value)]
+    elif isinstance(value, float) and math.isfinite(value) and float(value).is_integer():
+        values = [int(value)]
+    elif isinstance(value, str):
+        parts = [part.strip() for part in value.replace(",", " ").split() if part.strip()]
+        if not parts:
+            return None
+        try:
+            values = [int(float(part)) for part in parts]
+        except (TypeError, ValueError):
+            return None
+    else:
+        return None
+    out: List[int] = []
+    for item in values:
+        try:
+            out.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _ssa_denoise(
@@ -129,6 +160,8 @@ def _vmd_denoise(  # noqa: C901
             if omega_arr.shape[0] == len(x) and omega_arr.shape[1] != len(x):
                 omega = omega_arr.T
     idx_all = list(range(modes.shape[0]))
+    keep_modes = _coerce_mode_indices(keep_modes)
+    drop_modes = _coerce_mode_indices(drop_modes)
     if omega is not None:
         omega_arr = np.asarray(omega)
         if omega_arr.ndim > 1 and omega_arr.shape[0] != modes.shape[0] and omega_arr.shape[1] == modes.shape[0]:
@@ -143,7 +176,7 @@ def _vmd_denoise(  # noqa: C901
             order = idx_all
     else:
         order = idx_all
-    if isinstance(keep_modes, (list, tuple)) and len(keep_modes) > 0:
+    if keep_modes:
         keep = []
         for idx in keep_modes:
             i = int(idx)
@@ -152,34 +185,30 @@ def _vmd_denoise(  # noqa: C901
             if 0 <= i < modes.shape[0]:
                 keep.append(i)
         idx_sel = keep
-    else:
-        if keep_ratio is not None and drop_modes is None:
-            keep_ratio = max(0.0, min(float(keep_ratio), 1.0))
-            total_energy = float(np.sum(modes ** 2))
-            if total_energy > 0:
-                cumulative = 0.0
-                keep = []
-                for i in order:
-                    cumulative += float(np.sum(modes[i] ** 2))
-                    keep.append(i)
-                    if cumulative / total_energy >= keep_ratio:
-                        break
-                idx_sel = keep
-            else:
-                idx_sel = idx_all
+    elif keep_ratio is not None and drop_modes is None:
+        keep_ratio = max(0.0, min(float(keep_ratio), 1.0))
+        total_energy = float(np.sum(modes ** 2))
+        if total_energy > 0:
+            cumulative = 0.0
+            keep = []
+            for i in order:
+                cumulative += float(np.sum(modes[i] ** 2))
+                keep.append(i)
+                if cumulative / total_energy >= keep_ratio:
+                    break
+            idx_sel = keep
         else:
-            drop = drop_modes if drop_modes is not None else [-1]
-            if isinstance(drop, (list, tuple)):
-                drop_set = set()
-                for idx in drop:
-                    i = int(idx)
-                    if i < 0:
-                        i = modes.shape[0] + i
-                    if 0 <= i < modes.shape[0]:
-                        drop_set.add(i)
-                idx_sel = [i for i in idx_all if i not in drop_set]
-            else:
-                idx_sel = idx_all
+            idx_sel = idx_all
+    else:
+        drop = drop_modes if drop_modes is not None else [-1]
+        drop_set = set()
+        for idx in drop:
+            i = int(idx)
+            if i < 0:
+                i = modes.shape[0] + i
+            if 0 <= i < modes.shape[0]:
+                drop_set.add(i)
+        idx_sel = [i for i in idx_all if i not in drop_set]
     if not idx_sel:
         idx_sel = idx_all
     y = np.asarray(modes[idx_sel].sum(axis=0), dtype=float).reshape(-1)
@@ -240,43 +269,44 @@ def _denoise_emd_family_series(
     method: str,
 ) -> pd.Series:
     del causality
-    if not any(component is not None for component in (_EMD, _EEMD, _CEEMDAN)):
-        return s
+    backend = {"emd": _EMD, "eemd": _EEMD, "ceemdan": _CEEMDAN}.get(method)
+    if backend is None:
+        raise RuntimeError(
+            f"Denoise method '{method}' requires EMD-signal, but it is not installed."
+        )
     xnp = np.asarray(x, dtype=float)
     max_imfs = params.get('max_imfs', 'auto')
     if isinstance(max_imfs, str) and max_imfs == 'auto':
         k = int(max(2, min(10, round(math.log2(len(xnp))))))
     else:
         k = int(max_imfs)
-    if method == 'emd' and _EMD is not None:
-        emd = _EMD()
+    if method == 'emd':
+        emd = backend()
         imfs = emd.emd(xnp, max_imf=k)
-    elif method == 'eemd' and _EEMD is not None:
+    elif method == 'eemd':
         noise_strength = float(params.get('noise_strength', 0.2))
         trials = int(params.get('trials', 100))
         random_state = params.get('random_state')
-        eemd = _EEMD(trials=trials, noise_strength=noise_strength)
+        eemd = backend(trials=trials, noise_strength=noise_strength)
         if random_state is not None:
             eemd.random_state = int(random_state)
         imfs = eemd.eemd(xnp, max_imf=k)
     else:
-        if _CEEMDAN is None:
-            return s
         noise_strength = float(params.get('noise_strength', 0.2))
         trials = int(params.get('trials', 100))
         random_state = params.get('random_state')
-        ce = _CEEMDAN(trials=trials, noise_strength=noise_strength)
+        ce = backend(trials=trials, noise_strength=noise_strength)
         if random_state is not None:
             ce.random_state = int(random_state)
         imfs = ce.ceemdan(xnp, max_imf=k)
     imfs = np.atleast_2d(imfs)
     resid = xnp - imfs.sum(axis=0)
     k_all = list(range(imfs.shape[0]))
-    keep_imfs = params.get('keep_imfs')
-    drop_imfs = params.get('drop_imfs', [0])
-    if isinstance(keep_imfs, (list, tuple)) and len(keep_imfs) > 0:
+    keep_imfs = _coerce_mode_indices(params.get('keep_imfs'))
+    drop_imfs = _coerce_mode_indices(params.get('drop_imfs', [0]))
+    if keep_imfs:
         k_sel = [idx for idx in keep_imfs if 0 <= int(idx) < imfs.shape[0]]
-    elif isinstance(drop_imfs, (list, tuple)) and len(drop_imfs) > 0:
+    elif drop_imfs:
         drop = {int(idx) for idx in drop_imfs}
         k_sel = [idx for idx in k_all if idx not in drop]
     else:

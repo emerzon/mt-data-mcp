@@ -10,7 +10,9 @@ from .api import (
     consume_denoise_warnings,
     denoise_list_methods,
     denoise_series,
+    effective_denoise_base_col,
     get_denoise_methods_data,
+    is_close_based_denoise_column,
     normalize_denoise_spec,
     resolve_denoise_base_col,
 )
@@ -25,6 +27,8 @@ __all__ = [
     "apply_denoise",
     "consume_denoise_warnings",
     "resolve_denoise_base_col",
+    "effective_denoise_base_col",
+    "is_close_based_denoise_column",
     "normalize_denoise_spec",
     "get_denoise_methods_data",
     "denoise_list_methods",

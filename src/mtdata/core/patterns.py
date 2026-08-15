@@ -119,6 +119,38 @@ def _should_drop_last_pattern_bar(
     )
 
 
+def _materialize_denoise_for_detectors(
+    df: pd.DataFrame,
+    spec: Dict[str, Any],
+) -> bool:
+    """Copy suffixed denoise columns onto canonical OHLC for pattern detectors.
+
+    Detectors read ``close``/``high``/``low``. Default keep_original only adds
+    ``close_dn``, so without this copy a denoise request is a no-op. Returns
+    True when the close series used for pivots was replaced.
+    """
+    suffix = str(spec.get("suffix") or "_dn")
+    application = df.attrs.get("denoise_last_application")
+    added = (
+        [str(name) for name in (application.get("added_columns") or [])]
+        if isinstance(application, dict)
+        else []
+    )
+    overwritten = (
+        [str(name) for name in (application.get("overwrote_columns") or [])]
+        if isinstance(application, dict)
+        else []
+    )
+    close_applied = "close" in overwritten
+    for name in ("open", "high", "low", "close", "volume", "tick_volume"):
+        candidate = f"{name}{suffix}"
+        if candidate in added and candidate in df.columns:
+            df[name] = df[candidate]
+            if name == "close":
+                close_applied = True
+    return close_applied
+
+
 def _fetch_pattern_data(  # noqa: C901
     symbol: str,
     timeframe: str,
@@ -214,6 +246,7 @@ def _fetch_pattern_data(  # noqa: C901
             dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
             if dn:
                 apply_denoise_util(df, dn, default_when='pre_ti')
+                df.attrs["pattern_denoise_applied"] = _materialize_denoise_for_detectors(df, dn)
         except Exception as exc:
             warning = f"Denoise failed for pattern detection on {symbol} {timeframe}; raw prices were used."
             logger.warning(warning, exc_info=True)
@@ -221,7 +254,10 @@ def _fetch_pattern_data(  # noqa: C901
     
     # Trim to requested limit
     if len(df) > int(limit):
+        applied = bool(df.attrs.get("pattern_denoise_applied"))
         df = df.iloc[-int(limit):].copy()
+        if applied:
+            df.attrs["pattern_denoise_applied"] = True
 
     # Freshness warning: flag when the most recent bar is unusually old.
     # Uses a generous threshold (7 days) to tolerate weekend/holiday closures.

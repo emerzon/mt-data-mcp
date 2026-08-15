@@ -2468,6 +2468,7 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
             pivot_price_source=str(config.pivot_price_source),
             external_denoise_applied=bool(
                 getattr(config, "_external_denoise_applied", False)
+                or bool(df.attrs.get("pattern_denoise_applied"))
             ),
             fallback_threshold_pct=float(config.min_prominence_pct),
         )
@@ -2509,7 +2510,10 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
             "selected_filter": {
                 "method": (
                     "external_explicit"
-                    if bool(getattr(config, "_external_denoise_applied", False))
+                    if bool(
+                        getattr(config, "_external_denoise_applied", False)
+                        or bool(df.attrs.get("pattern_denoise_applied"))
+                    )
                     else "none"
                 ),
                 "params": {},

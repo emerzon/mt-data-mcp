@@ -7,6 +7,7 @@ import numpy as np
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.market_units import forex_pip_size
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..utils import denoise as _denoise_api
 from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
@@ -1554,10 +1555,14 @@ def forecast_barrier_optimize(  # noqa: C901
         base_col = 'close'
         if denoise:
             try:
-                from ..utils.denoise import apply_denoise as apply_denoise_util
-                added = apply_denoise_util(df, denoise, default_when='pre_ti')
-                if f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
+                normalized = _denoise_api.normalize_denoise_spec(denoise, default_when='pre_ti') or denoise
+                added = _denoise_api.apply_denoise(df, normalized, default_when='pre_ti')
+                base_col = _denoise_api.effective_denoise_base_col(
+                    df,
+                    normalized if isinstance(normalized, dict) else denoise,
+                    base_col='close',
+                    added_columns=added,
+                )
             except Exception as ex:
                 contract_warnings.append(
                     f"Denoise request failed; using raw close prices instead: {ex}"

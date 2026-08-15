@@ -5,6 +5,7 @@ import numpy as np
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
+from ..utils import denoise as _denoise_api
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -228,10 +229,14 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         base_col = 'close'
         if denoise:
             try:
-                from ..utils.denoise import apply_denoise as apply_denoise_util
-                added = apply_denoise_util(df, denoise, default_when='pre_ti')
-                if f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
+                normalized = _denoise_api.normalize_denoise_spec(denoise, default_when='pre_ti') or denoise
+                added = _denoise_api.apply_denoise(df, normalized, default_when='pre_ti')
+                base_col = _denoise_api.effective_denoise_base_col(
+                    df,
+                    normalized if isinstance(normalized, dict) else denoise,
+                    base_col='close',
+                    added_columns=added,
+                )
             except Exception as ex:
                 warnings_out.append(f"Denoise request failed; using raw close prices instead: {ex}")
         prices = df[base_col].astype(float).to_numpy()
@@ -601,10 +606,14 @@ def forecast_barrier_closed_form(
         denoise_error: Optional[str] = None
         if denoise:
             try:
-                from ..utils.denoise import apply_denoise as apply_denoise_util
-                added = apply_denoise_util(df, denoise, default_when='pre_ti')
-                if f"{base_col}_dn" in added:
-                    base_col = f"{base_col}_dn"
+                normalized = _denoise_api.normalize_denoise_spec(denoise, default_when='pre_ti') or denoise
+                added = _denoise_api.apply_denoise(df, normalized, default_when='pre_ti')
+                base_col = _denoise_api.effective_denoise_base_col(
+                    df,
+                    normalized if isinstance(normalized, dict) else denoise,
+                    base_col='close',
+                    added_columns=added,
+                )
                 last_application = df.attrs.get("denoise_last_application")
                 overwritten = (
                     list(last_application.get("overwrote_columns") or [])

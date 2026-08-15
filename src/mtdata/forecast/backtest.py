@@ -727,14 +727,15 @@ def _build_curated_prepared_inputs(
     if expected_return is not None and math.isfinite(float(expected_return)):
         scalars["expected_return"] = float(expected_return)
     if anchor_history is not None and getattr(anchor_history, "empty", True) is False:
-        for col in ("close", "close_dn"):
-            if col in anchor_history.columns:
-                try:
-                    value = float(anchor_history[col].iloc[-1])
-                except Exception:
-                    continue
-                if math.isfinite(value):
-                    scalars[col] = value
+        for col in anchor_history.columns:
+            if str(col) != "close" and not str(col).startswith("close_"):
+                continue
+            try:
+                value = float(anchor_history[col].iloc[-1])
+            except Exception:
+                continue
+            if math.isfinite(value):
+                scalars[col] = value
     return CuratedPreparedInputs(
         scalars=scalars,
         feature_names=_feature_names_from_spec(features),

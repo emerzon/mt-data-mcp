@@ -4,10 +4,49 @@
 
 import type { DenoiseMethodInfo, DenoiseSpecUI } from '../types'
 
+/** Methods that cannot run causally. Keep in sync with `_DENOISE_METHOD_CAUSALITY_SUPPORT`. */
+export const ZERO_PHASE_ONLY_METHODS = new Set([
+  'lowpass_fft',
+  'wavelet',
+  'wavelet_packet',
+  'hp',
+  'whittaker',
+  'l1_trend',
+  'gaussian',
+  'savgol',
+  'loess',
+  'stl',
+  'tv',
+  'ssa',
+  'vmd',
+  'emd',
+  'eemd',
+  'ceemdan',
+])
+
+export function defaultDenoiseCausality(
+  method: string,
+  methodMeta?: DenoiseMethodInfo | null
+): 'causal' | 'zero_phase' {
+  if (
+    methodMeta?.requires_causality_opt_in === true ||
+    methodMeta?.supports_causal === false ||
+    (Array.isArray(methodMeta?.supports?.causality) &&
+      !methodMeta.supports.causality.includes('causal'))
+  ) {
+    return 'zero_phase'
+  }
+  if (methodMeta?.defaults?.causality === 'causal' || methodMeta?.defaults?.causality === 'zero_phase') {
+    return methodMeta.defaults.causality
+  }
+  const name = String(method || '').trim().toLowerCase()
+  return ZERO_PHASE_ONLY_METHODS.has(name) ? 'zero_phase' : 'causal'
+}
+
 /**
  * Build a denoise spec when the user picks a method from the chart Filter menu.
  * Non-causal methods (e.g. l1_trend) require explicit causality='zero_phase' opt-in
- * for the history API; chart research always opts in for retrospective overlays.
+ * for the history API; dual-mode methods default to causal.
  */
 export function chartDenoiseFromMethod(
   method: string,
@@ -17,25 +56,14 @@ export function chartDenoiseFromMethod(
   const name = String(method || '').trim()
   if (!name || name.toLowerCase() === 'none') return undefined
 
-  const hasMeta = Boolean(methodMeta)
-  const requiresOptIn =
-    methodMeta?.requires_causality_opt_in === true ||
-    methodMeta?.supports_causal === false ||
-    (Array.isArray(methodMeta?.supports?.causality) &&
-      !methodMeta!.supports!.causality!.includes('causal'))
-
-  // Chart overlays are retrospective. Non-causal methods must opt into zero_phase;
-  // when method metadata is not loaded yet, prefer zero_phase so filters like
-  // l1_trend do not hit the history API without consent.
+  const resolvedDefault = defaultDenoiseCausality(name, methodMeta)
   let causality: 'zero_phase' | 'causal'
-  if (requiresOptIn || !hasMeta) {
+  if (resolvedDefault === 'zero_phase') {
     causality = 'zero_phase'
   } else if (previous?.method === name && (previous.causality === 'causal' || previous.causality === 'zero_phase')) {
     causality = previous.causality
-  } else if (methodMeta?.defaults?.causality === 'causal' || methodMeta?.defaults?.causality === 'zero_phase') {
-    causality = methodMeta.defaults.causality
   } else {
-    causality = 'causal'
+    causality = resolvedDefault
   }
 
   return {

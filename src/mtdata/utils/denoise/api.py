@@ -92,6 +92,10 @@ _DENOISE_SPEC_KEYS = {
     "keep_original",
     "suffix",
 }
+_COLUMN_ALIASES_OHLC = frozenset({"ohlc", "price"})
+_COLUMN_ALIASES_OHLCV = frozenset({"ohlcv"})
+_COLUMN_ALIASES_ALL = frozenset({"all", "*", "numeric"})
+_COLUMN_ALIASES = _COLUMN_ALIASES_OHLC | _COLUMN_ALIASES_OHLCV | _COLUMN_ALIASES_ALL
 
 _DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
     "ema": {"span": 10},
@@ -187,13 +191,109 @@ _DENOISE_METHOD_CAUSALITY_SUPPORT = {
 }
 
 
+def _as_column_selection(cols: Any) -> Any:
+    """Return a known alias string or a list of concrete column names."""
+    if cols is None:
+        return list(_DENOISE_BASE_DEFAULTS["columns"])
+    if isinstance(cols, str):
+        key = cols.strip().lower()
+        if key in _COLUMN_ALIASES:
+            return key
+        parts = [part.strip() for part in cols.replace(",", " ").split() if part.strip()]
+        return parts if parts else list(_DENOISE_BASE_DEFAULTS["columns"])
+    if isinstance(cols, (list, tuple, set)):
+        values = [str(part).strip() for part in cols if str(part).strip()]
+        if len(values) == 1 and values[0].lower() in _COLUMN_ALIASES:
+            return values[0].lower()
+        return values if values else list(_DENOISE_BASE_DEFAULTS["columns"])
+    return list(_DENOISE_BASE_DEFAULTS["columns"])
+
+
+def _expand_column_selection(cols: Any, df: pd.DataFrame) -> List[str]:
+    """Expand alias strings so apply_denoise always iterates real columns."""
+    selection = _as_column_selection(cols)
+    if not isinstance(selection, str):
+        return list(selection)
+    if selection in _COLUMN_ALIASES_OHLC or selection in _COLUMN_ALIASES_OHLCV:
+        selected = [
+            name for name in ("open", "high", "low", "close") if name in df.columns
+        ]
+        if selection in _COLUMN_ALIASES_OHLCV:
+            if "volume" in df.columns:
+                selected.append("volume")
+            elif "tick_volume" in df.columns:
+                selected.append("tick_volume")
+        return selected if selected else list(_DENOISE_BASE_DEFAULTS["columns"])
+    try:
+        return [
+            column
+            for column in df.columns
+            if column != "time"
+            and not str(column).startswith("_")
+            and pd.api.types.is_numeric_dtype(df[column])
+        ]
+    except Exception:
+        return list(_DENOISE_BASE_DEFAULTS["columns"])
+
+
+def effective_denoise_base_col(
+    df: pd.DataFrame,
+    spec: Optional[Dict[str, Any]],
+    *,
+    base_col: str = "close",
+    added_columns: Optional[List[str]] = None,
+) -> str:
+    """Return the column a consumer should read after denoise was applied."""
+    if not spec or not isinstance(spec, dict):
+        return base_col
+    keep_original = (
+        bool(spec.get("keep_original"))
+        if "keep_original" in spec
+        else bool(_DENOISE_BASE_DEFAULTS["keep_original"])
+    )
+    if not keep_original:
+        return base_col
+    suffix = str(spec.get("suffix") or _DENOISE_BASE_DEFAULTS["suffix"])
+    candidate = f"{base_col}{suffix}"
+    added = added_columns
+    if added is None:
+        application = df.attrs.get("denoise_last_application")
+        if isinstance(application, dict):
+            added = [
+                str(name) for name in (application.get("added_columns") or [])
+            ]
+        else:
+            added = []
+    if candidate in added or candidate in df.columns:
+        return candidate
+    return base_col
+
+
+def is_close_based_denoise_column(
+    column: str,
+    spec: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """True when *column* is close or the denoised close produced by *spec*."""
+    name = str(column or "").strip()
+    if name == "close":
+        return True
+    suffix = str((spec or {}).get("suffix") or _DENOISE_BASE_DEFAULTS["suffix"])
+    if name == f"close{suffix}":
+        return True
+    return name.startswith("close_")
+
+
 def _denoise_availability(name: str) -> tuple[bool, str]:
     if name == 'wavelet':
         return (_pywt is not None, 'PyWavelets')
     if name == 'tv':
         return (_skimage_tv_chambolle is not None, 'scikit-image')
-    if name in ('emd', 'eemd', 'ceemdan'):
-        return (any(x is not None for x in (_EMD, _EEMD, _CEEMDAN)), 'EMD-signal')
+    if name == 'emd':
+        return (_EMD is not None, 'EMD-signal')
+    if name == 'eemd':
+        return (_EEMD is not None, 'EMD-signal')
+    if name == 'ceemdan':
+        return (_CEEMDAN is not None, 'EMD-signal')
     if name in ('hp', 'whittaker'):
         return (_sps is not None and _sps_linalg is not None, 'scipy.sparse')
     if name == 'savgol':
@@ -399,31 +499,7 @@ def apply_denoise(
     if method == 'none':
         return added_cols
     params = spec.get('params') or {}
-    cols = spec.get('columns') or 'ohlcv'
-    # Normalize columns selection
-    if isinstance(cols, str):
-        key = cols.strip().lower()
-        if key in ('ohlcv', 'ohlc', 'price'):
-            selected = []
-            for name in ('open', 'high', 'low', 'close'):
-                if name in df.columns:
-                    selected.append(name)
-            if 'volume' in df.columns:
-                selected.append('volume')
-            elif 'tick_volume' in df.columns:
-                selected.append('tick_volume')
-            cols = selected if selected else ['close']
-        elif key in ('all', '*', 'numeric'):
-            try:
-                cols = [
-                    c for c in df.columns
-                    if c != 'time' and not str(c).startswith('_') and pd.api.types.is_numeric_dtype(df[c])
-                ]
-            except Exception:
-                cols = ['close']
-        else:
-            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
-            cols = parts if parts else ['close']
+    cols = _expand_column_selection(spec.get('columns'), df)
     causality = str(spec.get('causality') or 'causal')
     keep_original = (
         bool(spec.get("keep_original"))
@@ -528,10 +604,12 @@ def resolve_denoise_base_col(
         return base_col
     try:
         added = apply_denoise(df, denoise, default_when=default_when)
-        suffix = str(denoise.get("suffix") or "_dn")
-        denoised_col = f"{base_col}{suffix}"
-        if denoised_col in added:
-            return denoised_col
+        return effective_denoise_base_col(
+            df,
+            denoise,
+            base_col=base_col,
+            added_columns=added,
+        )
     except Exception as ex:
         _append_denoise_warning(
             df,
@@ -611,10 +689,8 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
             params.update(_normalize_denoise_param_aliases(method, supplied_params))
         out['method'] = method
         out['params'] = params
-        cols = out.get('columns')
-        if isinstance(cols, str):
-            parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
-            out['columns'] = parts if parts else ['close']
+        if 'columns' in out:
+            out['columns'] = _as_column_selection(out.get('columns'))
         return out
     # String method name
     try:
@@ -732,6 +808,8 @@ __all__ = [
     "apply_denoise",
     "consume_denoise_warnings",
     "resolve_denoise_base_col",
+    "effective_denoise_base_col",
+    "is_close_based_denoise_column",
     "normalize_denoise_spec",
     "get_denoise_methods_data",
     "denoise_list_methods",
