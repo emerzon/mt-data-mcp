@@ -292,7 +292,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Include earnings already released in the selected period. Defaults to "
         "false; after the US cash close this can empty this-week results."
     ),
-    ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
+    ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, auto, or ensemble.",
     ("forecast_barrier_prob", "barrier"): (
         'Barrier object. Use {"kind":"single_price","level":1.1000} (aliases: '
         'price, barrier) for closed_form, or {"kind":"tp_sl","unit":"pct",'
@@ -389,8 +389,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "and forecast_threshold."
     ),
     ("strategy_validate", "barrier"): (
-        "JSON triple-barrier labeling config with horizon, tp_pct, sl_pct, and "
-        "same_bar_policy; tp_pct/sl_pct are percentage points (0.5 means 0.5%)."
+        "JSON next-open execution barrier for strategy P&L (not labels_triple_barrier). "
+        "Uses horizon, tp_pct, sl_pct, and same_bar_policy; tp_pct/sl_pct are "
+        "percentage points (0.5 means 0.5%). Entry is the next bar's open; timeout "
+        "is mark-to-market return, not a 0 label."
     ),
     ("options_chain", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."

@@ -118,26 +118,34 @@ def barrier_path_payoffs(
     gross[outcomes.wins] = float(reward)
 
     realized_loss = np.full(eval_paths.shape[0], float(risk), dtype=float)
-    if gap_aware_stops and np.any(outcomes.losses):
-        rows = np.flatnonzero(outcomes.losses)
-        exits = eval_paths[rows, outcomes.first_sl[rows]]
-        signed_move = (
-            float(entry_price) - exits
-            if direction == "long"
-            else exits - float(entry_price)
-        )
-        if mode == "pct":
-            observed_loss = signed_move / float(entry_price) * 100.0
-        else:
-            observed_loss = signed_move / float(tick_size)
-        realized_loss[rows] = np.maximum(float(risk), observed_loss)
+    loss_like = outcomes.losses
+    if gap_aware_stops and same_bar_policy == "sl_first":
+        loss_like = outcomes.losses | outcomes.ties
+    if gap_aware_stops and np.any(loss_like):
+        tick_increment = float(tick_size) if mode != "pct" else 0.0
+        can_measure = (
+            mode == "pct" and float(entry_price) > 0.0
+        ) or (mode != "pct" and np.isfinite(tick_increment) and tick_increment > 0.0)
+        if can_measure:
+            rows = np.flatnonzero(loss_like)
+            exits = eval_paths[rows, outcomes.first_sl[rows]]
+            signed_move = (
+                float(entry_price) - exits
+                if direction == "long"
+                else exits - float(entry_price)
+            )
+            if mode == "pct":
+                observed_loss = signed_move / float(entry_price) * 100.0
+            else:
+                observed_loss = signed_move / tick_increment
+            realized_loss[rows] = np.maximum(float(risk), observed_loss)
     gross[outcomes.losses] = -realized_loss[outcomes.losses]
 
     if same_bar_policy == "tp_first":
         gross[outcomes.ties] = float(reward)
         active = outcomes.wins | outcomes.losses | outcomes.ties
     elif same_bar_policy == "sl_first":
-        gross[outcomes.ties] = -float(risk)
+        gross[outcomes.ties] = -realized_loss[outcomes.ties]
         active = outcomes.wins | outcomes.losses | outcomes.ties
     else:
         active = outcomes.wins | outcomes.losses

@@ -479,7 +479,10 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertFalse(result["denoise_applied"])
         self.assertEqual(result["denoise_status"], "failed")
         self.assertEqual(result["denoise_error"], "invalid filter setup")
-        self.assertIn("using raw close prices", result["warnings"][0])
+        self.assertTrue(
+            any("using raw close prices" in str(item) for item in result["warnings"])
+        )
+        self.assertFalse(result.get("usable_for_live_trading"))
 
     def test_gbm_single_barrier_upcross_prob_returns_one_when_barrier_below_start(self):
         self.assertAlmostEqual(

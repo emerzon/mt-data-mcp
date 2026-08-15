@@ -3820,6 +3820,38 @@ def test_forecast_barrier_prob_closed_form_compact_keeps_reference_source():
     assert "last_price_source" not in out
 
 
+def test_forecast_barrier_prob_closed_form_compact_keeps_already_hit_and_warnings():
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "last_price": 1.18,
+        "last_price_source": "candle_close",
+        "barrier": 1.17,
+        "prob_hit": 1.0,
+        "already_hit": True,
+        "warnings": ["Denoise request failed; using raw close prices instead: boom"],
+        "denoise_status": "failed",
+        "denoise_error": "boom",
+        "usable_for_live_trading": False,
+        "execution_blockers": ["live_reference_quote_not_used"],
+    }
+
+    out = forecast_use_cases._apply_barrier_prob_detail(
+        payload,
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="closed_form",
+            barrier={"kind": "single_price", "level": 1.17},
+            detail="compact",
+        ),
+    )
+
+    assert out["already_hit"] is True
+    assert out["denoise_status"] == "failed"
+    assert out["usable_for_live_trading"] is False
+    assert "Denoise request failed" in out["warnings"][0]
+
+
 def test_forecast_barrier_prob_detail_rounds_display_values():
     payload = {
         "success": True,

@@ -27,6 +27,9 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
+from ..utils.barriers import (
+    unresolved_barrier_price_error as _unresolved_barrier_price_error,
+)
 from ..utils.coercion import coerce_finite_float, round_finite
 from ..utils.denoise import (
     consume_denoise_warnings,
@@ -659,6 +662,17 @@ def labels_triple_barrier(  # noqa: C901
                             "tp_ticks/sl_ticks for offset-style barriers."
                         )
                     }
+                resolve_error = _unresolved_barrier_price_error(
+                    tp_abs=tp_abs,
+                    sl_abs=sl_abs,
+                    tp_pct=barrier_values.get("tp_pct"),
+                    sl_pct=barrier_values.get("sl_pct"),
+                    tp_ticks=barrier_values.get("tp_ticks"),
+                    sl_ticks=barrier_values.get("sl_ticks"),
+                    tick_size=trade_tick_size,
+                )
+                if not resolve_error.startswith("Missing barriers"):
+                    return {"error": resolve_error}
                 return {
                     "error": (
                         "Missing barriers. Provide either tp_pct and sl_pct, "
@@ -866,7 +880,10 @@ def labels_triple_barrier(  # noqa: C901
                     "0": {
                         "code": 0,
                         "label": "hold",
-                        "description": "Neither barrier hit within horizon bars (neutral/timeout outcome)",
+                        "description": (
+                            "Unresolved: neither barrier hit within horizon, or both "
+                            "hit on the same bar when same_bar_policy='neutral'"
+                        ),
                     },
                 }
             elif output_mode in {"compact", "standard"}:

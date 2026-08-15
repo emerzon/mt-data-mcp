@@ -881,7 +881,7 @@ class TestAddDynamicArguments:
         [
             ("options_barrier_price", "barrier", "knock-in/knock-out"),
             ("strategy_validate", "candidates", "builtin_strategy"),
-            ("strategy_validate", "barrier", "triple-barrier"),
+            ("strategy_validate", "barrier", "next-open execution"),
         ],
     )
     def test_specialized_barrier_help_is_domain_specific(

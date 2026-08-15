@@ -159,6 +159,39 @@ class TestBarrierTradingCosts(_BarrierTestBase):
             10.0,
         )
 
+    def test_spread_pips_use_point_not_trade_tick_size(self):
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": 1.1}))
+
+        with patch(f"{_BARRIER_OPT_ROOT}._get_tick_size", return_value=0.0001), patch(
+            f"{_BARRIER_OPT_ROOT}._get_symbol_point",
+            return_value=0.00001,
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._symbol_price_precision",
+            return_value=5,
+        ):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                params={"spread_pips": 1.0, "use_live_price": False},
+            )
+
+        expected_pct = 0.0001 / 1.1 * 100.0
+        self.assertAlmostEqual(
+            result["trading_costs"]["cost_per_trade"],
+            expected_pct,
+        )
+
     def test_cost_adjusted_ev_fields(self):
         """When costs present, ev_gross and ev_net should appear in best candidate."""
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')

@@ -90,7 +90,7 @@ price is a regular-session price, as shown by `underlying_price_session`.
 
 ### `options_barrier_price`
 
-Price a barrier option using QuantLib's numerical engine.
+Price a European barrier option with QuantLib's analytic continuous-monitoring engine (`AnalyticBarrierEngine`, Reiner–Rubinstein). This is not the discrete-bar TP/SL first-hit tool; use [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) for that.
 
 By default, QuantLib pricing assumes the `UnitedStates.NYSE` calendar and interprets `maturity_days` as calendar days. Override `--calendar` and `--maturity-basis` for non-US or non-equity workflows.
 When `--valuation-date` is omitted, mtdata uses the selected calendar's local
@@ -124,8 +124,8 @@ mtdata-cli options_barrier_price \
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
 | `--volatility` | 0.2 | Implied volatility (decimal, e.g., 0.2 = 20%) |
-| `--rebate` | 0.0 | Rebate paid at barrier touch |
-| `--valuation-date` | chain observation date | Valuation date in `YYYY-MM-DD` format; when supplied, it must match the provider snapshot date in the selected calendar timezone |
+| `--rebate` | 0.0 | Knock-out: paid if the barrier is hit. Knock-in: paid at expiry only if the barrier is never hit |
+| `--valuation-date` | selected calendar's local date | Valuation date in `YYYY-MM-DD`; omitted uses the calendar local date (not an options-chain snapshot) |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name (for example `UnitedStates.NYSE` or `NullCalendar`) |
 | `--maturity-basis` | `calendar_days` | Interpret `--maturity-days` as `calendar_days` or `business_days` in the selected calendar |
 

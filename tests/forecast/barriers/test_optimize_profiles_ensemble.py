@@ -265,6 +265,14 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
             "common_candidate_aggregate",
         )
         self.assertEqual(result["best"].get("ensemble_member_count"), 2)
+        best = result["best"]
+        partition = [
+            float(best.get("prob_tp_first") or 0.0),
+            float(best.get("prob_sl_first") or 0.0),
+            float(best.get("prob_same_bar") or 0.0),
+            float(best.get("prob_no_hit") or 0.0),
+        ]
+        self.assertAlmostEqual(sum(partition), 1.0, places=6)
         self.assertEqual(
             set(result["best"].get("member_metrics", {})),
             {"mc_gbm", "bootstrap"},

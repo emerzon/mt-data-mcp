@@ -542,6 +542,46 @@ def simulate_gbm_mc(
     }
 
 
+def _finite_positive(value: Any) -> Optional[float]:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(parsed) or parsed <= 0.0:
+        return None
+    return parsed
+
+
+def _annual_heston_to_per_bar(
+    *,
+    kappa: Optional[float],
+    theta: Optional[float],
+    xi: Optional[float],
+    v0: Optional[float],
+    bars_per_year: Optional[float],
+) -> Optional[Dict[str, float]]:
+    """Convert literature/QuantLib annual Heston overrides to the per-bar clock.
+
+    Auto-calibration stays in per-bar units (``dt=1``). User overrides follow the
+    annual convention used by ``options_heston_calibrate`` and the public docs.
+    """
+    bpy = _finite_positive(bars_per_year)
+    if bpy is None or bpy <= 1.0:
+        return None
+    if all(value is None for value in (kappa, theta, xi, v0)):
+        return None
+    converted: Dict[str, float] = {"bars_per_year": float(bpy)}
+    if kappa is not None:
+        converted["kappa"] = float(kappa) / float(bpy)
+    if theta is not None:
+        converted["theta"] = float(theta) / float(bpy)
+    if v0 is not None:
+        converted["v0"] = float(v0) / float(bpy)
+    if xi is not None:
+        converted["xi"] = float(xi) / float(np.sqrt(bpy))
+    return converted
+
+
 def simulate_heston_mc(
     prices: np.ndarray,
     horizon: int,
@@ -553,6 +593,7 @@ def simulate_heston_mc(
     rho: Optional[float] = None,
     v0: Optional[float] = None,
     dt: float = 1.0,
+    bars_per_year: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Simulate a Heston stochastic volatility model using Euler discretization."""
     rng = np.random.RandomState(seed)
@@ -562,9 +603,24 @@ def simulate_heston_mc(
     ret_var = float(np.var(rets, ddof=1))
     ret_var = max(ret_var, 1e-10)
 
-    theta_val = float(theta) if theta is not None else ret_var
+    annual_overrides = _annual_heston_to_per_bar(
+        kappa=kappa,
+        theta=theta,
+        xi=xi,
+        v0=v0,
+        bars_per_year=bars_per_year,
+    )
+    theta_val = (
+        float(annual_overrides["theta"])
+        if annual_overrides is not None and "theta" in annual_overrides
+        else float(theta) if theta is not None else ret_var
+    )
     mu_price = float(mu_log + 0.5 * theta_val)
-    v0_val = float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
+    v0_val = (
+        float(annual_overrides["v0"])
+        if annual_overrides is not None and "v0" in annual_overrides
+        else float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
+    )
     rv = np.clip(rets * rets, 1e-12, None)
     kappa_emp = 2.0
     if rv.size >= 3:
@@ -599,8 +655,16 @@ def simulate_heston_mc(
             if np.isfinite(rho_guess):
                 rho_emp = float(np.clip(rho_guess, -0.99, 0.99))
 
-    kappa_val = float(kappa) if kappa is not None else kappa_emp
-    xi_val = float(xi) if xi is not None else xi_emp
+    kappa_val = (
+        float(annual_overrides["kappa"])
+        if annual_overrides is not None and "kappa" in annual_overrides
+        else float(kappa) if kappa is not None else kappa_emp
+    )
+    xi_val = (
+        float(annual_overrides["xi"])
+        if annual_overrides is not None and "xi" in annual_overrides
+        else float(xi) if xi is not None else xi_emp
+    )
     rho_val = float(rho) if rho is not None else rho_emp
     kappa_val = float(max(1e-6, kappa_val))
     xi_val = float(max(1e-6, xi_val))
@@ -642,6 +706,16 @@ def simulate_heston_mc(
             'xi': xi_val,
             'rho': rho_val,
             'v0': v0_val,
+            'param_time_unit': (
+                'annual_converted_to_per_bar'
+                if annual_overrides is not None
+                else 'per_bar'
+            ),
+            'bars_per_year': (
+                float(annual_overrides['bars_per_year'])
+                if annual_overrides is not None
+                else None
+            ),
         },
     }
 
@@ -662,10 +736,23 @@ def simulate_jump_diffusion_mc(
     _, rets, last_price = _prepare_simulation_history(prices, "jump_diffusion")
 
     mu = float(np.mean(rets))
-    sigma = float(np.std(rets, ddof=1)) + 1e-12
+    sigma_total = float(np.std(rets, ddof=1)) + 1e-12
+    threshold = float(jump_threshold)
 
-    jump_mask = np.abs(rets - mu) > (float(jump_threshold) * sigma)
+    jump_mask = np.abs(rets - mu) > (threshold * sigma_total)
+    cont_rets = rets[~jump_mask]
+    sigma = (
+        float(np.std(cont_rets, ddof=1)) + 1e-12
+        if cont_rets.size >= 2
+        else sigma_total
+    )
+    # Re-threshold with residual vol so jumps are not hidden inside the
+    # contaminated full-sample standard deviation.
+    jump_mask = np.abs(rets - mu) > (threshold * sigma)
     jump_rets = rets[jump_mask]
+    cont_rets = rets[~jump_mask]
+    if cont_rets.size >= 2:
+        sigma = float(np.std(cont_rets, ddof=1)) + 1e-12
     jump_freq = float(jump_rets.size) / float(max(1, rets.size))
     lambda_val = float(jump_lambda) if jump_lambda is not None else float(np.clip(jump_freq, 0.0, 1.0))
     if jump_rets.size >= 3:
@@ -702,6 +789,8 @@ def simulate_jump_diffusion_mc(
         'params': {
             'mu': mu,
             'sigma': sigma,
+            'sigma_total': sigma_total,
+            'diffusion_sigma': sigma,
             'jump_lambda': lambda_val,
             'jump_mu': mu_j,
             'jump_sigma': sigma_j,

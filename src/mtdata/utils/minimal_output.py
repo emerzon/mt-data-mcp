@@ -1331,6 +1331,12 @@ def _normalize_barrier_optimize_payload(
         "viable",
         "no_action",
         "status",
+        "status_reason",
+        "tradable",
+        "usable_for_live_trading",
+        "execution_blockers",
+        "recommendation",
+        "warnings",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):
@@ -1353,6 +1359,9 @@ def _normalize_barrier_optimize_payload(
             "edge",
             "profit_factor",
             "edge_vs_breakeven",
+            "phantom_profit_risk",
+            "ev_timeout_dominated",
+            "warning",
         ]
         out["best"] = {
             key: best.get(key)
@@ -1415,6 +1424,14 @@ def _normalize_barrier_prob_payload(
         "method",
         "warning",
         "warnings",
+        "same_bar_policy",
+        "data_as_of",
+        "usable_for_live_trading",
+        "execution_blockers",
+        "status_reason",
+        "already_hit",
+        "denoise_status",
+        "denoise_error",
         "error",
     ):
         value = payload.get(key)

@@ -55,7 +55,7 @@ You will see three probabilities on a take-profit / stop-loss query:
 | `prob_sl_first` | Share of paths that touched the **loss** line first. |
 | `prob_no_hit` | Share of paths that hit **neither** before time ran out. |
 
-They should add up to about 1. A large `prob_no_hit` usually means the lines are far away or the horizon is short. These are simulation counts, not a broker guarantee.
+With the default `same_bar_policy=sl_first` (or `tp_first`), `prob_tp_first + prob_sl_first + prob_no_hit` is about 1. Under `neutral`, same-bar ties sit in `prob_same_bar` / `prob_unresolved` instead of being assigned to TP or SL, so use `prob_tp_first + prob_sl_first + prob_same_bar + prob_no_hit`. A large `prob_no_hit` usually means the lines are far away or the horizon is short. These are simulation counts, not a broker guarantee.
 
 **Deeper detail** (methods, grids, Kelly / EV objectives) starts below.
 
@@ -94,12 +94,13 @@ We want to compute:
 
 **Mathematical Model**:
 ```
-S_t = S₀ * exp((μ - 0.5σ²)t + σW_t)
+Δ log S = mean(historical log-return) + σ Z
+S_{t+1} = S_t * exp(Δ log S)
 ```
 where:
-- `μ` = drift (mean log-return)
-- `σ` = volatility (std of log-returns)
-- `W_t` = Wiener process (Brownian motion)
+- the drift is the **mean log-return** (no extra −½σ² Itô term; that term is already inside the historical mean)
+- `σ` = sample standard deviation of log-returns
+- `Z` = standard normal draw (antithetic pairs by default in `forecast_barrier_prob`)
 
 **How it works**:
 1. Calibrate μ and σ from historical log-returns
@@ -146,10 +147,11 @@ estimates by accounting for the path between endpoints. TP and SL bridge hits
 are sampled independently, so it does not provide an exact joint two-barrier
 first-passage ordering.
 
-**Key insight**: If we know the price at time T (from simulation), the probability of hitting a barrier between t and t+Δt is:
+**Key insight**: If we know the log-price at the ends of a bar, the probability of hitting a log-barrier `b = ln B` between those closes is:
 ```
-P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
+P(hit | X_t, X_{t+1}) = exp(-2 * (b - X_t)(b - X_{t+1}) / σ²)
 ```
+where `X = ln S` and `σ` is the per-bar log-return standard deviation (Δt = 1 bar).
 
 **How it works**:
 1. Generate GBM paths as normal
@@ -375,6 +377,11 @@ dW_t^1 dW_t^2 = ρ dt
 > mtdata-cli forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
 >   --method heston --barrier '{"kind":"tp_sl","unit":"pct","take_profit":10.0,"stop_loss":5.0}' \
 >   --params "kappa=2.0 theta=0.04 xi=0.3 rho=-0.5"
+>
+> `kappa` / `theta` / `xi` / `v0` overrides use the **annual** QuantLib/literature
+> convention (θ=0.04 ⇒ 20% annual vol) and are converted to the per-bar clock.
+> Omit them to use per-bar auto-calibration. The payload `sim_meta.param_time_unit`
+> reports which family was used.
 > ```
 
 ---
@@ -632,7 +639,7 @@ Choose what to optimize. Each objective answers a different trading question:
 | `ev_per_bar` | `EV / mean_time_in_trade_all_paths` | Fast trades, capital turnover |
 | `profit_factor` | `(P(tp_first)*net_TP) / (P(sl_first)*net_SL)` | Risk/reward ratio focus |
 | `min_loss_prob` | Minimize `P(loss)` | Capital preservation |
-| `utility` | `P(tp_first)*log(1+TP) + P(sl_first)*log(1-SL)` | Risk-averse trading |
+| `utility` | `mean(log1p(path_payoff * unit_to_return))` with `unit_to_return=0.01` in pct mode (so `tp=0.5` is a 0.5% return, not 50%) | Risk-averse trading |
 
 #### Detailed Descriptions
 
@@ -1182,15 +1189,18 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 **Problem**: Paper trading results don't match reality
 
 **Solution**:
-- Reduce TP by spread/2
-- Increase SL by spread/2
-- Or use `tp_ticks`/`sl_ticks` which account for tick size
+- Reduce TP by the live half-spread and increase SL by the same amount, **or**
+- Pass optimize cost params (`spread_pips` / `spread_bps` / `slippage_*` / `commission_*`).
+- `tp_ticks` / `sl_ticks` are `trade_tick_size` distances only. They do **not** subtract spread.
 
 ```bash
-# Example: 20/15 tick-size barriers on EURUSD
+# Tick distances (no automatic spread adjustment)
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
-  --method hmm_mc --barrier '{"kind":"tp_sl","unit":"ticks","take_profit":20,"stop_loss":15}'  # RR = 1.33 after spread
+  --method hmm_mc --barrier '{"kind":"tp_sl","unit":"ticks","take_profit":20,"stop_loss":15}'
+# Cost-aware search (pip/bps inputs on forecast_barrier_optimize)
+mtdata-cli forecast_barrier_optimize EURUSD --timeframe M5 --horizon 12 \
+  --params "spread_pips=1.2,slippage_pips=0.3"
 ```
 
 ---

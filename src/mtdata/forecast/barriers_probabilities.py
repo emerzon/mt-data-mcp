@@ -14,6 +14,7 @@ from ..utils.barriers import (
     normalize_same_bar_policy,
     normalize_trade_direction,
     resolve_same_bar_probabilities,
+    unresolved_barrier_price_error,
     validate_barrier_unit_family_exclusivity,
 )
 from ..utils.barriers import (
@@ -212,9 +213,14 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
 
         if tp_price is None or sl_price is None:
             return {
-                "error": (
-                    "Missing barriers. Provide either tp_pct and sl_pct, "
-                    "tp_abs and sl_abs, or tp_ticks and sl_ticks."
+                "error": unresolved_barrier_price_error(
+                    tp_abs=tp_abs,
+                    sl_abs=sl_abs,
+                    tp_pct=barrier_values.get("tp_pct"),
+                    sl_pct=barrier_values.get("sl_pct"),
+                    tp_ticks=barrier_values.get("tp_ticks"),
+                    sl_ticks=barrier_values.get("sl_ticks"),
+                    tick_size=tick_size,
                 )
             }
         if not _barrier_prices_are_valid(
@@ -242,7 +248,14 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         prices = df[base_col].astype(float).to_numpy()
 
         # Simulate paths
-        sims = int(p.get('n_sims', p.get('sims', 2000)) or 2000)
+        raw_sims = p.get('n_sims', p.get('sims', None))
+        if raw_sims is None:
+            sims = 2000
+        else:
+            try:
+                sims = int(raw_sims)
+            except Exception:
+                return {"error": f"Invalid n_sims: {raw_sims}. Must be >= 1."}
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
         method_key = normalize_barrier_method(method)
@@ -316,6 +329,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     block_size=bs,
                 )
             elif method_key == 'heston':
+                heston_bars_per_year, _ = _annualization_context(timeframe, symbol)
                 sim = _simulate_heston_mc(
                     prices,
                     horizon=horizon_val,
@@ -326,6 +340,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     xi=p.get('xi'),
                     rho=p.get('rho'),
                     v0=p.get('v0'),
+                    bars_per_year=heston_bars_per_year,
                 )
             elif method_key == 'jump_diffusion':
                 sim = _simulate_jump_diffusion_mc(
@@ -530,6 +545,12 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 "Barrier hits are evaluated at simulated bar closes; transient "
                 "intra-bar touches may be undercounted."
             )
+            if method_key in {"jump_diffusion", "bootstrap"}:
+                warnings_out.append(
+                    "Close-only jump or bootstrap paths can gap through the nearer "
+                    "barrier and score the far barrier as first; treat first-hit "
+                    "order as discrete-close, not continuous first-passage."
+                )
         if 'model_summary' in sim:
             out['model_summary'] = str(sim['model_summary'])
         # Expose simulation model metadata (e.g. HMM fitted vs requested states)
@@ -541,6 +562,11 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         if 'sigma' in sim:
             import numpy as _np
             sim_meta['sigma'] = [float(v) for v in _np.asarray(sim['sigma']).ravel()]
+        sim_params = sim.get("params") if isinstance(sim, dict) else None
+        if isinstance(sim_params, dict):
+            for key in ("param_time_unit", "bars_per_year", "sigma_total", "diffusion_sigma"):
+                if key in sim_params:
+                    sim_meta[key] = sim_params[key]
         if sim_meta:
             out['sim_meta'] = sim_meta
             requested_states = sim_meta.get("requested_n_states")
@@ -688,6 +714,12 @@ def forecast_barrier_closed_form(
             "prob_hit": float(prob),
         }
         result.update(freshness_context)
+        _apply_barrier_freshness_contract(
+            result,
+            history_context=freshness_context,
+            reference_context={},
+            last_price_source="candle_close",
+        )
         if denoise:
             result["denoise_applied"] = denoise_applied
             result["denoise_status"] = (
@@ -699,10 +731,14 @@ def forecast_barrier_closed_form(
             )
             if denoise_error is not None:
                 result["denoise_error"] = denoise_error
-                result["warnings"] = [
+                denoise_warning = (
                     "Denoise request failed; using raw close prices instead: "
                     f"{denoise_error}"
-                ]
+                )
+                existing_warnings = list(result.get("warnings") or [])
+                if denoise_warning not in existing_warnings:
+                    existing_warnings.append(denoise_warning)
+                result["warnings"] = existing_warnings
         if freshness_context.get("data_as_of"):
             result["reference_price_time"] = freshness_context.get("data_as_of")
             result["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")

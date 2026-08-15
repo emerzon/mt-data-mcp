@@ -1630,6 +1630,17 @@ def _apply_barrier_prob_detail(
             "bars_per_year",
             "annualization_basis",
             "override_units",
+            "already_hit",
+            "warnings",
+            "denoise_applied",
+            "denoise_status",
+            "denoise_error",
+            "usable_for_live_trading",
+            "usable_for_live_trading_basis",
+            "execution_blockers",
+            "data_as_of",
+            "data_stale",
+            "freshness",
         ):
             _set_if_present(closed_form, key, payload.get(key))
         if detail_value == "standard":

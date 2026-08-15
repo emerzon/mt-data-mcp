@@ -301,6 +301,39 @@ class TestSimulateHestonMc:
         with pytest.raises(ValueError):
             simulate_heston_mc(np.array([1.0, 2.0, 3.0]), horizon=5)
 
+    def test_annual_overrides_convert_to_per_bar(self):
+        result = simulate_heston_mc(
+            self._prices(),
+            horizon=4,
+            n_sims=8,
+            seed=1,
+            kappa=2.0,
+            theta=0.04,
+            xi=0.3,
+            v0=0.04,
+            bars_per_year=252.0,
+        )
+        params = result["params"]
+        assert params["param_time_unit"] == "annual_converted_to_per_bar"
+        assert params["theta"] == pytest.approx(0.04 / 252.0)
+        assert params["v0"] == pytest.approx(0.04 / 252.0)
+        assert params["kappa"] == pytest.approx(2.0 / 252.0)
+        assert params["xi"] == pytest.approx(0.3 / np.sqrt(252.0))
+
+    def test_overrides_without_bars_per_year_stay_per_bar(self):
+        result = simulate_heston_mc(
+            self._prices(),
+            horizon=4,
+            n_sims=8,
+            seed=1,
+            kappa=3.0,
+            theta=0.02,
+            xi=0.3,
+            v0=0.01,
+        )
+        assert result["params"]["param_time_unit"] == "per_bar"
+        assert result["params"]["theta"] == pytest.approx(0.02)
+
 
 class TestSimulateJumpDiffusionMc:
     def _prices(self, n=200, seed=42):
@@ -325,6 +358,23 @@ class TestSimulateJumpDiffusionMc:
     def test_too_few(self):
         with pytest.raises(ValueError):
             simulate_jump_diffusion_mc(np.array([1.0, 2.0, 3.0]), horizon=5)
+
+    def test_diffusion_sigma_excludes_identified_jumps(self):
+        rng = np.random.RandomState(7)
+        cont = rng.normal(0.0, 0.01, 400)
+        jumps = np.zeros(400)
+        jump_idx = np.array([20, 80, 140, 200, 260, 320])
+        jumps[jump_idx] = np.array([0.12, -0.11, 0.13, -0.12, 0.14, -0.13])
+        rets = cont + jumps
+        prices = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(rets)]))
+        result = simulate_jump_diffusion_mc(prices, horizon=8, n_sims=200, seed=3)
+        params = result["params"]
+        assert params["sigma"] < params["sigma_total"]
+        simulated_var = float(np.var(result["return_paths"], ddof=1))
+        historical_var = float(np.var(rets, ddof=1))
+        # Residual-vol Merton should stay near historical variance, not the
+        # ~1.5x inflation from using full-sample sigma plus jumps.
+        assert simulated_var < 1.45 * historical_var
 
 
 class TestSimulateGarchMc:

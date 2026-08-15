@@ -91,7 +91,7 @@ class TestBarrierOptimizeGuardrails(_BarrierTestBase):
                 sl_abs=0.99,
             )
         self.assertIn("error", result)
-        self.assertIn("Missing barriers", result["error"])
+        self.assertIn("invalid for the current price", result["error"])
 
     # ------------------------------------------------------------------
     # Input validation – optimize
@@ -154,6 +154,55 @@ class TestBarrierOptimizeGuardrails(_BarrierTestBase):
         self.assertEqual(result.get("objective"), "ev")
         self.assertEqual(result.get("objective_requested"), "not_a_real_objective")
         self.assertEqual(result.get("objective_used"), "ev")
+
+    def test_forecast_barrier_optimize_rejects_zero_n_sims(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            params={"n_sims": 0},
+        )
+        self.assertIn("error", result)
+        self.assertIn("Invalid n_sims", result["error"])
+
+    def test_forecast_barrier_optimize_swaps_inverted_ratio_range(self):
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.0040, 1.0040],
+            [0.9960, 0.9960],
+        ])
+        with patch(f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc") as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=2,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                grid_style="ratio",
+                sl_min=0.2,
+                sl_max=0.2,
+                sl_steps=1,
+                params={
+                    "ratio_min": 4.0,
+                    "ratio_max": 0.5,
+                    "ratio_steps": 4,
+                    "n_sims": 20,
+                    "use_live_price": False,
+                },
+            )
+        self.assertTrue(result.get("success"))
+        search = result.get("search_config") or {}
+        ratio_range = search.get("ratio_range") or []
+        self.assertEqual(len(ratio_range), 2)
+        self.assertAlmostEqual(float(ratio_range[0]), 0.5)
+        self.assertAlmostEqual(float(ratio_range[1]), 4.0)
+        warnings = result.get("warnings") or []
+        self.assertTrue(any("swapped" in str(item).lower() for item in warnings))
 
     # ------------------------------------------------------------------
     # EV/edge warnings and guardrails

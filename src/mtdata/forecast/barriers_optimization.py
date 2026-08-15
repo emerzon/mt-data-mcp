@@ -71,6 +71,7 @@ from .barriers_shared import (
     normalize_barrier_seed,
     offset_barrier_seed,
 )
+from .common import annualization_context as _annualization_context
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
 from .monte_carlo import (
@@ -128,7 +129,7 @@ class _BarrierEvaluationContext:
     mode_val: str
     dir_long: bool
     last_price: float
-    tick_size: float
+    tick_size: Optional[float]
     rr_min_val: Optional[float]
     rr_max_val: Optional[float]
     has_trading_costs: bool
@@ -532,6 +533,13 @@ def _evaluate_barrier_candidate(
     ev_resolved_contribution = float(
         np.mean(np.where(payoffs.active, selected_payoffs, 0.0))
     )
+    # Neutral ties are excluded from both active and unresolved but still pay
+    # configured costs. Keep them in the published EV split.
+    same_bar_contribution = 0.0
+    if context.same_bar_policy == "neutral" and np.any(ties):
+        same_bar_contribution = float(
+            np.mean(np.where(ties, selected_payoffs, 0.0))
+        )
     edge = effective_prob_win - effective_prob_loss
     win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
     loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
@@ -585,11 +593,16 @@ def _evaluate_barrier_candidate(
         profit_factor = None
         profit_factor_note = "Undefined: no simulated losses for this barrier pair."
 
-    unit_to_return = (
-        0.01
-        if context.mode_val == 'pct'
-        else float(context.tick_size) / float(context.last_price)
-    )
+    if context.mode_val == 'pct':
+        unit_to_return = 0.01
+    elif (
+        context.tick_size is not None
+        and context.tick_size > 0.0
+        and context.last_price > 0.0
+    ):
+        unit_to_return = float(context.tick_size) / float(context.last_price)
+    else:
+        unit_to_return = 0.0
     path_returns = (
         payoffs.net if context.has_trading_costs else payoffs.gross
     ) * unit_to_return
@@ -633,6 +646,7 @@ def _evaluate_barrier_candidate(
         "ev_including_timeout": ev_val,
         "ev_resolved_contribution": ev_resolved_contribution,
         "timeout_mtm_contribution": ev_unresolved_net,
+        "same_bar_contribution": same_bar_contribution,
         "ev_gross": ev_gross if context.has_trading_costs else None,
         "ev_net": ev_val if context.has_trading_costs else None,
         "ev_unresolved": ev_unresolved_net,
@@ -661,9 +675,14 @@ def _evaluate_barrier_candidate(
     }
     if profit_factor_note:
         result["profit_factor_note"] = profit_factor_note
+    timeout_dominated = bool(
+        ev_val > 0.0
+        and ev_unresolved_net > 0.0
+        and ev_unresolved_net > max(float(ev_resolved_contribution), 0.0)
+    )
+    result["ev_timeout_dominated"] = timeout_dominated
     if effective_prob_win <= 0.0:
         result["zero_win_probability"] = True
-        result["ev_timeout_dominated"] = bool(ev_val > 0.0 and ev_unresolved_net > 0.0)
         result["warning"] = (
             "prob_win is 0: no simulated paths reached TP within horizon; "
             "positive ev_including_timeout is timeout mark-to-market, not a resolved win."
@@ -673,6 +692,10 @@ def _evaluate_barrier_candidate(
         result["warning"] = (
             f"prob_win is below {LOW_PRACTICAL_WIN_PROB_THRESHOLD:.0%}; "
             "treat positive EV as unresolved-path driven unless confirmed."
+        )
+    elif timeout_dominated:
+        result["warning"] = (
+            "Positive EV is dominated by timeout mark-to-market, not resolved TP hits."
         )
     _annotate_candidate_metrics(result, cost_per_trade=context.cost_per_trade)
     return result, False
@@ -841,17 +864,38 @@ _BARRIER_CONCISE_DROP_KEYS = frozenset(
 )
 
 
+def _get_symbol_point(symbol: str) -> Optional[float]:
+    """Return the broker quote increment (``point``), not ``trade_tick_size``."""
+    try:
+        from ..utils.mt5 import get_symbol_info_cached
+
+        info = get_symbol_info_cached(symbol)
+    except Exception:
+        return None
+    if info is None:
+        return None
+    try:
+        point = float(getattr(info, "point", 0.0) or 0.0)
+    except Exception:
+        return None
+    if not np.isfinite(point) or point <= 0.0:
+        return None
+    return float(point)
+
+
 def _cost_pip_size(
     symbol: str,
     tick_size: Optional[float],
     digits: Optional[int],
 ) -> Optional[float]:
     """Return the conventional pip size used by spread/slippage inputs."""
-    if tick_size is None or tick_size <= 0:
+    del tick_size  # pip size is a point convention, not a trade-tick count
+    point = _get_symbol_point(symbol)
+    if point is None:
         return None
     return forex_pip_size(
         symbol,
-        point=float(tick_size),
+        point=float(point),
         digits=int(digits) if digits is not None else -1,
     )
 
@@ -877,6 +921,7 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "ev_including_timeout",
     "ev_resolved_contribution",
     "timeout_mtm_contribution",
+    "same_bar_contribution",
     "ev_unresolved",
     "ev_timeout_dominated",
     "kelly",
@@ -997,6 +1042,84 @@ def _finalize_barrier_output(
             candidates=candidates,
         )
     return out
+
+
+def _cohere_ensemble_probability_row(
+    row: Dict[str, Any],
+    *,
+    cost_per_trade: float,
+) -> Dict[str, Any]:
+    """Renormalize independently aggregated probabilities and rebuild derived fields."""
+    partition_keys = (
+        "prob_tp_strict_first",
+        "prob_sl_strict_first",
+        "prob_same_bar",
+        "prob_no_hit",
+    )
+    raw_values = [_optional_finite_float(row.get(key)) for key in partition_keys]
+    if any(value is None for value in raw_values):
+        raw_values = [
+            _optional_finite_float(row.get("prob_tp_first")),
+            _optional_finite_float(row.get("prob_sl_first")),
+            _optional_finite_float(row.get("prob_same_bar")),
+            _optional_finite_float(row.get("prob_no_hit")),
+        ]
+        partition_keys = (
+            "prob_tp_first",
+            "prob_sl_first",
+            "prob_same_bar",
+            "prob_no_hit",
+        )
+    if any(value is None for value in raw_values):
+        return row
+    total = float(sum(raw_values))  # type: ignore[arg-type]
+    if total <= 0.0:
+        return row
+    if abs(total - 1.0) > 1e-6:
+        row["probs_incoherent"] = True
+        row["probs_raw_sum"] = total
+    normalized = [float(value) / total for value in raw_values]  # type: ignore[arg-type]
+    if partition_keys[0] == "prob_tp_strict_first":
+        tp_strict, sl_strict, same_bar, no_hit = normalized
+    else:
+        # Already policy-resolved margins; recover a 4-way partition by
+        # keeping same-bar mass and treating the rest as strict-first.
+        same_bar = normalized[2]
+        no_hit = normalized[3]
+        remaining = max(0.0, 1.0 - same_bar - no_hit)
+        win_loss = normalized[0] + normalized[1]
+        if win_loss > 0.0:
+            tp_strict = remaining * (normalized[0] / win_loss)
+            sl_strict = remaining * (normalized[1] / win_loss)
+        else:
+            tp_strict = 0.0
+            sl_strict = remaining
+    policy = str(row.get("same_bar_policy") or "sl_first")
+    resolved = resolve_same_bar_probabilities(
+        tp_strict=tp_strict,
+        sl_strict=sl_strict,
+        same_bar=same_bar,
+        no_hit=no_hit,
+        policy=policy,
+    )
+    row.update(resolved)
+    row["prob_win"] = resolved["prob_tp_first"]
+    row["prob_loss"] = resolved["prob_sl_first"]
+    row["edge"] = float(resolved["prob_tp_first"] - resolved["prob_sl_first"])
+    tp_unit = _optional_finite_float(row.get("tp"))
+    sl_unit = _optional_finite_float(row.get("sl"))
+    cost = max(0.0, float(cost_per_trade))
+    if tp_unit is not None and sl_unit is not None and sl_unit + cost > 0.0:
+        net_rr = (tp_unit - cost) / (sl_unit + cost) if cost > 0.0 else (
+            tp_unit / sl_unit if sl_unit > 0.0 else 0.0
+        )
+        if net_rr > 0.0:
+            row["kelly"] = float(
+                resolved["prob_tp_first"] - (resolved["prob_sl_first"] / net_rr)
+            )
+        else:
+            row["kelly"] = 0.0
+    return row
 
 
 def _attach_viability_semantics(
@@ -1321,7 +1444,10 @@ def forecast_barrier_optimize(  # noqa: C901
         if ratio_min_val <= 0:
             ratio_min_val = ratio_min
         if ratio_max_val < ratio_min_val:
-            ratio_max_val = ratio_min_val
+            ratio_min_val, ratio_max_val = ratio_max_val, ratio_min_val
+            contract_warnings.append(
+                "ratio_min and ratio_max were swapped so the search range is low-to-high."
+            )
 
         vol_window_val = int(params_dict.get('vol_window', vol_window))
         vol_min_mult_val = float(params_dict.get('vol_min_mult', vol_min_mult))
@@ -1570,7 +1696,14 @@ def forecast_barrier_optimize(  # noqa: C901
         prices = df[base_col].astype(float).to_numpy()
 
         sims_default = int(profile_cfg['n_sims'])
-        sims = int(params_dict.get('n_sims', params_dict.get('sims', sims_default)) or sims_default)
+        raw_sims = params_dict.get('n_sims', params_dict.get('sims', None))
+        if raw_sims is None:
+            sims = int(sims_default)
+        else:
+            try:
+                sims = int(raw_sims)
+            except Exception:
+                return {"error": f"Invalid n_sims: {raw_sims}. Must be >= 1."}
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
         n_seeds = int(params_dict.get('n_seeds', 1) or 1)
@@ -1905,6 +2038,10 @@ def forecast_barrier_optimize(  # noqa: C901
                     value = _agg_metric(member_rows, metric_name)
                     if value is not None:
                         aggregate_row[metric_name] = value
+                _cohere_ensemble_probability_row(
+                    aggregate_row,
+                    cost_per_trade=cost_per_trade,
+                )
                 _annotate_candidate_metrics(
                     aggregate_row,
                     cost_per_trade=cost_per_trade,
@@ -2048,18 +2185,27 @@ def forecast_barrier_optimize(  # noqa: C901
                     "refine": bool(refine_flag),
                     "statistical_robustness": {
                         "enabled": bool(statistical_robustness_requested),
+                        "applied": ["method_dispersion"],
+                        "unsupported": [
+                            "oos_validation",
+                            "bootstrap",
+                            "drift_stress",
+                            "cross_seed_stability",
+                            "sensitivity_analysis",
+                            "power_analysis",
+                        ],
                         "target_ci_width": target_ci_width_val,
                         "n_seeds_stability": n_seeds_stability_val,
-                        "bootstrap_enabled": bool(enable_bootstrap_val),
+                        "bootstrap_enabled": False,
                         "n_bootstrap": n_bootstrap_val,
-                        "convergence_check_enabled": bool(enable_convergence_check_val),
+                        "convergence_check_enabled": False,
                         "convergence_window": convergence_window_val,
                         "convergence_threshold": convergence_threshold_val,
-                        "power_analysis_enabled": bool(enable_power_analysis_val),
+                        "power_analysis_enabled": False,
                         "power_effect_size": power_effect_size_val,
-                        "sensitivity_analysis_enabled": bool(enable_sensitivity_analysis_val),
-                        "drift_stress_enabled": bool(enable_drift_stress_val),
-                        "oos_validation_enabled": bool(enable_oos_validation_val),
+                        "sensitivity_analysis_enabled": False,
+                        "drift_stress_enabled": False,
+                        "oos_validation_enabled": False,
                     } if statistical_robustness_requested else None,
                 },
                 "results": summary_results,
@@ -2141,6 +2287,19 @@ def forecast_barrier_optimize(  # noqa: C901
                 }
                 out["statistical_robustness"] = {
                     "source": "ensemble_common_candidate",
+                    "note": (
+                        "Ensemble reports member-method dispersion only; "
+                        "walk-forward OOS, bootstrap, drift stress, and "
+                        "independent-seed holdout are not run for ensemble picks."
+                    ),
+                    "unsupported": [
+                        "oos_validation",
+                        "bootstrap",
+                        "drift_stress",
+                        "cross_seed_stability",
+                        "sensitivity_analysis",
+                        "power_analysis",
+                    ],
                     "method_dispersion": _cross_seed_stability(
                         dispersion_inputs,
                         metric_keys=['prob_tp_first', 'prob_sl_first', 'ev', 'edge', 'kelly'],
@@ -2327,6 +2486,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'heston':
+                heston_bars_per_year, _ = _annualization_context(timeframe, symbol)
                 for offset in range(effective_seed_count):
                     sim = _simulate_heston_mc(
                         calibration_prices,
@@ -2338,6 +2498,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         xi=params_dict.get('xi'),
                         rho=params_dict.get('rho'),
                         v0=params_dict.get('v0'),
+                        bars_per_year=heston_bars_per_year,
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'jump_diffusion':
@@ -2493,7 +2654,7 @@ def forecast_barrier_optimize(  # noqa: C901
             mode_val=mode_val,
             dir_long=dir_long,
             last_price=float(last_price),
-            tick_size=float(tick_size),
+            tick_size=_optional_finite_float(tick_size),
             rr_min_val=rr_min_val,
             rr_max_val=rr_max_val,
             has_trading_costs=has_trading_costs,
@@ -2615,7 +2776,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 risk=risk,
                 direction="long" if dir_long else "short",
                 mode=mode_val,  # type: ignore[arg-type]
-                tick_size=float(tick_size),
+                tick_size=float(tick_size) if tick_size else 0.0,
                 cost_per_trade=(cost_per_trade if has_trading_costs else 0.0),
                 same_bar_policy=same_bar_policy_value,
                 gap_aware_stops=eval_context.gap_aware_stops,
@@ -3283,7 +3444,7 @@ def forecast_barrier_optimize(  # noqa: C901
                             risk=float(best.get('sl', 0.0)),
                             direction=direction_norm,
                             mode=mode_val,
-                            tick_size=float(tick_size),
+                            tick_size=float(tick_size) if tick_size else 0.0,
                             cost_per_trade=float(cost_per_trade),
                             same_bar_policy=same_bar_policy_value,
                             gap_aware_stops=eval_context.gap_aware_stops,
@@ -3324,7 +3485,11 @@ def forecast_barrier_optimize(  # noqa: C901
                     if row.get('tp') is not None and row.get('sl') is not None
                 ]
                 holdout_selected_row: Optional[Dict[str, Any]] = None
-                for seed_offset in range(1, min(n_seeds_stability_val, 5) + 1):
+                holdout_seed_origin = max(1, int(n_seeds))
+                for seed_offset in range(
+                    holdout_seed_origin,
+                    holdout_seed_origin + min(n_seeds_stability_val, 5),
+                ):
                     seed_key = offset_barrier_seed(request_seed_base, seed_offset)
                     try:
                         (
@@ -3437,7 +3602,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     )
                     statistical_analysis['post_selection_evaluation'] = {
                         "source": "independent_seed",
-                        "seed": int(offset_barrier_seed(request_seed_base, 1)),
+                        "seed": int(offset_barrier_seed(request_seed_base, holdout_seed_origin)),
                         "tp": float(best.get('tp')),
                         "sl": float(best.get('sl')),
                         "objective": objective_val,

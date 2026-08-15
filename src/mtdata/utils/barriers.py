@@ -264,6 +264,38 @@ def resolve_barrier_prices(  # noqa: C901
     return float(tp_price), float(sl_price)
 
 
+def unresolved_barrier_price_error(
+    *,
+    tp_abs: Optional[float] = None,
+    sl_abs: Optional[float] = None,
+    tp_pct: Optional[float] = None,
+    sl_pct: Optional[float] = None,
+    tp_ticks: Optional[float] = None,
+    sl_ticks: Optional[float] = None,
+    tick_size: Optional[float] = None,
+) -> str:
+    """Explain why TP/SL resolution returned no executable prices."""
+    has_ticks = tp_ticks is not None or sl_ticks is not None
+    has_pct = tp_pct is not None or sl_pct is not None
+    has_abs = tp_abs is not None or sl_abs is not None
+    tick_increment = coerce_finite_float(tick_size)
+    if has_ticks and (tick_increment is None or tick_increment <= 0.0):
+        return (
+            "Tick size unavailable for this symbol; use pct or absolute price "
+            "barriers, or provide a symbol with trade_tick_size."
+        )
+    if has_pct or has_ticks or has_abs:
+        return (
+            "Resolved TP/SL barriers are invalid for the current price "
+            "(a level may be non-finite, or the distance snapped onto or "
+            "through the entry)."
+        )
+    return (
+        "Missing barriers. Provide either tp_pct and sl_pct, "
+        "tp_abs and sl_abs, or tp_ticks and sl_ticks."
+    )
+
+
 def build_barrier_kwargs(
     *,
     tp_abs: Optional[float] = None,

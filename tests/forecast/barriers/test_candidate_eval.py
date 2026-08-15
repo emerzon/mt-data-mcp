@@ -203,6 +203,69 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertEqual(result["prob_same_bar"], 0.5)
         self.assertEqual(result["ev_unresolved"], 0.0)
 
+    def test_neutral_ties_with_costs_are_in_ev_split(self):
+        from dataclasses import replace
+
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        ctx = replace(
+            self._make_context(same_bar_policy="neutral"),
+            has_trading_costs=True,
+            ev_deduct_cost=0.2,
+            cost_per_trade=0.2,
+        )
+        bridge = _BarrierBridgeInputs(
+            enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None
+        )
+        paths = np.array([[1.1020, 1.1020], [1.1000, 1.1000]])
+        with patch(
+            "mtdata.forecast.barriers_optimization._candidate_hit_arrays",
+            return_value=(
+                np.array([0, 2]),
+                np.array([0, 2]),
+                np.array([False, False]),
+                np.array([False, False]),
+                np.array([True, False]),
+            ),
+        ):
+            result, is_invalid = _evaluate_barrier_candidate(
+                10.0, 10.0, paths, context=ctx, bridge_inputs=bridge
+            )
+
+        self.assertFalse(is_invalid)
+        self.assertAlmostEqual(
+            result["ev"],
+            result["ev_resolved_contribution"]
+            + result["timeout_mtm_contribution"]
+            + result["same_bar_contribution"],
+        )
+        self.assertAlmostEqual(result["same_bar_contribution"], -0.1)
+
+    def test_pct_mode_allows_missing_tick_size(self):
+        from dataclasses import replace
+
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        ctx = replace(
+            self._make_context(mode="pct", last_price=100.0, dir_long=True),
+            tick_size=None,
+        )
+        bridge = _BarrierBridgeInputs(
+            enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None
+        )
+        paths = np.full((8, 4), 100.0)
+        result, is_invalid = _evaluate_barrier_candidate(
+            1.0, 1.0, paths, context=ctx, bridge_inputs=bridge
+        )
+        self.assertFalse(is_invalid)
+        self.assertIsNotNone(result)
+
     def test_max_prob_no_hit_does_not_count_neutral_same_bar_ties(self):
         from dataclasses import replace
 

@@ -1496,6 +1496,36 @@ class TestFormatResultMinimal:
         assert "prob_resolve: 0.9" in compact
         assert "breakeven_win_rate" not in compact
 
+    def test_compact_barrier_optimize_keeps_trade_gate_fields(self):
+        compact = format_result_minimal(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "status": "ok",
+                "status_reason": "EV and break-even-adjusted edge conflict",
+                "tradable": False,
+                "usable_for_live_trading": False,
+                "execution_blockers": ["ev_edge_conflict"],
+                "recommendation": "avoid",
+                "best": {
+                    "tp": 1.0,
+                    "sl": 0.5,
+                    "ev": 0.12,
+                    "phantom_profit_risk": True,
+                    "warning": "timeout mark-to-market",
+                },
+            },
+            verbose=False,
+            tool_name="forecast_barrier_optimize",
+        )
+
+        assert "status: ok" in compact
+        assert "status_reason:" in compact
+        assert "tradable: false" in compact
+        assert "usable_for_live_trading: false" in compact
+        assert "recommendation: avoid" in compact
+        assert "phantom_profit_risk: true" in compact
+
     def test_compact_patterns_output_prefers_highlights(self):
         payload = {
             "success": True,
