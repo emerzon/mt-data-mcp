@@ -1744,7 +1744,10 @@ def _attach_classic_volume_confirmation(
     penalty = _config_float(config, "volume_confirm_penalty", 0.06, minimum=0.0)
 
     last_index = max(int(len(volume) - 1), 0)
-    raw_end_index = _safe_float(out.get("end_index"))
+    details_breakout = _safe_float(details.get("breakout_index"))
+    raw_end_index = _safe_float(
+        details_breakout if details_breakout is not None else out.get("end_index")
+    )
     end_index = max(
         0,
         min(
@@ -2193,11 +2196,22 @@ def _enrich_classic_patterns(
     rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
-    regime_context = _infer_market_regime(df, config)
+    regime_by_end: Dict[int, Optional[Dict[str, Any]]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
-        out.append(_enrich_classic_pattern_row(row, df, config, regime_context))
+        asof = row.get("available_at_index", row.get("end_index"))
+        try:
+            asof_i = int(asof)
+        except Exception:
+            asof_i = int(max(0, len(df) - 1))
+        asof_i = max(0, min(asof_i, int(max(0, len(df) - 1))))
+        if asof_i not in regime_by_end:
+            sliced = df.iloc[: asof_i + 1]
+            regime_by_end[asof_i] = _infer_market_regime(sliced, config)
+        out.append(
+            _enrich_classic_pattern_row(row, df, config, regime_by_end[asof_i])
+        )
     return out
 
 

@@ -10,6 +10,7 @@ from .utils import (
     _conf,
     _count_touches,
     _detect_pivots_close,
+    _effective_flat_slope,
     _find_recent_breakout,
     _fit_line,
     _fit_line_robust,
@@ -51,7 +52,8 @@ def _fit_line_bounded_shape(
         lower_source=lower_source,
     )
     start_idx = int(min(ih[0], il[0]))
-    if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=n - 1):
+    last_pivot = int(max(ih[-1], il[-1]))
+    if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=last_pivot):
         return None
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
     touches = _count_touches(
@@ -223,12 +225,13 @@ def detect_triangles(
     )
     if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
         return []
+    flat = _effective_flat_slope(shape["c"], cfg)
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
-    flat_top = abs(shape["sh"]) <= cfg.max_flat_slope
-    flat_bottom = abs(shape["sl"]) <= cfg.max_flat_slope
+    flat_top = abs(shape["sh"]) <= flat
+    flat_bottom = abs(shape["sl"]) <= flat
     can_be_flat_triangle = (
-        (flat_top and shape["sl"] > cfg.max_flat_slope)
-        or (flat_bottom and shape["sh"] < -cfg.max_flat_slope)
+        (flat_top and shape["sl"] > flat)
+        or (flat_bottom and shape["sh"] < -flat)
     )
     if same_sign and not can_be_flat_triangle:
         return []
@@ -237,9 +240,9 @@ def detect_triangles(
     if shape["touches"] < cfg.min_channel_touches - 1:
         return []
 
-    if abs(shape["sh"]) <= cfg.max_flat_slope and shape["sl"] > cfg.max_flat_slope:
+    if abs(shape["sh"]) <= flat and shape["sl"] > flat:
         name = "Ascending Triangle"
-    elif abs(shape["sl"]) <= cfg.max_flat_slope and shape["sh"] < -cfg.max_flat_slope:
+    elif abs(shape["sl"]) <= flat and shape["sh"] < -flat:
         name = "Descending Triangle"
     else:
         name = "Symmetrical Triangle"
@@ -263,7 +266,8 @@ def detect_wedges(
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
     if not same_sign or shape["touches"] < cfg.min_channel_touches - 1:
         return []
-    if abs(shape["sh"]) <= cfg.max_flat_slope and abs(shape["sl"]) <= cfg.max_flat_slope:
+    flat = _effective_flat_slope(shape["c"], cfg)
+    if abs(shape["sh"]) <= flat and abs(shape["sl"]) <= flat:
         return []
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
@@ -295,14 +299,16 @@ def detect_broadening(
         sh, bh, r2h = _fit_line(ih.astype(float), upper_source[ih])
         sl, bl, r2l = _fit_line(il.astype(float), lower_source[il])
     
-    diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
+    flat = _effective_flat_slope(c, cfg)
+    diverging = (sh > flat and sl < -flat)
     if diverging:
         conf = _conf(4, min(r2h, r2l), 1.0, cfg)
         x = np.arange(n, dtype=float)
         top = sh * x + bh
         bot = sl * x + bl
         start_idx = int(min(ih[0], il[0]))
-        if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=n - 1):
+        last_pivot = int(max(ih[-1], il[-1]))
+        if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=last_pivot):
             return out
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         status = "forming"
@@ -347,7 +353,8 @@ def detect_diamonds(
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
-    W = min(int(cfg.diamond_max_window_bars), n)
+    span_cap = int(getattr(cfg, "max_pattern_span_bars", 0) or 10**9)
+    W = min(int(cfg.diamond_max_window_bars), n, span_cap)
     if W < int(cfg.diamond_min_window_bars):
         return out
 
@@ -382,7 +389,7 @@ def detect_diamonds(
         return out
 
     best: Optional[Dict[str, Any]] = None
-    min_slope = float(max(1e-6, cfg.max_flat_slope * 2.0))
+    min_slope = float(max(1e-6, float(cfg.max_flat_slope) * 2.0))
 
     upper_geometry = seg_h if bool(cfg.pivot_use_hl) else seg
     lower_geometry = seg_l if bool(cfg.pivot_use_hl) else seg

@@ -92,6 +92,13 @@ def detect_flags_pennants(
     except TypeError:
         peaks2, troughs2 = _detect_pivots_close(consolidation_seg, cfg)
 
+    pivot_confirm_gap = max(2, int(getattr(cfg, "min_distance", 5)))
+    pivot_cutoff = max(0, int(consolidation_seg.size) - pivot_confirm_gap)
+    peaks2 = np.asarray(peaks2, dtype=int)
+    troughs2 = np.asarray(troughs2, dtype=int)
+    peaks2 = peaks2[peaks2 < pivot_cutoff]
+    troughs2 = troughs2[troughs2 < pivot_cutoff]
+
     if peaks2.size < 2 or troughs2.size < 2:
         return out
 
@@ -329,7 +336,8 @@ def _detect_cup_handle_variant(
     invert: bool,
 ) -> Optional[ClassicPatternResult]:
     min_window = int(cfg.cup_handle_min_window_bars)
-    max_window = min(int(cfg.cup_handle_max_window_bars), int(c.size))
+    span_cap = int(getattr(cfg, "max_pattern_span_bars", 0) or 10**9)
+    max_window = min(int(cfg.cup_handle_max_window_bars), int(c.size), span_cap)
     if max_window < min_window:
         return None
 

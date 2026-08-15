@@ -7,7 +7,9 @@ from ..common import interval_overlap_ratio as _interval_overlap_ratio
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
     _apply_breakout_confidence_bonus,
+    _boundary_tol_abs,
     _dtw_distance,
+    _effective_flat_slope,
     _find_forward_level_breakout,
     _fit_line,
     _level_close,
@@ -98,8 +100,10 @@ def _neckline_quality_score(
     r2: float,
     point_count: int,
     cfg: ClassicDetectorConfig,
+    flat_slope: float | None = None,
 ) -> float:
-    neck_penalty = max(0.0, 1.0 - min(1.0, abs(float(slope)) / max(1e-6, cfg.max_flat_slope * 5.0)))
+    unit = float(cfg.max_flat_slope if flat_slope is None else flat_slope)
+    neck_penalty = max(0.0, 1.0 - min(1.0, abs(float(slope)) / max(1e-6, unit * 5.0)))
     if int(point_count) <= 2:
         return float(neck_penalty)
     return float(0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2))))
@@ -182,10 +186,31 @@ def detect_tops_bottoms(
                 start_i, end_i = int(ii_sorted[0]), int(ii_sorted[-1])
                 status = "forming"
                 level = float(np.median(vals[cluster]))
+                cluster_set = {int(v) for v in ii_sorted.tolist()}
+                opposing = troughs if kind == "top" else peaks
+                if not np.any((opposing > start_i) & (opposing < end_i)):
+                    continue
+                tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+                level_tol = _boundary_tol_abs(
+                    level, tol_abs, float(cfg.same_level_tol_pct)
+                )
+                intervening = [
+                    int(p)
+                    for p in idxs
+                    if start_i < int(p) < end_i and int(p) not in cluster_set
+                ]
+                if kind == "top" and any(
+                    float(level_source[p]) > (level + level_tol) for p in intervening
+                ):
+                    continue
+                if kind == "bottom" and any(
+                    float(level_source[p]) < (level - level_tol) for p in intervening
+                ):
+                    continue
                 neckline = _formation_neckline(
                     neckline_source,
                     ii_sorted,
-                    troughs if kind == "top" else peaks,
+                    opposing,
                     kind,
                 )
                 direction = "down" if kind == "top" else "up"
@@ -257,7 +282,6 @@ def detect_head_shoulders(  # noqa: C901
     lower_source = low_values if use_high_low else c
 
     tol_pct = float(cfg.same_level_tol_pct)
-    breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
     pivot_cap = int(getattr(cfg, "head_shoulders_max_peak_candidates", 0))
     if pivot_cap <= 0:
         pivot_cap = max(6, int(cfg.max_pattern_pivots) * 2)
@@ -332,16 +356,24 @@ def detect_head_shoulders(  # noqa: C901
         name = 'Head and Shoulders' if regular else 'Inverse Head and Shoulders'
         broke = False
         end_i = int(rsh)
-        for k in range(1, breakout_look + 1):
-            i = rsh + k
-            if i >= n:
-                break
-            neck_i = slope * i + intercept
+        break_i = None
+        tol_abs = _tol_abs_from_close(c, tol_pct)
+        for i in range(int(rsh) + 1, int(n)):
+            neck_i = float(slope * float(i) + intercept)
+            if not np.isfinite(neck_i):
+                continue
+            tol = _boundary_tol_abs(neck_i, tol_abs, float(tol_pct))
             px = float(c[i])
-            if regular and px < neck_i:
-                status = 'completed'; broke = True; end_i = int(i); break
-            if (not regular) and px > neck_i:
-                status = 'completed'; broke = True; end_i = int(i); break
+            if regular and px < (neck_i - tol):
+                break_i = int(i)
+                break
+            if (not regular) and px > (neck_i + tol):
+                break_i = int(i)
+                break
+        if break_i is not None:
+            status = "completed"
+            broke = True
+            end_i = int(break_i)
 
         sym_conf = max(0.0, 1.0 - abs(span_ratio - 1.0))
         sh_sim_conf = max(0.0, 1.0 - (abs(ls_p - rs_p) / max(1e-9, abs(sh_avg))))
@@ -350,6 +382,7 @@ def detect_head_shoulders(  # noqa: C901
             r2=float(r2),
             point_count=int(neck_idxs.size),
             cfg=cfg,
+            flat_slope=_effective_flat_slope(c, cfg),
         )
         prom_conf = min(1.0, head_prom / (tol_pct * 2.0))
         base_conf = 0.25 * sym_conf + 0.35 * sh_sim_conf + 0.2 * neck_quality + 0.2 * prom_conf
@@ -358,7 +391,7 @@ def detect_head_shoulders(  # noqa: C901
 
         if getattr(cfg, 'use_dtw_check', False):
             seg_start = max(0, int(lsh))
-            seg_end = int(end_i if broke else rsh)
+            seg_end = int(rsh)
             seg = c[seg_start: seg_end + 1].astype(float)
             seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
             dist = min(
@@ -472,12 +505,13 @@ def detect_rounding(
     out: List[ClassicPatternResult] = []
     n = c.size
     configured_windows = [int(v) for v in getattr(cfg, "rounding_window_sizes", []) if int(v) > 0]
+    span_cap = int(getattr(cfg, "max_pattern_span_bars", 0) or 10**9)
     candidate_windows = configured_windows or [100, 150, int(cfg.rounding_window_bars), 300]
     valid_windows = sorted(
         {
             min(int(w), n - 1)
             for w in candidate_windows
-            if min(int(w), n - 1) >= 100
+            if min(int(w), n - 1) >= 100 and min(int(w), n - 1) <= span_cap
         }
     )
     if not valid_windows:

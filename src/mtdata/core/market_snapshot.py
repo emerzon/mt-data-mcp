@@ -515,7 +515,7 @@ def _pattern_bias(payload: Any) -> Optional[str]:
     ):
         return None
     confidence = _coerce_float(payload.get("pattern_confidence"))
-    if confidence is None or confidence < 0.5:
+    if confidence is not None and confidence < 0.5:
         return None
 
     for key in ("pattern_bias", "bias", "direction"):

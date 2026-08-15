@@ -67,7 +67,10 @@ class ClassicDetectorConfig:
     )
     # Trendline/line-fit
     max_flat_slope: float = (
-        1e-4  # absolute slope to consider line flat (price units per bar)
+        1e-4  # absolute floor for a 'flat' slope (price units per bar)
+    )
+    max_flat_slope_pct_per_bar: float = (
+        0.01  # additional flatness as percent of median price per bar
     )
     min_r2: float = 0.6  # minimum R^2 for line fit confidence
     max_pattern_pivots: int = 8  # max recent pivots used by line-based detectors
@@ -183,7 +186,7 @@ class ClassicDetectorConfig:
     # structures. include_completed controls lifecycle visibility; it does not
     # bypass these recency and geometry-quality limits.
     max_pattern_age_bars: int = 300
-    max_pattern_span_bars: int = 200
+    max_pattern_span_bars: int = 300
     include_lifecycle_metadata: bool = True
     # Optional confidence calibration map:
     # { "default": {"0.40": 0.35, "0.70": 0.62, "0.90": 0.82},
@@ -289,6 +292,8 @@ def validate_classic_detector_config(
         "min_pole_return_pct",
         "min_confidence",
         "min_r2",
+        "max_flat_slope",
+        "max_flat_slope_pct_per_bar",
     ):
         val = getattr(cfg, attr, None)
         if isinstance(val, (int, float)) and val < 0:

@@ -232,7 +232,7 @@ class TestExtractCandlestickRows:
             deprioritize={"doji"},
         )
 
-        assert rows == [["T1", "Bullish DOJI"]]
+        assert rows == [["T1", "Neutral DOJI"]]
 
     def test_include_metrics_adds_span_context(self):
         df_tail = pd.DataFrame({

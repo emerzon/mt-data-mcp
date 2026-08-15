@@ -23,6 +23,24 @@ def _level_close(a: float, b: float, tol_pct: float) -> bool:
     return abs((a - b) / ((abs(a) + abs(b)) / 2.0)) * 100.0 <= tol_pct
 
 
+def _effective_flat_slope(close: np.ndarray, cfg: ClassicDetectorConfig) -> float:
+    """Return a price-scaled slope used as 'flat'.
+
+    ``max_flat_slope`` stays an absolute floor (so explicit 0.02 overrides
+    still mean 0.02 price units per bar). ``max_flat_slope_pct_per_bar``
+    scales with median price so a 1-point wiggle on a 5000 index is not a
+    rising wedge.
+    """
+    floor = abs(float(getattr(cfg, "max_flat_slope", 1e-4)))
+    pct = abs(float(getattr(cfg, "max_flat_slope_pct_per_bar", 0.01)))
+    finite = np.asarray(close, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return max(floor, 1e-12)
+    med = abs(float(np.median(finite)))
+    return max(floor, med * (pct / 100.0), 1e-12)
+
+
 @lru_cache(maxsize=1)
 def _get_ransac_regressor_cls():
     from sklearn.linear_model import RANSACRegressor  # type: ignore

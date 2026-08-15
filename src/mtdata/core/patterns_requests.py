@@ -20,6 +20,7 @@ class PatternsDetectRequest(BaseModel):
     lookback: int = Field(
         150,
         ge=1,
+        le=20_000,
         description="Historical bars fetched for pattern analysis.",
     )
 
@@ -57,7 +58,36 @@ class PatternsDetectRequest(BaseModel):
     last_n_bars: Optional[int] = Field(None, ge=1)
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None
-    engine: Optional[Literal["native", "stock_pattern"]] = None
+    engine: Optional[str] = Field(
+        None,
+        description=(
+            "Classic-mode engine: 'native', 'stock_pattern', or a "
+            "comma-separated list when ensemble=True."
+        ),
+    )
+
+    @field_validator("engine", mode="before")
+    @classmethod
+    def _normalize_engine(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if not isinstance(value, str):
+            raise ValueError("engine must be a string")
+        normalized = value.strip()
+        if not normalized:
+            return None
+        allowed = {"native", "stock_pattern"}
+        tokens = [
+            part.strip().lower().replace("-", "_")
+            for part in normalized.replace(";", ",").split(",")
+            if part.strip()
+        ]
+        if not tokens:
+            return None
+        invalid = [token for token in tokens if token not in allowed]
+        if invalid:
+            raise ValueError(f"Invalid engine: {invalid[0]}")
+        return normalized
     ensemble: bool = False
     ensemble_weights: Optional[Dict[str, Any]] = None
     include_series: bool = False

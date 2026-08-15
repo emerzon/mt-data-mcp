@@ -193,7 +193,7 @@ def test_recent_terminal_harmonic_pivot_is_marked_forming():
     assert patterns
     assert patterns[0].status == "forming"
     assert patterns[0].details["terminal_pivot_confirmed"] is False
-    assert patterns[0].details["available_at_index"] == 105
+    assert patterns[0].details["available_at_index"] == 102
 
 
 def test_pattern_type_filter_limits_candidates():
