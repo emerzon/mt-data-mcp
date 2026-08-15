@@ -140,7 +140,8 @@ class TestFetchPatternData:
         mock_mt5.symbol_info.return_value = MagicMock(visible=False)
         mock_rates.return_value = _make_rates_array(200)
         self._call("EURUSD", "H1", 500)
-        mock_mt5.symbol_select.assert_called_once_with("EURUSD", True)
+        assert mock_mt5.symbol_select.call_args_list[0].args == ("EURUSD", True)
+        assert mock_mt5.symbol_select.call_args_list[-1].args == ("EURUSD", False)
 
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns._mt5_copy_rates_from")

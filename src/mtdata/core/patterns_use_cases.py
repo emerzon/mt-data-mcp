@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -84,6 +85,39 @@ def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
         fetch_floor = _ALL_MODE_FETCH_FLOOR
     
     return min(user_limit, max(fetch_floor, min(user_limit, max_bars)))
+
+_ALL_MODE_SECTION_KEYS = ("classic", "elliott", "fractal", "harmonic", "candlestick")
+
+
+def _section_config(
+    config: Optional[Dict[str, Any]],
+    section: str,
+    *,
+    extra_keys: Optional[set[str]] = None,
+    sibling_cfgs: Optional[List[Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Split a mode='all' config dict into per-detector settings.
+
+    Un-namespaced keys still apply to every detector that has the field
+    (back-compat). Nest under a section name to retune only one detector,
+    e.g. ``{"harmonic": {"min_confidence": 0.7}}``.
+    """
+    if not isinstance(config, dict):
+        return None
+    namespaced = config.get(section)
+    extra = extra_keys or set()
+    siblings = list(sibling_cfgs or [])
+    shared: Dict[str, Any] = {}
+    for key, value in config.items():
+        if key in _ALL_MODE_SECTION_KEYS:
+            continue
+        owners = [cfg for cfg in siblings if hasattr(cfg, key)]
+        if key in extra or owners:
+            shared[key] = value
+    if isinstance(namespaced, dict):
+        return {**shared, **namespaced}
+    return shared or None
+
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
@@ -407,6 +441,10 @@ def run_patterns_detect(  # noqa: C901
         bool(request.ensemble) or request.ensemble_weights is not None
     ) and mode_value != "classic":
         return {"error": "ensemble applies only to mode='classic'."}
+    if request.last_n_bars is not None and mode_value not in {"candlestick", "all"}:
+        return {
+            "error": "last_n_bars applies only to mode='candlestick' or mode='all'."
+        }
 
     def _fetch_pattern_frame(
         timeframe: str,
@@ -463,6 +501,7 @@ def run_patterns_detect(  # noqa: C901
             config=request.config if isinstance(request.config, dict) else None,
             start=request.start,
             end=request.end,
+            denoise=request.denoise,
         )
         if isinstance(out, dict) and not out.get("error"):
             _attach_pattern_window_metadata(
@@ -487,6 +526,10 @@ def run_patterns_detect(  # noqa: C901
                 {"candlestick": {"patterns": rows}},
                 limit=min(max(1, int(request.top_k or 5)), 10),
             )
+            compact_src = deps.compact_patterns_payload(
+                out if isinstance(out, dict) else {"data": out},
+                preview_limit=request.top_k,
+            )
             summary_out = {
                 "success": bool(isinstance(out, dict) and out.get("success", True)),
                 "symbol": request.symbol,
@@ -495,6 +538,17 @@ def run_patterns_detect(  # noqa: C901
                 "n_patterns": len(rows),
                 "highlights": highlights,
             }
+            for key in (
+                "pattern_status",
+                "pattern_confidence",
+                "bias",
+                "review_recommended",
+                "suggested_review",
+                "applied_last_n_bars",
+                "timezone",
+            ):
+                if isinstance(compact_src, dict) and compact_src.get(key) not in (None, ""):
+                    summary_out[key] = compact_src[key]
             if isinstance(out, dict) and out.get("note"):
                 summary_out["note"] = out["note"]
             return summary_out
@@ -503,9 +557,11 @@ def run_patterns_detect(  # noqa: C901
                 out if isinstance(out, dict) else {"data": out},
                 preview_limit=request.top_k,
             )
-        return _dedupe_repeated_regime_context(
-            _limit_pattern_payload_rows(out, top_k=request.top_k)
-        )
+        if detail_value == "standard":
+            return _dedupe_repeated_regime_context(
+                _limit_pattern_payload_rows(out, top_k=request.top_k)
+            )
+        return _dedupe_repeated_regime_context(out)
 
     if mode_value == "classic":
         tf_single = tf_norm or "H1"
@@ -662,31 +718,7 @@ def run_patterns_detect(  # noqa: C901
             return err
 
         out_list = deps.format_fractal_patterns(df, cfg)
-        visible_rows = (
-            list(out_list)
-            if request.include_completed
-            else [
-                row
-                for row in out_list
-                if str(row.get("status", "")).strip().lower() == "active"
-            ]
-        )
-        resp = deps.build_pattern_response(
-            request.symbol,
-            tf_single,
-            request.lookback,
-            mode_value,
-            out_list,
-            request.include_completed,
-            request.include_series,
-            request.series_time,
-            df,
-            detail=detail_value,
-            top_k=request.top_k,
-        )
-        fractal_context = deps.summarize_fractal_context(visible_rows)
-        if fractal_context:
-            resp.update(fractal_context)
+        vp_payload = None
         if _config_bool(request.config, "volume_profile", False):
             vp_source = (
                 str((request.config or {}).get("volume_profile_source") or "auto")
@@ -712,13 +744,12 @@ def run_patterns_detect(  # noqa: C901
                 max_ticks=_config_int(
                     request.config, "volume_profile_max_ticks", 50_000
                 ),
-                max_m1_bars=max(1, int(request.lookback) * 60),
+                max_m1_bars=max(1, min(int(request.lookback) * 60, 50_000)),
                 detail="compact",
             )
-            resp["volume_profile"] = vp_payload
             if isinstance(vp_payload, dict) and vp_payload.get("success"):
-                enriched_rows = deps.annotate_level_confluence(
-                    resp.get("patterns") or [],
+                out_list = deps.annotate_level_confluence(
+                    out_list,
                     vp_payload.get("levels") or [],
                     tolerance_points=_config_float(
                         request.config, "volume_profile_tolerance_points", 25.0
@@ -726,13 +757,39 @@ def run_patterns_detect(  # noqa: C901
                     price_point=vp_payload.get("price_point") or vp_payload.get("bucket_size"),
                     price_key="level_price",
                 )
-                resp["patterns"] = enriched_rows
-                resp["n_volume_profile_confluences"] = sum(
-                    1
-                    for row in enriched_rows
-                    if isinstance(row, dict)
-                    and (row.get("volume_profile_confluence") or {}).get("within_tolerance")
-                )
+        visible_rows = (
+            list(out_list)
+            if request.include_completed
+            else [
+                row
+                for row in out_list
+                if str(row.get("status", "")).strip().lower() == "active"
+            ]
+        )
+        resp = deps.build_pattern_response(
+            request.symbol,
+            tf_single,
+            request.lookback,
+            mode_value,
+            out_list,
+            request.include_completed,
+            request.include_series,
+            request.series_time,
+            df,
+            detail=detail_value,
+            top_k=request.top_k,
+        )
+        fractal_context = deps.summarize_fractal_context(visible_rows)
+        if fractal_context:
+            resp.update(fractal_context)
+        if vp_payload is not None:
+            resp["volume_profile"] = vp_payload
+            resp["n_volume_profile_confluences"] = sum(
+                1
+                for row in out_list
+                if isinstance(row, dict)
+                and (row.get("volume_profile_confluence") or {}).get("within_tolerance")
+            )
         _attach_signal_bias_summary(resp, deps)
         return resp
 
@@ -830,6 +887,14 @@ def run_patterns_detect(  # noqa: C901
             return resp
 
         scanned_timeframes = deps.resolve_elliott_scan_timeframes(cfg)
+        if not scanned_timeframes:
+            return {
+                "error": (
+                    "No valid Elliott scan_timeframes. "
+                    "Use H1, H4, D1 (or other TIMEFRAME_MAP keys). "
+                    "Omit scan_timeframes to use the H1/H4/D1 default."
+                )
+            }
         findings: List[Dict[str, Any]] = []
         combined_patterns: List[Dict[str, Any]] = []
         failed_timeframes: Dict[str, str] = {}
@@ -993,8 +1058,35 @@ def run_patterns_detect(  # noqa: C901
             resp["warnings"] = warnings_out
         if request.include_series:
             resp["series_by_timeframe"] = series_by_timeframe
-        if detail_value == "compact":
-            return deps.compact_patterns_payload(resp)
+        if detail_value in {"compact", "summary"}:
+            compact_resp = deps.compact_patterns_payload(
+                resp, preview_limit=request.top_k
+            )
+            if detail_value == "summary":
+                return {
+                    key: value
+                    for key, value in compact_resp.items()
+                    if key
+                    in {
+                        "success",
+                        "symbol",
+                        "timeframe",
+                        "lookback",
+                        "mode",
+                        "n_patterns",
+                        "top_patterns",
+                        "pattern_status",
+                        "pattern_confidence",
+                        "bias",
+                        "highlights",
+                        "review_recommended",
+                        "warnings",
+                        "note",
+                        "failed_timeframes",
+                        "adaptation",
+                    }
+                }
+            return compact_resp
         return _dedupe_repeated_regime_context(resp)
 
     if mode_value == "all":
@@ -1006,6 +1098,7 @@ def run_patterns_detect(  # noqa: C901
         elliott_patterns: List[Dict[str, Any]] = []
         elliott_adaptations: Dict[str, Dict[str, Any]] = {}
         fractal_patterns: List[Dict[str, Any]] = []
+        series_by_timeframe: Dict[str, Dict[str, Any]] = {}
         section_errors: Dict[str, Dict[str, str]] = {}
 
         classic_cfg = deps.classic_cfg_cls()
@@ -1022,10 +1115,37 @@ def run_patterns_detect(  # noqa: C901
         fractal_invalid: List[str] = []
         harmonic_invalid: List[str] = []
         if isinstance(request.config, dict):
-            classic_invalid = deps.apply_config_to_obj(classic_cfg, request.config)
-            elliott_invalid = deps.apply_config_to_obj(elliott_cfg, request.config)
-            fractal_invalid = deps.apply_config_to_obj(fractal_cfg, request.config)
-            harmonic_invalid = deps.apply_config_to_obj(harmonic_cfg, request.config)
+            sibling_cfgs = [classic_cfg, elliott_cfg, fractal_cfg, harmonic_cfg]
+            classic_invalid = deps.apply_config_to_obj(
+                classic_cfg,
+                _section_config(
+                    request.config,
+                    "classic",
+                    extra_keys=_CLASSIC_CONFIG_EXTRA_KEYS,
+                    sibling_cfgs=sibling_cfgs,
+                ),
+            )
+            elliott_invalid = deps.apply_config_to_obj(
+                elliott_cfg,
+                _section_config(
+                    request.config, "elliott", sibling_cfgs=sibling_cfgs
+                ),
+            )
+            fractal_invalid = deps.apply_config_to_obj(
+                fractal_cfg,
+                _section_config(
+                    request.config,
+                    "fractal",
+                    extra_keys=_FRACTAL_CONFIG_EXTRA_KEYS,
+                    sibling_cfgs=sibling_cfgs,
+                ),
+            )
+            harmonic_invalid = deps.apply_config_to_obj(
+                harmonic_cfg,
+                _section_config(
+                    request.config, "harmonic", sibling_cfgs=sibling_cfgs
+                ),
+            )
 
         all_unapplied_keys = _all_mode_invalid_config_keys(
             request.config,
@@ -1104,15 +1224,27 @@ def run_patterns_detect(  # noqa: C901
 
             # Apply timeframe-aware age/span defaults (only when user didn't set them)
             user_cfg = request.config if isinstance(request.config, dict) else {}
-            if "max_pattern_age_bars" not in user_cfg:
+
+            def _user_set(
+                key: str, *sections: str, cfg: Dict[str, Any] = user_cfg
+            ) -> bool:
+                if key in cfg:
+                    return True
+                for section in sections:
+                    nested = cfg.get(section)
+                    if isinstance(nested, dict) and key in nested:
+                        return True
+                return False
+
+            if not _user_set("max_pattern_age_bars", "classic", "elliott"):
                 age_bars, _ = _timeframe_aware_age_limits(tf, tf_limit)
                 classic_cfg.max_pattern_age_bars = age_bars
                 elliott_cfg.max_pattern_age_bars = age_bars
-            if "max_pattern_span_bars" not in user_cfg:
+            if not _user_set("max_pattern_span_bars", "classic", "elliott"):
                 _, span_bars = _timeframe_aware_age_limits(tf, tf_limit)
                 classic_cfg.max_pattern_span_bars = span_bars
                 elliott_cfg.max_pattern_span_bars = span_bars
-            if "max_age_bars" not in user_cfg:
+            if not _user_set("max_age_bars", "fractal"):
                 fractal_age, _ = _timeframe_aware_age_limits(tf, tf_limit)
                 fractal_cfg.max_age_bars = fractal_age
 
@@ -1131,13 +1263,17 @@ def run_patterns_detect(  # noqa: C901
                     config=request.config if isinstance(request.config, dict) else None,
                     start=request.start,
                     end=request.end,
+                    denoise=request.denoise,
                 )
                 if isinstance(candle_result, dict) and not candle_result.get("error"):
                     rows = candle_result.get("data", [])
+                    candle_bars = candle_result.get("candles")
                     if isinstance(rows, list):
                         for row in rows:
                             if isinstance(row, dict):
                                 row["timeframe"] = tf
+                                if candle_bars is not None:
+                                    row["_data_length"] = candle_bars
                                 candlestick_patterns.append(row)
                 elif isinstance(candle_result, dict) and candle_result.get("error"):
                     section_errors.setdefault("candlestick", {})[tf] = str(
@@ -1150,7 +1286,10 @@ def run_patterns_detect(  # noqa: C901
             df, fetch_err = _fetch_pattern_frame(
                 tf,
                 tf_limit,
-                fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["all"],
+                fetch_floor_bars=min(
+                    _MODE_FETCH_FLOOR_BARS["all"],
+                    max(30, int(tf_limit)),
+                ),
             )
             if fetch_err:
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
@@ -1159,6 +1298,31 @@ def run_patterns_detect(  # noqa: C901
                 section_errors.setdefault("elliott", {})[tf] = err_msg
                 section_errors.setdefault("fractal", {})[tf] = err_msg
                 continue
+
+            if request.include_series:
+                series_payload: Dict[str, Any] = {
+                    "series_close": [
+                        None
+                        if not math.isfinite(float(v))
+                        else float(v)
+                        for v in deps.to_float_np(df.get("close")).tolist()
+                    ]
+                }
+                if "time" in df.columns:
+                    if str(request.series_time).lower() == "epoch":
+                        series_payload["series_epoch"] = [
+                            None
+                            if not math.isfinite(float(v))
+                            else float(v)
+                            for v in deps.to_float_np(df.get("time")).tolist()
+                        ]
+                    else:
+                        series_payload["series_time"] = [
+                            deps.format_time_minimal(float(v))
+                            for v in deps.to_float_np(df.get("time")).tolist()
+                            if math.isfinite(float(v))
+                        ]
+                series_by_timeframe[tf] = series_payload
 
             # ── Classic (native engine) ──
             n_bars = len(df)
@@ -1243,6 +1407,16 @@ def run_patterns_detect(  # noqa: C901
         score_all_mode_patterns(harmonic_patterns, request.lookback)
         score_all_mode_patterns(elliott_patterns, request.lookback)
         score_all_mode_patterns(fractal_patterns, request.lookback)
+        for section_rows in (
+            candlestick_patterns,
+            classic_patterns,
+            harmonic_patterns,
+            elliott_patterns,
+            fractal_patterns,
+        ):
+            for row in section_rows:
+                if isinstance(row, dict):
+                    row.pop("_data_length", None)
 
         total = (
             len(candlestick_patterns)
@@ -1290,6 +1464,8 @@ def run_patterns_detect(  # noqa: C901
             },
             "total_patterns": total,
         }
+        if request.include_series and series_by_timeframe:
+            resp["series_by_timeframe"] = series_by_timeframe
 
         if classic_patterns:
             bias = deps.summarize_pattern_bias(classic_patterns)

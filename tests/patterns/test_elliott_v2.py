@@ -94,7 +94,7 @@ def test_result_exposes_geometry_and_causal_availability_separately() -> None:
 
     assert result.end_index == 5
     assert result.available_at_index == close.size - 1
-    assert result.structure_state == "developing"
+    assert result.structure_state == "confirmed"
     assert result.details["pivots"][0]["time"] == 0.0
     assert np.isfinite(result.details["pivots"][0]["price"])
 

@@ -241,6 +241,8 @@ def _validate_config(config: ElliottWaveConfig) -> None:
         value = getattr(config, name)
         if value is not None and (isinstance(value, bool) or int(value) < 1):
             raise ValueError(f"{name} must be None or an integer >= 1")
+    if isinstance(config.max_scan_timeframes, bool) or int(config.max_scan_timeframes) < 1:
+        raise ValueError("max_scan_timeframes must be an integer >= 1")
 
 
 def _zigzag_pivots_indices(
@@ -404,6 +406,9 @@ def _ohlc_zigzag_pivots_indices(
         if trend == "up":
             if hi > ext_price:
                 ext_i, ext_price = i, hi
+            # A wide bar that just set the high must not confirm against its own low.
+            if i == ext_i:
+                continue
             reversal = (ext_price - lo) / abs(ext_price) * 100.0 if ext_price else 0.0
             if reversal >= threshold_pct:
                 pivots.append(ext_i)
@@ -412,6 +417,8 @@ def _ohlc_zigzag_pivots_indices(
         else:
             if lo < ext_price:
                 ext_i, ext_price = i, lo
+            if i == ext_i:
+                continue
             reversal = (hi - ext_price) / abs(ext_price) * 100.0 if ext_price else 0.0
             if reversal >= threshold_pct:
                 pivots.append(ext_i)
@@ -453,9 +460,8 @@ def _enforce_min_distance_on_pivots(
         if idx - prev >= md:
             out.append(idx)
             continue
-        # When two pivots are too close, keep the one with a larger move from anchor.
+        # Keep the earlier origin. Replacing it shifts a 1-5 count off wave 0.
         if len(out) == 1:
-            out[-1] = idx
             continue
         anchor = out[-2]
         old_move = abs(float(close[prev]) - float(close[anchor]))
@@ -546,34 +552,33 @@ def _build_pivot_records(
             kind = "peak" if close[idx] > max(close[pivots[pos - 1]], close[pivots[pos + 1]]) else "trough"
 
         confirmation_index: Optional[int] = None
-        if pos < len(pivots) - 1:
-            pivot_price = float(
-                prices[int(idx)]
-                if isinstance(prices, dict) and int(idx) in prices
-                else high[idx]
+        pivot_price = float(
+            prices[int(idx)]
+            if isinstance(prices, dict) and int(idx) in prices
+            else high[idx]
+            if use_ohlc and kind == "peak"
+            else low[idx]
+            if use_ohlc
+            else close[idx]
+        )
+        for bar in range(int(idx) + 1, int(close.size)):
+            price = float(
+                low[bar]
                 if use_ohlc and kind == "peak"
-                else low[idx]
+                else high[bar]
                 if use_ohlc
-                else close[idx]
+                else close[bar]
             )
-            for bar in range(int(idx) + 1, int(close.size)):
-                price = float(
-                    low[bar]
-                    if use_ohlc and kind == "peak"
-                    else high[bar]
-                    if use_ohlc
-                    else close[bar]
-                )
-                if not np.isfinite(price) or pivot_price == 0.0:
-                    continue
-                reversal = (
-                    (pivot_price - price) / abs(pivot_price) * 100.0
-                    if kind == "peak"
-                    else (price - pivot_price) / abs(pivot_price) * 100.0
-                )
-                if reversal >= threshold:
-                    confirmation_index = int(bar)
-                    break
+            if not np.isfinite(price) or pivot_price == 0.0:
+                continue
+            reversal = (
+                (pivot_price - price) / abs(pivot_price) * 100.0
+                if kind == "peak"
+                else (price - pivot_price) / abs(pivot_price) * 100.0
+            )
+            if reversal >= threshold:
+                confirmation_index = int(bar)
+                break
         records.append(
             ElliottPivot(
                 index=int(idx),
@@ -1721,11 +1726,7 @@ class ElliottWaveAnalyzer:
             if direction in {"up", "down"}
         }
         price_by_index = {
-            int(idx): float(
-                geometry[int(idx)]
-                if self._normalized_pivot_price_source() == "ohlc"
-                else self.close[int(idx)]
-            )
+            int(idx): float(geometry[int(idx)])
             for idx in piv_idx
         }
         piv_idx = _enforce_min_distance_on_pivots(piv_idx, geometry, min_distance)
@@ -1734,15 +1735,33 @@ class ElliottWaveAnalyzer:
             piv_idx, kind_by_index, price_by_index
         )
         self._pivot_cache[key] = piv_idx
-        self._pivot_record_cache[key] = _build_pivot_records(
+        records = _build_pivot_records(
             piv_idx,
-            self.pivot_signal,
+            geometry,
             float(threshold_pct),
             high=self.high if self._normalized_pivot_price_source() == "ohlc" else None,
             low=self.low if self._normalized_pivot_price_source() == "ohlc" else None,
             kinds=kind_by_index,
             prices=price_by_index,
         )
+        if self._normalized_pivot_price_source() == "close":
+            from dataclasses import replace as _replace_pivot
+
+            rewritten: List[ElliottPivot] = []
+            for record in records:
+                idx = int(record.index)
+                if 0 <= idx < int(self.close.size) and np.isfinite(float(self.close[idx])):
+                    rewritten.append(
+                        _replace_pivot(
+                            record,
+                            price=float(self.close[idx]),
+                            price_source="close",
+                        )
+                    )
+                else:
+                    rewritten.append(record)
+            records = rewritten
+        self._pivot_record_cache[key] = records
         return piv_idx
 
     def pivot_signature(
@@ -2126,7 +2145,11 @@ class ElliottWaveAnalyzer:
             "available_at_time": PatternResultBase.resolve_time(
                 self.times, int(available_at_index)
             ),
-            "status_basis": "causal_confirmation",
+            "status_basis": (
+                "causal_confirmation_given_terminal_scale"
+                if str(getattr(self.config, "scale_mode", "")).strip().lower() == "auto"
+                else "causal_confirmation"
+            ),
         }
         if scenario.fallback_candidate:
             details["candidate_score"] = float(scenario.confidence)
@@ -2629,6 +2652,7 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
     results = _filter_overlapping_corrections(list(results_by_key.values()))
     # Apply proximity-based deduplication (Option C) to remove near-duplicate patterns
     results = _dedupe_similar_waves(results, proximity_bars=24)
+    results = _filter_nested_results(results)
     results = _group_scale_alternatives(results)
     results.sort(
         key=lambda result: _causal_result_sort_key(

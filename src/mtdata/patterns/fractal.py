@@ -24,7 +24,7 @@ class FractalDetectorConfig:
 @dataclass
 class FractalPatternResult(PatternResultBase):
     name: str
-    status: Literal["active", "broken"]
+    status: Literal["active", "broken", "stale"]
     direction: str
     price: float
     details: Dict[str, Any] = field(default_factory=dict)
@@ -268,7 +268,7 @@ def _apply_fractal_lifecycle_filter(
     cfg: FractalDetectorConfig,
     n_bars: int,
 ) -> List[FractalPatternResult]:
-    max_age = int(getattr(cfg, "max_age_bars", 500))
+    max_age = int(getattr(cfg, "max_age_bars", 300))
     include_stale = bool(getattr(cfg, "include_stale_levels", False))
     filtered: List[FractalPatternResult] = []
     for result in results:
@@ -280,6 +280,8 @@ def _apply_fractal_lifecycle_filter(
             n_bars=n_bars,
         )
         result.details["lifecycle_state"] = lifecycle_state
+        if lifecycle_state == "stale":
+            result.status = "stale"
         if lifecycle_state != "stale" or include_stale:
             filtered.append(result)
     return filtered

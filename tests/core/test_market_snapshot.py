@@ -428,6 +428,9 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
         "support_count": 1,
         "resistance_count": 1,
         "pattern_count": 2,
+        "pattern_bias": "bullish",
+        "pattern_is_signal": False,
+        "pattern_usage": "information_only",
         "pattern_window_bars": 3,
         "pattern_scan_note": (
             "Candlestick triggers are limited to the latest 3 bars; "
@@ -504,6 +507,9 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         "support_count": 1,
         "resistance_count": 1,
         "pattern_count": 2,
+        "pattern_bias": "bullish",
+        "pattern_is_signal": False,
+        "pattern_usage": "information_only",
         "pattern_window_bars": 3,
         "pattern_scan_note": (
             "Candlestick triggers are limited to the latest 3 bars; "

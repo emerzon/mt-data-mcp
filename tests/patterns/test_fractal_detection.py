@@ -12,7 +12,7 @@ from mtdata.patterns.fractal import (
 def test_fractal_status_annotation_matches_runtime_lifecycle():
     status_type = get_type_hints(FractalPatternResult)["status"]
 
-    assert set(get_args(status_type)) == {"active", "broken"}
+    assert set(get_args(status_type)) == {"active", "broken", "stale"}
 
 
 def _fractal_breakout_frame(close_breakout: bool = True) -> pd.DataFrame:

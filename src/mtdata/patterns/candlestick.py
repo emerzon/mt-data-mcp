@@ -653,13 +653,20 @@ def _extract_candlestick_rows(
             name = str(base_names[col_idx])
             value = float(values[i, col_idx])
             label_core = _candlestick_display_name(name).strip().upper()
-            dir_title = "Bullish" if value > 0 else "Bearish"
+            normalized = str(normalized_names[col_idx])
+            if normalized in deprioritize:
+                dir_title = "Neutral"
+            else:
+                dir_title = "Bullish" if value > 0 else "Bearish"
             if include_metrics:
                 span_bars = int(span_values[col_idx])
                 start_bar_idx = max(0, int(i - span_bars + 1))
                 start_time = str(time_vals[start_bar_idx])
                 end_time = str(time_vals[i])
-                direction = "bullish" if value > 0 else "bearish"
+                if normalized in deprioritize:
+                    direction = "neutral"
+                else:
+                    direction = "bullish" if value > 0 else "bearish"
                 strength = float(strength_values[i, col_idx])
                 raw_signal: Any
                 if abs(value - round(value)) <= 1e-9:
@@ -741,6 +748,7 @@ def detect_candlestick_patterns(  # noqa: C901
     config: Optional[Dict[str, Any]] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    denoise: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     try:
         _ensure_candlestick_runtime()
@@ -796,14 +804,44 @@ def detect_candlestick_patterns(  # noqa: C901
         current_time_epoch=live_bar_reference_epoch,
     ):
         df = df.iloc[:-1].copy()
+    denoise_warnings: List[str] = []
+    if denoise:
+        try:
+            from ..utils.denoise import apply_denoise as apply_denoise_util
+            from ..utils.denoise import (
+                normalize_denoise_spec as _normalize_denoise_spec,
+            )
+
+            dn = _normalize_denoise_spec(denoise, default_when="pre_ti")
+            if dn:
+                apply_denoise_util(df, dn, default_when="pre_ti")
+                suffix = str(dn.get("suffix") or "_dn")
+                for name in ("open", "high", "low", "close", "volume", "tick_volume"):
+                    candidate = f"{name}{suffix}"
+                    if candidate in df.columns:
+                        df[name] = df[candidate]
+        except Exception as exc:
+            logger.warning(
+                "Denoise failed for candlestick detection on %s %s; raw prices were used.",
+                symbol,
+                timeframe,
+                exc_info=True,
+            )
+            denoise_warnings.append(
+                f"Denoise failed for pattern detection on {symbol} {timeframe}; "
+                f"raw prices were used. {exc}"
+            )
     if len(df) > int(limit):
         df = df.iloc[-int(limit):].copy()
     if len(df) == 0:
         return {"error": "No closed candle data available"}
-    warnings_out = data_quality_warnings(
-        df,
-        symbol=symbol,
-        timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
+    warnings_out = list(denoise_warnings)
+    warnings_out.extend(
+        data_quality_warnings(
+            df,
+            symbol=symbol,
+            timeframe_seconds=float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0),
+        )
     )
     epochs = pd.to_numeric(df["time"], errors="coerce").tolist()
     _use_ctz = _use_client_tz()
@@ -968,7 +1006,12 @@ def detect_candlestick_patterns(  # noqa: C901
         payload["warnings"] = warnings_out
     if last_n_val is not None:
         payload["last_n_bars"] = int(last_n_val)
-    if not _use_ctz:
+    if _use_ctz:
+        from ..utils.time import _resolve_client_tz
+
+        client_tz = _resolve_client_tz()
+        payload["timezone"] = str(getattr(client_tz, "zone", None) or client_tz or "local")
+    else:
         payload["timezone"] = "UTC"
     return payload
 

@@ -197,6 +197,49 @@ def detect_pivots(
     return peaks.astype(int), troughs.astype(int)
 
 
+def _coerce_pattern_time_epoch(values: Any, expected_size: int) -> np.ndarray:
+    """Convert a time column to UTC epoch seconds.
+
+    Datetime64 / timezone-aware values become seconds, not nanoseconds.
+    Numeric values larger than 1e12 are treated as milliseconds or
+    nanoseconds and scaled down.
+    """
+    try:
+        series = values if isinstance(values, pd.Series) else pd.Series(values)
+    except Exception:
+        return np.asarray([], dtype=float)
+    if pd.api.types.is_datetime64_any_dtype(series) or isinstance(
+        getattr(series, "dtype", None), pd.DatetimeTZDtype
+    ):
+        try:
+            dt = pd.to_datetime(series, utc=True, errors="coerce")
+            ns = dt.astype("int64", copy=False).to_numpy(dtype=float)
+            seconds = ns / 1e9
+            valid = dt.notna().to_numpy()
+            seconds = np.where(valid, seconds, np.nan)
+            return np.asarray(seconds, dtype=float)
+        except Exception:
+            return np.asarray([], dtype=float)
+    try:
+        times = to_float_np(series)
+    except (TypeError, ValueError):
+        try:
+            dt = pd.to_datetime(series, utc=True, errors="coerce")
+            ns = dt.astype("int64", copy=False).to_numpy(dtype=float)
+            return np.asarray(ns / 1e9, dtype=float)
+        except Exception:
+            return np.asarray([], dtype=float)
+    finite = times[np.isfinite(times)]
+    if finite.size == 0:
+        return times if times.size == expected_size else np.asarray([], dtype=float)
+    typical = float(np.nanmedian(np.abs(finite)))
+    if typical > 1e16:
+        times = times / 1e9
+    elif typical > 1e12:
+        times = times / 1e3
+    return times
+
+
 def prepare_ohlc_pattern_inputs(
     df: pd.DataFrame,
     *,
@@ -238,10 +281,7 @@ def prepare_ohlc_pattern_inputs(
         return None
 
     if "time" in df.columns:
-        try:
-            times = to_float_np(df["time"])
-        except (TypeError, ValueError):
-            times = np.asarray([], dtype=float)
+        times = _coerce_pattern_time_epoch(df["time"], n)
         if times.size != n or not np.isfinite(times).any():
             if time_mode == "arange":
                 times = np.arange(n, dtype=float)

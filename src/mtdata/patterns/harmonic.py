@@ -601,7 +601,10 @@ def _build_result(
     confirmation_bars = max(1, int(cfg.min_distance))
     terminal_pivot_confirmed = bars_since_completion >= confirmation_bars
     status = "completed" if terminal_pivot_confirmed else "forming"
-    available_at_index = int(points[-1].index) + confirmation_bars
+    available_at_index = min(
+        int(n_bars) - 1,
+        int(points[-1].index) + confirmation_bars,
+    )
     completion_freshness = (
         "recent" if bars_since_completion <= int(cfg.recent_bars) else "historical"
     )
@@ -631,7 +634,8 @@ def _build_result(
         "terminal_pivot_confirmed": terminal_pivot_confirmed,
         "confirmation_bars_required": confirmation_bars,
         "available_at_index": available_at_index,
-        "status_basis": "right_hand_pivot_confirmation",
+        "status_basis": "right_edge_batch_pivots_with_terminal_confirmation",
+        "detection_scope": "right_edge_as_of_input_window",
     }
     return HarmonicPatternResult(
         name=f"{direction_label} {spec.display}",

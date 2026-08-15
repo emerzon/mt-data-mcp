@@ -177,13 +177,47 @@ def _fetch_pattern_data(  # noqa: C901
     if _info is None:
         return None, {"error": f"Symbol '{symbol}' not found or is not available in MT5."}
     _was_visible = bool(_info.visible) if _info is not None else None
+    selected_temporarily = False
     try:
         if _was_visible is False:
             if not mt5_gateway.symbol_select(symbol, True):
                 return None, {"error": f"Symbol '{symbol}' is not visible and could not be selected in MT5."}
+            selected_temporarily = True
     except Exception as exc:
         return None, {"error": f"Failed to enable symbol '{symbol}' in MT5: {exc}"}
-    
+
+    try:
+        return _fetch_pattern_data_after_select(
+            symbol,
+            timeframe,
+            limit,
+            denoise=denoise,
+            mt5_gateway=mt5_gateway,
+            mt5_tf=mt5_tf,
+            start=start,
+            end=end,
+            fetch_floor_bars=fetch_floor_bars,
+        )
+    finally:
+        if selected_temporarily:
+            try:
+                mt5_gateway.symbol_select(symbol, False)
+            except Exception:
+                pass
+
+
+def _fetch_pattern_data_after_select(  # noqa: C901
+    symbol: str,
+    timeframe: str,
+    limit: int,
+    *,
+    denoise: Optional[Dict[str, Any]],
+    mt5_gateway: Any,
+    mt5_tf: Any,
+    start: Optional[str],
+    end: Optional[str],
+    fetch_floor_bars: Optional[int],
+) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
     utc_now = datetime.now(timezone.utc)
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
@@ -209,7 +243,11 @@ def _fetch_pattern_data(  # noqa: C901
     else:
         rates = _mt5_copy_rates_from(symbol, mt5_tf, utc_now, count)
     
-    minimum_bars = 5 if (start_dt is not None or end_dt is not None) else 100
+    # Do not hard-fail a shorter but usable broker history. Detector minima
+    # are reported as recommended_min_bars rather than a 100-bar fetch wall.
+    minimum_bars = 5
+    if start_dt is None and end_dt is None:
+        minimum_bars = max(5, min(int(limit), 20))
     if rates is None or len(rates) < minimum_bars:
         return None, {"error": f"Failed to fetch sufficient bars for {symbol}"}
     
@@ -317,40 +355,32 @@ def _resolve_elliott_scan_timeframes(cfg: _ElliottCfg) -> List[str]:
     elif isinstance(raw_scan, (list, tuple, set)):
         requested = [str(part).strip().upper() for part in raw_scan if str(part).strip()]
 
-    if not requested:
-        requested = [tf for tf in _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES if tf in TIMEFRAME_MAP]
-    if not requested:
-        requested = [str(tf).strip().upper() for tf in TIMEFRAME_MAP.keys()]
-
     try:
         max_scan = int(getattr(cfg, "max_scan_timeframes", 3))
     except Exception:
         max_scan = 3
-    if max_scan <= 0:
-        max_scan = max(1, len(TIMEFRAME_MAP))
+    if max_scan < 1:
+        max_scan = 3
 
-    out: List[str] = []
-    seen = set()
-    for timeframe in requested:
-        if timeframe not in TIMEFRAME_MAP or timeframe in seen:
-            continue
-        seen.add(timeframe)
-        out.append(timeframe)
-        if len(out) >= max_scan:
-            break
-    if out:
+    def _take(candidates: List[str]) -> List[str]:
+        out: List[str] = []
+        seen = set()
+        for timeframe in candidates:
+            if timeframe not in TIMEFRAME_MAP or timeframe in seen:
+                continue
+            seen.add(timeframe)
+            out.append(timeframe)
+            if len(out) >= max_scan:
+                break
         return out
 
-    fallback: List[str] = []
-    for timeframe in TIMEFRAME_MAP.keys():
-        tf = str(timeframe).strip().upper()
-        if tf in seen:
-            continue
-        seen.add(tf)
-        fallback.append(tf)
-        if len(fallback) >= max_scan:
-            break
-    return fallback
+    if requested:
+        # Unknown tokens are ignored. If none survive, return empty so the
+        # caller can error instead of silently scanning M1/M2/M3.
+        return _take(requested)
+
+    defaults = [tf for tf in _DEFAULT_ELLIOTT_SCAN_TIMEFRAMES if tf in TIMEFRAME_MAP]
+    return _take(defaults)
 
 
 def _patterns_detect_deps() -> PatternsDetectDeps:
@@ -431,6 +461,7 @@ def _build_pattern_response(  # noqa: C901
         "mode": mode,
         "patterns": filtered,
         "n_patterns": int(len(filtered)),
+        "candles": int(len(df)),
     }
     if mode_value == "candlestick":
         resp["completion_filter"] = {
@@ -568,13 +599,25 @@ def _build_pattern_response(  # noqa: C901
     
     # Include series data if requested
     if include_series:
-        resp["series_close"] = [float(v) for v in __to_float_np(df.get('close')).tolist()]
-        if 'time' in df.columns:
-            if str(series_time).lower() == 'epoch':
-                resp["series_epoch"] = [float(v) for v in __to_float_np(df.get('time')).tolist()]
+        def _finite_or_none(values: Any) -> List[Any]:
+            out: List[Any] = []
+            for value in __to_float_np(values).tolist():
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    out.append(None)
+                    continue
+                out.append(number if np.isfinite(number) else None)
+            return out
+
+        resp["series_close"] = _finite_or_none(df.get("close"))
+        if "time" in df.columns:
+            if str(series_time).lower() == "epoch":
+                resp["series_epoch"] = _finite_or_none(df.get("time"))
             else:
                 resp["series_time"] = [
-                    _format_time_minimal(float(v)) for v in __to_float_np(df.get('time')).tolist()
+                    None if epoch is None else _format_time_minimal(epoch)
+                    for epoch in _finite_or_none(df.get("time"))
                 ]
 
     detail_value = str(detail).lower().strip()
@@ -594,7 +637,18 @@ def _build_pattern_response(  # noqa: C901
                     "n_patterns",
                     "summary",
                     "recent_patterns",
+                    "top_patterns",
+                    "pattern_status",
+                    "pattern_confidence",
+                    "bias",
+                    "highlights",
+                    "review_recommended",
+                    "suggested_review",
+                    "dominant_direction",
                     "show_all_hint",
+                    "result_limit",
+                    "result_limit_note",
+                    "data_quality",
                     "warnings",
                     "note",
                     "failed_timeframes",
@@ -836,7 +890,13 @@ def _format_harmonic_patterns(
     pats = _detect_harmonic_patterns(df, cfg)
     out_list: List[Dict[str, Any]] = []
     n_bars = len(df)
-    recent_bars = max(3, min(20, round(n_bars * 0.05)))
+    configured_recent = getattr(cfg, "recent_bars", None)
+    try:
+        recent_bars = max(1, int(configured_recent)) if configured_recent is not None else max(
+            3, min(20, round(n_bars * 0.05))
+        )
+    except Exception:
+        recent_bars = max(3, min(20, round(n_bars * 0.05)))
     for p in pats:
         try:
             start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
@@ -1234,6 +1294,14 @@ def _run_classic_engine_stock_pattern(
             details = dict(details)
             details.setdefault("bias", stock_pattern_bias.get(fn_name, "neutral"))
         status = _infer_stock_pattern_status(res)
+        if status == "detected":
+            # Williams-style right confirmation: a structure whose end is
+            # still inside bars_right of the right edge is forming.
+            status = (
+                "forming"
+                if int(e_idx) >= int(len(sp_df) - max(1, bars_right) - 1)
+                else "completed"
+            )
         confidence_cap = 0.95 if status == "forming" else 1.0
         d: Dict[str, Any] = {
             "name": name,
@@ -1453,8 +1521,9 @@ def patterns_detect(
 
     engine : str, optional
         Classic-mode engine selection: "native", "stock_pattern", or a
-        comma-separated list when `ensemble=True`. Omitted classic calls use
-        "native". Supplying engine for another mode is an error.
+        comma-separated list when `ensemble=True` (for example
+        "native,stock_pattern"). Omitted classic calls use "native".
+        Supplying engine for another mode is an error.
 
     ensemble : bool, optional (default=False)
         For classic mode, merge detections from multiple engines into consensus results.

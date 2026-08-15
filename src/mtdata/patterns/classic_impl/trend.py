@@ -8,6 +8,7 @@ from .utils import (
     _conf,
     _count_recent_touches,
     _count_touches,
+    _effective_flat_slope,
     _find_recent_breakout,
     _fit_line,
     _fit_line_robust,
@@ -68,7 +69,8 @@ def detect_trend_lines(
             geom_ok = 1.0
             conf = _conf(touches, r2, geom_ok, cfg)
             status = "forming"
-            tl_dir = 'Ascending' if slope > cfg.max_flat_slope else ('Descending' if slope < -cfg.max_flat_slope else 'Horizontal')
+            flat = _effective_flat_slope(c, cfg)
+            tl_dir = 'Ascending' if slope > flat else ('Descending' if slope < -flat else 'Horizontal')
             name = f"{tl_dir} Trend Line"
             
             recent_i = n - 1
@@ -175,12 +177,13 @@ def detect_channels(
         lower_source=lower_source,
     )
     
+    flat = _effective_flat_slope(c, cfg)
     name = "Trend Channel"
-    if sh > cfg.max_flat_slope and sl > cfg.max_flat_slope:
+    if sh > flat and sl > flat:
         name = "Ascending Channel"
-    elif sh < -cfg.max_flat_slope and sl < -cfg.max_flat_slope:
+    elif sh < -flat and sl < -flat:
         name = "Descending Channel"
-    elif abs(sh) <= cfg.max_flat_slope and abs(sl) <= cfg.max_flat_slope:
+    elif abs(sh) <= flat and abs(sl) <= flat:
         name = "Horizontal Channel"
         
     if approx_parallel and not converging and not widening and touches >= cfg.min_channel_touches:
