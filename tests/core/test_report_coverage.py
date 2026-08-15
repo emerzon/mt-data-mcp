@@ -197,13 +197,9 @@ def test_report_section_plan_only_runs_dependencies_available_to_template() -> N
     )
 
     assert minimal["execution"] == ["forecast"]
-    assert basic["execution"] == ["backtest", "forecast"]
-    assert basic["selected_runtime_estimate_seconds"] == 30.0
-    assert basic["required_dependencies"] == {
-        "forecast": [
-            {"section": "backtest", "estimated_runtime_seconds": 25.0}
-        ]
-    }
+    assert basic["execution"] == ["forecast"]
+    assert basic["selected_runtime_estimate_seconds"] == 5.0
+    assert basic["required_dependencies"] == {}
 
 
 def test_report_section_plan_runtime_budget_includes_dependencies() -> None:
@@ -212,24 +208,24 @@ def test_report_section_plan_runtime_budget_includes_dependencies() -> None:
     insufficient = _resolve_report_section_plan(
         "basic",
         include_sections=["context", "forecast"],
-        max_runtime=33.0,
+        max_runtime=8.0,
     )
     sufficient = _resolve_report_section_plan(
         "basic",
         include_sections=["context", "forecast"],
-        max_runtime=34.0,
+        max_runtime=9.0,
     )
 
-    assert insufficient["selected_runtime_estimate_seconds"] == 34.0
+    assert insufficient["selected_runtime_estimate_seconds"] == 9.0
     assert insufficient["execution"] == ["context"]
     assert insufficient["runtime_omitted"] == ["forecast"]
     assert insufficient["runtime_omitted_details"]["forecast"] == {
-        "estimated_incremental_seconds": 30.0,
-        "budget_remaining_seconds": 29.0,
+        "estimated_incremental_seconds": 5.0,
+        "budget_remaining_seconds": 4.0,
         "shortfall_seconds": 1.0,
-        "required_dependencies": ["backtest"],
+        "required_dependencies": [],
     }
-    assert sufficient["execution"] == ["context", "backtest", "forecast"]
+    assert sufficient["execution"] == ["context", "forecast"]
 
 
 def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
@@ -247,6 +243,7 @@ def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
         "forecast",
         "barriers",
         "patterns",
+        "confluence",
     ]
 
 
@@ -279,7 +276,7 @@ def test_basic_report_volatility_failure_keeps_method_errors(monkeypatch):
     volatility = out["sections"]["volatility"]
     assert volatility["error"] == "Volatility estimation failed."
     assert volatility["hint"].startswith("Run forecast_volatility_estimate")
-    assert volatility["errors"][0]["method"] == "ewma"
+    assert volatility["errors"][0]["method"] == "yang_zhang"
     assert "unavailable" in volatility["errors"][0]["error"]
 
 
@@ -465,8 +462,8 @@ def test_run_report_generate_returns_budgeted_partial_sections():
         "ok": 2,
         "partial": 0,
         "error": 0,
-        "omitted": 7,
-        "total": 9,
+        "omitted": 8,
+        "total": 10,
     }
     assert result["runtime_plan"]["max_runtime_seconds"] == 10.0
     assert result["runtime_plan"]["estimated_runtime_seconds"] == 7.0
@@ -479,6 +476,7 @@ def test_run_report_generate_returns_budgeted_partial_sections():
         "forecast",
         "barriers",
         "patterns",
+        "confluence",
     ]
 
 
@@ -500,7 +498,7 @@ def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
                 symbol="EURUSD",
                 template="basic",
                 include_sections=["context", "forecast"],
-                max_runtime=33,
+                max_runtime=8,
                 detail="full",
             ),
             format_number=lambda value: str(value),
@@ -510,13 +508,9 @@ def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
         )
 
     plan = result["runtime_plan"]
-    assert plan["selected_runtime_estimate_seconds"] == 34.0
+    assert plan["selected_runtime_estimate_seconds"] == 9.0
     assert plan["scheduled_sections"] == ["context"]
-    assert plan["required_dependencies"] == {
-        "forecast": [
-            {"section": "backtest", "estimated_runtime_seconds": 25.0}
-        ]
-    }
+    assert plan["required_dependencies"] == {}
     assert plan["runtime_omitted_details"]["forecast"]["shortfall_seconds"] == 1.0
 
 
@@ -919,7 +913,13 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
     assert structured["forecast"]["last"] == 1.104
     assert structured["backtest"]["best_method"] == "EMA"
     assert structured["patterns"]["recent"] == [
-        {"pattern": "hammer", "direction": "bullish", "confidence": 0.8}
+        {
+            "pattern": "hammer",
+            "name": "hammer",
+            "direction": "bullish",
+            "confidence": 0.8,
+            "match_score": 0.8,
+        }
     ]
     assert out["timezone"] == "UTC"
     assert "sections" not in out
@@ -938,6 +938,8 @@ def test_report_generate_compact_exposes_template_focus():
         "W1": {"levels": {}},
         "__base_timeframe__": "H4",
     }
+    sections["volume_profile"] = {"poc": 1.101}
+    sections["news"] = {"status": "no_results"}
     rep = _make_report(sections=sections)
     rep["meta"] = {"timeframe": "H4"}
     mock_swing = MagicMock(return_value=rep)
@@ -960,6 +962,39 @@ def test_report_generate_compact_exposes_template_focus():
     assert focus["context_timeframes"] == ["H1", "H4", "D1"]
     assert focus["pivot_timeframes"] == ["D1", "W1"]
     assert "__base_timeframe__" not in focus["pivot_timeframes"]
+    assert focus["extra_sections"] == ["confluence", "volume_profile", "news"]
+
+
+def test_report_generate_compact_keeps_style_distinctive_summaries():
+    fn = _get_report_generate()
+    sections = _make_full_sections()
+    sections["market"] = {"bid": 1.1, "ask": 1.1002, "spread_ticks": 2.0, "depth_status": "quote_only"}
+    sections["execution_gates"] = {"status": "pass", "execution_ready": True}
+    sections["session"] = {"status": "open"}
+    sections["news"] = {"upcoming_events": [{"title": "CPI"}]}
+    sections["regime"] = {"hmm": {"summary": "range"}}
+    sections["volume_profile"] = {"poc": 1.101}
+    rep = _make_report(sections=sections)
+    mock_intraday = MagicMock(return_value=rep)
+
+    with patch("mtdata.core.report_templates.template_basic", mock_intraday, create=True), \
+         patch("mtdata.core.report_templates.template_advanced", mock_intraday, create=True), \
+         patch("mtdata.core.report_templates.template_scalping", mock_intraday, create=True), \
+         patch("mtdata.core.report_templates.template_intraday", mock_intraday, create=True), \
+         patch("mtdata.core.report_templates.template_swing", mock_intraday, create=True), \
+         patch("mtdata.core.report_templates.template_position", mock_intraday, create=True), \
+         patch(_FMT_NUM, side_effect=str):
+        out = fn("EURUSD", template="intraday", horizon=12, detail="compact")
+
+    structured = out["summary_structured"]
+    assert structured["session"]["status"] == "open"
+    assert structured["news"]["upcoming_events"][0]["title"] == "CPI"
+    assert structured["confluence"]["levels"][0]["price"] == 1.102
+    assert structured["levels"][0]["price"] == 1.102
+    assert structured["market"]["bid"] == 1.1
+    assert structured["execution_gates"]["execution_ready"] is True
+    assert "narrative" in structured
+    assert out["health"]["ok"] >= 1
 
 
 def test_report_generate_standard_infers_root_timezone_from_sections():
@@ -1034,6 +1069,7 @@ def _make_full_sections():
             },
         },
         "patterns": {"recent": []},
+        "confluence": {"levels": [{"price": 1.102, "role": "at", "score": 12.0}]},
     }
 
 
@@ -1738,9 +1774,11 @@ class TestReportWarnings:
                 format="toon",
             )
 
-        assert captured_params["_report_execution_sections"] == ["backtest", "forecast"]
+        assert captured_params["_report_execution_sections"] == ["forecast"]
         assert list(res["sections"]) == ["forecast"]
-        assert list(res["summary_structured"]) == ["forecast"]
+        assert "forecast" in res["summary_structured"]
+        assert "backtest" not in res["summary_structured"]
+        assert "barriers" not in res["summary_structured"]
         assert res["section_controls"]["included_sections"] == ["forecast"]
         assert "backtest" in res["section_controls"]["omitted_sections"]
         assert "barriers" in res["section_controls"]["omitted_sections"]
@@ -2008,6 +2046,7 @@ class TestReportWarnings:
             "forecast",
             "barriers",
             "patterns",
+            "confluence",
         ]
 
     def test_forecast_section_without_finite_values_is_not_healthy(self):

@@ -22,9 +22,11 @@ ReportTemplateLiteral = Literal[
 ]
 
 _REPORT_TEMPLATE_HELP = (
-    "Report template: minimal fast context+forecast (default), basic balanced research, "
-    "advanced adds regimes/HAR/conformal, scalping M5 short-term setup, "
-    "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup. "
+    "Report template: minimal fast context+forecast (default), basic research "
+    "with confluence and a single volatility estimator, advanced adds "
+    "regimes/HAR/conformal, scalping M5 quote and session gates, "
+    "intraday H1 plus news/session seasonality, swing H4/D1 plus volume "
+    "profile and news, position D1/W1 plus volume profile and news. "
     "Typical warm-runtime tiers: minimal about 3-10 seconds; scalping about "
     "15-60 seconds; basic/intraday/swing/position about 30-120 seconds; "
     "advanced about 60-180 seconds. Broker history and enabled methods can "

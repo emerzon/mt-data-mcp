@@ -37,6 +37,7 @@ _BASIC_REPORT_SECTIONS = (
     "forecast",
     "barriers",
     "patterns",
+    "confluence",
 )
 _REPORT_TEMPLATE_SECTIONS = {
     "minimal": ("context", "forecast"),
@@ -47,14 +48,32 @@ _REPORT_TEMPLATE_SECTIONS = {
         "volatility_har_rv",
         "forecast_conformal",
     ),
-    "scalping": (*_BASIC_REPORT_SECTIONS, "market", "execution_gates"),
-    "intraday": (*_BASIC_REPORT_SECTIONS, "market", "execution_gates"),
-    "swing": _BASIC_REPORT_SECTIONS,
-    "position": _BASIC_REPORT_SECTIONS,
+    "scalping": (
+        "context",
+        "pivot",
+        "contexts_multi",
+        "pivot_multi",
+        "volatility",
+        "backtest",
+        "forecast",
+        "barriers",
+        "patterns",
+        "market",
+        "execution_gates",
+        "session",
+    ),
+    "intraday": (
+        *_BASIC_REPORT_SECTIONS,
+        "market",
+        "execution_gates",
+        "session",
+        "news",
+        "temporal",
+    ),
+    "swing": (*_BASIC_REPORT_SECTIONS, "volume_profile", "news"),
+    "position": (*_BASIC_REPORT_SECTIONS, "volume_profile", "news"),
 }
 _REPORT_SECTION_DEPENDENCIES = {
-    "forecast": ("backtest",),
-    "forecast_conformal": ("backtest",),
     "execution_gates": ("market",),
 }
 _REPORT_SECTION_RUNTIME_ESTIMATES = {
@@ -62,13 +81,18 @@ _REPORT_SECTION_RUNTIME_ESTIMATES = {
     "pivot": 3.0,
     "contexts_multi": 10.0,
     "pivot_multi": 5.0,
-    "volatility": 10.0,
+    "volatility": 4.0,
     "backtest": 25.0,
     "forecast": 5.0,
-    "barriers": 20.0,
+    "barriers": 12.0,
     "patterns": 4.0,
+    "confluence": 6.0,
     "market": 4.0,
     "execution_gates": 1.0,
+    "session": 2.0,
+    "news": 4.0,
+    "temporal": 6.0,
+    "volume_profile": 8.0,
     "regime": 20.0,
     "volatility_har_rv": 15.0,
     "forecast_conformal": 25.0,
@@ -426,14 +450,28 @@ def _attach_report_timezone(report: Dict[str, Any]) -> Dict[str, Any]:
 
 
 _COMPACT_SUMMARY_STRUCTURED_KEYS = (
+    "narrative",
     "market",
+    "session",
+    "levels",
     "forecast",
+    "risk",
     "backtest",
     "barriers",
+    "structure",
     "patterns",
     "pivot",
+    "confluence",
+    "volume_profile",
     "volatility",
+    "news",
+    "temporal",
+    "regime",
+    "volatility_har_rv",
+    "forecast_conformal",
+    "execution_gates",
     "template_focus",
+    "health",
 )
 
 
@@ -672,6 +710,26 @@ def _compact_report_payload(  # noqa: C901
         compact["timezone"] = timezone_label
     if report.get("as_of") not in (None, ""):
         compact["as_of"] = report.get("as_of")
+    structured_preview = report.get("summary_structured")
+    if isinstance(structured_preview, dict):
+        narrative = structured_preview.get("narrative")
+        if isinstance(narrative, str) and narrative.strip():
+            compact["narrative"] = narrative.strip()
+        health = structured_preview.get("health")
+        if not isinstance(health, dict) or not health:
+            status_summary = (
+                report.get("sections_status", {}).get("summary")
+                if isinstance(report.get("sections_status"), dict)
+                else None
+            )
+            if isinstance(status_summary, dict):
+                health = {
+                    key: status_summary.get(key)
+                    for key in ("ok", "partial", "error", "omitted")
+                    if status_summary.get(key) is not None
+                }
+        if isinstance(health, dict) and health:
+            compact["health"] = health
     if (
         report.get("generated_at") not in (None, "")
         and report.get("generated_at") != report.get("as_of")
@@ -744,29 +802,12 @@ def _compact_report_payload(  # noqa: C901
 
 
 def _compact_report_top_patterns(patterns_section: Any, *, limit: int = 3) -> List[Dict[str, Any]]:
-    if not isinstance(patterns_section, dict):
-        return []
-    rows = patterns_section.get("recent")
-    if not isinstance(rows, list):
-        return []
+    from .extras import compact_report_pattern_row, extract_report_pattern_rows
+
+    rows = extract_report_pattern_rows(patterns_section, limit=limit)
     compact: List[Dict[str, Any]] = []
     for row in rows:
-        if not isinstance(row, dict):
-            continue
-        item = {
-            key: row[key]
-            for key in (
-                "pattern",
-                "name",
-                "type",
-                "direction",
-                "signal",
-                "confidence",
-                "score",
-                "time",
-            )
-            if row.get(key) not in (None, "", [], {})
-        }
+        item = compact_report_pattern_row(row)
         if item:
             compact.append(item)
         if len(compact) >= max(1, int(limit)):
@@ -1158,7 +1199,19 @@ def _build_report_executive_summary(
     section_health = assessment.get("section_health")
     if isinstance(section_health, dict):
         out["section_health"] = section_health
-    for key in ("context", "backtest", "barriers", "patterns", "template_focus"):
+    for key in (
+        "context",
+        "backtest",
+        "barriers",
+        "patterns",
+        "template_focus",
+        "narrative",
+        "levels",
+        "risk",
+        "structure",
+        "session",
+        "news",
+    ):
         value = summary_structured.get(key)
         if value not in (None, "", [], {}):
             out[key] = value
@@ -1202,7 +1255,7 @@ def _report_template_focus(
     if pivot_tfs:
         focus["pivot_timeframes"] = pivot_tfs
     if isinstance(sections.get("market"), dict):
-        focus["market_snapshot"] = True
+        focus["live_quote"] = True
     regime = sections.get("regime")
     if isinstance(regime, dict):
         methods = [
@@ -1214,6 +1267,18 @@ def _report_template_focus(
             focus["regime_methods"] = methods
     if isinstance(sections.get("volatility_har_rv"), dict):
         focus["extra_volatility"] = "har_rv"
+    for extra_name in ("confluence", "volume_profile", "session", "news", "temporal"):
+        if isinstance(sections.get(extra_name), dict):
+            extras = focus.setdefault("extra_sections", [])
+            extras.append(extra_name)
+    context = sections.get("context")
+    trend_mtf = context.get("trend_mtf") if isinstance(context, dict) else None
+    if isinstance(trend_mtf, dict) and trend_mtf:
+        focus["mtf_regime_codes"] = {
+            str(name): (value.get("regime_code") if isinstance(value, dict) else None)
+            for name, value in trend_mtf.items()
+            if isinstance(value, dict) and value.get("regime_code") is not None
+        }
     return focus
 
 
@@ -1802,6 +1867,116 @@ def run_report_generate(  # noqa: C901
                 )
                 if top_patterns:
                     summary_structured["patterns"] = {"recent": top_patterns}
+            except Exception:
+                pass
+
+            try:
+                sections_map = rep.get("sections") if isinstance(rep.get("sections"), dict) else {}
+                confluence = sections_map.get("confluence")
+                if isinstance(confluence, dict) and confluence.get("levels"):
+                    summary_structured["confluence"] = {
+                        key: confluence[key]
+                        for key in ("reference_price", "levels")
+                        if confluence.get(key) not in (None, "", [], {})
+                    }
+                    summary_structured["levels"] = list(confluence.get("levels") or [])[:5]
+                elif isinstance(summary_structured.get("pivot"), dict):
+                    pivot_levels = {
+                        key: summary_structured["pivot"][key]
+                        for key in ("PP", "R1", "S1")
+                        if summary_structured["pivot"].get(key) is not None
+                    }
+                    if pivot_levels:
+                        summary_structured["levels"] = pivot_levels
+                for section_name in (
+                    "session",
+                    "news",
+                    "volume_profile",
+                    "temporal",
+                    "regime",
+                    "volatility_har_rv",
+                    "forecast_conformal",
+                    "execution_gates",
+                ):
+                    payload = sections_map.get(section_name)
+                    if isinstance(payload, dict) and payload not in ({},):
+                        if payload.get("status") == "omitted" and payload.get("error") is None:
+                            continue
+                        summary_structured[section_name] = payload
+                market_section = sections_map.get("market")
+                if isinstance(market_section, dict) and market_section.get("bid") is not None:
+                    summary_structured.setdefault("market", {})
+                    if isinstance(summary_structured["market"], dict):
+                        for key in ("bid", "ask", "spread", "spread_ticks", "depth_status"):
+                            if market_section.get(key) not in (None, "", [], {}):
+                                summary_structured["market"][key] = market_section.get(key)
+                risk: Dict[str, Any] = {}
+                if isinstance(summary_structured.get("volatility"), dict):
+                    risk["volatility"] = summary_structured["volatility"]
+                if isinstance(summary_structured.get("barriers"), dict):
+                    risk["barriers"] = {
+                        key: summary_structured["barriers"][key]
+                        for key in ("long", "short", "best")
+                        if key in summary_structured["barriers"]
+                    }
+                if risk:
+                    summary_structured["risk"] = risk
+                structure: Dict[str, Any] = {}
+                if top_patterns:
+                    structure["patterns"] = top_patterns
+                context_section = sections_map.get("context")
+                trend_mtf = (
+                    context_section.get("trend_mtf")
+                    if isinstance(context_section, dict)
+                    else None
+                )
+                if isinstance(trend_mtf, dict) and trend_mtf:
+                    structure["mtf_regime_codes"] = {
+                        str(name): (
+                            value.get("regime_code")
+                            if isinstance(value, dict)
+                            else None
+                        )
+                        for name, value in trend_mtf.items()
+                        if isinstance(value, dict)
+                    }
+                if structure:
+                    summary_structured["structure"] = structure
+                narrative_parts: List[str] = []
+                market_summary = summary_structured.get("market")
+                if isinstance(market_summary, dict) and market_summary.get("close") is not None:
+                    trend_note = market_summary.get("trend")
+                    close_text = format_number(market_summary.get("close"))
+                    if trend_note:
+                        narrative_parts.append(f"Last close {close_text} ({trend_note}).")
+                    else:
+                        narrative_parts.append(f"Last close {close_text}.")
+                forecast_summary = summary_structured.get("forecast")
+                if isinstance(forecast_summary, dict) and forecast_summary.get("method"):
+                    direction = forecast_summary.get("direction")
+                    method_name = forecast_summary.get("method")
+                    if direction:
+                        narrative_parts.append(
+                            f"Forecast {method_name} is {direction} over the horizon."
+                        )
+                    else:
+                        narrative_parts.append(f"Forecast method is {method_name}.")
+                if isinstance(summary_structured.get("levels"), list) and summary_structured["levels"]:
+                    nearest = summary_structured["levels"][0]
+                    if isinstance(nearest, dict) and nearest.get("price") is not None:
+                        narrative_parts.append(
+                            f"Nearest confluence is {format_number(nearest.get('price'))}"
+                            + (
+                                f" ({nearest.get('role')})."
+                                if nearest.get("role")
+                                else "."
+                            )
+                        )
+                if isinstance(summary_structured.get("barriers"), dict):
+                    if summary_structured["barriers"].get("ev_edge_conflict"):
+                        narrative_parts.append("Barrier EV and edge disagree; treat as lower confidence.")
+                if narrative_parts:
+                    summary_structured["narrative"] = " ".join(narrative_parts)
             except Exception:
                 pass
 
