@@ -645,26 +645,28 @@ def screen_stocks(
             limit=limit,
             page=page,
         )
-        if df is None:
-            return {"error": "Failed to fetch screener results from Finviz."}
-
-        stocks_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
-            df,
-            limit=limit,
-            page=page,
-        )
-        if df.empty:
+        if df is None or df.empty:
+            safe_limit, safe_page = _sanitize_pagination(limit, page)
             return {
                 "success": True,
+                "view": view_lower,
+                "filters": filters or {},
+                "order": order_applied,
                 "count": 0,
                 "total": 0,
                 "limit": safe_limit,
                 "page": safe_page,
                 "pages": 0,
                 "stocks": [],
+                "empty_reason": "no_filter_matches",
                 "message": "No stocks matched the filter criteria",
             }
 
+        stocks_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
+            df,
+            limit=limit,
+            page=page,
+        )
         pagination_meta = _screener_pagination_metadata(
             fetched_count=total,
             fetch_limit=fetch_limit,

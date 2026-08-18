@@ -377,6 +377,50 @@ class TestFinvizService:
         
         assert result["success"] is True
         assert result["count"] == 0
+        assert result["empty_reason"] == "no_filter_matches"
+        assert result["stocks"] == []
+
+    @patch('finvizfinance.screener.overview.Overview')
+    def test_screen_stocks_none_is_valid_empty_result(self, mock_overview_class):
+        from mtdata.services.finviz import screen_stocks
+
+        mock_screener = MagicMock()
+        mock_screener.screener_view.return_value = None
+        mock_overview_class.return_value = mock_screener
+
+        result = screen_stocks(
+            filters={"Market Cap.": "Mega ($200bln and more)"},
+            limit=5,
+        )
+
+        assert result == {
+            "success": True,
+            "view": "overview",
+            "filters": {"Market Cap.": "Mega ($200bln and more)"},
+            "order": "-marketcap",
+            "count": 0,
+            "total": 0,
+            "limit": 5,
+            "page": 1,
+            "pages": 0,
+            "stocks": [],
+            "empty_reason": "no_filter_matches",
+            "message": "No stocks matched the filter criteria",
+        }
+
+    @patch('finvizfinance.screener.overview.Overview')
+    def test_screen_stocks_transport_failure_remains_retryable(self, mock_overview_class):
+        from mtdata.services.finviz import screen_stocks
+
+        mock_screener = MagicMock()
+        mock_screener.screener_view.side_effect = TimeoutError("request timeout")
+        mock_overview_class.return_value = mock_screener
+
+        result = screen_stocks(filters={"Exchange": "NASDAQ"})
+
+        assert result["error_code"] == "finviz_timeout"
+        assert result["retryable"] is True
+        assert "timed out" in result["error"]
 
     @patch('finvizfinance.forex.Forex')
     def test_get_forex_performance(self, mock_forex_class):
