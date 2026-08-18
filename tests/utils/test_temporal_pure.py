@@ -858,11 +858,16 @@ class TestTemporalAnalyze:
 
         assert r.get("success") is True
         assert [group["group_label"] for group in r["groups"]] == ["Tue", "Wed"]
-        assert r["total_count"] == 7
-        assert r["offset"] == 1
-        assert r["limit"] == 2
-        assert r["has_more"] is True
-        assert r["more_available"] == 4
+        assert r["pagination"] == {
+            "total": 7,
+            "returned": 2,
+            "offset": 1,
+            "limit": 2,
+            "has_more": True,
+            "more_available": 4,
+        }
+        assert "total_count" not in r
+        assert "offset" not in r
         assert r["bars"] == 24 * 14
 
     @_apply_analyze_patches
@@ -885,9 +890,14 @@ class TestTemporalAnalyze:
         ]
         assert all(len(item["breakdown"]) == 1 for item in r["groups"])
         assert r["groups"][0]["breakdown"][0]["group_label"] == "Tue"
-        assert r["groups"][0]["total_count"] == 7
-        assert r["groups"][0]["offset"] == 1
-        assert r["groups"][0]["limit"] == 1
+        assert r["groups"][0]["pagination"] == {
+            "total": 7,
+            "returned": 1,
+            "offset": 1,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 5,
+        }
 
     @_apply_analyze_patches
     def test_temporal_analyze_logs_finish_event(self, mock_fetch, caplog):

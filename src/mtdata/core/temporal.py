@@ -44,7 +44,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_detail
+from .output_contract import build_pagination_meta, normalize_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +68,13 @@ _MONTH_LABELS = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ]
-_PAGINATION_KEYS = (
-    "total_count",
+_PAGINATION_FIELDS = (
+    "total",
+    "returned",
     "offset",
     "limit",
     "has_more",
     "more_available",
-    "truncated",
 )
 _SESSION_ORDER = {
     "asia": 0,
@@ -366,24 +366,23 @@ def _paginate_temporal_rows(
     if limit is None and offset == 0:
         return paged, {}
 
-    more_available = max(0, total_count - offset - len(paged))
-    meta: Dict[str, Any] = {
-        "total_count": total_count,
-        "offset": offset,
-        "has_more": more_available > 0,
-        "more_available": more_available,
+    return paged, {
+        "pagination": build_pagination_meta(
+            total=total_count,
+            returned=len(paged),
+            offset=offset,
+            limit=limit,
+        )
     }
-    if limit is not None:
-        meta["limit"] = limit
-    if more_available > 0:
-        meta["truncated"] = True
-    return paged, meta
 
 
 def _copy_pagination_meta(source: Dict[str, Any], target: Dict[str, Any]) -> None:
-    for key in _PAGINATION_KEYS:
-        if key in source:
-            target[key] = source[key]
+    pagination = source.get("pagination")
+    if not isinstance(pagination, dict):
+        return
+    for key in _PAGINATION_FIELDS:
+        if key in pagination:
+            target[key] = pagination[key]
 
 
 def _flatten_temporal_dimension_groups(
@@ -564,7 +563,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "overall_basis",
             "analysis_status",
             "message",
-            *_PAGINATION_KEYS,
+            "pagination",
         )
         if key in payload
     }
@@ -680,7 +679,7 @@ def _summary_temporal_payload(
             pagination = compact.get("dimension_pagination")
             if isinstance(pagination, dict):
                 out["group_counts"] = {
-                    str(dimension): int(meta.get("total_count") or 0)
+                    str(dimension): int(meta.get("total") or 0)
                     for dimension, meta in pagination.items()
                     if isinstance(meta, dict)
                 }
