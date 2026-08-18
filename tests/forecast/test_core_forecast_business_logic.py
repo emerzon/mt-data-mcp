@@ -3493,13 +3493,13 @@ def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
         "model_viability_and_reference_quote"
     )
     assert out["execution_blockers"] == ["optimizer_non_viable"]
+    assert out["mathematically_viable"] is False
     for key in (
         "no_action",
         "no_action_reason",
         "actionability",
         "actionability_reason",
         "actionability_flags",
-        "mathematically_viable",
         "trade_gate_passed",
         "viable",
         "no_candidates",
@@ -3509,6 +3509,37 @@ def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
         "concise",
     ):
         assert key not in out
+
+
+def test_forecast_barrier_optimize_distinguishes_risk_block_from_non_viability():
+    def fake_optimize(**_kwargs):
+        return {
+            "success": True,
+            "status": "ok",
+            "best": {"ev": 0.12, "kelly": -0.04},
+            "viable": True,
+            "mathematically_viable": True,
+            "tradable": False,
+            "trade_gate_passed": False,
+            "actionability_flags": ["phantom_profit_risk"],
+            "usable_for_live_trading": True,
+            "execution_blockers": [],
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mc_gbm"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out["mathematically_viable"] is True
+    assert out["tradable"] is False
+    assert out["usable_for_live_trading"] is False
+    assert out["execution_blockers"] == [
+        "risk_actionability_gate_failed",
+        "phantom_profit_risk",
+    ]
+    assert "optimizer_non_viable" not in out["execution_blockers"]
 
 
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():

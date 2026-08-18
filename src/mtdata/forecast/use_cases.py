@@ -472,7 +472,6 @@ _BARRIER_OPTIMIZE_COMPACT_OMIT_KEYS = frozenset(
         "actionability_flags",
         "actionability_reason",
         "concise",
-        "mathematically_viable",
         "no_action",
         "no_action_reason",
         "no_candidates",
@@ -510,9 +509,16 @@ def _gate_barrier_optimize_live_readiness(payload: Dict[str, Any]) -> None:
     """Require both live inputs and a viable optimizer result for live readiness."""
     if "usable_for_live_trading" not in payload:
         return
-    viable_result = bool(
-        payload.get("tradable") is True and isinstance(payload.get("best"), dict)
+    has_best = isinstance(payload.get("best"), dict)
+    mathematically_viable = bool(
+        has_best
+        and payload.get(
+            "mathematically_viable",
+            payload.get("viable"),
+        )
+        is True
     )
+    viable_result = bool(payload.get("tradable") is True and mathematically_viable)
     payload["usable_for_live_trading"] = bool(
         payload.get("usable_for_live_trading") is True and viable_result
     )
@@ -522,8 +528,18 @@ def _gate_barrier_optimize_live_readiness(payload: Dict[str, Any]) -> None:
     if viable_result:
         return
     blockers = list(payload.get("execution_blockers") or [])
-    if "optimizer_non_viable" not in blockers:
-        blockers.append("optimizer_non_viable")
+    blocker = (
+        "risk_actionability_gate_failed"
+        if mathematically_viable
+        else "optimizer_non_viable"
+    )
+    if blocker not in blockers:
+        blockers.append(blocker)
+    if mathematically_viable:
+        for flag in payload.get("actionability_flags") or []:
+            normalized = str(flag).strip()
+            if normalized and normalized not in blockers:
+                blockers.append(normalized)
     payload["execution_blockers"] = blockers
 
 
@@ -3804,9 +3820,9 @@ def run_forecast_barrier_optimize(
                 result.pop("last_price", None)
                 result.pop("last_price_close", None)
                 result.pop("last_price_source", None)
+            _gate_barrier_optimize_live_readiness(result)
             if detail_value == "compact":
                 result = _compact_barrier_optimize_payload(result)
-            _gate_barrier_optimize_live_readiness(result)
             barrier_unit, barrier_mode = _barrier_optimize_unit_context(result)
             result.setdefault("barrier_unit", barrier_unit)
             result.setdefault("barrier_mode", barrier_mode)
