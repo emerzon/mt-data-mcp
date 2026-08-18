@@ -25,9 +25,9 @@ from ..utils.mt5 import (
 )
 from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
+from .runtime_metadata import run_mt5_logged_operation
 
 logger = logging.getLogger(__name__)
 
@@ -323,7 +323,7 @@ def stationarity_test(
             )
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="stationarity_test",
         symbol=symbol,
@@ -490,7 +490,7 @@ def seasonality_detect(
             }
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="seasonality_detect",
         symbol=symbol,
@@ -657,7 +657,7 @@ def outliers_detect(
             }
         return result
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="outliers_detect",
         symbol=symbol,
@@ -842,7 +842,7 @@ def volatility_term_structure(
             out["lookback"] = int(lookback)
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="volatility_term_structure",
         symbol=symbol,

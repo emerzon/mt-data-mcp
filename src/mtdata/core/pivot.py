@@ -64,10 +64,9 @@ from ..utils.utils import (
     validate_historical_range,
 )
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import attach_completed_bar_input_policy
-from .runtime_metadata import display_timezone_label
+from .runtime_metadata import display_timezone_label, run_mt5_logged_operation
 from .volume_profile import compute_volume_profile_payload
 
 logger = logging.getLogger(__name__)
@@ -697,7 +696,7 @@ def pivot_compute_points(  # noqa: C901
         except Exception as exc:
             return {"error": f"Error computing pivot points: {str(exc)}"}
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="pivot_compute_points",
         symbol=symbol,
@@ -1047,7 +1046,7 @@ def confluence_levels(  # noqa: C901
         except Exception as exc:
             return {"error": f"Error computing confluence levels: {str(exc)}"}
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="confluence_levels",
         symbol=symbol,
@@ -1240,7 +1239,7 @@ def support_resistance_levels(
         except Exception as exc:
             return {"error": f"Error computing support/resistance levels: {str(exc)}"}
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="support_resistance_levels",
         symbol=symbol,

@@ -4,8 +4,8 @@ from typing import Any, Dict, Union
 from ...utils.mt5 import ensure_mt5_connection_or_raise
 from .._mcp_instance import mcp
 from ..error_envelope import build_error_payload
-from ..execution_logging import run_logged_operation
 from ..mt5_gateway import create_mt5_gateway, mt5_connection_error
+from ..runtime_metadata import run_mt5_logged_operation
 from .requests import ReportGenerateRequest
 from .use_cases import run_report_generate
 from .utils import _get_indicator_value, format_number
@@ -107,7 +107,7 @@ def report_generate(
         )
         return _attach_report_compute_hint(report, request)
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="report_generate",
         symbol=request.symbol,

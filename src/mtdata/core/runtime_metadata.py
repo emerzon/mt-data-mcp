@@ -4,7 +4,7 @@ import hashlib
 import os
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, TypeVar, cast
 from zoneinfo import ZoneInfo
 
 
@@ -55,8 +55,36 @@ def attach_mt5_source(payload: Any, *, gateway: Any = None) -> Any:
         return payload
     out = dict(payload)
     if not isinstance(out.get("source"), dict):
+        legacy_source = out.get("source")
+        if isinstance(legacy_source, str) and legacy_source.strip():
+            out.setdefault("data_lineage", legacy_source.strip())
         out["source"] = build_mt5_source_provenance(gateway)
     return out
+
+
+LoggedResultT = TypeVar("LoggedResultT")
+
+
+def run_mt5_logged_operation(
+    logger: Any,
+    *,
+    operation: str,
+    func: Callable[[], LoggedResultT],
+    gateway: Any = None,
+    success_eval: Optional[Callable[[LoggedResultT], bool]] = None,
+    **fields: Any,
+) -> LoggedResultT:
+    """Run an MT5-backed operation and guarantee provenance on success."""
+    from .execution_logging import run_logged_operation
+
+    result = run_logged_operation(
+        logger,
+        operation=operation,
+        func=func,
+        success_eval=success_eval,
+        **fields,
+    )
+    return cast(LoggedResultT, attach_mt5_source(result, gateway=gateway))
 
 
 def _safe_tz_name(value: Any) -> Optional[str]:

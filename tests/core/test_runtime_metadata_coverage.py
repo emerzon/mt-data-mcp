@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from mtdata.core.runtime_metadata import build_runtime_timezone_meta
+from mtdata.core.runtime_metadata import (
+    attach_mt5_source,
+    build_mt5_source_provenance,
+    build_runtime_timezone_meta,
+    run_mt5_logged_operation,
+)
 
 
 def _make_config(
@@ -104,3 +110,36 @@ def test_uses_iana_name_for_client_timezone_when_available() -> None:
 
     assert result["client"]["tz"] == "America/Chicago"
     assert result["utc"]["tz"] == "UTC"
+
+
+def test_mt5_logged_operation_attaches_stable_source_and_preserves_lineage() -> None:
+    gateway = SimpleNamespace(
+        account_info=lambda: SimpleNamespace(
+            company="Broker Co",
+            server="Broker-Demo",
+        )
+    )
+
+    result = run_mt5_logged_operation(
+        logging.getLogger(__name__),
+        operation="test_mt5_operation",
+        func=lambda: {"success": True, "source": "mt5_history"},
+        gateway=gateway,
+    )
+
+    assert result["source"] == build_mt5_source_provenance(gateway)
+    assert result["source"]["source_context_id"] == (
+        build_mt5_source_provenance(gateway)["source_context_id"]
+    )
+    assert result["data_lineage"] == "mt5_history"
+
+
+def test_mt5_source_discloses_unavailable_account_context() -> None:
+    gateway = SimpleNamespace(account_info=lambda: None)
+
+    result = attach_mt5_source({"success": True}, gateway=gateway)
+
+    assert result["source"] == {
+        "provider": "mt5",
+        "context_available": False,
+    }

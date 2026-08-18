@@ -382,6 +382,60 @@ class TestCausalDiscoverSignals:
         assert ("No data" in result["error"]) or ("Not enough" in result["error"])
         assert result["error_code"] in {"data_fetch_failed", "insufficient_symbols"}
 
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_partial_fetch_requires_opt_in_and_discloses_directed_tests(
+        self,
+        mock_fetch,
+        mock_granger,
+    ):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 3.0, 80), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
+            if symbol == "C":
+                return pd.Series(dtype=float), "No history for C"
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.5, 10, 1)}, None),
+        }
+
+        rejected = self._unwrapped()(
+            "A,B,C",
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+        )
+
+        assert rejected["success"] is False
+        assert rejected["error_code"] == "symbol_set_incomplete"
+        assert rejected["data_quality"]["analysis_family"] == {
+            "kind": "directed_symbol_pairs",
+            "tests_requested": 6,
+            "tests_available": 2,
+            "tests_removed": 4,
+        }
+        mock_granger.assert_not_called()
+
+        allowed = self._unwrapped()(
+            "A,B,C",
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+            allow_partial=True,
+        )
+
+        assert allowed["success"] is True
+        assert allowed["data_quality"]["omitted_symbols"] == ["C"]
+        assert allowed["data_quality"]["allow_partial"] is True
+        assert allowed["pairs_tested"] == 2
+
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
     def test_insufficient_overlap_includes_per_symbol_diagnostics(self, mock_fetch):
@@ -1245,7 +1299,7 @@ class TestCorrelationMatrix:
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_partial_fetch_failures_are_preserved_as_warnings(self, mock_fetch):
+    def test_partial_fetch_requires_explicit_opt_in_and_discloses_pair_loss(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.01, 80)
         series_map = {
@@ -1260,12 +1314,37 @@ class TestCorrelationMatrix:
 
         mock_fetch.side_effect = _fetch_side_effect
 
-        result = self._unwrapped()("A,B,C")
+        rejected = self._unwrapped()("A,B,C")
+
+        assert rejected["success"] is False
+        assert rejected["error_code"] == "symbol_set_incomplete"
+        assert rejected["data_quality"] == {
+            "status": "partial",
+            "allow_partial": False,
+            "requested_symbols": ["A", "B", "C"],
+            "analysis_universe_symbols": ["A", "B", "C"],
+            "resolved_symbols": ["A", "B"],
+            "omitted_symbols": ["C"],
+            "omissions": [
+                {"symbol": "C", "reason": "Failed to fetch data for C"}
+            ],
+            "analysis_family": {
+                "kind": "undirected_symbol_pairs",
+                "tests_requested": 3,
+                "tests_available": 1,
+                "tests_removed": 2,
+            },
+        }
+        assert "allow_partial=true" in rejected["remediation"]
+
+        result = self._unwrapped()("A,B,C", allow_partial=True)
 
         assert result["success"] is True
         assert result["summary"]["counts"]["pairs"] == 1
         assert result["meta"]["stats"]["symbols_used"] == ["A", "B"]
-        assert "warnings" in result
+        assert result["data_quality"]["status"] == "partial"
+        assert result["data_quality"]["allow_partial"] is True
+        assert result["data_quality"]["analysis_family"]["tests_removed"] == 2
         assert any("Failed to fetch data for C" in warning for warning in result["warnings"])
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
@@ -1377,6 +1456,78 @@ class TestCointegrationTest:
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
         assert "either symbols or group" in result["error"]
+
+    @patch(
+        "statsmodels.tsa.stattools.coint",
+        return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]),
+    )
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_partial_fetch_requires_opt_in_and_discloses_test_family(
+        self,
+        mock_fetch,
+        _mock_coint,
+    ):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 4.0, 80), index=idx),
+        }
+
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
+            if symbol == "C":
+                return pd.Series(dtype=float), "Unknown symbol C"
+            return series_map[symbol], None
+
+        mock_fetch.side_effect = _fetch_side_effect
+
+        rejected = self._unwrapped()(
+            "A,B,C",
+            window_bars=40,
+            min_overlap=20,
+        )
+
+        assert rejected["success"] is False
+        assert rejected["error_code"] == "symbol_set_incomplete"
+        assert rejected["data_quality"]["analysis_family"] == {
+            "kind": "undirected_symbol_pairs",
+            "tests_requested": 3,
+            "tests_available": 1,
+            "tests_removed": 2,
+        }
+        _mock_coint.assert_not_called()
+
+        allowed = self._unwrapped()(
+            "A,B,C",
+            window_bars=40,
+            min_overlap=20,
+            allow_partial=True,
+        )
+
+        assert allowed["success"] is True
+        assert allowed["data_quality"]["omissions"] == [
+            {"symbol": "C", "reason": "Unknown symbol C"}
+        ]
+        assert allowed["summary"]["counts"]["pairs"] == 1
+
+        johansen_rejected = self._unwrapped()(
+            "A,B,C",
+            method="johansen",
+            window_bars=40,
+            min_overlap=20,
+        )
+
+        assert johansen_rejected["error_code"] == "symbol_set_incomplete"
+        assert johansen_rejected["data_quality"]["analysis_family"] == {
+            "kind": "multivariate_symbol_set",
+            "tests_requested": 1,
+            "tests_available": 1,
+            "tests_removed": 0,
+            "dimensions_requested": 3,
+            "dimensions_available": 2,
+            "dimensions_removed": 1,
+            "universe_changed": True,
+        }
 
     @patch("mtdata.core.causal._causal_connection_error", return_value=None)
     def test_engle_granger_rejects_degenerate_two_bar_window(self, _mock_connection):

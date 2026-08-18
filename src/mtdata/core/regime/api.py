@@ -31,6 +31,7 @@ from ..output_contract import (
     normalize_output_detail,
     normalize_output_verbosity_detail,
 )
+from ..runtime_metadata import attach_mt5_source
 from ..tool_calling import call_tool_sync_structured
 from .methods.bocpd import (
     _auto_calibrate_bocpd_params,
@@ -1275,6 +1276,7 @@ def regime_detect(  # noqa: C901
                 result.setdefault("analysis_window", dict(analysis_window_meta))
             result.setdefault("timezone", "UTC")
             _attach_regime_usage_notice(result)
+            result = attach_mt5_source(result)
         log_operation_finish(
             logger,
             operation="regime_detect",

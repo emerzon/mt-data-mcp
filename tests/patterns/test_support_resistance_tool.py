@@ -93,7 +93,9 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
-    assert result["source"] == "mt5_history"
+    assert result["source"]["provider"] == "mt5"
+    assert isinstance(result["source"]["context_available"], bool)
+    assert result["data_lineage"] == "mt5_history"
     assert result["timezone"] == "UTC"
     assert result["input_bar_policy"] == "closed_bars_only"
     assert result["latest_bar_complete"] is True

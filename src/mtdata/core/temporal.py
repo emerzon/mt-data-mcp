@@ -42,9 +42,9 @@ from ..utils.utils import (
     validate_historical_range,
 )
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import build_pagination_meta, normalize_output_detail
+from .runtime_metadata import run_mt5_logged_operation
 
 logger = logging.getLogger(__name__)
 
@@ -1550,7 +1550,7 @@ def temporal_analyze(  # noqa: C901
                 context=context,
             )
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="temporal_analyze",
         symbol=symbol,

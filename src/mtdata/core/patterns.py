@@ -45,7 +45,6 @@ from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ..utils.utils import to_float_np as __to_float_np
 from ..utils.volume_profile import annotate_level_confluence
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import attach_completed_bar_input_policy
 from .patterns_requests import PatternsDetailLiteral, PatternsDetectRequest
@@ -82,6 +81,7 @@ from .patterns_support import (
     _visible_pattern_rows,
 )
 from .patterns_use_cases import PatternsDetectDeps, run_patterns_detect
+from .runtime_metadata import run_mt5_logged_operation
 from .volume_profile import compute_volume_profile_payload
 
 logger = logging.getLogger(__name__)
@@ -1590,7 +1590,7 @@ def patterns_detect(
             result = attach_completed_bar_input_policy(result)
         return result
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="patterns_detect",
         symbol=request.symbol,

@@ -43,9 +43,9 @@ from ..utils.mt5 import (
 )
 from ..utils.time import _format_time_minimal
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_detail
+from .runtime_metadata import run_mt5_logged_operation
 
 logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10
@@ -1132,7 +1132,7 @@ def labels_triple_barrier(  # noqa: C901
         except Exception as exc:
             return {"error": f"Error computing triple-barrier labels: {str(exc)}"}
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="labels_triple_barrier",
         symbol=symbol,

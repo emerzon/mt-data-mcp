@@ -38,9 +38,9 @@ from ..utils.utils import (
     validate_historical_range,
 )
 from ._mcp_instance import mcp
-from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import build_pagination_meta, normalize_output_verbosity_detail
+from .runtime_metadata import run_mt5_logged_operation
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +181,7 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "include_incomplete",
         "transform",
         "normalize",
+        "allow_partial",
         "detail",
     }
 )
@@ -201,6 +202,7 @@ _CORRELATION_REQUEST_KEYS = frozenset(
         "transform",
         "min_overlap",
         "include_incomplete",
+        "allow_partial",
         "detail",
     }
 )
@@ -224,6 +226,7 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "significance",
         "min_overlap",
         "include_incomplete",
+        "allow_partial",
         "detail",
     }
 )
@@ -456,6 +459,81 @@ def _insufficient_symbol_payload(
         meta=meta,
         warnings=warnings,
     )
+
+
+def _symbol_fetch_data_quality(
+    *,
+    requested_symbols: List[str],
+    analysis_universe: List[str],
+    series_map: Dict[str, pd.Series],
+    errors: List[str],
+    allow_partial: bool,
+    analysis_family_kind: str,
+) -> Dict[str, Any]:
+    resolved = [symbol for symbol in analysis_universe if symbol in series_map]
+    omitted = [symbol for symbol in analysis_universe if symbol not in series_map]
+    if analysis_family_kind == "multivariate_symbol_set":
+        requested_tests = int(len(analysis_universe) >= 2)
+        resolved_tests = int(len(resolved) >= 2)
+    else:
+        directed = analysis_family_kind == "directed_symbol_pairs"
+        divisor = 1 if directed else 2
+        requested_tests = (
+            len(analysis_universe) * (len(analysis_universe) - 1) // divisor
+        )
+        resolved_tests = len(resolved) * (len(resolved) - 1) // divisor
+    analysis_family = {
+        "kind": analysis_family_kind,
+        "tests_requested": int(requested_tests),
+        "tests_available": int(resolved_tests),
+        "tests_removed": int(requested_tests - resolved_tests),
+    }
+    if analysis_family_kind == "multivariate_symbol_set":
+        analysis_family.update(
+            {
+                "dimensions_requested": len(analysis_universe),
+                "dimensions_available": len(resolved),
+                "dimensions_removed": len(omitted),
+                "universe_changed": bool(omitted),
+            }
+        )
+    return {
+        "status": "partial" if omitted else "complete",
+        "allow_partial": bool(allow_partial),
+        "requested_symbols": list(requested_symbols),
+        "analysis_universe_symbols": list(analysis_universe),
+        "resolved_symbols": resolved,
+        "omitted_symbols": omitted,
+        "omissions": [
+            {
+                "symbol": symbol,
+                "reason": errors[index] if index < len(errors) else "history_unavailable",
+            }
+            for index, symbol in enumerate(omitted)
+        ],
+        "analysis_family": analysis_family,
+    }
+
+
+def _partial_symbol_fetch_error(
+    *,
+    meta: Dict[str, Any],
+    errors: List[str],
+    data_quality: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = _causal_error(
+        "One or more requested symbols could not be fetched; subset analysis is "
+        "disabled by default.",
+        code="symbol_set_incomplete",
+        meta=meta,
+        details=list(errors),
+    )
+    out["data_quality"] = data_quality
+    out["remediation"] = (
+        "Correct the omitted symbols or retry with allow_partial=true to analyze "
+        "the disclosed subset."
+    )
+    return out
 
 
 def _fetch_series(
@@ -1797,6 +1875,7 @@ def causal_discover_signals(  # noqa: C901
     transform: str = "log_return",
     normalize: bool = True,
     detail: DetailLiteral = "compact",
+    allow_partial: bool = False,
 ) -> Dict[str, Any]:
     """Discover pairwise Granger predictive links between MT5 symbols.
 
@@ -1823,6 +1902,8 @@ def causal_discover_signals(  # noqa: C901
             intercept used here, this does not change the exact Granger statistic.
         detail: "compact" returns significant links plus top pair summaries; "full"
             returns every tested pair in items.
+        allow_partial: Permit analysis after a symbol fetch omission. Defaults to
+            false; partial results disclose the reduced testing family.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -1849,6 +1930,7 @@ def causal_discover_signals(  # noqa: C901
             "transform": str(transform),
             "normalize": bool(normalize),
             "normalization_role": "numerical_conditioning_only_affine_invariant",
+            "allow_partial": bool(allow_partial),
             "detail": detail_mode,
         }
         transform_value = _normalize_transform_name(transform)
@@ -1996,6 +2078,7 @@ def causal_discover_signals(  # noqa: C901
 
         fetch_count = max(int(window_bars) + max_lag + 10, 200)
         meta["fetch_count"] = int(fetch_count)
+        analysis_universe = list(symbol_list)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol_name in symbol_list:
@@ -2013,13 +2096,23 @@ def causal_discover_signals(  # noqa: C901
             else:
                 series_map[symbol_name] = series
 
+        data_quality = _symbol_fetch_data_quality(
+            requested_symbols=list(meta.get("symbols_input") or analysis_universe),
+            analysis_universe=analysis_universe,
+            series_map=series_map,
+            errors=errors,
+            allow_partial=allow_partial,
+            analysis_family_kind="directed_symbol_pairs",
+        )
         if errors and not series_map:
-            return _causal_error(
+            out = _causal_error(
                 errors[0],
                 code=_history_fetch_error_code(errors),
                 meta=meta,
                 details=errors,
             )
+            out["data_quality"] = data_quality
+            return out
         warnings_out: List[str] = []
         if errors:
             warnings_out.extend(errors)
@@ -2032,12 +2125,21 @@ def causal_discover_signals(  # noqa: C901
                 details_out.append(
                     f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
                 )
-            return _causal_error(
+            out = _causal_error(
                 f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
                 code="anchor_symbol_missing",
                 meta=meta,
                 warnings=warnings_out,
                 details=details_out or None,
+            )
+            out["data_quality"] = data_quality
+            return out
+
+        if errors and not allow_partial:
+            return _partial_symbol_fetch_error(
+                meta=meta,
+                errors=errors,
+                data_quality=data_quality,
             )
 
         if len(series_map) < 2:
@@ -2327,6 +2429,7 @@ def causal_discover_signals(  # noqa: C901
         meta["output_truncated"] = output_truncated
         out: Dict[str, Any] = {
             "success": True,
+            "data_quality": data_quality,
             "result": "links_found" if significant_rows else "no_links_found",
             "transform": transform_value,
             **_pair_transform_guidance(
@@ -2409,7 +2512,7 @@ def causal_discover_signals(  # noqa: C901
             )
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="causal_discover_signals",
         symbols=symbols,
@@ -2420,6 +2523,7 @@ def causal_discover_signals(  # noqa: C901
         start=start,
         end=end,
         max_lag=max_lag,
+        allow_partial=allow_partial,
         detail=detail,
         func=_run,
     )
@@ -2440,6 +2544,7 @@ def correlation_matrix(  # noqa: C901
     min_overlap: Annotated[int, Field(ge=2)] = 30,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
+    allow_partial: bool = False,
 ) -> Dict[str, Any]:
     """Calculate pairwise symbol correlations from MT5 price history.
 
@@ -2467,6 +2572,8 @@ def correlation_matrix(  # noqa: C901
         include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps canonical pair rows and counts; "standard" adds
             highlight indexes; "full" also includes the derived matrix view.
+        allow_partial: Permit analysis after a symbol fetch omission. Defaults to
+            false; partial results disclose the reduced pair family.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -2483,6 +2590,7 @@ def correlation_matrix(  # noqa: C901
             "transform": str(transform),
             "min_overlap": int(min_overlap),
             "include_incomplete": bool(include_incomplete),
+            "allow_partial": bool(allow_partial),
             "detail": str(detail or "compact"),
         }
         range_error = _causal_history_range_error(start, end, meta=meta)
@@ -2643,6 +2751,7 @@ def correlation_matrix(  # noqa: C901
 
         fetch_count = max(int(window_bars) + 10, int(min_overlap) + 10, 200)
         meta["fetch_count"] = int(fetch_count)
+        analysis_universe = list(symbol_list)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol_name in symbol_list:
@@ -2660,13 +2769,23 @@ def correlation_matrix(  # noqa: C901
             else:
                 series_map[symbol_name] = series
 
+        data_quality = _symbol_fetch_data_quality(
+            requested_symbols=list(meta.get("symbols_input") or analysis_universe),
+            analysis_universe=analysis_universe,
+            series_map=series_map,
+            errors=errors,
+            allow_partial=allow_partial,
+            analysis_family_kind="undirected_symbol_pairs",
+        )
         if errors and not series_map:
-            return _causal_error(
+            out = _causal_error(
                 errors[0],
                 code=_history_fetch_error_code(errors),
                 meta=meta,
                 details=errors,
             )
+            out["data_quality"] = data_quality
+            return out
 
         warnings_out: List[str] = []
         if errors:
@@ -2680,12 +2799,21 @@ def correlation_matrix(  # noqa: C901
                 details_out.append(
                     f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
                 )
-            return _causal_error(
+            out = _causal_error(
                 f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
                 code="anchor_symbol_missing",
                 meta=meta,
                 warnings=warnings_out,
                 details=details_out or None,
+            )
+            out["data_quality"] = data_quality
+            return out
+
+        if errors and not allow_partial:
+            return _partial_symbol_fetch_error(
+                meta=meta,
+                errors=errors,
+                data_quality=data_quality,
             )
 
         if len(series_map) < 2:
@@ -2837,6 +2965,7 @@ def correlation_matrix(  # noqa: C901
             warnings_out.append(alignment_warning)
         out: Dict[str, Any] = {
             "success": True,
+            "data_quality": data_quality,
             "transform": transform_value,
             **_pair_transform_guidance(
                 "correlation_matrix",
@@ -2867,7 +2996,7 @@ def correlation_matrix(  # noqa: C901
             out["warnings"] = warnings_out
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="correlation_matrix",
         symbols=symbols,
@@ -2881,6 +3010,7 @@ def correlation_matrix(  # noqa: C901
         transform=transform,
         min_overlap=min_overlap,
         include_incomplete=include_incomplete,
+        allow_partial=allow_partial,
         detail=detail,
         func=_run,
     )
@@ -3134,7 +3264,7 @@ def cross_correlation(  # noqa: C901
             out["count"] = len(rows)
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="cross_correlation",
         symbols=symbols,
@@ -3166,6 +3296,7 @@ def cointegration_test(  # noqa: C901
     min_overlap: int = 80,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
+    allow_partial: bool = False,
 ) -> Dict[str, Any]:
     """Run Engle-Granger pair tests or a multivariate Johansen rank test.
 
@@ -3201,6 +3332,8 @@ def cointegration_test(  # noqa: C901
         include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps pair results concise; "full" adds overlap/window
             diagnostics and legends.
+        allow_partial: Permit analysis after a symbol fetch omission. Defaults to
+            false; partial results disclose the reduced test family.
     """
 
     def _run() -> Dict[str, Any]:  # noqa: C901
@@ -3223,6 +3356,7 @@ def cointegration_test(  # noqa: C901
             "significance": float(significance),
             "min_overlap": min_overlap_value,
             "include_incomplete": bool(include_incomplete),
+            "allow_partial": bool(allow_partial),
             "detail": str(detail or "compact"),
         }
         range_error = _causal_history_range_error(start, end, meta=meta)
@@ -3434,6 +3568,7 @@ def cointegration_test(  # noqa: C901
 
         fetch_count = max(window_bars_value + 10, min_overlap_value + 10, 200)
         meta["fetch_count"] = int(fetch_count)
+        analysis_universe = list(symbol_list)
         series_map: Dict[str, pd.Series] = {}
         errors: List[str] = []
         for symbol_name in symbol_list:
@@ -3451,14 +3586,28 @@ def cointegration_test(  # noqa: C901
             else:
                 series_map[symbol_name] = series
 
+        data_quality = _symbol_fetch_data_quality(
+            requested_symbols=list(meta.get("symbols_input") or analysis_universe),
+            analysis_universe=analysis_universe,
+            series_map=series_map,
+            errors=errors,
+            allow_partial=allow_partial,
+            analysis_family_kind=(
+                "multivariate_symbol_set"
+                if method_value == "johansen"
+                else "undirected_symbol_pairs"
+            ),
+        )
         if errors and not series_map:
-            return _causal_error(
+            out = _causal_error(
                 errors[0],
                 code=_history_fetch_error_code(errors),
                 meta=meta,
                 warnings=warnings_out,
                 details=errors,
             )
+            out["data_quality"] = data_quality
+            return out
 
         if errors:
             warnings_out.extend(errors)
@@ -3471,12 +3620,21 @@ def cointegration_test(  # noqa: C901
                 details_out.append(
                     f"Expanded group: {', '.join(str(sym) for sym in expanded_symbols)}"
                 )
-            return _causal_error(
+            out = _causal_error(
                 f"Requested symbol {requested_anchor} could not be fetched from its auto-expanded group.",
                 code="anchor_symbol_missing",
                 meta=meta,
                 warnings=warnings_out,
                 details=details_out or None,
+            )
+            out["data_quality"] = data_quality
+            return out
+
+        if errors and not allow_partial:
+            return _partial_symbol_fetch_error(
+                meta=meta,
+                errors=errors,
+                data_quality=data_quality,
             )
 
         if len(series_map) < 2:
@@ -3756,6 +3914,7 @@ def cointegration_test(  # noqa: C901
 
         out: Dict[str, Any] = {
             "success": True,
+            "data_quality": data_quality,
             "transform": transform_value,
             **_pair_transform_guidance(
                 "cointegration_test",
@@ -3822,7 +3981,7 @@ def cointegration_test(  # noqa: C901
             )
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="cointegration_test",
         symbols=symbols,
@@ -3839,6 +3998,7 @@ def cointegration_test(  # noqa: C901
         significance=significance,
         include_incomplete=include_incomplete,
         min_overlap=min_overlap,
+        allow_partial=allow_partial,
         detail=detail,
         func=_run,
     )
