@@ -148,7 +148,7 @@ def _effective_tick_limit(request: DataFetchTicksRequest) -> int:
     except Exception:
         limit = DATA_FETCH_TICKS_DEFAULT_LIMIT
     fields_set = getattr(request, "model_fields_set", set())
-    if (request.start or request.end) and "limit" not in fields_set:
+    if request.start and request.end and "limit" not in fields_set:
         return DATA_FETCH_TICKS_MAX_LIMIT
     return limit
 

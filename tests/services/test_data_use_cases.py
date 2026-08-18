@@ -2021,6 +2021,41 @@ def test_run_data_fetch_ticks_range_uses_safety_cap_and_pagination():
     assert result["pagination"]["limit"] == 50_000
 
 
+def test_run_data_fetch_ticks_start_only_uses_small_default_page():
+    observed = {}
+
+    def _fetch(**kwargs):
+        observed.update(kwargs)
+        return {
+            "success": True,
+            "count": 20,
+            "tick_count": 20,
+            "data": [],
+            "query_applied": {
+                "mode": "historical",
+                "selection": "first_n",
+                "start": "2026-08-17T00:00:00Z",
+            },
+        }
+
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD",
+            start="2026-08-17T00:00:00Z",
+            detail="standard",
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=_fetch,
+    )
+
+    assert observed["limit"] == 20
+    assert result["requested_limit"] == 20
+    assert result["query_applied"]["default_limit"] == 20
+    assert result["limit_reached"] is True
+    assert result["pagination"]["has_more"] is True
+    assert result["pagination"]["limit"] == 20
+
+
 def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     row, spread_sample = _compact_tick_row(
         {"time": "2026-07-17T01:53:23Z", "bid": 1.14396, "ask": 1.14396},

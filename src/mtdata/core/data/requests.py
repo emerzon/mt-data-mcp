@@ -476,8 +476,9 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
         description=(
             "Max ticks to return. Unbounded and end-only queries select the latest "
             f"ticks (default {DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). "
-            "Any query with start selects the earliest ticks at or after start. "
-            "Omitted limit on an explicit start/end range returns matching ticks "
+            "A start-only query selects the earliest ticks at or after start and "
+            f"also defaults to a {DATA_FETCH_TICKS_DEFAULT_LIMIT}-tick page. "
+            "Omitted limit on a fully bounded start/end range returns matching ticks "
             f"up to {DATA_FETCH_TICKS_MAX_LIMIT}. The response echoes requested_limit "
             "and sets limit_reached=true when the cap is hit; this does not assert "
             "that another page exists."
