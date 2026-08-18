@@ -11,7 +11,7 @@ from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import mt5
-from ..utils.time import _format_time_minimal
+from ..utils.time import _format_time_minimal, bar_close_epoch
 from .common import (
     annualization_context as _annualization_context,
 )
@@ -2348,6 +2348,9 @@ def forecast_backtest(  # noqa: C901
                 if idx not in actual_windows:
                     continue
                 anchor_time = _format_time_minimal(times[idx])
+                anchor_cutoff = _format_time_minimal(
+                    bar_close_epoch(times[idx], timeframe)
+                )
                 truth, ts = actual_windows[idx]
                 anchor_history = df.iloc[: idx + 1]
                 if model_lookback is not None:
@@ -2382,15 +2385,20 @@ def forecast_backtest(  # noqa: C901
                                 ),
                                 evaluation=evaluation_contract,
                             )
+                        volatility_time_bounds = (
+                            {"start": start, "end": anchor_cutoff}
+                            if start
+                            else {"as_of": anchor_cutoff}
+                        )
                         r = raise_if_error_result(forecast_volatility(  # type: ignore
                             symbol=symbol,
                             timeframe=timeframe,
                             method=method,  # type: ignore
                             horizon=int(horizon),
-                            as_of=anchor_time,
                             params=pm if isinstance(pm, dict) else None,
                             proxy=proxy,  # type: ignore
                             denoise=_dn_used,
+                            **volatility_time_bounds,
                         ))
                     else:
                         # Choose per-method params falling back to global params
@@ -2440,6 +2448,7 @@ def forecast_backtest(  # noqa: C901
                     )
                     mae = float(abs(pred_sigma - realized_sigma)) if np.isfinite(pred_sigma) and np.isfinite(realized_sigma) else float('nan')
                     rmse = mae
+                    nested_data_window = r.get("data_window") or {}
                     per_anchor.append({
                         "anchor": anchor_time,
                         "success": np.isfinite(pred_sigma) and np.isfinite(realized_sigma),
@@ -2451,11 +2460,20 @@ def forecast_backtest(  # noqa: C901
                         "forecast_sigma": pred_sigma,
                         "realized_sigma": realized_sigma,
                         "training_bars_used": int(
-                            (r.get("data_window") or {}).get(
+                            nested_data_window.get(
                                 "bars_used",
                                 anchor_training_bars,
                             )
                         ),
+                        "training_window": {
+                            "start": nested_data_window.get(
+                                "start",
+                                _format_time_minimal(
+                                    float(anchor_history["time"].iloc[0])
+                                ),
+                            ),
+                            "end": nested_data_window.get("end", anchor_time),
+                        },
                     })
                 else:
                     if target_mode == 'return':

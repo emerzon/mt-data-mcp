@@ -26,7 +26,7 @@ from mtdata.forecast.backtest import (
     forecast_backtest,
 )
 from mtdata.forecast.common import bars_per_year as _bars_per_year
-from mtdata.utils.time import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal, bar_close_epoch
 
 # ── Helper to build a fake df ────────────────────────────────────────────────
 
@@ -298,6 +298,71 @@ class TestForecastBacktest:
             row["training_bars_used"] == 50
             for row in result["results"]["theta"]["details"]
         )
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_volatility_explicit_start_bounds_every_training_window(self, fetch):
+        df = _make_df(185)
+        fetch.return_value = df
+        captured = []
+
+        def fake_volatility(**kwargs):
+            captured.append(kwargs)
+            cutoff_epoch = next(
+                float(value)
+                for value in df["time"]
+                if _format_time_minimal(float(value)) == kwargs["end"]
+            )
+            bounded = df[
+                (df["time"] >= float(df["time"].iloc[0]))
+                & (df["time"] + 3600 <= cutoff_epoch)
+            ]
+            return {
+                "volatility_horizon": 0.05,
+                "data_window": {
+                    "start": _format_time_minimal(float(bounded["time"].iloc[0])),
+                    "end": _format_time_minimal(float(bounded["time"].iloc[-1])),
+                    "bars_used": len(bounded),
+                },
+            }
+
+        requested_start = _format_time_minimal(float(df["time"].iloc[0]))
+        with patch(
+            "mtdata.forecast.backtest.forecast_volatility",
+            side_effect=fake_volatility,
+        ):
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                horizon=3,
+                steps=2,
+                spacing=3,
+                start=requested_start,
+                methods=["ewma"],
+                quantity="volatility",
+                detail="full",
+            )
+
+        assert result["success"] is True
+        assert all(call["start"] == requested_start for call in captured)
+        assert all("as_of" not in call for call in captured)
+        assert [call["end"] for call in captured] == [
+            _format_time_minimal(
+                bar_close_epoch(
+                    next(
+                        float(value)
+                        for value in df["time"]
+                        if _format_time_minimal(float(value)) == row["anchor"]
+                    ),
+                    "H1",
+                )
+            )
+            for row in result["results"]["ewma"]["details"]
+        ]
+        for row in result["results"]["ewma"]["details"]:
+            assert row["training_window"]["start"] == requested_start
+            assert row["training_bars_used"] <= result["backtest_plan"][
+                "history_bars_used"
+            ]
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_rejects_overlapping_generated_backtest_windows(self, fetch):
