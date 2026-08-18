@@ -270,7 +270,7 @@ See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
 For forecast methods, use `--params`:
 ```bash
 mtdata-cli forecast_generate EURUSD --method arima --params "p=2 d=1 q=2"
-mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000 seed=42"
+mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000 seed=42" --ci-alpha 0.05
 ```
 
 ---
@@ -612,7 +612,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --horizon 24
 
 # Monte Carlo simulation
-mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"
+mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000" --ci-alpha 0.05
 
 # Search timeframes + methods + params for the best starting configuration
 mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \

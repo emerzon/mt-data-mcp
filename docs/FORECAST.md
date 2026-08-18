@@ -175,12 +175,12 @@ Generates thousands of possible future paths instead of a single forecast.
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --method mc_gbm --params "n_sims=2000 seed=42"
+  --method mc_gbm --params "n_sims=2000 seed=42" --ci-alpha 0.05
 ```
 
 **Output includes:**
 - Point forecast (median of simulations)
-- Percentile bands (5th, 25th, 75th, 95th)
+- A 95% lower/upper simulation band requested by `--ci-alpha 0.05`
 - Useful for risk sizing and barrier analysis
 
 ### Analog Forecasting
@@ -443,7 +443,7 @@ authoritative way to distinguish those causes.
 | List methods | `mtdata-cli forecast_list_methods` |
 | Basic forecast | `mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta` |
 | Foundation method | `mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --horizon 24` |
-| Monte Carlo | `mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"` |
+| Monte Carlo with a 95% simulation band | `mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000" --ci-alpha 0.05` |
 | Backtest | `mtdata-cli forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
 | Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --metric avg_rmse` |
