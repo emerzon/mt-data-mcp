@@ -79,6 +79,24 @@ def test_sections_status_marks_scheduled_missing_sections_as_errors():
     )
     assert status["summary"]["error"] == 1
 
+
+def test_sections_status_rejects_conformal_section_without_finite_bounds():
+    from mtdata.core.report.use_cases import _build_sections_status
+
+    status = _build_sections_status(
+        {
+            "forecast_conformal": {
+                "method": "theta",
+                "lower_price": None,
+                "upper_price": None,
+            }
+        }
+    )
+
+    assert status["sections"]["forecast_conformal"] == "error"
+    errors = status["details"]["forecast_conformal"]["errors"]
+    assert "no complete finite interval" in errors[0]["message"]
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -148,6 +166,42 @@ def test_report_generate_request_validates_runtime_budget():
     assert ReportGenerateRequest(symbol="EURUSD", max_runtime=10).max_runtime == 10
     with pytest.raises(ValidationError, match="greater than or equal to 1"):
         ReportGenerateRequest(symbol="EURUSD", max_runtime=0.5)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"start": "banana"}, "start must be a valid date"),
+        (
+            {"start": "2026-08-15", "end": "2026-08-10"},
+            "start must be before or equal to end",
+        ),
+        ({"horizon": 501}, "less than or equal to 500"),
+        (
+            {"start": "2026-08-01"},
+            "end is required when start is supplied",
+        ),
+    ],
+)
+def test_report_generate_request_rejects_invalid_shared_inputs(kwargs, message):
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    with pytest.raises(ValidationError, match=message):
+        ReportGenerateRequest(symbol="EURUSD", **kwargs)
+
+
+def test_report_generate_request_accepts_consistent_historical_window():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    request = ReportGenerateRequest(
+        symbol="EURUSD",
+        start="2026-08-01",
+        end="2026-08-10",
+        horizon=500,
+    )
+
+    assert request.start == "2026-08-01"
+    assert request.end == "2026-08-10"
 
 
 def test_report_generate_request_rejects_removed_summary_only_field():
@@ -2041,6 +2095,9 @@ class TestReportWarnings:
 
         assert res["section_run_status"] == "partial"
         assert res["success"] is False
+        assert res["error_code"] == "report_partial_not_allowed"
+        assert isinstance(res["request_id"], str)
+        assert res["details"]["failed_sections"] == ["forecast"]
 
     def test_all_error_sections_mark_report_failed(self):
         fn = _get_report_generate()
@@ -2205,6 +2262,48 @@ def test_minimal_report_assessment_recommends_broader_template():
         "run_basic_template_for_levels_and_risk"
     )
     assert "use template=basic" in assessment["summary"]
+
+
+@pytest.mark.parametrize(
+    ("selected", "completed", "not_requested"),
+    [
+        (["context"], "Minimal context completed", "Forecast was not requested"),
+        (["forecast"], "Minimal forecast completed", "Context was not requested"),
+    ],
+)
+def test_minimal_report_assessment_names_only_selected_sections(
+    selected, completed, not_requested,
+):
+    from mtdata.core.report.use_cases import _build_overall_report_assessment
+
+    assessment = _build_overall_report_assessment(
+        {
+            "meta": {"template": "minimal"},
+            "sections_status": {
+                "summary": {"total": 1, "ok": 1, "partial": 0, "error": 0},
+                "sections": {selected[0]: "ok"},
+            },
+            "execution_progress": {"selected_sections": selected},
+        }
+    )
+
+    assert completed in assessment["summary"]
+    assert not_requested in assessment["summary"]
+
+
+def test_context_snapshot_time_is_report_data_as_of():
+    from mtdata.core.report.use_cases import _derive_report_data_as_of
+
+    assert _derive_report_data_as_of(
+        {
+            "context": {
+                "last_snapshot": {
+                    "time": "2026-08-10T23:00Z",
+                    "close": 1.15461,
+                }
+            }
+        }
+    ) == "2026-08-10T23:00:00Z"
 
 
 def test_report_assessment_elevates_closed_session_freshness():

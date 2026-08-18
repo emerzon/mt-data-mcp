@@ -92,6 +92,7 @@ def report_generate(
     - max_runtime: cooperative seconds budget; expensive sections that do not fit are omitted.
     - allow_partial: defaults true so usable sections survive nested failures; set false for strict runs.
     - progress: emit sub-tool start/finish lines to stderr.
+    - start/end: start requires end; end alone creates an as-of historical report.
     """
     def _run() -> Union[str, Dict[str, Any]]:
         connection_error = _report_connection_error()

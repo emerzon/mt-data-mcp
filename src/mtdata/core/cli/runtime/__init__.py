@@ -108,8 +108,12 @@ def _temporary_environment(overrides: Dict[str, Optional[str]]):
 
 
 @contextmanager
-def _suppress_cli_side_output(*, enabled: bool):
-    """Suppress stdout/stderr for CLI operations."""
+def _suppress_cli_side_output(
+    *,
+    enabled: bool,
+    stderr_allow_prefixes: tuple[str, ...] = (),
+):
+    """Suppress incidental tool output while replaying approved stderr records."""
     if not enabled:
         yield
         return
@@ -129,6 +133,10 @@ def _suppress_cli_side_output(*, enabled: bool):
                 yield
     finally:
         logging.disable(previous_disable)
+    if stderr_allow_prefixes:
+        for line in stderr_buffer.getvalue().splitlines():
+            if line.startswith(stderr_allow_prefixes):
+                print(line, file=sys.stderr, flush=True)
 
 
 __all__ = [

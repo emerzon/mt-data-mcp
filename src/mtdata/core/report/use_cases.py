@@ -174,6 +174,14 @@ def _collect_report_timestamp_candidates(value: Any) -> List[datetime]:
     candidates: List[datetime] = []
     if isinstance(value, dict):
         for key, item in value.items():
+            if str(key) == "last_snapshot" and isinstance(item, dict):
+                for timestamp_key in ("time", "time_epoch"):
+                    parsed = _parse_report_timestamp(item.get(timestamp_key))
+                    if parsed is not None:
+                        candidates.append(parsed)
+                        break
+                candidates.extend(_collect_report_timestamp_candidates(item))
+                continue
             if str(key) in _REPORT_TIMESTAMP_KEYS:
                 parsed = _parse_report_timestamp(item)
                 if parsed is not None:
@@ -214,6 +222,42 @@ def _has_payload_content(payload: Any) -> bool:
     if isinstance(payload, list):
         return any(_has_payload_content(item) for item in payload)
     return payload not in (None, "")
+
+
+def _has_finite_conformal_intervals(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    intervals = payload.get("intervals")
+    if isinstance(intervals, list) and intervals:
+        for row in intervals:
+            if not isinstance(row, dict) or row.get("time") in (None, ""):
+                return False
+            try:
+                point = float(row.get("forecast"))
+                lower = float(row.get("lower_price"))
+                upper = float(row.get("upper_price"))
+            except (TypeError, ValueError):
+                return False
+            if not all(math.isfinite(value) for value in (point, lower, upper)):
+                return False
+            if not lower <= point <= upper:
+                return False
+        return True
+    lower_values = payload.get("lower_price")
+    upper_values = payload.get("upper_price")
+    if not isinstance(lower_values, list) or not isinstance(upper_values, list):
+        return False
+    if not lower_values or len(lower_values) != len(upper_values):
+        return False
+    try:
+        return all(
+            math.isfinite(float(lower))
+            and math.isfinite(float(upper))
+            and float(lower) <= float(upper)
+            for lower, upper in zip(lower_values, upper_values, strict=True)
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_report_error_noise(message: str) -> bool:
@@ -321,6 +365,15 @@ def _build_sections_status(
             missing_error = {
                 "path": "forecast",
                 "message": "Forecast section contains no finite forecast values.",
+            }
+            if missing_error not in errors:
+                errors.append(missing_error)
+        if str(name) == "forecast_conformal" and not _has_finite_conformal_intervals(payload):
+            has_error = True
+            has_content = False
+            missing_error = {
+                "path": "forecast_conformal",
+                "message": "Conformal section contains no complete finite interval series.",
             }
             if missing_error not in errors:
                 errors.append(missing_error)
@@ -708,8 +761,9 @@ def _compact_report_payload(  # noqa: C901
     timezone_label = _valid_timezone_label(report.get("timezone"))
     if timezone_label:
         compact["timezone"] = timezone_label
-    if report.get("as_of") not in (None, ""):
-        compact["as_of"] = report.get("as_of")
+    compact["as_of"] = report.get("as_of")
+    if report.get("data_as_of_status") not in (None, ""):
+        compact["data_as_of_status"] = report.get("data_as_of_status")
     structured_preview = report.get("summary_structured")
     if isinstance(structured_preview, dict):
         narrative = structured_preview.get("narrative")
@@ -1098,11 +1152,37 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
     else:
         confidence = "high" if ok >= 3 else "medium"
         if template == "minimal":
-            recommended_action = "run_basic_template_for_levels_and_risk"
-            summary_text = (
-                "Minimal context and forecast sections completed successfully; "
-                "use template=basic when levels and risk context are required."
+            execution_progress = report.get("execution_progress")
+            selected = (
+                execution_progress.get("selected_sections")
+                if isinstance(execution_progress, dict)
+                else None
             )
+            selected_names = [
+                str(name) for name in selected
+            ] if isinstance(selected, list) else list(
+                (sections_status.get("sections") or {}).keys()
+            )
+            completed_names = [
+                name
+                for name in ("context", "forecast")
+                if name in selected_names
+                and name not in failed_sections
+                and name not in partial_sections
+                and name not in omitted_sections
+            ]
+            not_requested = [
+                name for name in ("context", "forecast") if name not in selected_names
+            ]
+            recommended_action = "run_basic_template_for_levels_and_risk"
+            completed_text = " and ".join(completed_names) or "selected sections"
+            summary_text = f"Minimal {completed_text} completed successfully"
+            if not_requested:
+                verb = "was" if len(not_requested) == 1 else "were"
+                summary_text += (
+                    f"; {' and '.join(not_requested).capitalize()} {verb} not requested"
+                )
+            summary_text += "; use template=basic when levels and risk context are required."
         else:
             recommended_action = "review_key_levels_and_risk"
             summary_text = "Report sections completed successfully; review levels, forecast, and risk context before acting."
@@ -2095,6 +2175,30 @@ def run_report_generate(  # noqa: C901
                             sections_status=sections_status,
                         )
                     )
+                elif not rep["success"] and rep["section_run_status"] == "partial":
+                    rep.update(
+                        build_error_payload(
+                            "The report is partial and allow_partial=false requires every "
+                            "selected section to complete successfully.",
+                            code="report_partial_not_allowed",
+                            operation="report_generate",
+                            details={
+                                "partial_sections": _report_section_names_by_status(
+                                    sections_status, "partial"
+                                ),
+                                "failed_sections": _report_section_names_by_status(
+                                    sections_status, "error"
+                                ),
+                                "omitted_sections": _report_section_names_by_status(
+                                    sections_status, "omitted"
+                                ),
+                            },
+                            remediation=(
+                                "Retry the named sections, increase max_runtime, or set "
+                                "allow_partial=true when partial output is acceptable."
+                            ),
+                        )
+                    )
                 sections_with_issues: Dict[str, List[str]] = {}
                 partial_section_names = _report_section_names_by_status(sections_status, "partial")
                 error_section_names = _report_section_names_by_status(sections_status, "error")
@@ -2188,7 +2292,10 @@ def run_report_generate(  # noqa: C901
             if generated_at_text is None:
                 generated_at_text = _format_report_timestamp(datetime.now(timezone.utc))
             rep["generated_at"] = generated_at_text
-            rep["as_of"] = _derive_report_data_as_of(source_sections or rep.get("sections")) or generated_at_text
+            data_as_of = _derive_report_data_as_of(source_sections or rep.get("sections"))
+            rep["as_of"] = data_as_of
+            if data_as_of is None:
+                rep["data_as_of_status"] = "unavailable"
             rep = _attach_report_timezone(rep)
             rep = _prioritize_report_payload(rep)
 

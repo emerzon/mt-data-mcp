@@ -129,8 +129,8 @@ def template_basic(  # noqa: C901
             symbol=symbol,
             timeframe=tf,
             limit=int(p.get('context_limit', 300)),
-            # Context is an as-of snapshot, so an explicit limit must anchor at
-            # the range end rather than select the first bars after start.
+            # Request validation requires an end whenever start is supplied.
+            # The context snapshot anchors at that shared report cutoff.
             start=None,
             end=end,
             indicators=indicators,  # type: ignore[arg-type]

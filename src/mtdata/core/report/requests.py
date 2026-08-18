@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
+from ...forecast.requests import MAX_FORECAST_HORIZON
 from ...shared.schema import (
     DenoiseSpec,
     DetailLiteral,
@@ -39,12 +40,27 @@ class ReportGenerateRequest(BaseModel):
     horizon: Optional[int] = Field(
         None,
         ge=1,
-        description="Forecast/report horizon in bars; must be at least 1 when supplied.",
+        le=MAX_FORECAST_HORIZON,
+        description=(
+            "Forecast/report horizon in bars; must be between 1 and "
+            f"{MAX_FORECAST_HORIZON} when supplied."
+        ),
     )
     template: ReportTemplateLiteral = Field("minimal", description=_REPORT_TEMPLATE_HELP)
     timeframe: Optional[TimeframeLiteral] = None
-    start: Optional[str] = None
-    end: Optional[str] = None
+    start: Optional[str] = Field(
+        None,
+        description=(
+            "Historical range start. An end bound is required when start is set "
+            "so every report section uses the same cutoff."
+        ),
+    )
+    end: Optional[str] = Field(
+        None,
+        description=(
+            "Inclusive historical cutoff. May be used alone for an as-of report."
+        ),
+    )
     methods: Optional[Union[str, List[str]]] = None
     include_sections: Optional[Union[str, List[str]]] = Field(
         None,
@@ -114,9 +130,36 @@ class ReportGenerateRequest(BaseModel):
             params_horizon = values["params"].get("horizon")
             if params_horizon is not None:
                 try:
-                    valid_horizon = int(params_horizon) >= 1
+                    horizon_value = int(params_horizon)
+                    valid_horizon = 1 <= horizon_value <= MAX_FORECAST_HORIZON
                 except (TypeError, ValueError):
                     valid_horizon = False
                 if not valid_horizon:
-                    raise ValueError("params.horizon must be an integer greater than or equal to 1")
+                    raise ValueError(
+                        "params.horizon must be an integer between 1 and "
+                        f"{MAX_FORECAST_HORIZON}"
+                    )
         return values
+
+    @model_validator(mode="after")
+    def _validate_historical_window(self) -> "ReportGenerateRequest":
+        from ...utils.utils import _parse_end_datetime, _parse_start_datetime
+
+        start_dt = _parse_start_datetime(self.start) if self.start else None
+        end_dt = _parse_end_datetime(self.end) if self.end else None
+        if self.start and start_dt is None:
+            raise ValueError(
+                "start must be a valid date or ISO 8601 timestamp"
+            )
+        if self.end and end_dt is None:
+            raise ValueError(
+                "end must be a valid date or ISO 8601 timestamp"
+            )
+        if self.start and not self.end:
+            raise ValueError(
+                "end is required when start is supplied so every report section "
+                "uses one historical cutoff"
+            )
+        if start_dt is not None and end_dt is not None and start_dt > end_dt:
+            raise ValueError("start must be before or equal to end")
+        return self

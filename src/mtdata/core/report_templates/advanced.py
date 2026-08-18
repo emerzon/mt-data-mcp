@@ -1,4 +1,5 @@
-from typing import Any, Dict, Optional
+import math
+from typing import Any, Dict, List, Optional
 
 from ...shared.schema import DenoiseSpec
 from ..report.utils import (
@@ -15,6 +16,90 @@ from .basic import (
     _get_raw_result,
     template_basic,
 )
+
+
+def _finite_number_list(value: Any) -> List[float]:
+    if not isinstance(value, list):
+        return []
+    numbers: List[float] = []
+    for item in value:
+        try:
+            number = float(item)
+        except (TypeError, ValueError):
+            return []
+        if not math.isfinite(number):
+            return []
+        numbers.append(number)
+    return numbers
+
+
+def _conformal_report_section(
+    payload: Dict[str, Any],
+    *,
+    method: str,
+    horizon: int,
+) -> Dict[str, Any]:
+    lower = _finite_number_list(payload.get("lower_price"))
+    upper = _finite_number_list(payload.get("upper_price"))
+    forecast = _finite_number_list(payload.get("forecast_price"))
+    conformal = payload.get("conformal")
+    conformal = conformal if isinstance(conformal, dict) else {}
+    per_step_q = _finite_number_list(conformal.get("per_step_q"))
+    times = payload.get("forecast_time")
+    times = times if isinstance(times, list) else []
+    expected = int(horizon)
+    if not (
+        len(lower) == expected
+        and len(upper) == expected
+        and len(forecast) == expected
+        and len(times) == expected
+        and len(per_step_q) == expected
+    ):
+        return {
+            "status": "error",
+            "method": method,
+            "error": (
+                "Conformal interval output was incomplete: expected one timestamp, "
+                "point forecast, lower bound, upper bound, and calibration quantile "
+                f"for each of {expected} steps."
+            ),
+        }
+    intervals: List[Dict[str, Any]] = []
+    for index, (time_value, point, low, high, quantile) in enumerate(
+        zip(times, forecast, lower, upper, per_step_q, strict=True),
+        start=1,
+    ):
+        if time_value in (None, "") or not low <= point <= high:
+            return {
+                "status": "error",
+                "method": method,
+                "error": (
+                    "Conformal interval output contained a missing timestamp or an "
+                    f"unordered bound at step {index}."
+                ),
+            }
+        intervals.append(
+            {
+                "step": index,
+                "time": time_value,
+                "forecast": point,
+                "lower_price": low,
+                "upper_price": high,
+                "per_step_q": quantile,
+            }
+        )
+    return {
+        "method": method,
+        "intervals": intervals,
+        "lower_price": lower,
+        "upper_price": upper,
+        "per_step_q": per_step_q,
+        "ci_alpha": payload.get("ci_alpha"),
+        "nominal_confidence_level": payload.get("nominal_confidence_level"),
+        "empirical_coverage": payload.get("empirical_coverage"),
+        "coverage_status": payload.get("coverage_status"),
+        "conformal": conformal,
+    }
 
 
 def template_advanced(
@@ -139,17 +224,16 @@ def template_advanced(
             spacing=conformal_spacing,
             ci_alpha=float(p.get('conformal_alpha', 0.1)),
             denoise=denoise,
+            detail='full',
         )
         if 'error' in conf:
             base['sections']['forecast_conformal'] = {'error': conf['error'], 'method': best_method}
         else:
-            base['sections']['forecast_conformal'] = {
-                'method': best_method,
-                'lower_price': conf.get('lower_price'),
-                'upper_price': conf.get('upper_price'),
-                'per_step_q': conf.get('conformal', {}).get('per_step_q'),
-                'ci_alpha': conf.get('ci_alpha'),
-            }
+            base['sections']['forecast_conformal'] = _conformal_report_section(
+                conf,
+                method=str(best_method),
+                horizon=int(horizon),
+            )
     elif p.get('_report_section_controls_active'):
         base['sections']['forecast_conformal'] = {
             'error': 'No backtest-selected method was available for conformal intervals.'

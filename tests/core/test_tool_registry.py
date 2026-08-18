@@ -2,6 +2,9 @@
 
 import asyncio
 import re
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from types import SimpleNamespace
 
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
 from mtdata.core._mcp_tools import registered_tool_catalog
@@ -180,6 +183,53 @@ def test_cli_error_envelope_matches_transport_log_request_id(caplog):
     )
     assert f"request_id={result['request_id']}" in finish
     assert current_request_id() is None
+
+
+def test_cli_report_progress_replays_only_structured_stderr():
+    def report_probe(*, request):
+        print("incidental stdout")
+        print("incidental stderr", file=__import__("sys").stderr)
+        print(
+            "report_generate progress operation=context state=started elapsed=0.1s",
+            file=__import__("sys").stderr,
+        )
+        return {"success": True}
+
+    stdout = StringIO()
+    stderr = StringIO()
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        result = _invoke_cli_tool_function(
+            report_probe,
+            args=None,
+            cmd_name="report_generate",
+            kwargs={"request": SimpleNamespace(progress=True)},
+        )
+
+    assert result["success"] is True
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue().strip() == (
+        "report_generate progress operation=context state=started elapsed=0.1s"
+    )
+
+
+def test_cli_report_progress_stays_silent_when_not_requested():
+    def report_probe(*, request):
+        print(
+            "report_generate progress operation=context state=started elapsed=0.1s",
+            file=__import__("sys").stderr,
+        )
+        return {"success": True}
+
+    stderr = StringIO()
+    with redirect_stderr(stderr):
+        _invoke_cli_tool_function(
+            report_probe,
+            args=None,
+            cmd_name="report_generate",
+            kwargs={"request": SimpleNamespace(progress=False)},
+        )
+
+    assert stderr.getvalue() == ""
 
 
 def test_tool_public_schemas_match_mcp_top_level_subset():

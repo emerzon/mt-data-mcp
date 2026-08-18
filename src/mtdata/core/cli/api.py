@@ -186,10 +186,17 @@ def _validated_cli_scalar(ptype: Any, base_type: type):
 def _invoke_cli_tool_function(
     func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]
 ) -> Any:
+    report_request = kwargs.get("request") if cmd_name == "report_generate" else None
+    replay_progress = bool(getattr(report_request, "progress", False))
     with ensure_request_id_scope() as request_id:
         try:
             with _capture_runtime_warnings() as warning_records:
-                with _suppress_cli_side_output(enabled=True):
+                with _suppress_cli_side_output(
+                    enabled=True,
+                    stderr_allow_prefixes=("report_generate progress ",)
+                    if replay_progress
+                    else (),
+                ):
                     result = func(**kwargs)
         except Exception:
             logger.exception(
@@ -613,6 +620,11 @@ def _result_has_tool_error(result: Any) -> bool:
 
 def _render_cli_result_status(result: Any, *, args: Any, cmd_name: str) -> int:
     rendered_result = _render_cli_result(result, args=args, cmd_name=cmd_name)
+    if isinstance(rendered_result, dict) and rendered_result.get("error_code") in {
+        "cli_invalid_arguments",
+        "cli_missing_required",
+    }:
+        return 2
     return int(_result_has_tool_error(rendered_result))
 
 

@@ -1473,10 +1473,13 @@ class TestTemplateAdvanced:
             name = func.__name__ if hasattr(func, '__name__') else str(func)
             if "conformal" in name.lower():
                 return {
-                    "lower_price": 1.20,
-                    "upper_price": 1.25,
+                    "forecast_time": [f"2026-08-18T{i:02d}:00Z" for i in range(12)],
+                    "forecast_price": [1.225] * 12,
+                    "lower_price": [1.20] * 12,
+                    "upper_price": [1.25] * 12,
                     "ci_alpha": 0.1,
-                    "conformal": {"per_step_q": [0.01]},
+                    "nominal_confidence_level": 0.9,
+                    "conformal": {"per_step_q": [0.025] * 12},
                 }
             return {"summary": "ok"}
 
@@ -1486,7 +1489,13 @@ class TestTemplateAdvanced:
         report = template_advanced("EURUSD", 12, None, {})
 
         conf = report["sections"].get("forecast_conformal", {})
-        assert "method" in conf or "error" in conf
+        assert conf["method"] == "arima"
+        assert len(conf["intervals"]) == 12
+        assert all(
+            row["lower_price"] <= row["forecast"] <= row["upper_price"]
+            for row in conf["intervals"]
+        )
+        assert conf["per_step_q"] == [0.025] * 12
         conformal_call = next(
             call
             for call in mock_raw.call_args_list
@@ -1494,6 +1503,7 @@ class TestTemplateAdvanced:
         )
         assert conformal_call.kwargs["spacing"] == 12
         assert conformal_call.kwargs["denoise"] is None
+        assert conformal_call.kwargs["detail"] == "full"
 
     @patch(f"{_ADV_MODULE}.template_basic")
     @patch(f"{_ADV_MODULE}._get_raw_result")

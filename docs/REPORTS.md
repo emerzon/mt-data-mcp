@@ -84,6 +84,8 @@ Useful controls:
 
 - `--horizon` sets the forecast horizon in bars.
 - `--timeframe`, `--start`, and `--end` constrain the requested market window.
+  `--end` may be used alone for an as-of snapshot; `--start` requires `--end`
+  so snapshot and range-aware sections share one historical cutoff.
 - When `--start` or `--end` bounds a report, sections that only support current-market
   analysis are not run. Their section payloads use `status: omitted` with reason
   `current_only_section_omitted`, and the report is marked partial rather than mixing
@@ -99,10 +101,13 @@ Useful controls:
   requested budget. `runtime_plan` records estimates, omissions, elapsed time,
   and whether the budget was exhausted.
 - `--progress true` writes sub-tool start/finish events to stderr while stdout
-  remains the final structured report.
+  remains the final structured report. Stdin shell batches preserve those lines
+  in the command record's `stderr` field.
 - `--allow-partial` defaults to `true`: a report with at least one usable
   section returns `success:true` and `section_run_status:partial`. Set it to
-  `false` when a caller requires every selected section to complete cleanly.
+  `false` when a caller requires every selected section to complete cleanly; a
+  strict rejection uses `error_code: report_partial_not_allowed` and names the
+  incomplete sections.
 - `--denoise` and `--denoise-params` configure optional input smoothing for
   candles and the forecast / volatility / barrier stack.
 - `--params` supplies template and sub-tool overrides such as context limits,
@@ -129,6 +134,10 @@ backtest, volatility, pivot, confluence, volume profile, patterns, barriers,
 session, news, temporal seasonality, regime, or multi-timeframe variants. Check the report-level and per-section status before consuming a
 value: a successful report envelope can still describe omitted or partial
 sections.
+
+Root `as_of` is the market-data cutoff derived from the selected sections;
+`generated_at` is the later assembly time. If no section exposes a trustworthy
+market timestamp, `as_of` is null and `data_as_of_status` is `unavailable`.
 
 `section_run_status` reports whether scheduled sections completed (`complete`,
 `partial`, or `failed`). `content_detail` separately reports how much content
