@@ -808,6 +808,9 @@ def _fetch_mt5_rates_guarded(
     future_error = future_as_of_error(as_of)
     if future_error:
         return None, future_error
+    start_dt, end_dt, range_error = _volatility_range_bounds(start, end)
+    if range_error:
+        return None, range_error
     requested_count = int(count)
     cache = _RATES_CACHE.get()
     cache_key = (
@@ -854,16 +857,6 @@ def _fetch_mt5_rates_guarded(
         err = _ensure_symbol_ready(symbol)
         if err:
             return None, str(err)
-        start_dt = _parse_start_datetime(start) if start else None
-        if start and start_dt is None:
-            return None, "Invalid start time."
-        end_dt = _parse_end_datetime(end) if end else None
-        if end and end_dt is None:
-            return None, "Invalid end time."
-        if start_dt is not None and end_dt is None:
-            end_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-        if start_dt is not None and end_dt is not None and start_dt > end_dt:
-            return None, "start must be before or equal to end."
         if start_dt is not None:
             rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
             rates = _closed_at(rates, end_dt)
@@ -900,6 +893,32 @@ def _fetch_mt5_rates_guarded(
                 pass
 
 
+def _volatility_range_bounds(
+    start: Optional[str],
+    end: Optional[str],
+) -> tuple[Optional[datetime], Optional[datetime], Optional[str]]:
+    """Resolve a historical range without touching the MT5 provider."""
+    start_dt = _parse_start_datetime(start) if start else None
+    if start and start_dt is None:
+        return None, None, "Invalid start time."
+    end_dt = _parse_end_datetime(end) if end else None
+    if end and end_dt is None:
+        return None, None, "Invalid end time."
+    now_utc = datetime.now(timezone.utc)
+    now_naive = now_utc.replace(tzinfo=None)
+    if start_dt is not None and start_dt > now_naive:
+        return None, None, "start must not be in the future."
+    if end:
+        end_lower_bound = _parse_start_datetime(end)
+        if end_lower_bound is not None and end_lower_bound > now_naive:
+            return None, None, "end must not be in the future."
+    if start_dt is not None and end_dt is None:
+        end_dt = now_naive
+    if start_dt is not None and end_dt is not None and start_dt > end_dt:
+        return None, None, "start must be before or equal to end."
+    return start_dt, end_dt, None
+
+
 def _drop_forming_live_bar(
     frame: pd.DataFrame,
     rates: Any,
@@ -910,6 +929,60 @@ def _drop_forming_live_bar(
     if live_window and len(frame) >= 2 and _is_last_bar_forming(rates, timeframe):
         return frame.iloc[:-1]
     return frame
+
+
+def _volatility_fetch_error_payload(
+    message: str,
+    *,
+    start: Optional[str],
+    end: Optional[str],
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"error": str(message)}
+    if "must not be in the future" in str(message).lower():
+        out.update(
+            {
+                "success": False,
+                "error_code": "forecast_range_in_future",
+                "requested_range": {"start": start, "end": end},
+                "remediation": (
+                    "Correct the requested time range/timezone so "
+                    "both bounds are at or before the current UTC time."
+                ),
+            }
+        )
+    return out
+
+
+def _volatility_no_rates_payload(
+    symbol: str,
+    *,
+    start: Optional[str],
+    end: Optional[str],
+    observed_bars: int,
+    minimum_bars: int,
+    data_timeframe: str,
+) -> Dict[str, Any]:
+    ranged = bool(start or end)
+    return {
+        "success": False,
+        "error": (
+            f"No sufficient closed MT5 rates were available for {symbol} in the "
+            "requested range."
+            if ranged
+            else f"Not enough closed MT5 rates were available for {symbol}."
+        ),
+        "error_code": "no_data_for_range" if ranged else "insufficient_history",
+        "requested_range": {"start": start, "end": end},
+        "data_timeframe": data_timeframe,
+        "observed_bars": int(observed_bars),
+        "minimum_bars": int(minimum_bars),
+        "remediation": (
+            "Correct the requested time range/timezone or choose a range with "
+            "available closed market data."
+            if ranged
+            else "Increase available history or choose a shorter-lookback method."
+        ),
+    }
 
 
 def forecast_volatility(  # noqa: C901
@@ -1221,9 +1294,20 @@ def forecast_volatility(  # noqa: C901
                 timeframe=timeframe,
             )
             if fetch_error:
-                return {"error": fetch_error}
+                return _volatility_fetch_error_payload(
+                    fetch_error,
+                    start=start,
+                    end=end,
+                )
             if rates is None or len(rates) < 5:
-                return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+                return _volatility_no_rates_payload(
+                    symbol,
+                    start=start,
+                    end=end,
+                    observed_bars=0 if rates is None else len(rates),
+                    minimum_bars=5,
+                    data_timeframe=timeframe,
+                )
             df = pd.DataFrame(rates)
             df = _drop_forming_live_bar(
                 df,
@@ -1459,9 +1543,20 @@ def forecast_volatility(  # noqa: C901
                     timeframe=rv_tf,
                 )
                 if fetch_error:
-                    return {"error": fetch_error}
+                    return _volatility_fetch_error_payload(
+                        fetch_error,
+                        start=start,
+                        end=end,
+                    )
                 if rates_rv is None or len(rates_rv) < 50:
-                    return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
+                    return _volatility_no_rates_payload(
+                        symbol,
+                        start=start,
+                        end=end,
+                        observed_bars=0 if rates_rv is None else len(rates_rv),
+                        minimum_bars=50,
+                        data_timeframe=rv_tf,
+                    )
                 dfrv = pd.DataFrame(rates_rv)
                 dfrv = _drop_forming_live_bar(
                     dfrv,
@@ -1566,9 +1661,20 @@ def forecast_volatility(  # noqa: C901
             timeframe=timeframe,
         )
         if fetch_error:
-            return {"error": fetch_error}
+            return _volatility_fetch_error_payload(
+                fetch_error,
+                start=start,
+                end=end,
+            )
         if rates is None or len(rates) < 3:
-            return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
+            return _volatility_no_rates_payload(
+                symbol,
+                start=start,
+                end=end,
+                observed_bars=0 if rates is None else len(rates),
+                minimum_bars=3,
+                data_timeframe=timeframe,
+            )
 
         df = pd.DataFrame(rates)
         df = _drop_forming_live_bar(

@@ -914,6 +914,61 @@ class TestForecastVolatilityAsOf:
         assert error == "as_of must not be in the future."
         fetch.assert_not_called()
 
+    @pytest.mark.parametrize(
+        ("start", "end", "expected_bound"),
+        [
+            ("2099-01-01", None, "start"),
+            (None, "2099-01-02", "end"),
+            ("2024-01-01", "2099-01-02", "end"),
+        ],
+    )
+    def test_future_range_bound_is_rejected_before_provider_call(
+        self,
+        start,
+        end,
+        expected_bound,
+    ):
+        with patch(f"{MOD}._ensure_symbol_ready") as ensure_symbol:
+            result = forecast_volatility(
+                "EURUSD",
+                "H1",
+                1,
+                method="ewma",
+                start=start,
+                end=end,
+            )
+
+        assert result["success"] is False
+        assert result["error_code"] == "forecast_range_in_future"
+        assert result["error"] == f"{expected_bound} must not be in the future."
+        assert result["requested_range"] == {"start": start, "end": end}
+        assert "time range/timezone" in result["remediation"]
+        ensure_symbol.assert_not_called()
+
+    def test_empty_successful_mt5_range_has_typed_no_data_error(self):
+        with (
+            patch(f"{MOD}._fetch_mt5_rates_guarded", return_value=([], None)),
+            patch(f"{MOD}.mt5.last_error", return_value=(1, "Success")),
+        ):
+            result = forecast_volatility(
+                "EURUSD",
+                "H1",
+                1,
+                method="ewma",
+                start="2024-01-01",
+                end="2024-01-02",
+            )
+
+        assert result["success"] is False
+        assert result["error_code"] == "no_data_for_range"
+        assert result["observed_bars"] == 0
+        assert result["minimum_bars"] == 3
+        assert result["requested_range"] == {
+            "start": "2024-01-01",
+            "end": "2024-01-02",
+        }
+        assert "Success" not in result["error"]
+
     def test_as_of_inside_bar_excludes_that_bar(self):
         base = int(datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc).timestamp())
         rates = _make_rates(3)
