@@ -844,6 +844,11 @@ def _apply_range_limit_cap(
         "retained": "first" if start_anchored else "last",
     }
     result["range_complete"] = False
+    result["range_incomplete_reason"] = (
+        "provider_window_ended_before_requested_end"
+        if query.get("provider_end_bounded")
+        else "limit"
+    )
     if available > limit_value:
         result["available_count"] = available
         result["truncation"]["excluded_count"] = available - len(retained)
@@ -862,11 +867,19 @@ def _apply_range_limit_cap(
         }
     else:
         result["truncation"]["excluded_count"] = None
-        warning = (
-            "The requested range began before the bounded provider window; "
-            f"returned up to the latest {limit_value} bars. Increase limit or "
-            "move the range start forward to retrieve an earlier page."
-        )
+        if start_anchored and query.get("provider_end_bounded"):
+            warning = (
+                f"The start-only range reached limit={limit_value} before its "
+                "implied end at the current time; returned the earliest matching "
+                "bars. Continue from the timestamp after the final returned bar "
+                "or narrow the requested range."
+            )
+        else:
+            warning = (
+                "The requested range began before the bounded provider window; "
+                f"returned up to the latest {limit_value} bars. Increase limit or "
+                "move the range start forward to retrieve an earlier page."
+            )
         result["pagination"] = {
             "total": None,
             "total_lower_bound": len(retained) + 1,

@@ -939,6 +939,56 @@ def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
     assert "requested_limit" not in result
 
 
+def test_start_only_candle_cap_discloses_incomplete_range_and_gap():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="M1",
+        start="2025-01-01",
+    )
+    rows = [
+        {"time": "2025-01-01T00:00:00Z", "close": 1.0},
+        {"time": "2025-04-09T09:36:00Z", "close": 1.1},
+    ]
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": rows,
+            "data_window": {
+                "start": rows[0]["time"],
+                "end": rows[-1]["time"],
+            },
+            "meta": {
+                "diagnostics": {
+                    "query": {
+                        "mode": "range",
+                        "provider_bounded": True,
+                        "provider_end_bounded": True,
+                    },
+                    "freshness": {
+                        "data_freshness_seconds": 42_000_000.0,
+                        "data_freshness_anchor": "query_expected_end",
+                        "data_freshness_metric": "requested_range_end_gap_seconds",
+                    },
+                }
+            },
+        },
+    )
+
+    assert result["range_complete"] is False
+    assert result["range_incomplete_reason"] == (
+        "provider_window_ended_before_requested_end"
+    )
+    assert result["truncated"] is True
+    assert result["pagination"]["has_more"] is True
+    assert result["pagination"]["total"] is None
+    assert result["query_end_gap_seconds"] == 42_000_000.0
+    assert result["query_end_gap"] != "0s"
+    assert "implied end at the current time" in result["warnings"][0]
+
+
 def test_run_data_fetch_candles_range_is_incomplete_on_spacing_mismatch():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

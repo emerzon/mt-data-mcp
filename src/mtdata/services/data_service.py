@@ -763,7 +763,20 @@ def _fetch_rates_with_warmup(  # noqa: C901
         # closed sessions while retaining a bounded provider request.
         span_seconds = seconds_per_bar * max(requested_rows * 3, requested_rows + 7)
         to_date = min(now_utc, scan_start + timedelta(seconds=span_seconds))
-        expected_end_ts = _utc_epoch_seconds(to_date)
+        expected_end_ts = _utc_epoch_seconds(now_utc)
+        if diagnostics is not None:
+            diagnostics["range_fetch"] = {
+                "provider_bounded": False,
+                "provider_start": _format_time_explicit(
+                    _utc_epoch_seconds(from_date_internal)
+                ),
+                "requested_start": _format_time_explicit(
+                    _utc_epoch_seconds(from_date)
+                ),
+                "requested_end": _format_time_explicit(expected_end_ts),
+                "requested_end_source": "wall_clock_now",
+                "provider_row_budget": requested_rows,
+            }
 
         def _fetch():
             # Closed sessions consume calendar time without producing rows.
@@ -783,6 +796,19 @@ def _fetch_rates_with_warmup(  # noqa: C901
                     for row in result
                 )
                 if qualifying >= candles or candidate_end >= now_utc:
+                    if diagnostics is not None:
+                        provider_end_bounded = candidate_end < now_utc
+                        diagnostics["range_fetch"].update(
+                            {
+                                "provider_bounded": bool(
+                                    provider_end_bounded and qualifying >= candles
+                                ),
+                                "provider_end": _format_time_explicit(
+                                    _utc_epoch_seconds(candidate_end)
+                                ),
+                                "provider_end_bounded": provider_end_bounded,
+                            }
+                        )
                     return result
                 elapsed = max(
                     seconds_per_bar,

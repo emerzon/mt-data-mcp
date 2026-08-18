@@ -464,13 +464,24 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         mock_parse.return_value = t1
         rates = _make_rates(5, base_ts=t1.timestamp() + 600)
         mock_range.return_value = rates
+        diagnostics = {}
         result, err = _fetch_rates_with_warmup(
             'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', None,
-            retry=False, sanity_check=False,
+            retry=False, sanity_check=False, diagnostics=diagnostics,
         )
         self.assertIsNone(err)
         self.assertEqual(result, rates)
         mock_range.assert_called_once()
+        self.assertTrue(diagnostics["range_fetch"]["provider_bounded"])
+        self.assertTrue(diagnostics["range_fetch"]["provider_end_bounded"])
+        self.assertEqual(
+            diagnostics["range_fetch"]["requested_end_source"],
+            "wall_clock_now",
+        )
+        self.assertGreater(
+            diagnostics["freshness"]["data_freshness_seconds"],
+            0,
+        )
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
