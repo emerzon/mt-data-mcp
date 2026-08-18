@@ -133,6 +133,9 @@ counted as intraday variance. It estimates normal daily coverage from the
 median bar count of up to 20 prior UTC days and excludes the final day when it
 has less than 90% of that coverage. Full output reports the final aggregate's
 observed time range, observed and expected bars, coverage, and inclusion status.
+When `rv_timeframe` differs from the requested forecast timeframe, target times
+are aligned to actual MT5 candle opens for the requested timeframe; `data_as_of`
+continues to identify the latest high-frequency model input.
 
 **When to use:** When you need the most accurate volatility forecasts and have access to intraday data.
 

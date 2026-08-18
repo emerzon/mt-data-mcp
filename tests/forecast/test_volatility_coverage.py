@@ -28,6 +28,7 @@ from mtdata.forecast.volatility import (
     forecast_volatility,
     get_volatility_methods_data,
 )
+from mtdata.utils.time import _format_time_minimal
 
 MOD = "mtdata.forecast.volatility"
 
@@ -1234,11 +1235,21 @@ def _mock_env(
     ensure_kw = ({"side_effect": ensure_side_effect}
                  if ensure_side_effect is not None else {"return_value": ensure_err})
 
+    def test_grid_anchor(*_args, **kwargs):
+        timeframe = str(kwargs["timeframe"])
+        observed = float(kwargs["observed_last_epoch"])
+        seconds = float(vol_mod.TIMEFRAME_SECONDS[timeframe])
+        return math.floor(observed / seconds) * seconds, None
+
     with (
         patch(f"{MOD}._ensure_symbol_ready", **ensure_kw) as m_ensure,
         patch(f"{MOD}._mt5_copy_rates_from", **copy_kw) as m_copy,
         patch("mtdata.utils.mt5._mt5_epoch_to_utc", return_value=1_704_067_200.0),
         patch(f"{MOD}._parse_start_datetime", return_value=parse_dt_return),
+        patch(
+            f"{MOD}._requested_timeframe_grid_anchor",
+            side_effect=test_grid_anchor,
+        ) as m_grid_anchor,
         patch(f"{MOD}.mt5") as m_mt5,
     ):
         m_mt5.symbol_info.return_value = mock_info
@@ -1246,7 +1257,12 @@ def _mock_env(
         m_mt5.last_error.return_value = (-1, "mock error")
         if select_side_effect is not None:
             m_mt5.symbol_select.side_effect = select_side_effect
-        yield {"mt5": m_mt5, "copy_rates": m_copy, "ensure": m_ensure}
+        yield {
+            "mt5": m_mt5,
+            "copy_rates": m_copy,
+            "ensure": m_ensure,
+            "grid_anchor": m_grid_anchor,
+        }
 
 
 # ===================================================================
@@ -2058,11 +2074,113 @@ class TestHarRvBlock:
                                             "window_m": 10})
             assert r.get("success") is True or "error" in r
 
-    def test_har_rv_uses_single_rate_fetch(self):
+    def test_har_rv_resolves_requested_grid_after_intraday_fetch(self):
         with _mock_env(rates_side_effect=self._har_rv_side_effect()) as env:
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert isinstance(r, dict)
             assert env["copy_rates"].call_count == 1
+            env["grid_anchor"].assert_called_once()
+
+    def test_requested_timeframe_grid_anchor_uses_actual_candle_opens(self):
+        start_epoch = int(
+            datetime(2026, 8, 16, 21, tzinfo=timezone.utc).timestamp()
+        )
+        h4_rates = _make_rates_ext(
+            3,
+            bar_secs=4 * 3600,
+            start_epoch=start_epoch,
+        )
+        observed_epoch = datetime(
+            2026, 8, 17, 2, 15, tzinfo=timezone.utc
+        ).timestamp()
+
+        with patch(
+            f"{MOD}._fetch_mt5_rates_guarded",
+            return_value=(h4_rates, None),
+        ):
+            anchor, error = vol_mod._requested_timeframe_grid_anchor(
+                "BTCUSD",
+                vol_mod.TIMEFRAME_MAP["H4"],
+                timeframe="H4",
+                observed_last_epoch=observed_epoch,
+                end="2026-08-17T02:20:00Z",
+            )
+
+        assert error is None
+        assert _format_time_minimal(anchor) == "2026-08-17T01:00Z"
+
+    @pytest.mark.parametrize(
+        ("timeframe", "grid_anchor", "expected_targets"),
+        [
+            (
+                "H1",
+                "2026-08-17T02:00:00Z",
+                [
+                    "2026-08-17T03:00Z",
+                    "2026-08-17T04:00Z",
+                    "2026-08-17T05:00Z",
+                ],
+            ),
+            (
+                "H4",
+                "2026-08-17T01:00:00Z",
+                [
+                    "2026-08-17T05:00Z",
+                    "2026-08-17T09:00Z",
+                    "2026-08-17T13:00Z",
+                ],
+            ),
+        ],
+    )
+    def test_har_rv_forecast_window_uses_requested_candle_grid(
+        self,
+        timeframe,
+        grid_anchor,
+        expected_targets,
+    ):
+        observed_epoch = int(
+            datetime(2026, 8, 17, 2, 15, tzinfo=timezone.utc).timestamp()
+        )
+        intraday = _make_rates_ext(
+            15_000,
+            bar_secs=300,
+            start_epoch=observed_epoch - (14_999 * 300),
+            seed=222,
+        )
+        anchor_epoch = datetime.fromisoformat(
+            grid_anchor.replace("Z", "+00:00")
+        ).timestamp()
+
+        with _mock_env(rates_side_effect=[intraday]) as env:
+            env["grid_anchor"].side_effect = None
+            env["grid_anchor"].return_value = (anchor_epoch, None)
+            result = forecast_volatility(
+                "BTCUSD",
+                timeframe,
+                3,
+                method="har_rv",
+                detail="full",
+            )
+
+        assert result["success"] is True
+        assert result["data_as_of"] == "2026-08-17T02:15Z"
+        window = result["forecast_window"]
+        assert window["anchor"] == _format_time_minimal(anchor_epoch)
+        assert window["input_data_as_of"] == result["data_as_of"]
+        assert window["alignment_basis"] == (
+            "mt5_requested_timeframe_candle_grid"
+        )
+        targets = vol_mod._next_volatility_times_on_grid(
+            observed_epoch,
+            anchor_epoch,
+            vol_mod.TIMEFRAME_SECONDS[timeframe],
+            3,
+            symbol="BTCUSD",
+            timeframe=timeframe,
+        )
+        assert [_format_time_minimal(value) for value in targets] == expected_targets
+        assert window["start"] == expected_targets[0]
+        assert window["end"] == expected_targets[-1]
 
     def test_as_of_keeps_all_bars(self):
         """Lines 1125-1126: as_of set → last bar NOT dropped."""

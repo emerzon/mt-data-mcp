@@ -592,6 +592,7 @@ def _volatility_input_context(
     live_window: bool,
     horizon: int = 1,
     now_epoch: Optional[float] = None,
+    forecast_grid_anchor_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     if "time" not in df.columns or len(df) == 0:
         return {}
@@ -615,12 +616,18 @@ def _volatility_input_context(
     if observation_timeframe != str(timeframe):
         out["data_window"]["observed_timeframe"] = observation_timeframe
     tf_secs = int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    grid_anchor_epoch = (
+        float(forecast_grid_anchor_epoch)
+        if forecast_grid_anchor_epoch is not None
+        else last_epoch
+    )
     forecast_epochs = (
-        next_times_from_last(
+        _next_volatility_times_on_grid(
             last_epoch,
+            grid_anchor_epoch,
             tf_secs,
             max(1, int(horizon)),
-            skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
+            symbol=symbol,
             timeframe=timeframe,
         )
         if tf_secs > 0
@@ -631,7 +638,7 @@ def _volatility_input_context(
         end_epoch = float(forecast_epochs[-1])
         calendar_timeframe = str(timeframe).upper() in {"D1", "W1", "MN1"}
         out["forecast_window"] = {
-            "anchor": _format_time_minimal(last_epoch),
+            "anchor": _format_time_minimal(grid_anchor_epoch),
             "start": _format_time_minimal(start_epoch),
             "end": _format_time_minimal(end_epoch),
             "bars": int(len(forecast_epochs)),
@@ -650,6 +657,12 @@ def _volatility_input_context(
         }
         if observation_timeframe != str(timeframe):
             out["forecast_window"]["timeframe"] = str(timeframe)
+            out["forecast_window"]["input_data_as_of"] = _format_time_minimal(
+                last_epoch
+            )
+            out["forecast_window"]["alignment_basis"] = (
+                "mt5_requested_timeframe_candle_grid"
+            )
     if not live_window:
         return out
 
@@ -704,6 +717,55 @@ def _volatility_input_context(
     return out
 
 
+def _next_volatility_times_on_grid(
+    last_observation_epoch: float,
+    grid_anchor_epoch: float,
+    tf_secs: int,
+    horizon: int,
+    *,
+    symbol: str,
+    timeframe: str,
+) -> List[float]:
+    """Project targets from a requested-timeframe grid, not the input cadence."""
+    skip_weekends = uses_standard_weekend_projection(symbol, tf_secs)
+    normalized_timeframe = str(timeframe).upper()
+    if normalized_timeframe not in {"D1", "W1", "MN1"}:
+        steps_after_anchor = math.floor(
+            (float(last_observation_epoch) - float(grid_anchor_epoch))
+            / float(tf_secs)
+        ) + 1
+        aligned_predecessor = (
+            float(grid_anchor_epoch)
+            + float(steps_after_anchor - 1) * float(tf_secs)
+        )
+        return next_times_from_last(
+            aligned_predecessor,
+            tf_secs,
+            horizon,
+            skip_weekends=skip_weekends,
+            timeframe=timeframe,
+        )
+
+    candidate_count = max(int(horizon) + 8, 16)
+    future: List[float] = []
+    for _ in range(4):
+        candidates = next_times_from_last(
+            grid_anchor_epoch,
+            tf_secs,
+            candidate_count,
+            skip_weekends=skip_weekends,
+            timeframe=timeframe,
+        )
+        future = [
+            value for value in candidates
+            if float(value) > float(last_observation_epoch)
+        ]
+        if len(future) >= int(horizon):
+            return future[: int(horizon)]
+        candidate_count *= 2
+    return future[: int(horizon)]
+
+
 def _finalize_volatility_with_context(
     payload: Dict[str, Any],
     *,
@@ -714,6 +776,7 @@ def _finalize_volatility_with_context(
     live_window: bool,
     detail: str,
     data_timeframe: Optional[str] = None,
+    forecast_grid_anchor_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     annualization_bars, annualization_basis = _volatility_annualization_context(
         symbol,
@@ -733,6 +796,7 @@ def _finalize_volatility_with_context(
             returns_used=returns_used,
             live_window=live_window,
             horizon=int(payload.get("horizon", 1) or 1),
+            forecast_grid_anchor_epoch=forecast_grid_anchor_epoch,
         )
     )
     return _finalize_volatility_output(payload, detail=detail)
@@ -975,6 +1039,44 @@ def _volatility_range_bounds(
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         return None, None, "start must be before or equal to end."
     return start_dt, end_dt, None
+
+
+def _requested_timeframe_grid_anchor(
+    symbol: str,
+    mt5_timeframe: Any,
+    *,
+    timeframe: str,
+    observed_last_epoch: float,
+    as_of: Optional[str] = None,
+    end: Optional[str] = None,
+) -> tuple[Optional[float], Optional[str]]:
+    """Read an actual requested-timeframe candle open for grid alignment."""
+    rates, fetch_error = _fetch_mt5_rates_guarded(
+        symbol,
+        mt5_timeframe,
+        3,
+        as_of=as_of,
+        end=end,
+        timeframe=None,
+    )
+    if fetch_error:
+        return None, fetch_error
+    if rates is None or len(rates) == 0:
+        return None, f"No {timeframe} candles were available to resolve the forecast grid."
+    try:
+        epochs = pd.to_numeric(pd.DataFrame(rates)["time"], errors="coerce")
+        epochs = epochs[np.isfinite(epochs)]
+    except (KeyError, TypeError, ValueError):
+        return None, f"Returned {timeframe} candles did not contain usable timestamps."
+    if epochs.empty:
+        return None, f"Returned {timeframe} candles did not contain usable timestamps."
+    not_after_input = epochs[epochs <= float(observed_last_epoch)]
+    reference = (
+        not_after_input.iloc[-1]
+        if not not_after_input.empty
+        else epochs.iloc[-1]
+    )
+    return float(reference), None
 
 
 def _drop_forming_live_bar(
@@ -1635,6 +1737,36 @@ def forecast_volatility(  # noqa: C901
                 )
                 if len(dfrv) < 10:
                     return {"error": "Insufficient intraday bars for RV"}
+                observed_last_epoch = float(dfrv["time"].iloc[-1])
+                if rv_tf == timeframe:
+                    forecast_grid_anchor_epoch = observed_last_epoch
+                else:
+                    (
+                        forecast_grid_anchor_epoch,
+                        grid_error,
+                    ) = _requested_timeframe_grid_anchor(
+                        symbol,
+                        mt5_tf,
+                        timeframe=timeframe,
+                        observed_last_epoch=observed_last_epoch,
+                        as_of=as_of,
+                        end=end,
+                    )
+                    if grid_error or forecast_grid_anchor_epoch is None:
+                        return {
+                            "success": False,
+                            "error": (
+                                "Unable to resolve the requested-timeframe candle "
+                                f"grid for HAR-RV: {grid_error or 'no usable anchor'}"
+                            ),
+                            "error_code": "forecast_grid_unavailable",
+                            "requested_timeframe": timeframe,
+                            "observed_timeframe": rv_tf,
+                            "remediation": (
+                                "Verify that MT5 provides candles for the requested "
+                                "timeframe and retry the same historical cutoff."
+                            ),
+                        }
                 daily_rv, realized_returns, final_daily_aggregate = (
                     _har_daily_realized_variance(
                     dfrv,
@@ -1707,6 +1839,7 @@ def forecast_volatility(  # noqa: C901
                     live_window=as_of is None and end is None,
                     detail=detail,
                     data_timeframe=rv_tf,
+                    forecast_grid_anchor_epoch=forecast_grid_anchor_epoch,
                 )
             except Exception as ex:
                 return {"error": f"HAR-RV error: {ex}"}
