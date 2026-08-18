@@ -50,6 +50,11 @@ DEDICATED_UI_TOOLS: dict[str, str] = {
     "forecast_list_methods": "forecast-panel/methods",
     "forecast_models_list": "forecast-panel/models-browser",
     "tools_list": "tools-runner/catalog",
+    "trade_idea_compose": "idea-panel/compose",
+    "confluence_levels": "chart-workspace/confluence-overlay",
+    "volume_profile_levels": "chart-workspace/volume-profile-overlay",
+    "trade_get_open": "chart-workspace/exposure-overlay",
+    "trade_get_pending": "chart-workspace/exposure-overlay",
 }
 
 # Product rationale for tools that stay out of the synchronous generic invoke path.

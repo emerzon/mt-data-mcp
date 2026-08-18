@@ -14,7 +14,7 @@ You will need the UI running: [WEBUI.md](WEBUI.md#you-will-need).
 
 ### Fast path
 
-Open **Tools**, run `trade_idea_compose` with symbol `EURUSD`, timeframe `H1`, horizon `12`, template `quick`. Read `direction`, `narrative`, `geometry`, and `preview.preview_ok`. That is the whole beginner path as one preview-only idea. It cannot place an order. Details: [TRADE_IDEAS.md](TRADE_IDEAS.md).
+Click **Idea**, leave the defaults, and compose. Read `direction`, `narrative`, geometry, and whether the dry-run preview is ok. Entry, take-profit, and stop-loss lines appear on the chart. That is the whole beginner path as one preview-only idea. It cannot place an order. Details: [TRADE_IDEAS.md](TRADE_IDEAS.md).
 
 The numbered steps below still show the same questions on the chart and in dedicated panels.
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getErrorMessage, getHistory, getTick } from '../../api/client'
+import { useConfluenceLevels, useExposureOverlay, useVolumeProfileLevels } from '../../hooks/useGeometry'
 import { useChartOverlays, usePivotLevels, useSupportResistance } from '../../hooks/useForecast'
 import { ensureChartDenoiseCausality } from '../../lib/denoiseSpec'
 import {
@@ -16,12 +17,19 @@ import {
 import { loadJSON, saveJSON } from '../../lib/storage'
 import { toUtcSec } from '../../lib/time'
 import { chartWorkspaceLivePollMs, tfSeconds } from '../../lib/timeframes'
+import {
+  confluencePriceLines,
+  exposurePriceLines,
+  ideaGeometryPriceLines,
+  volumeProfilePriceLines,
+} from '../../lib/geometryOverlays'
 import type {
   AnchorMetrics,
   ChartOverlay,
   DenoiseSpecUI,
   ForecastPayload,
   HistoryBar,
+  TradeIdeaPayload,
 } from '../../types'
 import type { PriceLineSpec } from '../../components/OHLCChart'
 
@@ -46,6 +54,7 @@ export function useChartWorkspace() {
   const [chartIndicators, setChartIndicators] = useState<ChartIndicatorSelection>(DEFAULT_CHART_INDICATORS)
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
   const [historyPageError, setHistoryPageError] = useState<string | null>(null)
+  const [ideaGeometry, setIdeaGeometry] = useState<TradeIdeaPayload['geometry'] | null>(null)
   const indicatorsQuery = buildIndicatorsQuery(chartIndicators)
   const indicatorsOhlcv = historyOhlcvForIndicators(chartIndicators)
   const historyContract = JSON.stringify({
@@ -60,6 +69,9 @@ export function useChartWorkspace() {
 
   const pivotState = usePivotLevels(symbol, timeframe)
   const srState = useSupportResistance(symbol, timeframe, QUERY_LIMIT)
+  const confluenceState = useConfluenceLevels(symbol)
+  const volumeProfileState = useVolumeProfileLevels(symbol, timeframe)
+  const exposureState = useExposureOverlay(symbol)
   const livePollMs = chartWorkspaceLivePollMs(timeframe)
 
   const {
@@ -189,7 +201,11 @@ export function useChartWorkspace() {
     setHistoryPageError(null)
     pivotState.reset()
     srState.reset()
-  }, [pivotState, srState])
+    confluenceState.reset()
+    volumeProfileState.reset()
+    exposureState.reset()
+    setIdeaGeometry(null)
+  }, [confluenceState, exposureState, pivotState, srState, volumeProfileState])
 
   const handleSymbolChange = useCallback(
     (newSymbol: string) => {
@@ -460,8 +476,24 @@ export function useChartWorkspace() {
       }
     }
 
-    return lines
-  }, [bars, showAsk, showBid, showLast, tickData])
+    return [
+      ...lines,
+      ...confluencePriceLines(confluenceState.data?.levels),
+      ...volumeProfilePriceLines(volumeProfileState.data),
+      ...ideaGeometryPriceLines(ideaGeometry),
+      ...exposurePriceLines(exposureState.data?.positions, exposureState.data?.pending),
+    ]
+  }, [
+    bars,
+    confluenceState.data,
+    exposureState.data,
+    ideaGeometry,
+    showAsk,
+    showBid,
+    showLast,
+    tickData,
+    volumeProfileState.data,
+  ])
 
   const earliest = bars.length ? bars[0].time : undefined
   const workspaceErrors = useMemo(() => {
@@ -474,6 +506,9 @@ export function useChartWorkspace() {
       historyPageError ? `Older history: ${historyPageError}` : null,
       pivotState.error ? `Pivots: ${pivotState.error}` : null,
       srState.error ? `Support/resistance: ${srState.error}` : null,
+      confluenceState.error ? `Confluence: ${confluenceState.error}` : null,
+      volumeProfileState.error ? `Volume profile: ${volumeProfileState.error}` : null,
+      exposureState.error ? `Exposure: ${exposureState.error}` : null,
       timezoneMode === 'server' && !serverTimeZone
         ? 'Exchange timezone unavailable; configure an IANA MT5_SERVER_TZ value.'
         : null,
@@ -493,11 +528,14 @@ export function useChartWorkspace() {
     historyPageError,
     isLive,
     liveHistoryError,
+    confluenceState.error,
+    exposureState.error,
     pivotState.error,
     serverTimeZone,
     srState.error,
     tickError,
     timezoneMode,
+    volumeProfileState.error,
   ])
 
   return {
@@ -543,6 +581,18 @@ export function useChartWorkspace() {
     handlePivotMethodChange: pivotState.setMethod,
     handleSRToggle: srState.toggle,
     handleSrControlsChange: srState.setControls,
+    handleConfluenceToggle: confluenceState.toggle,
+    handleVolumeProfileToggle: volumeProfileState.toggle,
+    handleExposureToggle: exposureState.toggle,
+    handleIdeaResult: (idea: TradeIdeaPayload | null) => {
+      setIdeaGeometry(idea?.geometry ?? null)
+    },
+    confluenceLevels: confluenceState.data?.levels,
+    confluenceLoading: confluenceState.isLoading,
+    volumeProfile: volumeProfileState.data,
+    volumeProfileLoading: volumeProfileState.isLoading,
+    exposure: exposureState.data,
+    exposureLoading: exposureState.isLoading,
     reload: () => {
       setEnd(undefined)
       setExtraHistory([])

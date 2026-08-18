@@ -43,8 +43,19 @@ from .forecast import (
 from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
 from .market_depth import market_ticker as _market_ticker_tool
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
-from .pivot import pivot_compute_points
+from .pivot import confluence_levels, pivot_compute_points
 from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
+from .trading.positions import trade_get_open, trade_get_pending
+from .volume_profile import volume_profile_levels
+from .web_api_geometry import (
+    get_confluence_response as _get_confluence_response,
+)
+from .web_api_geometry import (
+    get_exposure_response as _get_exposure_response,
+)
+from .web_api_geometry import (
+    get_volume_profile_response as _get_volume_profile_response,
+)
 from .web_api_handlers import (
     get_denoise_methods_response as _get_denoise_methods_response,
 )
@@ -463,6 +474,41 @@ def get_support_resistance(
         decay_half_life_bars=decay_half_life_bars,
         detail=detail,
         fetch_history_impl=_fetch_history_impl,
+    )
+
+
+@api_router.get("/confluence")
+def get_confluence(
+    symbol: str = Query(...),
+    pivot_timeframe: str = Query("D1"),
+    sr_timeframe: str = Query("auto"),
+) -> Dict[str, Any]:
+    return _get_confluence_response(
+        symbol=symbol,
+        pivot_timeframe=pivot_timeframe,
+        sr_timeframe=sr_timeframe,
+        confluence_tool=confluence_levels,
+    )
+
+
+@api_router.get("/volume-profile")
+def get_volume_profile(
+    symbol: str = Query(...),
+    timeframe: str = Query("H1"),
+) -> Dict[str, Any]:
+    return _get_volume_profile_response(
+        symbol=symbol,
+        timeframe=timeframe,
+        volume_profile_tool=volume_profile_levels,
+    )
+
+
+@api_router.get("/exposure")
+def get_exposure(symbol: str = Query(...)) -> Dict[str, Any]:
+    return _get_exposure_response(
+        symbol=symbol,
+        open_tool=trade_get_open,
+        pending_tool=trade_get_pending,
     )
 
 

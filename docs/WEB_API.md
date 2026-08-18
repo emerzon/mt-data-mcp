@@ -155,6 +155,24 @@ Calculate pivot points.
   - `timeframe` (string): Default "H1".
   - `method` (string): "classic", "fibonacci", "woodie", "camarilla", "demark".
 
+#### `GET /api/confluence`
+
+Compact confluence zones for chart overlays (`price`, `type`, `score`, optional range).
+
+- **Query:** `symbol` (required), `pivot_timeframe` (default `D1`), `sr_timeframe` (default `auto`).
+
+#### `GET /api/volume-profile`
+
+Compact POC / VAH / VAL prices for the chart.
+
+- **Query:** `symbol` (required), `timeframe` (default `H1`).
+
+#### `GET /api/exposure`
+
+Read-only open positions and pending orders for one symbol. No mutations.
+
+- **Query:** `symbol` (required).
+
 #### `POST /api/trade-ideas`
 
 Compose a **preview-only** research idea (session, forecast, volatility, one

@@ -42,6 +42,7 @@ type Props = {
   onDenoiseChange: (value?: DenoiseSpecUI) => void
   onOpenForecast: () => void
   onOpenTools: () => void
+  onOpenIdea: () => void
   onToggleBid: () => void
   onToggleAsk: () => void
   onToggleLast: () => void
@@ -57,6 +58,15 @@ type Props = {
   srControls: SupportResistanceControls
   onSrControlsChange: (partial: Partial<SupportResistanceControls>) => void
   srLoading?: boolean
+  hasConfluence?: boolean
+  onToggleConfluence?: () => void
+  confluenceLoading?: boolean
+  hasVolumeProfile?: boolean
+  onToggleVolumeProfile?: () => void
+  volumeProfileLoading?: boolean
+  hasExposure?: boolean
+  onToggleExposure?: () => void
+  exposureLoading?: boolean
 }
 
 export function ChartToolbar({
@@ -83,6 +93,7 @@ export function ChartToolbar({
   onDenoiseChange,
   onOpenForecast,
   onOpenTools,
+  onOpenIdea,
   onToggleBid,
   onToggleAsk,
   onToggleLast,
@@ -98,6 +109,15 @@ export function ChartToolbar({
   srControls,
   onSrControlsChange,
   srLoading,
+  hasConfluence,
+  onToggleConfluence,
+  confluenceLoading,
+  hasVolumeProfile,
+  onToggleVolumeProfile,
+  volumeProfileLoading,
+  hasExposure,
+  onToggleExposure,
+  exposureLoading,
 }: Props) {
   const overflow = toolbarUsesOverflowMenu(layoutBreakpoint)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -141,6 +161,15 @@ export function ChartToolbar({
         hasSR={hasSR}
         onToggleSR={onToggleSR}
         srLoading={srLoading}
+        hasConfluence={hasConfluence}
+        onToggleConfluence={onToggleConfluence}
+        confluenceLoading={confluenceLoading}
+        hasVolumeProfile={hasVolumeProfile}
+        onToggleVolumeProfile={onToggleVolumeProfile}
+        volumeProfileLoading={volumeProfileLoading}
+        hasExposure={hasExposure}
+        onToggleExposure={onToggleExposure}
+        exposureLoading={exposureLoading}
       />
       <div className="w-px h-5 bg-slate-700 hidden sm:block" />
       <PriceLinesSelector
@@ -227,6 +256,15 @@ export function ChartToolbar({
           title="Browse and run all backend tools"
         >
           Tools
+        </button>
+        <button
+          type="button"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm font-medium px-3 py-2 min-h-9 rounded-lg border border-slate-700 transition-colors disabled:opacity-50"
+          onClick={onOpenIdea}
+          disabled={!symbol}
+          title="Compose a preview-only trade idea"
+        >
+          Idea
         </button>
         <button
           className="bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium px-3 sm:px-4 py-2 min-h-9 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

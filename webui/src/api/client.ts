@@ -21,6 +21,10 @@ import type {
   ForecastVolBody,
   BacktestBody,
   BacktestResult,
+  ConfluenceResponse,
+  ExposureResponse,
+  TradeIdeaPayload,
+  VolumeProfileResponse,
 } from '../types'
 import type { ToolCatalogEntry } from '../lib/toolCatalog'
 
@@ -262,6 +266,42 @@ export async function getSupportResistance(
   params: SupportResistanceParams
 ): Promise<SupportResistanceResponse> {
   const { data } = await api.get<SupportResistanceResponse>(apiPath('/support-resistance'), { params })
+  return data
+}
+
+export async function getConfluence(params: {
+  symbol: string
+  pivot_timeframe?: string
+  sr_timeframe?: string
+}): Promise<ConfluenceResponse> {
+  const { data } = await api.get<ConfluenceResponse>(apiPath('/confluence'), { params })
+  return data
+}
+
+export async function getVolumeProfile(params: {
+  symbol: string
+  timeframe?: string
+}): Promise<VolumeProfileResponse> {
+  const { data } = await api.get<VolumeProfileResponse>(apiPath('/volume-profile'), { params })
+  return data
+}
+
+export async function getExposure(symbol: string): Promise<ExposureResponse> {
+  const { data } = await api.get<ExposureResponse>(apiPath('/exposure'), { params: { symbol } })
+  return data
+}
+
+export async function composeTradeIdea(body: {
+  symbol: string
+  timeframe?: string
+  horizon?: number
+  direction?: 'auto' | 'long' | 'short'
+  template?: 'quick' | 'standard'
+  risk_pct?: number
+  as_of?: string
+  detail?: string
+}): Promise<TradeIdeaPayload> {
+  const { data } = await api.post<TradeIdeaPayload>(apiPath('/trade-ideas'), body)
   return data
 }
 

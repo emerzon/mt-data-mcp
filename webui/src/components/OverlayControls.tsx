@@ -18,6 +18,15 @@ type Props = {
   hasSR: boolean
   onToggleSR: () => void
   srLoading?: boolean
+  hasConfluence?: boolean
+  onToggleConfluence?: () => void
+  confluenceLoading?: boolean
+  hasVolumeProfile?: boolean
+  onToggleVolumeProfile?: () => void
+  volumeProfileLoading?: boolean
+  hasExposure?: boolean
+  onToggleExposure?: () => void
+  exposureLoading?: boolean
 }
 
 /**
@@ -35,6 +44,15 @@ export function OverlayControls({
   hasSR,
   onToggleSR,
   srLoading,
+  hasConfluence,
+  onToggleConfluence,
+  confluenceLoading,
+  hasVolumeProfile,
+  onToggleVolumeProfile,
+  volumeProfileLoading,
+  hasExposure,
+  onToggleExposure,
+  exposureLoading,
 }: Props) {
   const [open, setOpen] = useState(false)
   useEscapeKey(open, () => setOpen(false))
@@ -43,7 +61,7 @@ export function OverlayControls({
     <div className="relative">
       <button
         type="button"
-        className={`toolbar-btn text-xs ${open || hasPivots || hasSR ? 'text-sky-300' : ''}`}
+        className={`toolbar-btn text-xs ${open || hasPivots || hasSR || hasConfluence || hasVolumeProfile || hasExposure ? 'text-sky-300' : ''}`}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
         title="Pivot method and support/resistance parameters"
@@ -172,6 +190,55 @@ export function OverlayControls({
             <p className="text-[10px] text-slate-600">
               Changing parameters refreshes levels when the overlay is on.
             </p>
+          </div>
+
+          <div className="border-t border-slate-800 pt-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-300">Confluence</span>
+              <button
+                type="button"
+                className={`text-xs px-2 py-1 rounded border ${
+                  hasConfluence
+                    ? 'border-fuchsia-700 text-fuchsia-300 bg-fuchsia-950/40'
+                    : 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+                disabled={disabled || confluenceLoading || !onToggleConfluence}
+                onClick={() => void onToggleConfluence?.()}
+              >
+                {confluenceLoading ? '…' : hasConfluence ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-300">Volume profile</span>
+              <button
+                type="button"
+                className={`text-xs px-2 py-1 rounded border ${
+                  hasVolumeProfile
+                    ? 'border-violet-700 text-violet-300 bg-violet-950/40'
+                    : 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+                disabled={disabled || volumeProfileLoading || !onToggleVolumeProfile}
+                onClick={() => void onToggleVolumeProfile?.()}
+              >
+                {volumeProfileLoading ? '…' : hasVolumeProfile ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-300">Open exposure</span>
+              <button
+                type="button"
+                className={`text-xs px-2 py-1 rounded border ${
+                  hasExposure
+                    ? 'border-amber-700 text-amber-300 bg-amber-950/40'
+                    : 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                }`}
+                disabled={disabled || exposureLoading || !onToggleExposure}
+                onClick={() => void onToggleExposure?.()}
+              >
+                {exposureLoading ? '…' : hasExposure ? 'On' : 'Off'}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">Exposure lines are read-only.</p>
           </div>
 
           <button

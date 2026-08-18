@@ -444,6 +444,81 @@ export type BacktestMethodResult = {
 // Chart Overlay Types
 // ============================================================================
 
+export type TradeIdeaGate = {
+  status: 'pass' | 'fail' | 'skip'
+  reason?: string
+}
+
+export type TradeIdeaPayload = {
+  success?: boolean
+  symbol?: string
+  timeframe?: string
+  horizon?: number
+  template?: string
+  direction?: string
+  suggested_direction?: string
+  actionability?: 'preview_only' | 'research'
+  narrative?: string
+  geometry?: {
+    entry?: number
+    take_profit?: number
+    stop_loss?: number
+    direction?: string
+  }
+  sizing?: { suggested_volume?: number; candidate_valid?: boolean }
+  preview?: {
+    dry_run?: boolean
+    preview_ok?: boolean
+    would_send_order?: boolean
+    skipped?: boolean
+    blockers?: unknown[]
+  }
+  gates?: Record<string, TradeIdeaGate>
+  partial_failure?: boolean
+  failed_sections?: string[]
+  error?: string
+}
+
+export type ConfluenceResponse = {
+  success?: boolean
+  symbol?: string
+  levels?: Array<{
+    price: number
+    type?: string
+    score?: number
+    range?: { low?: number; high?: number }
+  }>
+}
+
+export type VolumeProfileResponse = {
+  success?: boolean
+  symbol?: string
+  poc?: number
+  vah?: number
+  val?: number
+}
+
+export type ExposureResponse = {
+  success?: boolean
+  symbol?: string
+  positions?: Array<{
+    ticket?: number | string
+    type?: string
+    volume?: number
+    price?: number
+    sl?: number
+    tp?: number
+  }>
+  pending?: Array<{
+    ticket?: number | string
+    type?: string
+    volume?: number
+    price?: number
+    sl?: number
+    tp?: number
+  }>
+}
+
 export type ChartOverlayPane = 'price' | 'rsi' | 'macd' | 'volume'
 
 export type ChartOverlay = {

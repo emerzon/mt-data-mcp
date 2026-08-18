@@ -9,7 +9,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 |---|---|---|---|---|---|
 | `causal_discover_signals` | research | generic_runner | tools-runner/generic | no |  |
 | `cointegration_test` | research | generic_runner | tools-runner/generic | no |  |
-| `confluence_levels` | research | generic_runner | tools-runner/generic | no |  |
+| `confluence_levels` | research | dedicated_ui | chart-workspace/confluence-overlay | no |  |
 | `correlation_matrix` | research | generic_runner | tools-runner/generic | no |  |
 | `cross_correlation` | research | generic_runner | tools-runner/generic | no |  |
 | `data_fetch_candles` | data | dedicated_ui | chart-workspace/history | no | Chart Indicators control sends `indicators` / optional `ohlcv` on `/history` |
@@ -86,10 +86,10 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `trade_account_info` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_close` | trading | generic_runner | tools-runner/generic | yes | mutation gate |
 | `trade_execution_quality` | trading | generic_runner | tools-runner/generic | no |  |
-| `trade_get_open` | trading | generic_runner | tools-runner/generic | no |  |
-| `trade_get_pending` | trading | generic_runner | tools-runner/generic | no |  |
+| `trade_get_open` | trading | dedicated_ui | chart-workspace/exposure-overlay | no | Read-only chart overlay |
+| `trade_get_pending` | trading | dedicated_ui | chart-workspace/exposure-overlay | no | Read-only chart overlay |
 | `trade_history` | trading | generic_runner | tools-runner/generic | no |  |
-| `trade_idea_compose` | trading | generic_runner | tools-runner/generic | no | Preview-only composer; dedicated Idea panel is a later slice |
+| `trade_idea_compose` | trading | dedicated_ui | idea-panel/compose | no | Preview-only composer; also runnable via Tools |
 | `trade_journal_analyze` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_modify` | trading | generic_runner | tools-runner/generic | yes | mutation gate |
 | `trade_place` | trading | generic_runner | tools-runner/generic | yes | mutation gate |
@@ -98,7 +98,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `trade_stress_test` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_var_cvar_calculate` | trading | generic_runner | tools-runner/generic | no |  |
 | `volatility_term_structure` | research | generic_runner | tools-runner/generic | no |  |
-| `volume_profile_levels` | research | generic_runner | tools-runner/generic | no |  |
+| `volume_profile_levels` | research | dedicated_ui | chart-workspace/volume-profile-overlay | no |  |
 | `wait_event` | data | generic_runner | tools-runner/generic | no |  |
 
 ## Surface meanings

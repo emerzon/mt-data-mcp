@@ -20,7 +20,7 @@ mtdata-cli trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quic
 
 Read `direction`, `narrative`, `geometry`, `sizing.suggested_volume`, and `preview.preview_ok`. If `direction` is `stand_down`, the composer is telling you the idea did not clear its gates — not that you should fade it.
 
-The same payload is available from MCP as `trade_idea_compose` and from HTTP as `POST /api/v1/trade-ideas`.
+The same payload is available from MCP as `trade_idea_compose` and from HTTP as `POST /api/v1/trade-ideas`. In the Web UI, use the **Idea** button.
 
 ---
 

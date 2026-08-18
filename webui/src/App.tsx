@@ -3,6 +3,7 @@ import { OHLCChart } from './components/OHLCChart'
 import { ChartToolbar } from './components/ChartToolbar'
 import { ChartWorkspaceStatusView } from './components/ChartWorkspaceStatus'
 import { ForecastPanel } from './components/ForecastPanel'
+import { IdeaPanel } from './components/IdeaPanel'
 import { ToolsRunnerPanel } from './components/ToolsRunnerPanel'
 import { useChartWorkspace } from './features/chart-workspace/useChartWorkspace'
 import { useViewportBreakpoint } from './hooks/useViewportBreakpoint'
@@ -11,6 +12,7 @@ import { resolveChartWorkspaceStatus } from './lib/workspaceStatus'
 export default function App() {
   const [showForecastPanel, setShowForecastPanel] = useState(false)
   const [showToolsPanel, setShowToolsPanel] = useState(false)
+  const [showIdeaPanel, setShowIdeaPanel] = useState(false)
   const workspace = useChartWorkspace()
   const layoutBreakpoint = useViewportBreakpoint()
 
@@ -50,11 +52,18 @@ export default function App() {
           onDenoiseChange={workspace.handleDenoiseChange}
           onOpenForecast={() => {
             setShowToolsPanel(false)
+            setShowIdeaPanel(false)
             setShowForecastPanel(true)
           }}
           onOpenTools={() => {
             setShowForecastPanel(false)
+            setShowIdeaPanel(false)
             setShowToolsPanel(true)
+          }}
+          onOpenIdea={() => {
+            setShowForecastPanel(false)
+            setShowToolsPanel(false)
+            setShowIdeaPanel(true)
           }}
           hasPivots={!!workspace.pivotLevels}
           hasSR={!!workspace.srLevels}
@@ -81,6 +90,15 @@ export default function App() {
           srControls={workspace.srControls}
           onSrControlsChange={workspace.handleSrControlsChange}
           srLoading={workspace.srLoading}
+          hasConfluence={!!workspace.confluenceLevels?.length}
+          onToggleConfluence={workspace.handleConfluenceToggle}
+          confluenceLoading={workspace.confluenceLoading}
+          hasVolumeProfile={!!workspace.volumeProfile}
+          onToggleVolumeProfile={workspace.handleVolumeProfileToggle}
+          volumeProfileLoading={workspace.volumeProfileLoading}
+          hasExposure={!!workspace.exposure}
+          onToggleExposure={workspace.handleExposureToggle}
+          exposureLoading={workspace.exposureLoading}
         />
 
         <div className="absolute inset-0" data-chart-surface>
@@ -135,6 +153,15 @@ export default function App() {
           timeframe={workspace.timeframe}
           anchor={workspace.anchor}
           onResult={workspace.handleForecastResult}
+          layoutBreakpoint={layoutBreakpoint}
+        />
+
+        <IdeaPanel
+          open={showIdeaPanel}
+          onClose={() => setShowIdeaPanel(false)}
+          symbol={workspace.symbol}
+          timeframe={workspace.timeframe}
+          onIdea={workspace.handleIdeaResult}
           layoutBreakpoint={layoutBreakpoint}
         />
 

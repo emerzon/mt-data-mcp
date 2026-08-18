@@ -51,6 +51,10 @@ port 5173 and forwards `/api` to the API on port 8000.
 
 You can stop there. That is already a full research glance.
 
+Optional sixth step: click **Idea**, leave the defaults, and compose. A preview-only
+research idea appears; entry, take-profit, and stop-loss lines draw on the chart.
+This is not an order.
+
 ---
 
 ## What the toolbar does
@@ -61,11 +65,12 @@ You can stop there. That is already a full research glance.
 | Timezone | How timestamps are *shown*: UTC, your computer local time, or the broker server clock. |
 | Timeframe | How big each candle is (`M5`, `H1`, `D1`, …). |
 | Reload | Fetch the chart again. |
-| Pivot / S-R | Draw formula pivot levels and data-driven support/resistance. |
+| Pivot / S-R | Draw formula pivot levels and data-driven support/resistance. **Levels** also toggles confluence zones, volume-profile POC/VAH/VAL, and read-only open/pending exposure. |
 | Indicators | Overlay moving averages on price and open RSI / MACD / volume panes. Start with **Sample trade** for EMA 20/50, RSI 14, and MACD. These are research overlays, not signals. |
 | Bid / Ask / Last | Draw the live buy price, sell price, and last trade (when the broker sends one). |
 | Denoise | Smooth the line so structure is easier to see. This changes the *display*, not your broker history. |
 | Forecast | Side panel for price forecast, volatility (“how far might it move?”), and a rolling backtest. |
+| Idea | Preview-only compose: narrative, TP/SL, size, gates, and dry-run. Draws entry/TP/SL on the chart. Cannot place an order. |
 | Tools | Search-and-run form for the full tool list (news, reports, orders, …). |
 | Auth | Paste an API token only if you started the server with `WEBAPI_AUTH_TOKEN`. It stays in this tab’s memory and clears on reload. |
 

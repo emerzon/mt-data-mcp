@@ -21,6 +21,9 @@ Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 | `/api/v1/tick` | GET | used | `useChartWorkspace` live quotes | Bid/ask/last price lines. |
 | `/api/v1/pivots` | GET | used | Overlay controls + `usePivotLevels` | Method selectable (classic/fibonacci/…). |
 | `/api/v1/support-resistance` | GET | used | Overlay controls + `useSupportResistance` | Lookback, min touches, max levels, tolerance. |
+| `/api/v1/confluence` | GET | used | Levels → Confluence | Compact zones for chart price lines. |
+| `/api/v1/volume-profile` | GET | used | Levels → Volume profile | POC / VAH / VAL. |
+| `/api/v1/exposure` | GET | used | Levels → Open exposure | Read-only positions and pending for the chart symbol. |
 | `/api/v1/denoise/methods` | GET | used | `DenoiseModal` | |
 | `/api/v1/denoise/wavelets` | GET | used | `DenoiseModal` (wavelet method) | |
 | `/api/v1/dimred/methods` | GET | used | Forecast advanced options | |
@@ -31,7 +34,7 @@ Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 | `/api/v1/forecast/price` | POST | used | Forecast price tab | |
 | `/api/v1/forecast/volatility` | POST | used | Volatility tab | |
 | `/api/v1/backtest` | POST | used | Backtest tab | |
-| `/api/v1/trade-ideas` | POST | intentional-omit | — | Dedicated compose route; SPA still uses Tools invoke until the Idea panel ships. |
+| `/api/v1/trade-ideas` | POST | used | Idea panel | Preview-only compose; draws TP/SL/entry on the chart. |
 | `/api/v1/tools` | GET | used | Tools runner catalog | Full MCP tool list + surface meta |
 | `/api/v1/tools/{name}` | GET | used | Tools runner detail | Parameter field descriptors |
 | `/api/v1/tools/{name}/invoke` | POST | used | Tools runner run | Mutation tools require `confirm=true` |
