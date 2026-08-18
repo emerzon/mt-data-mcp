@@ -185,14 +185,23 @@ five-digit FX quotes, one pip is 10 ticks).
 
 ```json
 {
-  "entries": ["2025-12-18 17:00", "2025-12-18 18:00", ...],
-  "labels": [1, -1, 0, 0, 1, ...],
-  "holding_bars": [5, 3, 12, 12, 8, ...],
+  "data": [
+    {
+      "entry_time": "2025-12-18 17:00",
+      "label": 1,
+      "outcome": "tp_first",
+      "holding_bars": 5
+    }
+  ],
   "summary": {
-    "counts": {"pos": 45, "neg": 32, "neut": 123}
+    "counts": {"tp": 45, "sl": 32, "neutral": 123}
   }
 }
 ```
+
+Compact output keeps at most 10 representative rows in `data`; summary counts
+cover the full requested lookback. Use `--detail full` when you need the
+parallel `entries`, `labels`, and `holding_bars` arrays for model training.
 
 **Interpretation:**
 - Label distribution shows historical win/loss rates for these barrier levels
@@ -222,7 +231,7 @@ Use triple-barrier labels to evaluate entry signals:
 # Label historical entry points
 mtdata-cli labels_triple_barrier EURUSD --horizon 12 --barriers '{"unit":"pct","take_profit":0.5,"stop_loss":0.3}'
 
-# Check win rate: counts.pos / (counts.pos + counts.neg)
+# Check resolved win rate: counts.tp / (counts.tp + counts.sl)
 # If win rate < 50%, signal needs improvement
 ```
 
