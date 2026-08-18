@@ -281,6 +281,54 @@ def test_compact_tick_summary_preserves_false_like_spread_availability() -> None
 class TestFetchRatesWithWarmup(unittest.TestCase):
     """Tests for the _fetch_rates_with_warmup helper."""
 
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_future_range_uses_wall_clock_for_freshness(
+        self,
+        mock_parse,
+        mock_range,
+    ):
+        now = datetime(2026, 8, 18, 17, 25, tzinfo=_UTC)
+        start = now.replace(hour=0, minute=0)
+        end = now.replace(hour=23, minute=59, second=59)
+        mock_parse.side_effect = [start, end]
+        mock_range.return_value = _make_rates(
+            2,
+            base_ts=now.replace(minute=0).timestamp(),
+            step=60 * 60,
+        )
+        diagnostics = {}
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now if tz is not None else now.replace(tzinfo=None)
+
+        with patch(f'{_DS}.datetime', FixedDateTime):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD',
+                16385,
+                'H1',
+                2,
+                0,
+                '2026-08-18 00:00',
+                '2026-08-18 23:59:59',
+                retry=False,
+                sanity_check=False,
+                diagnostics=diagnostics,
+            )
+
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+        freshness = diagnostics['freshness']
+        self.assertEqual(freshness['data_freshness_seconds'], 25 * 60)
+        self.assertEqual(freshness['data_freshness_anchor'], 'wall_clock')
+        self.assertEqual(
+            freshness['query_end_gap_seconds'],
+            (end - now.replace(minute=0)).total_seconds(),
+        )
+        self.assertTrue(freshness['last_bar_within_policy_window'])
+
     @patch(_RATES_FROM)
     def test_no_datetime_uses_copy_rates_from(self, mock_from):
         """Default path: no start/end datetime."""

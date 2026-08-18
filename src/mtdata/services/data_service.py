@@ -536,6 +536,7 @@ def _build_candle_freshness_diagnostics(
     last_bar_epoch: Any,
     expected_end_epoch: Any,
     freshness_cutoff_epoch: Any,
+    data_freshness_reference_epoch: Any = None,
 ) -> Dict[str, Any]:
     def _coerce_epoch(value: Any) -> Optional[float]:
         try:
@@ -548,25 +549,31 @@ def _build_candle_freshness_diagnostics(
 
     last_epoch = _coerce_epoch(last_bar_epoch)
     expected_epoch = _coerce_epoch(expected_end_epoch)
+    reference_epoch = _coerce_epoch(data_freshness_reference_epoch)
+    if reference_epoch is None:
+        reference_epoch = expected_epoch
     cutoff_epoch = _coerce_epoch(freshness_cutoff_epoch)
     data_freshness_seconds: Optional[float] = None
     last_bar_within_policy_window: Optional[bool] = None
 
-    if last_epoch is not None and expected_epoch is not None:
+    if last_epoch is not None and reference_epoch is not None:
         data_freshness_seconds = round(
-            max(0.0, float(expected_epoch - last_epoch)),
+            max(0.0, float(reference_epoch - last_epoch)),
             3,
         )
     if last_epoch is not None and cutoff_epoch is not None:
         last_bar_within_policy_window = bool(last_epoch >= cutoff_epoch)
 
-    return {
+    diagnostics = {
         "last_bar_epoch": last_epoch,
         "expected_end_epoch": expected_epoch,
         "freshness_cutoff_epoch": cutoff_epoch,
         "data_freshness_seconds": data_freshness_seconds,
         "last_bar_within_policy_window": last_bar_within_policy_window,
     }
+    if reference_epoch != expected_epoch:
+        diagnostics["data_freshness_reference_epoch"] = reference_epoch
+    return diagnostics
 
 
 def _relax_live_completed_bar_freshness(
@@ -856,6 +863,19 @@ def _fetch_rates_with_warmup(  # noqa: C901
         def _fetch():
             return _mt5_copy_rates_from(symbol, mt5_timeframe, utc_now, candles + warmup_bars + extra_bars)
 
+    wall_clock_ts = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
+    range_query = bool(start_datetime or end_datetime)
+    explicit_now_end = str(end_datetime or "").strip().casefold() == "now"
+    live_range = bool(
+        range_query
+        and (
+            expected_end_ts >= wall_clock_ts
+            or explicit_now_end
+            or (start_datetime and not end_datetime)
+        )
+    )
+    freshness_reference_ts = wall_clock_ts if live_range else expected_end_ts
+
     attempts = FETCH_RETRY_ATTEMPTS if retry else 1
     rates = None
     stale_last_t: Optional[float] = None
@@ -869,9 +889,11 @@ def _fetch_rates_with_warmup(  # noqa: C901
             raise
         if rates is not None and len(rates) > 0:
             last_t = rates[-1]["time"]
-            freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
+            freshness_cutoff = freshness_reference_ts - seconds_per_bar * (
+                SANITY_BARS_TOLERANCE + extra_bars
+            )
             tail_is_forming = _is_last_bar_forming(
-                rates, timeframe, current_time_epoch=expected_end_ts
+                rates, timeframe, current_time_epoch=freshness_reference_ts
             )
             if tail_is_forming and include_incomplete:
                 # The forming bar itself proves the feed reached its open
@@ -890,8 +912,26 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 last_bar_epoch=last_completed_epoch,
                 expected_end_epoch=expected_end_ts,
                 freshness_cutoff_epoch=freshness_cutoff,
+                data_freshness_reference_epoch=freshness_reference_ts,
             )
-            if start_datetime or end_datetime:
+            if live_range:
+                if last_completed_epoch is not None:
+                    freshness_meta["query_end_gap_seconds"] = round(
+                        max(0.0, expected_end_ts - last_completed_epoch),
+                        3,
+                    )
+                freshness_meta["query_end_gap_anchor"] = (
+                    FRESHNESS_ANCHOR_QUERY_EXPECTED_END
+                )
+                freshness_meta["query_end_gap_metric"] = (
+                    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP
+                )
+            if live_range:
+                freshness_meta["data_freshness_anchor"] = FRESHNESS_ANCHOR_WALL_CLOCK
+                freshness_meta["data_freshness_metric"] = (
+                    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE
+                )
+            elif range_query:
                 freshness_meta["data_freshness_anchor"] = (
                     FRESHNESS_ANCHOR_QUERY_EXPECTED_END
                 )

@@ -1428,28 +1428,36 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noq
             public["freshness_policy_relaxed"] = normalize_policy_relaxed(
                 freshness.get("freshness_policy_relaxed")
             )
+        query_gap_value = freshness.get("query_end_gap_seconds")
         if (
-            query_mode == "range"
-            and result.get("range_incomplete_reason") != "forming_bar_excluded"
-            and freshness.get("data_freshness_seconds") is not None
+            query_gap_value is None
+            and query_mode == "range"
+            and freshness.get("data_freshness_anchor")
+            == FRESHNESS_ANCHOR_QUERY_EXPECTED_END
         ):
+            query_gap_value = freshness.get("data_freshness_seconds")
+        if query_mode == "range" and query_gap_value is not None:
             try:
-                seconds = max(0.0, float(freshness["data_freshness_seconds"]))
+                seconds = max(0.0, float(query_gap_value))
             except Exception:
-                seconds = freshness["data_freshness_seconds"]
+                seconds = query_gap_value
             public["query_end_gap_seconds"] = seconds
             public["query_end_gap_anchor"] = (
-                freshness.get("data_freshness_anchor")
+                freshness.get("query_end_gap_anchor")
                 or FRESHNESS_ANCHOR_QUERY_EXPECTED_END
             )
             public["query_end_gap_metric"] = (
-                freshness.get("data_freshness_metric")
+                freshness.get("query_end_gap_metric")
                 or FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP
             )
             gap_text = _format_age_seconds(seconds)
             if gap_text is not None:
                 public["query_end_gap"] = gap_text
-        elif freshness.get("data_freshness_seconds") is not None:
+        publish_data_age = bool(
+            query_mode != "range"
+            or freshness.get("data_freshness_anchor") == FRESHNESS_ANCHOR_WALL_CLOCK
+        )
+        if publish_data_age and freshness.get("data_freshness_seconds") is not None:
             try:
                 seconds = max(0.0, float(freshness["data_freshness_seconds"]))
             except Exception:

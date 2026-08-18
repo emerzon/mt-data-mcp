@@ -1033,7 +1033,11 @@ def test_range_with_only_excluded_forming_bar_is_not_complete():
             "meta": {
                 "diagnostics": {
                     "query": {"mode": "range"},
-                    "freshness": {"data_freshness_seconds": 86_400},
+                    "freshness": {
+                        "data_freshness_seconds": None,
+                        "query_end_gap_seconds": None,
+                        "data_freshness_anchor": "wall_clock",
+                    },
                 }
             },
         },
@@ -1047,6 +1051,46 @@ def test_range_with_only_excluded_forming_bar_is_not_complete():
     assert result["forming_candle_status"] == "skipped"
     assert result["data_window"]["latest_bar_complete"] is False
     assert "query_end_gap" not in result
+    assert "data_age_seconds" not in result
+    assert "data_stale" not in result
+
+
+def test_live_calendar_range_separates_bar_age_from_query_end_gap():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        start="today",
+        end="today",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": [{"time": "2026-08-18T16:00:00Z", "close": 1.1}],
+            "range_incomplete_reason": "forming_bar_excluded",
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "range"},
+                    "freshness": {
+                        "data_freshness_seconds": 1_500.0,
+                        "last_bar_within_policy_window": True,
+                        "data_freshness_anchor": "wall_clock",
+                        "data_freshness_metric": "last_completed_bar_age_seconds",
+                        "query_end_gap_seconds": 25_200.0,
+                        "query_end_gap_anchor": "query_expected_end",
+                        "query_end_gap_metric": "requested_range_end_gap_seconds",
+                    },
+                }
+            },
+        },
+    )
+
+    assert result["data_age_seconds"] == 1_500.0
+    assert result["data_stale"] is False
+    assert result["history_policy_ok"] is True
+    assert result["query_end_gap_seconds"] == 25_200.0
 
 
 def test_run_data_fetch_candles_normalizes_count_metadata():
