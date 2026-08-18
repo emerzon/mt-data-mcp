@@ -3,6 +3,21 @@ from types import SimpleNamespace
 from mtdata.core import volume_profile as vp
 
 
+def test_window_end_formatter_uses_range_end_semantics() -> None:
+    assert vp._format_window_timestamp(
+        "2026-08-16",
+        end_bound=True,
+    ) == "2026-08-16T23:59:59.999999Z"
+    assert vp._format_window_timestamp(
+        "2026-08-16T12:34:56-05:00",
+        end_bound=True,
+    ) == "2026-08-16T17:34:56Z"
+    assert vp._format_window_timestamp(
+        "August 16, 2026 12:34 UTC",
+        end_bound=True,
+    ) == "2026-08-16T12:34:00Z"
+
+
 def _completed_hour_bars(start: vp.datetime, count: int) -> dict:
     return {
         "data": [
@@ -596,6 +611,99 @@ def test_tick_profile_discloses_partial_observed_window(monkeypatch):
         "status": "partial",
         "reason": "incomplete_tick_window",
     }
+
+
+def test_tick_profile_resolves_date_end_and_excuses_weekend_closure(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "limit_reached": False,
+            "data": [
+                {
+                    "time": "2026-08-16T21:00:00.360Z",
+                    "bid": 1.0,
+                    "ask": 1.1,
+                },
+                {
+                    "time": "2026-08-16T23:59:55.183Z",
+                    "bid": 1.1,
+                    "ask": 1.2,
+                },
+            ],
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-08-15",
+        end="2026-08-16",
+        source="ticks",
+        max_ticks=50_000,
+        bucket_size=0.1,
+        detail="full",
+    )
+
+    assert result["requested_window"] == {
+        "start": "2026-08-15T00:00:00Z",
+        "end": "2026-08-16T23:59:59.999999Z",
+    }
+    assert result["window"]["end"] < result["requested_window"]["end"]
+    assert result.get("truncated") is not True
+    assert result["diagnostics"][
+        "start_gap_explained_by_scheduled_closure"
+    ] is True
+    assert result["scheduled_closures"] == [
+        {
+            "reason": "standard_weekend_closure",
+            "start": "2026-08-14T21:00:00Z",
+            "end": "2026-08-16T21:00:00Z",
+        }
+    ]
+
+
+def test_tick_profile_full_weekend_closure_is_not_provider_truncation(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {"limit_reached": False, "data": []},
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-08-15T00:00:00Z",
+        end="2026-08-16T20:00:00Z",
+        source="ticks",
+        bucket_size=0.1,
+        detail="full",
+    )
+
+    assert result["no_data_reason"] == "market_closed_weekend"
+    assert result["data_quality"] == {
+        "status": "not_applicable",
+        "reason": "market_closed_weekend",
+    }
+    assert result.get("truncated") is not True
 
 
 def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):

@@ -10,6 +10,8 @@ from pydantic import Field
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.symbols import is_probably_crypto_symbol
+from ..utils.freshness import standard_weekend_window
 from ..utils.mt5 import (
     MT5ConnectionError,
     _symbol_ready_guard,
@@ -216,7 +218,11 @@ def _table_rows(payload: Dict[str, Any]) -> list[dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
-def _format_window_timestamp(value: Any) -> Optional[str]:
+def _format_window_timestamp(
+    value: Any,
+    *,
+    end_bound: bool = False,
+) -> Optional[str]:
     if value in (None, ""):
         return None
     timespec = "seconds"
@@ -242,13 +248,102 @@ def _format_window_timestamp(value: Any) -> Optional[str]:
             return None
         if "." in text:
             timespec = "milliseconds"
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        except ValueError:
-            parsed = _parse_start_datetime(text)
-            if parsed is None:
-                return text
+        parser = _parse_end_datetime if end_bound else _parse_start_datetime
+        parsed = parser(text)
+        if parsed is None:
+            return text
+        if parsed.microsecond:
+            timespec = (
+                "milliseconds"
+                if parsed.microsecond % 1000 == 0
+                else "microseconds"
+            )
     return _format_datetime_explicit(parsed, timespec=timespec)
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    return (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
+
+
+def _weekend_tick_coverage_context(
+    symbol: str,
+    *,
+    requested_start: datetime,
+    requested_end: datetime,
+    observed_start: Optional[datetime],
+    observed_end: Optional[datetime],
+    endpoint_tolerance_seconds: float = 300.0,
+) -> Dict[str, Any]:
+    """Identify endpoint gaps fully explained by the standard weekend closure."""
+    if is_probably_crypto_symbol(symbol):
+        return {}
+    request_start_utc = _utc_datetime(requested_start)
+    request_end_utc = _utc_datetime(requested_end)
+    start_window = standard_weekend_window(request_start_utc)
+    end_probe = request_end_utc - timedelta(microseconds=1)
+    end_window = standard_weekend_window(end_probe)
+    closures: list[Dict[str, Any]] = []
+    start_gap_expected = False
+    end_gap_expected = False
+
+    if start_window is not None and observed_start is not None:
+        close_utc, reopen_utc = start_window
+        seconds_after_reopen = (
+            _utc_datetime(observed_start) - reopen_utc
+        ).total_seconds()
+        start_gap_expected = (
+            0.0 <= seconds_after_reopen <= float(endpoint_tolerance_seconds)
+        )
+        if start_gap_expected:
+            closures.append(
+                {
+                    "reason": "standard_weekend_closure",
+                    "start": _format_datetime_explicit(close_utc, timespec="seconds"),
+                    "end": _format_datetime_explicit(reopen_utc, timespec="seconds"),
+                }
+            )
+
+    if end_window is not None and observed_end is not None:
+        close_utc, reopen_utc = end_window
+        seconds_before_close = (
+            close_utc - _utc_datetime(observed_end)
+        ).total_seconds()
+        end_gap_expected = (
+            0.0 <= seconds_before_close <= float(endpoint_tolerance_seconds)
+        )
+        closure = {
+            "reason": "standard_weekend_closure",
+            "start": _format_datetime_explicit(close_utc, timespec="seconds"),
+            "end": _format_datetime_explicit(reopen_utc, timespec="seconds"),
+        }
+        if end_gap_expected and closure not in closures:
+            closures.append(closure)
+
+    entirely_closed = bool(
+        start_window is not None
+        and end_window is not None
+        and start_window == end_window
+    )
+    if entirely_closed and not closures:
+        close_utc, reopen_utc = start_window
+        closures.append(
+            {
+                "reason": "standard_weekend_closure",
+                "start": _format_datetime_explicit(close_utc, timespec="seconds"),
+                "end": _format_datetime_explicit(reopen_utc, timespec="seconds"),
+            }
+        )
+    return {
+        "start_gap_expected": start_gap_expected,
+        "end_gap_expected": end_gap_expected,
+        "entire_request_closed": entirely_closed,
+        "scheduled_closures": closures,
+        "basis": "standard_weekend_hours",
+    }
 
 
 def _observed_profile_window(
@@ -623,6 +718,7 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "truncation_reason",
         "data_quality",
         "coverage_note",
+        "scheduled_closures",
         "warnings",
         "as_of",
         "data_as_of",
@@ -891,6 +987,39 @@ def compute_volume_profile_payload(
             **(selected.get("diagnostics") or {}),
             **(profile.get("diagnostics") or {}),
         }
+        requested_start = _parse_start_datetime(resolved_start) if resolved_start else None
+        requested_end = _parse_end_datetime(resolved_end) if resolved_end else None
+        if requested_start is not None and requested_end is not None:
+            closure_context = _weekend_tick_coverage_context(
+                symbol,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                observed_start=None,
+                observed_end=None,
+            )
+            if closure_context.get("entire_request_closed"):
+                profile.update(
+                    {
+                        "no_data_reason": "market_closed_weekend",
+                        "market_status": "closed",
+                        "market_status_reason": "weekend",
+                        "market_status_source": "standard_weekend_hours",
+                        "scheduled_closures": closure_context.get(
+                            "scheduled_closures"
+                        ),
+                        "requested_window": {
+                            "start": _format_window_timestamp(resolved_start),
+                            "end": _format_window_timestamp(
+                                resolved_end,
+                                end_bound=True,
+                            ),
+                        },
+                        "data_quality": {
+                            "status": "not_applicable",
+                            "reason": "market_closed_weekend",
+                        },
+                    }
+                )
         return profile
     profile["symbol"] = symbol
     profile.update(_profile_source_quality(selected.get("source")))
@@ -912,7 +1041,7 @@ def compute_volume_profile_payload(
     )
     profile["requested_window"] = {
         "start": _format_window_timestamp(resolved_start),
-        "end": _format_window_timestamp(resolved_end),
+        "end": _format_window_timestamp(resolved_end, end_bound=True),
     }
     if bar_window is not None:
         profile["bar_window"] = bar_window
@@ -968,15 +1097,38 @@ def compute_volume_profile_payload(
                 float((requested_end - observed_end).total_seconds()),
             )
             gap_tolerance = max(300.0, requested_seconds * 0.05)
+            closure_context = _weekend_tick_coverage_context(
+                symbol,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                observed_start=observed_start,
+                observed_end=observed_end,
+            )
+            start_gap_expected = bool(
+                closure_context.get("start_gap_expected")
+            )
+            end_gap_expected = bool(closure_context.get("end_gap_expected"))
             profile["diagnostics"].update(
                 {
                     "requested_window_seconds": round(requested_seconds, 3),
                     "observed_start_gap_seconds": round(start_gap, 3),
                     "observed_end_gap_seconds": round(end_gap, 3),
                     "window_gap_tolerance_seconds": round(gap_tolerance, 3),
+                    "start_gap_explained_by_scheduled_closure": start_gap_expected,
+                    "end_gap_explained_by_scheduled_closure": end_gap_expected,
                 }
             )
-            if start_gap > gap_tolerance or end_gap > gap_tolerance:
+            scheduled_closures = closure_context.get("scheduled_closures")
+            if scheduled_closures:
+                profile["scheduled_closures"] = scheduled_closures
+                profile["coverage_note"] = (
+                    "Tick-window coverage excludes the disclosed scheduled "
+                    "weekend closure from endpoint-gap checks."
+                )
+            if (
+                (start_gap > gap_tolerance and not start_gap_expected)
+                or (end_gap > gap_tolerance and not end_gap_expected)
+            ):
                 profile["truncated"] = True
                 profile["truncation_reason"] = "incomplete_tick_window"
                 profile["volume_profile_accuracy"] = "tick_partial_window"
