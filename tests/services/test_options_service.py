@@ -127,6 +127,7 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
                             "inTheMoney": True,
                             "lastTradeDate": 0,
                             "currency": "USD",
+                            "contractSize": "REGULAR",
                         },
                         {
                             "contractSymbol": "AAPL260417C00110000",
@@ -187,6 +188,42 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
+    assert out["options"][0]["contract_size"] == "REGULAR"
+    assert out["options"][0]["contract_multiplier"] == 100
+    assert out["options"][0]["premium_quote_unit"] == (
+        "currency_per_underlying_unit"
+    )
+    assert out["contract_terms_summary"] == {
+        "provider_classifications": ["REGULAR"],
+        "multiplier_statuses": ["standard_from_provider_classification"],
+        "uniform_contract_multiplier": 100,
+        "mixed_or_unresolved_terms": False,
+    }
+    assert out["contract_premium_formula"] == (
+        "cash premium = quoted bid/ask/last * contract_multiplier"
+    )
+
+
+def test_option_contract_terms_fail_closed_for_adjusted_and_missing_metadata():
+    regular = osvc._option_contract_terms("REGULAR")
+    adjusted = osvc._option_contract_terms("MINI")
+    missing = osvc._option_contract_terms(None)
+
+    assert regular["contract_multiplier"] == 100
+    assert adjusted["contract_multiplier"] is None
+    assert adjusted["multiplier_status"] == (
+        "unavailable_nonstandard_or_adjusted"
+    )
+    assert missing["contract_multiplier"] is None
+    assert missing["multiplier_status"] == (
+        "unavailable_provider_metadata_missing"
+    )
+    summary = osvc._option_contract_terms_summary(
+        [regular, adjusted, missing]
+    )
+    assert summary["provider_classifications"] == ["MINI", "REGULAR"]
+    assert summary["uniform_contract_multiplier"] is None
+    assert summary["mixed_or_unresolved_terms"] is True
 
 
 @pytest.mark.parametrize(
@@ -396,6 +433,10 @@ def test_get_options_chain_uses_configured_tradier_provider(monkeypatch):
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
+    assert out["options"][0]["contract_multiplier"] is None
+    assert out["options"][0]["multiplier_status"] == (
+        "unavailable_provider_metadata_missing"
+    )
 
 
 def test_configured_tradier_provider_without_token_falls_back_to_yahoo(monkeypatch):

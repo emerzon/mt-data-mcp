@@ -79,6 +79,18 @@ nearest-strike `selection_order`. When a limit omits contracts,
 complete filtered chain. This is a bounded nearest-strike selection, not offset
 pagination.
 
+Each option row reports the provider's `contract_size` classification,
+`contract_multiplier`, multiplier status, deliverable status, and
+`premium_quote_unit`. A provider-classified `REGULAR` US equity option has a
+multiplier of 100 underlying units. Nonstandard, adjusted, or missing provider
+metadata leaves the multiplier unavailable instead of inheriting a chain-level
+default. Convert a quoted bid, ask, or last price to cash premium only when the
+row multiplier is known:
+
+```text
+cash premium = quoted premium × contract_multiplier
+```
+
 Both options-data commands expose the provider quote time, its age, and
 `data_stale`. A quote older than 15 minutes is marked stale; an unavailable
 provider timestamp leaves `data_stale` unknown (`null`). Yahoo's underlying

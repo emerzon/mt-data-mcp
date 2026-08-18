@@ -881,6 +881,7 @@ def _normalize_tradier_options(
                 in_the_money = float(strike) < underlying
             elif side == "put":
                 in_the_money = float(strike) > underlying
+        currency = row.get("currency") or "USD"
         entry: Dict[str, Any] = {
             "side": side,
             "contract": row.get("symbol") or row.get("contractSymbol"),
@@ -905,10 +906,92 @@ def _normalize_tradier_options(
             ),
             "in_the_money": bool(in_the_money),
             "last_trade_epoch": _parse_tradier_epoch(row.get("trade_date") or row.get("last_trade_date")),
-            "currency": row.get("currency") or "USD",
+            "currency": currency,
+            **_option_contract_terms(
+                row.get("contract_size") or row.get("contractSize"),
+            ),
         }
         out.append(entry)
     return out
+
+
+def _option_contract_terms(classification: Any) -> Dict[str, Any]:
+    provider_size = str(classification or "").strip().upper() or None
+    if provider_size == "REGULAR":
+        return {
+            "contract_size": provider_size,
+            "contract_multiplier": 100,
+            "multiplier_status": "standard_from_provider_classification",
+            "deliverable": "100 underlying units",
+            "deliverable_status": "standard",
+            "premium_quote_unit": "currency_per_underlying_unit",
+        }
+    if provider_size is not None:
+        return {
+            "contract_size": provider_size,
+            "contract_multiplier": None,
+            "multiplier_status": "unavailable_nonstandard_or_adjusted",
+            "deliverable": None,
+            "deliverable_status": "provider_classification_only",
+            "premium_quote_unit": "currency_per_underlying_unit",
+        }
+    return {
+        "contract_size": None,
+        "contract_multiplier": None,
+        "multiplier_status": "unavailable_provider_metadata_missing",
+        "deliverable": None,
+        "deliverable_status": "unavailable",
+        "premium_quote_unit": "currency_per_underlying_unit",
+    }
+
+
+def _option_contract_terms_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    classifications = sorted(
+        {
+            str(row.get("contract_size"))
+            for row in rows
+            if row.get("contract_size") not in (None, "")
+        }
+    )
+    statuses = sorted(
+        {
+            str(row.get("multiplier_status"))
+            for row in rows
+            if row.get("multiplier_status") not in (None, "")
+        }
+    )
+    multipliers = sorted(
+        {
+            int(row["contract_multiplier"])
+            for row in rows
+            if row.get("contract_multiplier") is not None
+        }
+    )
+    all_known = bool(rows) and all(
+        row.get("contract_multiplier") is not None for row in rows
+    )
+    return {
+        "provider_classifications": classifications,
+        "multiplier_statuses": statuses,
+        "uniform_contract_multiplier": (
+            multipliers[0]
+            if all_known and len(multipliers) == 1
+            else None
+        ),
+        "mixed_or_unresolved_terms": not all_known or len(multipliers) > 1,
+    }
+
+
+def _option_premium_contract() -> Dict[str, Any]:
+    return {
+        "units": {
+            "option_premium": "currency_per_underlying_unit",
+            "contract_multiplier": "underlying_units_per_contract",
+        },
+        "contract_premium_formula": (
+            "cash premium = quoted bid/ask/last * contract_multiplier"
+        ),
+    }
 
 
 def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
@@ -995,7 +1078,8 @@ def _get_tradier_options_chain(
         "expiration_status": expiration_status,
         "underlying_price": underlying_price,
         "currency": quote.get("currency") or "USD",
-        "contract_size": "REGULAR",
+        "contract_terms_summary": _option_contract_terms_summary(normalized),
+        **_option_premium_contract(),
         "expirations": expirations,
         "option_type": option_type,
         "min_open_interest": int(min_open_interest),
@@ -1110,6 +1194,7 @@ def _get_yahoo_options_chain(
                 "in_the_money": bool(row.get("inTheMoney", False)),
                 "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0, field_name="lastTradeDate"),
                 "currency": row.get("currency"),
+                **_option_contract_terms(row.get("contractSize")),
             }
             out.append(entry)
         out.sort(key=lambda x: float(x.get("strike", 0.0)))
@@ -1139,7 +1224,8 @@ def _get_yahoo_options_chain(
         "expiration_status": expiration_status,
         "underlying_price": underlying_price,
         "currency": quote.get("currency"),
-        "contract_size": quote.get("contractSize"),
+        "contract_terms_summary": _option_contract_terms_summary(combined),
+        **_option_premium_contract(),
         "expirations": sorted(available_map),
         "option_type": option_type,
         "min_open_interest": int(min_open_interest),

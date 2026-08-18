@@ -4478,7 +4478,21 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "selection_order": "nearest_strike_to_underlying_balanced_by_side",
             "complete_request": {"limit": 25},
             "applied_limit": kwargs["limit"],
-            "contract_size": "REGULAR",
+            "contract_terms_summary": {
+                "provider_classifications": ["REGULAR"],
+                "multiplier_statuses": [
+                    "standard_from_provider_classification"
+                ],
+                "uniform_contract_multiplier": 100,
+                "mixed_or_unresolved_terms": False,
+            },
+            "contract_premium_formula": (
+                "cash premium = quoted bid/ask/last * contract_multiplier"
+            ),
+            "units": {
+                "option_premium": "currency_per_underlying_unit",
+                "contract_multiplier": "underlying_units_per_contract",
+            },
             "expirations": ["2026-06-19"],
             "options": [
                 {
@@ -4493,6 +4507,14 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
                     "last_trade_epoch": 1700000000,
                     "volume": 10,
                     "open_interest": 20,
+                    "contract_size": "REGULAR",
+                    "contract_multiplier": 100,
+                    "multiplier_status": (
+                        "standard_from_provider_classification"
+                    ),
+                    "deliverable": "100 underlying units",
+                    "deliverable_status": "standard",
+                    "premium_quote_unit": "currency_per_underlying_unit",
                 }
             ],
         },
@@ -4560,6 +4582,14 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert compact_chain["truncated"] is True
     assert compact_chain["complete_request"] == {"limit": 25}
     assert "contract_size" not in compact_chain
+    assert compact_chain["contract_terms_summary"][
+        "uniform_contract_multiplier"
+    ] == 100
+    assert compact_chain["options"][0]["contract_size"] == "REGULAR"
+    assert compact_chain["options"][0]["contract_multiplier"] == 100
+    assert compact_chain["options"][0]["premium_quote_unit"] == (
+        "currency_per_underlying_unit"
+    )
     assert "implied_volatility" not in compact_chain["options"][0]
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
 
