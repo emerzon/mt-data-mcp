@@ -334,7 +334,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "strikes; omitted full output uses 200."
     ),
     ("options_heston_calibrate", "valuation_date"): (
-        "Valuation date in YYYY-MM-DD format; omit for the selected calendar's local date."
+        "Options-chain observation date in YYYY-MM-DD format; omit to use the "
+        "provider chain snapshot date. A different calendar date is rejected."
     ),
     ("options_barrier_price", "valuation_date"): (
         "Valuation date in YYYY-MM-DD format; omit for the selected calendar's local date."

@@ -32,21 +32,24 @@ returns at the candle boundary when it fits within the budget, or reports
 ## Example 1 — wait for the next H1 close
 
 ```bash
-mtdata-cli wait_event EURUSD --timeframe H1 --json
+mtdata-cli wait_event EURUSD --timeframe H1 --watch-for '[]' --json
 ```
 
-Use this when the next research step should run on a *completed* hour, not a
-bar that is still forming.
+The explicit empty watch list makes this a candle-boundary-only wait, so the
+next research step runs on a *completed* hour rather than returning early for
+an inferred market or account event.
 
 Add a safety cap for unattended scripts:
 
 ```bash
-mtdata-cli wait_event EURUSD --timeframe H1 --max-wait-seconds 300 --json
+mtdata-cli wait_event EURUSD --timeframe H1 --watch-for '[]' \
+  --max-wait-seconds 300 --json
 ```
 
 A timeframe wait with no symbol and no extra watch list is a pure clock wait
 (no candle payload). Passing the symbol includes a best-effort closed-candle
-snapshot when the boundary hits.
+snapshot when the boundary hits. If a symbol is supplied and `--watch-for` is
+omitted, the command installs its inferred watcher set and may return mid-bar.
 
 ---
 

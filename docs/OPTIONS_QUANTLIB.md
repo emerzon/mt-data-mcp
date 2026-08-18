@@ -167,7 +167,7 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--option-type` | `call` | `call`, `put`, or `both` |
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
-| `--valuation-date` | provider observation date | Valuation date in `YYYY-MM-DD` format |
+| `--valuation-date` | provider observation date | Options-chain observation date in `YYYY-MM-DD`; an explicit value must match the provider snapshot date |
 | `--min-open-interest` | 0 | Min open interest for contract selection; must be at least 0 |
 | `--min-volume` | 0 | Min volume for contract selection; must be at least 0 |
 | `--max-contracts` | 25 | Max contracts used in calibration; must be at least 5 |

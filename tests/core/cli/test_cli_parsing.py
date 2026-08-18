@@ -1206,7 +1206,7 @@ class TestResolveParamKwargs:
             ("outliers_detect", "limit", "anomalous bars"),
             ("temporal_analyze", "limit", "time buckets"),
             ("temporal_analyze", "session_calendar", "auto, fx, or equity"),
-            ("options_heston_calibrate", "valuation_date", "YYYY-MM-DD"),
+            ("options_heston_calibrate", "valuation_date", "chain snapshot date"),
             ("seasonality_detect", "max_period", "period in bars"),
         ],
     )
