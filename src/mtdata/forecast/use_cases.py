@@ -1967,12 +1967,12 @@ def _compact_forecast_warnings(
 
 def _compact_backtest_units(
     raw_units: Any,
-    ranked_methods: list[Dict[str, Any]],
+    method_summaries: list[Dict[str, Any]],
 ) -> Dict[str, Any]:
     if not isinstance(raw_units, dict):
         return {}
     visible_unit_keys = {"forecast_error"}
-    for row in ranked_methods:
+    for row in method_summaries:
         visible_unit_keys.update(row.keys())
     return {
         key: value
@@ -2027,13 +2027,13 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
             return None
         return value_f if math.isfinite(value_f) else None
 
-    ranked_methods: list[Dict[str, Any]] = []
+    method_summaries: list[Dict[str, Any]] = []
     methods_total = 0
     methods_failed: list[str] = []
     for method_name, method_payload in raw_results.items():
         methods_total += 1
         if not isinstance(method_payload, dict):
-            ranked_methods.append({"method": method_name, "result": method_payload})
+            method_summaries.append({"method": method_name, "result": method_payload})
             methods_failed.append(str(method_name))
             continue
         if method_payload.get("success") is False:
@@ -2127,10 +2127,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
         if isinstance(details, list) and not metrics_unavailable:
             method_out["details_count"] = len(details)
         ranked_row = dict(method_out)
-        ranked_row["_sort_metric"] = _sort_metric(
-            method_payload.get("avg_rmse", method_payload.get("avg_mae"))
-        )
-        ranked_methods.append(ranked_row)
+        ranked_row["_sort_metric"] = _sort_metric(method_payload.get("avg_rmse"))
+        method_summaries.append(ranked_row)
 
     compact_out = dict(result)
     compact_out.pop("request", None)
@@ -2138,7 +2136,7 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
     compact_out["detail"] = "compact"
     compact_units = _compact_backtest_units(
         compact_out.get("units"),
-        ranked_methods,
+        method_summaries,
     )
     if compact_units:
         compact_out["units"] = compact_units
@@ -2162,24 +2160,62 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
     compact_out["methods_failed"] = len(methods_failed)
     if methods_failed:
         compact_out["failed_methods"] = methods_failed
-    ranked_methods.sort(
+    method_summaries.sort(
         key=lambda row: (
             row.get("_sort_metric") is None,
             row.get("_sort_metric") if row.get("_sort_metric") is not None else 0.0,
             str(row.get("method") or ""),
         )
     )
-    compact_out["ranked_methods"] = [
-        {key: value for key, value in row.items() if key != "_sort_metric" and value is not None}
-        for row in ranked_methods
-    ]
+    ranked_methods: list[Dict[str, Any]] = []
+    rank = 0
+    for row in method_summaries:
+        method = str(row.get("method") or "")
+        score = row.get("_sort_metric")
+        eligible = score is not None and row.get("success") is not False
+        ranked_row: Dict[str, Any] = {
+            "method": method,
+            "ranking_status": "ranked" if eligible else "unranked",
+        }
+        if eligible:
+            rank += 1
+            ranked_row.update(
+                {
+                    "rank": rank,
+                    "avg_rmse": _compact_metric("avg_rmse", score),
+                    "trading_metrics_available": not _is_explicit_false(
+                        row.get("metrics_available")
+                    ),
+                }
+            )
+            if _is_explicit_false(row.get("metrics_available")):
+                ranked_row["selection_warning"] = (
+                    "ranking_uses_forecast_error_only; trading metrics are unavailable"
+                )
+                if row.get("metrics_reason"):
+                    ranked_row["trading_metrics_reason"] = row["metrics_reason"]
+        else:
+            ranked_row["unranked_reason"] = (
+                row.get("error_code")
+                or ("method_failed" if row.get("success") is False else "avg_rmse_unavailable")
+            )
+            if row.get("error"):
+                ranked_row["error"] = row["error"]
+        ranked_methods.append(ranked_row)
+    compact_out["ranking"] = {
+        "metric": "avg_rmse",
+        "direction": "ascending",
+        "scope": "non_failed_methods_with_finite_avg_rmse",
+        "note": "Trading metrics do not affect rank; inspect results for method details.",
+    }
+    compact_out["ranked_methods"] = ranked_methods
     compact_out["results"] = {
         str(row.get("method")): {
             key: value
             for key, value in row.items()
             if key not in {"method", "_sort_metric"} and value is not None
         }
-        for row in ranked_methods
+        for row in method_summaries
     }
     return compact_out
 
@@ -2190,6 +2226,7 @@ def _attach_backtest_collection_contract(result: Dict[str, Any]) -> Dict[str, An
     out = dict(result)
     for key in (
         "ranked_methods",
+        "ranking",
         "methods_total",
         "methods_succeeded",
         "methods_failed",
@@ -2691,6 +2728,13 @@ def run_forecast_backtest(
         horizon=request.horizon,
         methods=len(request.methods or []),
     )
+    if isinstance(result, dict):
+        backtest_plan = result.get("backtest_plan")
+        if isinstance(backtest_plan, dict):
+            backtest_plan["actual_runtime_seconds"] = round(
+                time.perf_counter() - started_at,
+                6,
+            )
     requested_detail = _requested_detail_label(request.detail)
     if str(request.detail or "compact").strip().lower() == "compact":
         return _compact_backtest_result(result)

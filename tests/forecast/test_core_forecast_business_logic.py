@@ -1362,7 +1362,12 @@ def test_run_forecast_backtest_derives_target_from_quantity():
 
 def test_run_forecast_backtest_preserves_requested_noncompact_detail():
     def fake_backtest_impl(**kwargs):
-        return {"success": True, "detail": "compact", "results": {}}
+        return {
+            "success": True,
+            "detail": "compact",
+            "backtest_plan": {"fits_planned": 15},
+            "results": {},
+        }
 
     standard = forecast_use_cases.run_forecast_backtest(
         ForecastBacktestRequest(symbol="EURUSD", detail="standard"),
@@ -1375,6 +1380,8 @@ def test_run_forecast_backtest_preserves_requested_noncompact_detail():
 
     assert standard["detail"] == "standard"
     assert summary["detail"] == "summary"
+    assert standard["backtest_plan"]["fits_planned"] == 15
+    assert standard["backtest_plan"]["actual_runtime_seconds"] >= 0.0
 
 
 def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
@@ -1434,7 +1441,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     }
     assert "units_profile" not in result
     assert result["ranked_methods"][0]["method"] == "theta"
-    assert result["ranked_methods"][0]["details_count"] == 1
+    assert result["ranked_methods"][0]["ranking_status"] == "unranked"
+    assert result["ranked_methods"][0]["unranked_reason"] == "avg_rmse_unavailable"
     assert "metrics" not in result["ranked_methods"][0]
 
 
@@ -1508,7 +1516,7 @@ def test_run_forecast_backtest_compact_keeps_kelly_metrics():
         backtest_impl=fake_backtest_impl,
     )
 
-    row = result["ranked_methods"][0]
+    row = result["results"]["theta"]
     assert row["avg_win_return"] == 0.03
     assert row["avg_loss_return"] == -0.015
     assert row["avg_loss_magnitude"] == 0.015
@@ -1548,7 +1556,7 @@ def test_run_forecast_backtest_compact_suppresses_low_sample_kelly_metrics():
         backtest_impl=fake_backtest_impl,
     )
 
-    row = result["ranked_methods"][0]
+    row = result["results"]["theta"]
     assert row["metrics_reliability"] == "low"
     assert row["trades_observed"] == 2
     assert "win_rate_pct" not in row
@@ -1590,7 +1598,7 @@ def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
         backtest_impl=fake_backtest_impl,
     )
 
-    row = result["ranked_methods"][0]
+    row = result["results"]["naive"]
     assert row["trade_status"] == "flat"
     assert row["metrics_available"] is False
     assert row["metrics_reason"] == "no_non_flat_trades"
@@ -1604,6 +1612,25 @@ def test_run_forecast_backtest_omits_trade_metrics_when_unavailable():
     assert "max_drawdown" not in row
     assert "avg_return" not in row
     assert "avg_return_per_trade" not in row
+    assert result["ranking"] == {
+        "metric": "avg_rmse",
+        "direction": "ascending",
+        "scope": "non_failed_methods_with_finite_avg_rmse",
+        "note": "Trading metrics do not affect rank; inspect results for method details.",
+    }
+    assert result["ranked_methods"] == [
+        {
+            "method": "naive",
+            "ranking_status": "ranked",
+            "rank": 1,
+            "avg_rmse": 1.2,
+            "trading_metrics_available": False,
+            "selection_warning": (
+                "ranking_uses_forecast_error_only; trading metrics are unavailable"
+            ),
+            "trading_metrics_reason": "no_non_flat_trades",
+        }
+    ]
 
 
 def test_run_forecast_backtest_handles_numpy_metrics_available_false():
@@ -1626,7 +1653,7 @@ def test_run_forecast_backtest_handles_numpy_metrics_available_false():
         backtest_impl=fake_backtest_impl,
     )
 
-    row = result["ranked_methods"][0]
+    row = result["results"]["naive"]
     assert row["metrics_available"] == np.bool_(False)
     assert "metrics_note" in row
     assert "win_rate" not in row

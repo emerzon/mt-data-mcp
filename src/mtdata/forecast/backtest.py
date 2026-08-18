@@ -2165,17 +2165,17 @@ def forecast_backtest(  # noqa: C901
             else:
                 methods = [s for s in txt.split() if s]
 
-        # Default methods based on quantity
-        if not methods:
+        # Keep an omitted method list suitable for an interactive CLI call. Larger
+        # comparisons remain available, but must be requested explicitly.
+        methods_defaulted = not methods
+        if methods_defaulted:
             if quantity == 'volatility':
                 methods = ['ewma', 'parkinson']
             else:
                 methods_info = _get_forecast_methods_data_safe()
                 avail = [m['method'] for m in methods_info.get('methods', []) if m.get('available')]
-                preferred = ['naive', 'drift', 'seasonal_naive', 'theta', 'fourier_ols', 'sf_autoarima', 'sf_theta']
+                preferred = ['naive', 'drift', 'theta']
                 methods = [m for m in preferred if m in avail]
-                if not methods:
-                    methods = [m for m in ('naive', 'drift', 'theta') if m in avail]
         params_map = dict(params_per_method or {})
         cleanup_gpu_after_run = forecast_methods_may_use_gpu(
             methods,
@@ -2648,6 +2648,10 @@ def forecast_backtest(  # noqa: C901
             "runs_used": int(len(anchor_indices)),
             "horizon_bars": int(horizon),
             "history_bars_used": int(len(df)),
+            "method_selection": "default_bounded_baselines" if methods_defaulted else "explicit",
+            "methods_planned": list(methods),
+            "method_count": int(len(methods)),
+            "fits_planned": int(len(methods) * len(anchor_indices)),
         }
         if model_lookback is not None:
             backtest_plan["model_lookback_bars"] = model_lookback

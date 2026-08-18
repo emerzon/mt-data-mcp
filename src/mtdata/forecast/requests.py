@@ -260,9 +260,11 @@ class ForecastBacktestRequest(_PublicForecastRequest):
     methods: Optional[List[str]] = Field(
         None,
         description=(
-            "Forecast methods to search. When omitted, uses fast classical "
-            "baselines only. Pass neural or foundation methods explicitly; they "
-            "may initialize large models or download model assets."
+            "Forecast methods to compare. When omitted, price/return backtests use "
+            "the bounded baseline set [naive, drift, theta], while volatility "
+            "backtests use [ewma, parkinson]. Pass larger, neural, or foundation "
+            "method sweeps explicitly; they may run many fits, initialize large "
+            "models, or download model assets."
         ),
     )
     params_per_method: Optional[Dict[str, Any]] = None

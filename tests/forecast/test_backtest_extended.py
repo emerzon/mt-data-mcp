@@ -192,7 +192,14 @@ class TestForecastBacktest:
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": list(range(12))}
             result = forecast_backtest("EURUSD", timeframe="H1")
-        assert isinstance(result, dict)
+        assert result["backtest_plan"]["method_selection"] == "default_bounded_baselines"
+        assert result["backtest_plan"]["methods_planned"] == ["naive", "drift", "theta"]
+        assert result["backtest_plan"]["fits_planned"] == 15
+        assert {call.kwargs["method"] for call in fc.call_args_list} == {
+            "naive",
+            "drift",
+            "theta",
+        }
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_default_methods_volatility(self, fetch):
