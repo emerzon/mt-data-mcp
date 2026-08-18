@@ -98,7 +98,10 @@ cash premium = quoted premium × contract_multiplier
 Both options-data commands expose the provider quote time, its age, and
 `data_stale`. A quote older than 15 minutes is marked stale; an unavailable
 provider timestamp leaves `data_stale` unknown (`null`). Yahoo's underlying
-price is a regular-session price, as shown by `underlying_price_session`.
+price is a regular-session price, as shown by `underlying_price_session`. A
+provider timestamp up to 30 seconds ahead of the local clock is reported as
+`clock_skew_within_tolerance` with `timestamp_skew_seconds` and is not marked
+stale solely for that skew. Larger future skew is treated as stale.
 
 ---
 

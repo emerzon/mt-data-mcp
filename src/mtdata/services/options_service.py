@@ -32,6 +32,7 @@ _YAHOO_MAX_ATTEMPTS = 3
 _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _OPTIONS_QUOTE_STALE_AFTER_SECONDS = 900.0
+_OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS = 30.0
 _US_EQUITY_OPTIONS_TZ = ZoneInfo("America/New_York")
 _US_EQUITY_OPTIONS_CLOSE = _dt.time(16, 0)
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
@@ -101,6 +102,10 @@ def _options_quote_metadata(
     now_epoch = float(_time.time())
     raw_age = now_epoch - float(timestamp_epoch)
     timestamp_in_future = raw_age < -1.0
+    timestamp_skew_seconds = max(0.0, -raw_age)
+    future_skew_outside_tolerance = (
+        timestamp_skew_seconds > _OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS
+    )
     metadata.update(
         {
             "as_of": _dt.datetime.fromtimestamp(
@@ -109,7 +114,7 @@ def _options_quote_metadata(
             "data_age_seconds": round(max(0.0, raw_age), 3),
             "data_stale": (
                 True
-                if timestamp_in_future
+                if future_skew_outside_tolerance
                 else raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS
             ),
             "freshness": (
@@ -122,7 +127,20 @@ def _options_quote_metadata(
         }
     )
     if timestamp_in_future:
-        metadata["freshness_reason"] = "provider_quote_timestamp_in_future"
+        metadata.update(
+            {
+                "timestamp_ahead_of_wall_clock": True,
+                "timestamp_skew_seconds": round(timestamp_skew_seconds, 3),
+                "timestamp_skew_tolerance_seconds": (
+                    _OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS
+                ),
+                "freshness_reason": (
+                    "provider_quote_timestamp_in_future"
+                    if future_skew_outside_tolerance
+                    else "clock_skew_within_tolerance"
+                ),
+            }
+        )
     elif raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS:
         metadata["freshness_reason"] = "provider_quote_age_exceeds_live_threshold"
     return metadata
