@@ -397,7 +397,7 @@ formats remain responsible for their own compatibility checks.
 ```bash
 mtdata-cli forecast_models_list --json
 mtdata-cli forecast_models_list --limit 50 --json  # Larger explicit page
-mtdata-cli forecast_models_delete --model-id "nhits/EURUSD_H1/abc123"
+mtdata-cli forecast_models_delete "nhits/EURUSD_H1/abc123"
 mtdata-cli forecast_models_cleanup --json          # preview stale/expired
 ```
 
