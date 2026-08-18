@@ -885,6 +885,14 @@ class TestFormatResultForCli:
                 {
                     "success": True,
                     "symbol": "EURUSD",
+                    "as_of": "2026-08-18T17:30:00Z",
+                    "assembled_at": "2026-08-18T17:30:00Z",
+                    "timezone": "UTC",
+                    "source": {
+                        "provider": "mt5",
+                        "broker_company": "Raw Trading Ltd",
+                        "server": "ICMarketsSC-Demo",
+                    },
                     "state": "open_position",
                     "account": {
                         "success": True,
@@ -940,6 +948,14 @@ class TestFormatResultForCli:
             "balance": 10000.0,
             "equity": 10010.0,
             "margin_level": 250.0,
+        }
+        assert payload["as_of"] == "2026-08-18T17:30:00Z"
+        assert payload["assembled_at"] == payload["as_of"]
+        assert payload["timezone"] == "UTC"
+        assert payload["source"] == {
+            "provider": "mt5",
+            "broker_company": "Raw Trading Ltd",
+            "server": "ICMarketsSC-Demo",
         }
         assert payload["quote"]["time"] == "2023-11-14 22:13"
         assert payload["quote"]["spread"] == 0.0002

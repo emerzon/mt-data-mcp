@@ -296,6 +296,10 @@ def _normalize_trade_session_context_cli_payload(  # noqa: C901
     for key in (
         "success",
         "symbol",
+        "as_of",
+        "assembled_at",
+        "timezone",
+        "source",
         "state",
         "state_scope",
         "portfolio_positions_count",
