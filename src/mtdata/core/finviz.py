@@ -41,6 +41,7 @@ from ..services.finviz.symbols import (
     looks_like_non_equity_symbol,
     normalize_finviz_equity_symbol,
 )
+from ..services.finviz.utils import finviz_percent_value
 from ..services.news_text import normalize_news_text
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
@@ -526,20 +527,7 @@ def _finviz_percent_value(
     *,
     fraction_input: bool = True,
 ) -> Optional[float]:
-    if value is None or value == "":
-        return None
-    parsed = _parse_finviz_numeric_value(value)
-    if parsed is None:
-        return None
-    if not fraction_input:
-        return round(float(parsed), 6)
-    if isinstance(value, (int, float)):
-        parsed = float(parsed) * 100.0
-        return round(float(parsed), 6)
-    text = str(value).strip()
-    if text and not text.endswith("%"):
-        parsed = float(parsed) * 100.0
-    return round(float(parsed), 6)
+    return finviz_percent_value(value, fraction_input=fraction_input)
 
 
 def _normalize_finviz_market_performance_fields(

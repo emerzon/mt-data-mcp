@@ -35,6 +35,7 @@ from .finviz import (
     get_stock_news,
 )
 from .finviz.symbols import normalize_finviz_equity_symbol
+from .finviz.utils import finviz_percent_value
 from .news_embeddings import get_news_embedding_service
 from .news_service import get_mt5_news
 from .news_text import normalize_news_text
@@ -1467,6 +1468,12 @@ class FinvizNewsSource:
             logger.exception("Error fetching Finviz general candidates")
             return []
 
+    def fetch_calendar_candidates(self, limit: int) -> List[NewsItem]:
+        """Return market-wide economic events without instrument filtering."""
+        return self._fetch_economic_candidates(
+            limit=max(limit, _MIN_ECONOMIC_CANDIDATES)
+        )
+
     def fetch_related_candidates(self, context: InstrumentContext, limit: int) -> List[NewsItem]:
         items: List[NewsItem] = []
         if context.asset_class == "equity":
@@ -1582,7 +1589,7 @@ class FinvizNewsSource:
                 display_name = label
             def _format_snapshot_value(display_key: str, value: Any) -> str:
                 text = _safe_text(value).strip()
-                if display_key in {"Price", "Change", "Perf", "Perf Day", "Perf Week", "Perf WTD"}:
+                if display_key == "Price":
                     try:
                         return f"{float(text):.4f}"
                     except (TypeError, ValueError):
@@ -1590,20 +1597,69 @@ class FinvizNewsSource:
                 return text
 
             summary_parts = []
-            for display_key, row_keys in (
-                ("Label", ("Label", "label")),
-                ("Group", ("Group", "group")),
-                ("Price", ("Price", "price")),
-                ("Change", ("Change", "change")),
-                ("Perf", ("Perf", "perf")),
-                ("Perf Day", ("Perf Day", "perf_day")),
-                ("Perf Week", ("Perf Week", "perf_week")),
-                ("Perf WTD", ("Perf WTD", "perf_wtd")),
+            performance_fields: Dict[str, float] = {}
+            for display_key, row_keys, canonical_key, fraction_input in (
+                ("Label", ("Label", "label"), None, False),
+                ("Group", ("Group", "group"), None, False),
+                ("Price", ("Price", "price"), None, False),
+                ("Change", ("Change", "change"), "change_pct", True),
+                (
+                    "Perf",
+                    ("Perf", "perf"),
+                    "perf_pct",
+                    market != "futures",
+                ),
+                (
+                    "Perf Day",
+                    ("Perf Day", "perf_day"),
+                    "perf_day_pct",
+                    market != "futures",
+                ),
+                (
+                    "Perf Week",
+                    ("Perf Week", "perf_week"),
+                    "perf_week_pct",
+                    market != "futures",
+                ),
+                (
+                    "Perf WTD",
+                    ("Perf WTD", "perf_wtd"),
+                    "perf_wtd_pct",
+                    market != "futures",
+                ),
             ):
                 value = _first_present(row, *row_keys)
-                if value:
-                    summary_parts.append(f"{display_key}: {_format_snapshot_value(display_key, value)}")
+                if value in (None, ""):
+                    continue
+                if canonical_key is not None:
+                    pct_value = finviz_percent_value(
+                        value,
+                        fraction_input=fraction_input,
+                    )
+                    if pct_value is not None:
+                        performance_fields[canonical_key] = pct_value
+                        display_value = f"{pct_value:.4f}".rstrip("0").rstrip(".")
+                        summary_parts.append(f"{display_key}: {display_value}%")
+                        continue
+                summary_parts.append(
+                    f"{display_key}: {_format_snapshot_value(display_key, value)}"
+                )
             observed_at = datetime.now(timezone.utc)
+            metadata: Dict[str, Any] = {
+                "ticker": ticker,
+                "label": label,
+                "market": market,
+                "search_text": " ".join(_safe_text(value) for value in row.values()),
+                "source_type": "quote_snapshot",
+                "snapshot_time_inferred": True,
+                "snapshot_score": round(row_score, 4),
+            }
+            if performance_fields:
+                metadata.update(performance_fields)
+                metadata["performance_format"] = "percent"
+                metadata["units"] = {
+                    key: "percent (1.0 = 1%)" for key in performance_fields
+                }
             out.append(
                 NewsItem(
                     title=f"{display_name} market snapshot",
@@ -1614,15 +1670,7 @@ class FinvizNewsSource:
                     summary=", ".join(summary_parts) or None,
                     category=market,
                     priority=NewsPriority.HIGH,
-                    metadata={
-                        "ticker": ticker,
-                        "label": label,
-                        "market": market,
-                        "search_text": " ".join(_safe_text(value) for value in row.values()),
-                        "source_type": "quote_snapshot",
-                        "snapshot_time_inferred": True,
-                        "snapshot_score": round(row_score, 4),
-                    },
+                    metadata=metadata,
                 )
             )
         return out
@@ -1806,6 +1854,7 @@ class NewsAggregator:
         general_candidates: List[NewsItem] = []
         related_candidates: List[NewsItem] = []
         market_context_candidates: List[NewsItem] = []
+        calendar_candidates: List[NewsItem] = []
         source_details: Dict[str, Dict[str, Any]] = {}
 
         for name, source in selected_sources.items():
@@ -1813,6 +1862,7 @@ class NewsAggregator:
                 general_items = source.fetch_general_candidates(candidate_limit)
                 general_candidates.extend(general_items)
                 related_items: List[NewsItem] = []
+                calendar_items: List[NewsItem] = []
                 if context is not None:
                     related_items = source.fetch_related_candidates(context, candidate_limit)
                     context_items = [
@@ -1826,11 +1876,20 @@ class NewsAggregator:
                 else:
                     news_items = []
                     context_items = []
+                    calendar_fetcher = getattr(
+                        source,
+                        "fetch_calendar_candidates",
+                        None,
+                    )
+                    if callable(calendar_fetcher):
+                        calendar_items = calendar_fetcher(candidate_limit)
+                        calendar_candidates.extend(calendar_items)
                 source_details[name] = {
                     "success": True,
                     "general_candidates": len(general_items),
                     "related_candidates": len(news_items),
                     "market_context_candidates": len(context_items),
+                    "calendar_candidates": len(calendar_items),
                 }
             except NewsSymbolUnavailableError as exc:
                 return {
@@ -1990,6 +2049,36 @@ class NewsAggregator:
                 item for item in general_pool
                 if item.dedupe_key() not in impact_keys
             ]
+        else:
+            global_calendar = _score_then_dedupe_items(calendar_candidates)
+            current_time = datetime.now(timezone.utc)
+            upcoming_events = sorted(
+                (
+                    item for item in global_calendar
+                    if item.kind == "economic_event"
+                    and item.published_at is not None
+                    and item.published_at > current_time
+                ),
+                key=lambda item: (
+                    item.published_at,
+                    -float(item.priority),
+                    -item.importance_score,
+                ),
+            )[:_DEFAULT_UPCOMING_BUCKET_SIZE]
+            recent_events = sorted(
+                (
+                    item for item in global_calendar
+                    if item.kind == "economic_event"
+                    and item.published_at is not None
+                    and item.published_at <= current_time
+                ),
+                key=lambda item: (
+                    "actual:" in _safe_text(item.summary).lower(),
+                    item.published_at,
+                    item.importance_score,
+                ),
+                reverse=True,
+            )[:_DEFAULT_RECENT_EVENTS_SIZE]
 
         general_news = _sort_news_for_display(general_pool[:general_bucket_size])
         related_news = _sort_news_for_display(related_news)

@@ -2,7 +2,22 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from mtdata.services import unified_news as svc
+from mtdata.services.finviz.utils import finviz_percent_value
+
+
+@pytest.fixture(autouse=True)
+def _default_empty_economic_calendar(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [],
+        },
+    )
 
 
 def _reset_aggregator(monkeypatch) -> None:
@@ -132,6 +147,57 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     assert result["related_news"] == []
     assert result["general_count"] == 2
     assert set(result["sources_used"]) == {"finviz", "mt5"}
+
+
+def test_fetch_unified_news_without_symbol_includes_marketwide_calendar(monkeypatch) -> None:
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda **_kwargs: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {"success": True, "news": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda **_kwargs: {
+            "success": True,
+            "items": [
+                {
+                    "date": (now + timedelta(hours=2)).isoformat(),
+                    "event": "US CPI",
+                    "ticker": "USD",
+                    "importance": 3,
+                    "forecast": "2.7%",
+                },
+                {
+                    "date": (now - timedelta(hours=1)).isoformat(),
+                    "event": "Eurozone GDP",
+                    "ticker": "EUR",
+                    "importance": 2,
+                    "actual": "0.3%",
+                },
+            ],
+        },
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news()
+
+    assert result["relevance_status"] == "market_wide"
+    assert [item["title"] for item in result["upcoming_events"]] == [
+        "US CPI (USD)"
+    ]
+    assert [item["title"] for item in result["recent_events"]] == [
+        "Eurozone GDP (EUR)"
+    ]
+    assert result["source_details"]["finviz"]["calendar_candidates"] == 2
 
 
 def test_mt5_source_uses_absolute_published_time(monkeypatch) -> None:
@@ -914,11 +980,27 @@ def test_market_snapshots_handle_lowercase_and_pair_keys(monkeypatch) -> None:
 
     assert forex_result["related_news"] == []
     assert forex_result["market_context"][0]["title"] == "EUR/USD market snapshot"
-    assert "Perf Week: -0.0039" in (forex_result["market_context"][0]["summary"] or "")
+    assert "Perf Day: 0.29%" in (forex_result["market_context"][0]["summary"] or "")
+    assert "Perf Week: -0.39%" in (forex_result["market_context"][0]["summary"] or "")
     assert "-0.0039000000000000003" not in (forex_result["market_context"][0]["summary"] or "")
+    forex_metadata = forex_result["market_context"][0]["metadata"]
+    assert forex_metadata["perf_day_pct"] == 0.29
+    assert forex_metadata["perf_week_pct"] == -0.39
+    assert forex_metadata["performance_format"] == "percent"
+    assert forex_metadata["units"] == {
+        "perf_day_pct": "percent (1.0 = 1%)",
+        "perf_week_pct": "percent (1.0 = 1%)",
+    }
     assert futures_result["market_context"][0]["title"] == "Nasdaq 100 E-mini market snapshot"
     assert "Label: Nasdaq 100 E-mini" in (futures_result["market_context"][0]["summary"] or "")
     assert "Perf: 0.8%" in (futures_result["market_context"][0]["summary"] or "")
+
+
+def test_finviz_percent_normalizer_handles_fraction_string_zero_and_negative():
+    assert finviz_percent_value(0.0109) == 1.09
+    assert finviz_percent_value("1.09%") == 1.09
+    assert finviz_percent_value(0.0) == 0.0
+    assert finviz_percent_value(-0.0039) == -0.39
 
 
 def test_index_snapshot_candidate_pool_keeps_more_than_three_rows(monkeypatch) -> None:

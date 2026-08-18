@@ -28,6 +28,25 @@ def to_float_or_none(value: Any) -> Optional[float]:
         return None
 
 
+def finviz_percent_value(
+    value: Any,
+    *,
+    fraction_input: bool = True,
+) -> Optional[float]:
+    """Normalize Finviz performance values to percentage points."""
+    parsed = to_float_or_none(value)
+    if parsed is None:
+        return None
+    if fraction_input:
+        if isinstance(value, (int, float)):
+            parsed *= 100.0
+        else:
+            text = str(value).strip()
+            if text and not text.endswith("%"):
+                parsed *= 100.0
+    return round(float(parsed), 6)
+
+
 def values_equivalent(lhs: Any, rhs: Any) -> bool:
     """Compare two values for near-equality, preferring numeric comparison."""
     left_num = to_float_or_none(lhs)
@@ -94,6 +113,7 @@ def apply_finvizfinance_timeout_patch() -> None:
 
 __all__ = [
     "to_float_or_none",
+    "finviz_percent_value",
     "values_equivalent",
     "crypto_day_week_identical",
     "crypto_price_display",

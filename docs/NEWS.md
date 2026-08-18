@@ -34,7 +34,9 @@ symbol. Same idea from an assistant: “Show me `news` for EURUSD. Do not trade.
 
 ## What the buckets mean
 
-With no symbol, you get the most important recent **general** items.
+With no symbol, you get the most important recent **general** items plus the
+market-wide upcoming and recent economic calendar. Symbol requests narrow
+calendar events to the instrument's currencies or macro exposure.
 
 With a symbol, the result is split so you can scan quickly:
 
@@ -48,6 +50,9 @@ With a symbol, the result is split so you can scan quickly:
 
 Compact output keeps those lists short and readable. `--detail full` adds
 matching diagnostics and, when available, a `market_context` quote snapshot.
+Finviz snapshot performance is expressed in canonical `*_pct` metadata fields
+using percentage points (`1.0 = 1%`), and summaries render a `%` sign. The
+high-frequency provider fractions are never exposed as unqualified decimals.
 
 A small `--limit` still tries to keep at least one upcoming event visible so a
 tight cap does not hide the next scheduled release.
