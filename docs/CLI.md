@@ -622,18 +622,25 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 ### Backtest Trading Rules
 ```bash
 mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy sma_cross \
-  --fast-period 10 --slow-period 30 --lookback 300 --json
+  --fast-period 10 --slow-period 30 --lookback 300 \
+  --cost-model fixed --spread-bps 1.2 --json
 
 mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
-  --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only --json
+  --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only \
+  --cost-model fixed --spread-bps 1.2 --json
 
 # Historical MT5 bar spreads are the default. For a controlled constant:
 mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
-The default `historical_bar_spread` model uses only spreads stored with the
-evaluation bars. Missing execution-bar spreads make the result explicitly
-incomplete; select `fixed` with an explicit spread for controlled comparisons.
+The runnable examples use a fixed 1.2 bps round-trip assumption; replace it with
+a defensible value for the instrument and venue. The default
+`historical_bar_spread` model uses only spreads stored with the evaluation bars.
+`strategy_backtest` fails closed before evaluation unless every required bar has
+a usable spread. `strategy_validate` may evaluate with at least some historical
+spread observations, but coverage below 90% prevents a positive evidence
+classification. Select `fixed` with an explicit spread for controlled
+comparisons.
 Annualized strategy
 metrics use the full evaluation duration, require at least 30 trades, and return
 compact `sample_guidance` when the lookback produces too few trades. Full-detail

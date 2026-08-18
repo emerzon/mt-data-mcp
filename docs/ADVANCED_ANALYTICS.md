@@ -94,6 +94,11 @@ forecast-threshold candidate reports the
 required trade count, computed-anchor coverage, long/short/neutral counts, and
 a reason distinguishing unavailable forecasts from an uncrossed threshold.
 
+This validation policy is intentionally less strict than `strategy_backtest`,
+which does not run unless historical spread coverage is complete. When the
+broker's stored bars omit spreads, pass `--cost-model fixed --spread-bps <value>`
+to either tool and choose a venue-appropriate round-trip assumption.
+
 Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
 
 ## Portfolio risk decomposition

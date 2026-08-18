@@ -331,7 +331,8 @@ class StrategyBacktestRequest(_PublicForecastRequest):
         "historical_bar_spread",
         description=(
             "Transaction-cost spread source. Historical bar spread uses only the "
-            "evaluation data and marks incomplete coverage explicitly; fixed requires "
+            "evaluation data and requires complete spread coverage; otherwise the "
+            "backtest returns cost_model_unavailable before evaluation. Fixed requires "
             "an explicit spread_bps."
         ),
     )

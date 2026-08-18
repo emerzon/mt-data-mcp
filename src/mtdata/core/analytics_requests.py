@@ -141,7 +141,8 @@ class StrategyValidateRequest(BaseModel):
         "historical_bar_spread",
         description=(
             "Transaction-cost spread source. Historical bar spread uses the completed "
-            "bars in the validation window; fixed requires an explicit spread_bps."
+            "bars in the validation window; coverage below 90% prevents a positive "
+            "evidence classification. Fixed requires an explicit spread_bps."
         ),
     )
     spread_bps: Optional[float] = Field(
