@@ -245,6 +245,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct",
     "price_change_pct_unit",
     "price_change_basis",
+    "price_change_current_price_field",
     "price_change_period",
     "bid",
     "ask",
@@ -299,6 +300,7 @@ _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
     "price_change_pct",
     "price_change_pct_unit",
     "price_change_basis",
+    "price_change_current_price_field",
     "price_change_period",
     "bid",
     "ask",
@@ -1673,7 +1675,6 @@ def symbols_describe(  # noqa: C901
                 "trade_exemode": {"prefixes": ("SYMBOL_TRADE_EXECUTION_",), "bitmask": False},
                 "trade_calc_mode": {"prefixes": ("SYMBOL_CALC_MODE_",), "bitmask": False},
                 "swap_mode": {"prefixes": ("SYMBOL_SWAP_MODE_",), "bitmask": False},
-                "filling_mode": {"prefixes": ("ORDER_FILLING_", "SYMBOL_FILLING_"), "bitmask": True},
                 "expiration_mode": {"prefixes": ("SYMBOL_EXPIRATION_",), "bitmask": True},
                 "order_mode": {"prefixes": ("SYMBOL_ORDER_",), "bitmask": True},
             }
@@ -1762,6 +1763,19 @@ def symbols_describe(  # noqa: C901
                         digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
                         value = _market_scan_round(_market_scan_float(value), digits=digits)
                     symbol_data[attr] = value
+
+                if attr == "filling_mode":
+                    # SYMBOL_FILLING_MODE is a bitmask whose numeric domain is
+                    # distinct from ORDER_FILLING_* request enum values.
+                    labels = [
+                        label
+                        for flag, label in ((1, "FOK"), (2, "IOC"), (4, "BOC"))
+                        if int(value) & flag
+                    ]
+                    if labels:
+                        symbol_data["filling_mode_labels"] = labels
+                        symbol_data["filling_mode_label"] = ", ".join(labels)
+                    continue
 
                 spec = enum_specs.get(attr)
                 if not spec:
@@ -1897,18 +1911,44 @@ def symbols_describe(  # noqa: C901
                 if quote_timestamp_available is not False
                 else None
             )
-            if price_change_value is not None:
+            refreshed_price = None
+            refreshed_price_field = None
+            if resolved_tick_epoch is not None:
+                for field in ("bid", "last", "mid"):
+                    candidate = _market_scan_float(symbol_data.get(field))
+                    if candidate is not None and candidate > 0.0:
+                        refreshed_price = candidate
+                        refreshed_price_field = field
+                        break
+            previous_close = _market_scan_float(symbol_data.get("session_close"))
+            if (
+                refreshed_price is not None
+                and previous_close is not None
+                and abs(previous_close) > 1e-12
+            ):
+                symbol_data["price_change_pct"] = _market_scan_round(
+                    ((refreshed_price - previous_close) / abs(previous_close)) * 100.0,
+                    digits=6,
+                )
+                symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
+                symbol_data["price_change_basis"] = (
+                    "previous_trading_day_close_to_refreshed_quote"
+                )
+                symbol_data["price_change_current_price_field"] = refreshed_price_field
+                symbol_data["price_change_period"] = {
+                    "start": "previous_trading_day_close",
+                    "end": "current_quote",
+                }
+            elif price_change_value is not None:
                 symbol_data["price_change_pct"] = _market_scan_round(
                     price_change_value,
                     digits=6,
                 )
                 symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
-                symbol_data["price_change_basis"] = (
-                    "previous_trading_day_close_to_current_quote"
-                )
+                symbol_data["price_change_basis"] = "broker_reported_price_change"
                 symbol_data["price_change_period"] = {
                     "start": "previous_trading_day_close",
-                    "end": "current_quote",
+                    "end": "broker_symbol_snapshot",
                 }
             elif quote_timestamp_available is not False:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
@@ -3454,6 +3494,7 @@ _MARKET_SCAN_RANK_BY_CHOICES = (
     "abs_price_change",
     "price_change_pct",
     "price_change",
+    "gap_pct",
     "tick_volume",
     "rsi",
     "spread_pct",
@@ -3853,6 +3894,7 @@ def symbols_top_markets(  # noqa: C901
             )
             price_change_rows.sort(
                 key=lambda row: (
+                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("price_change_pct") is None,
                     (
                         -abs(float(row.get("price_change_pct") or 0.0))
@@ -3865,6 +3907,7 @@ def symbols_top_markets(  # noqa: C901
             abs_price_change_rows = [dict(row) for row in price_change_rows]
             abs_price_change_rows.sort(
                 key=lambda row: (
+                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("price_change_pct") is None,
                     -abs(float(row.get("price_change_pct") or 0.0)),
                     row.get("symbol") or "",
@@ -4238,7 +4281,7 @@ def market_scan(  # noqa: C901
     rsi_below: Optional[float] = None,
     rsi_above: Optional[float] = None,
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
-    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
+    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "gap_pct", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
     rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
     quote_usable_only: Optional[bool] = None,
 ) -> Dict[str, Any]:
@@ -4499,7 +4542,7 @@ def market_scan(  # noqa: C901
                 invalid = numeric is None
                 if filter_name == "max_spread_pct":
                     invalid = invalid or numeric < 0.0
-                else:
+                elif filter_name in {"rsi_below", "rsi_above"}:
                     invalid = invalid or not 0.0 <= numeric <= 100.0
                 if invalid:
                     if filter_name == "max_spread_pct":
@@ -4735,6 +4778,13 @@ def market_scan(  # noqa: C901
                 rsi_above=rsi_above,
                 rsi_below=rsi_below,
             )
+            if (
+                rank_order_value == "auto"
+                and rank_by_value == "gap_pct"
+                and max_gap_pct is not None
+                and float(max_gap_pct) < 0.0
+            ):
+                effective_rank_order = "asc"
             _market_scan_sort_rows(
                 matched_rows,
                 rank_by=rank_by_value,

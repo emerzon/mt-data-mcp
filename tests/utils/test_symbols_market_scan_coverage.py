@@ -826,6 +826,71 @@ def test_gap_up_preset_uses_open_vs_previous_close(
     )
 
 
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_gap_down_preset_ranks_largest_decline_first(
+    mock_symbols_get,
+    mock_tick,
+    mock_rates,
+    mock_group,
+):
+    mock_symbols_get.return_value = [_make_symbol("MILD"), _make_symbol("LARGE")]
+    mock_tick.return_value = _make_tick(bid=100.0, ask=100.1)
+
+    def rates(symbol, *_args):
+        rows = _make_bars([100.0, 100.0])
+        rows[-1]["open"] = 97.5 if symbol == "MILD" else 92.0
+        return rows
+
+    mock_rates.side_effect = rates
+
+    result = _get_market_scan()(
+        symbols="MILD,LARGE",
+        preset="gap_down",
+        timeframe="H1",
+        lookback=2,
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert result["rank_order"] == "asc"
+    assert [row["symbol"] for row in result["data"]] == ["LARGE", "MILD"]
+    assert [row["gap_pct"] for row in result["data"]] == [-8.0, -2.5]
+
+
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_market_scan_accepts_negative_price_change_thresholds(
+    mock_symbols_get,
+    mock_tick,
+    mock_rates,
+    mock_group,
+):
+    mock_symbols_get.return_value = [_make_symbol("MILD"), _make_symbol("LARGE")]
+    mock_tick.return_value = _make_tick(bid=100.0, ask=100.1)
+    mock_rates.side_effect = lambda symbol, *_args: (
+        _make_bars([100.0, 99.5])
+        if symbol == "MILD"
+        else _make_bars([100.0, 98.0])
+    )
+
+    result = _get_market_scan()(
+        symbols="MILD,LARGE",
+        timeframe="H1",
+        lookback=2,
+        max_price_change_pct=-1.0,
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert [row["symbol"] for row in result["data"]] == ["LARGE"]
+    assert result["data"][0]["price_change_pct"] == -2.0
+
+
 def test_symbol_category_prefers_stock_group_over_crypto_substrings():
     from mtdata.core.symbols import _symbol_category
 
@@ -1017,7 +1082,7 @@ class TestSymbolsTopMarkets:
     @patch("mtdata.core.symbols._build_market_scan_spread_row")
     @patch("mtdata.core.symbols._build_market_scan_bar_row")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_price_change_ranking_is_metric_first_when_freshness_differs(
+    def test_price_change_ranking_prefers_fresh_rows_before_magnitude(
         self,
         mock_symbols_get,
         mock_bar_row,
@@ -1049,10 +1114,10 @@ class TestSymbolsTopMarkets:
         )
 
         assert result["success"] is True
-        assert [row["symbol"] for row in result["data"]] == ["STALE", "FRESH"]
+        assert [row["symbol"] for row in result["data"]] == ["FRESH", "STALE"]
         assert [abs(row["price_change_pct"]) for row in result["data"]] == [
-            0.75,
             0.25,
+            0.75,
         ]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)

@@ -1179,7 +1179,9 @@ class TestSymbolsDescribe:
         symbols_mod.mt5.SYMBOL_ORDER_LIMIT = 2
         symbols_mod.mt5.SYMBOL_EXPIRATION_GTC = 1
         symbols_mod.mt5.SYMBOL_EXPIRATION_SPECIFIED = 4
-        symbols_mod.mt5.ORDER_FILLING_IOC = 2
+        symbols_mod.mt5.ORDER_FILLING_FOK = 0
+        symbols_mod.mt5.ORDER_FILLING_IOC = 1
+        symbols_mod.mt5.ORDER_FILLING_RETURN = 2
         symbols_mod.mt5.SYMBOL_SWAP_MODE_POINTS = 1
 
         fn = _get_symbols_describe()
@@ -1192,7 +1194,8 @@ class TestSymbolsDescribe:
         assert "Limit" in (sd.get("order_mode_labels") or [])
         assert "GTC" in (sd.get("expiration_mode_labels") or [])
         assert "Specified" in (sd.get("expiration_mode_labels") or [])
-        assert any(v in (sd.get("filling_mode_labels") or []) for v in ("IOC", "Return"))
+        assert sd.get("filling_mode_labels") == ["IOC"]
+        assert "Return" not in sd.get("filling_mode_labels", [])
         assert sd.get("swap_mode_label") == "Points"
 
     @patch(f"{_MT5}.symbol_info")
@@ -1261,11 +1264,20 @@ class TestSymbolsDescribe:
     ):
         del mock_time, mock_tz
         info = MagicMock()
-        info.__dir__ = lambda self: ["name", "time", "digits", "point"]
+        info.__dir__ = lambda self: [
+            "name",
+            "time",
+            "digits",
+            "point",
+            "price_change",
+            "session_close",
+        ]
         info.name = "EURUSD"
         info.time = 1_700_000_108.0
         info.digits = 5
         info.point = 0.00001
+        info.price_change = 5.0
+        info.session_close = 1.2
         mock_info.return_value = info
         mock_tick.return_value = SimpleNamespace(
             time=1_700_000_108.0,
@@ -1297,6 +1309,15 @@ class TestSymbolsDescribe:
         assert details["spread_pips"] == 0.9
         assert details["spread_valid"] is True
         assert details["spread_quality"] == "two_sided"
+        assert details["price_change_pct"] == -8.333333
+        assert details["price_change_basis"] == (
+            "previous_trading_day_close_to_refreshed_quote"
+        )
+        assert details["price_change_current_price_field"] == "bid"
+        assert details["price_change_period"] == {
+            "start": "previous_trading_day_close",
+            "end": "current_quote",
+        }
 
     @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
     @patch("mtdata.core.symbols.time.time", return_value=1_700_000_100.0)
@@ -1469,12 +1490,10 @@ class TestSymbolsDescribe:
         assert sd["session_close"] == 4760.87
         assert sd["price_change_pct"] == -0.7924
         assert sd["price_change_pct_unit"] == "percent (1.0 = 1%)"
-        assert sd["price_change_basis"] == (
-            "previous_trading_day_close_to_current_quote"
-        )
+        assert sd["price_change_basis"] == "broker_reported_price_change"
         assert sd["price_change_period"] == {
             "start": "previous_trading_day_close",
-            "end": "current_quote",
+            "end": "broker_symbol_snapshot",
         }
         assert "price_change" not in sd
 
@@ -1691,7 +1710,9 @@ class TestSymbolsDescribe:
 
         symbols_mod.mt5.SYMBOL_TRADE_EXECUTION_INSTANT = 2
         symbols_mod.mt5.SYMBOL_CALC_MODE_CFD = 3
-        symbols_mod.mt5.ORDER_FILLING_IOC = 2
+        symbols_mod.mt5.ORDER_FILLING_FOK = 0
+        symbols_mod.mt5.ORDER_FILLING_IOC = 1
+        symbols_mod.mt5.ORDER_FILLING_RETURN = 2
         symbols_mod.mt5.SYMBOL_SWAP_MODE_POINTS = 1
 
         fn = _get_symbols_describe()
