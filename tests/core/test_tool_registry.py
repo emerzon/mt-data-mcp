@@ -65,6 +65,7 @@ EXPECTED_TOOL_NAMES = frozenset(
         "labels_triple_barrier",
         "market_status",
         "market_snapshot",
+        "market_radar",
         "market_ticker",
         "market_microstructure_analyze",
         "market_relative_strength",

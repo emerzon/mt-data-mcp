@@ -519,6 +519,62 @@ export type ExposureResponse = {
   }>
 }
 
+export type RadarRow = {
+  symbol: string
+  bid?: number
+  ask?: number
+  mid?: number
+  last?: number
+  close?: number
+  spread?: number
+  spread_pips?: number
+  spread_pct?: number
+  spread_quality?: string
+  usable_for_live_trading?: boolean
+  quote_not_live_ready?: boolean
+  data_stale?: boolean
+  price_change_pct?: number
+  live_price_change_pct?: number
+  rsi?: number
+  tick_volume?: number
+}
+
+export type RadarResponse = {
+  success?: boolean
+  timeframe?: string
+  rank_by?: string
+  rows?: RadarRow[]
+  missing?: string[]
+  seeded?: boolean
+  partial_failure?: boolean
+  count?: number
+  error?: string
+}
+
+export type SessionStripResponse = {
+  success?: boolean
+  account?: {
+    login?: number | string
+    server?: string
+    company?: string
+    equity?: number
+    balance?: number
+    currency?: string
+    is_demo?: boolean
+  }
+  account_error?: string
+  news?: Array<{ title: string; time?: string; source?: string; bucket?: string }>
+  exposure_count?: number
+  market_status?: {
+    status?: string
+    is_tradable?: boolean
+    can_open_new_positions?: boolean
+    reason?: string
+  }
+  partial_failure?: boolean
+  failed_sections?: string[]
+}
+
 export type ChartOverlayPane = 'price' | 'rsi' | 'macd' | 'volume'
 
 export type ChartOverlay = {

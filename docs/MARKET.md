@@ -32,8 +32,9 @@ mtdata-cli market_status --region all --json
 mtdata-cli market_status --symbol EURUSD --json
 ```
 
-In the Web UI, picking a symbol and turning **Live** on is the ticker. **Tools**
-can run any command in this page.
+In the Web UI, picking a symbol and turning **Live** on is the ticker. **Watch**
+opens a persisted watchlist (`market_radar`) so you can scan a few names without
+retyping them. **Tools** can run any command in this page.
 
 ---
 
@@ -61,6 +62,9 @@ mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 # Scan visible majors: strong RSI and price above its average
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
   --sma-period 20 --timeframe H1 --lookback 120 --json
+
+# Compact watchlist (max 20 names; unusable quotes stay visible)
+mtdata-cli market_radar --symbols EURUSD,GBPUSD,XAUUSD --timeframe H1 --json
 ```
 
 `symbols_top_markets` ranks. `market_scan` **filters** (spread caps, RSI

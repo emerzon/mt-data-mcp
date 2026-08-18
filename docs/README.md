@@ -116,7 +116,7 @@ These are **not** tutorials. They track coverage and dependency work.
 |----------|-------------|
 | [WEBUI_GOAL.md](WEBUI_GOAL.md) | Chart-workspace product goal |
 | [WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md) | Route × UI matrix |
-| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 93 tools × UI surface |
+| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 94 tools × UI surface |
 | [DEPENDENCY_MIGRATION.md](DEPENDENCY_MIGRATION.md) | Python 3.14 package snapshot |
 | [STYLE.md](STYLE.md) | Docs persona and page contract |
 
@@ -137,6 +137,12 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta -
 
 ```bash
 mtdata-cli trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quick
+```
+
+### 1c) Watchlist radar
+
+```bash
+mtdata-cli market_radar --symbols EURUSD,GBPUSD,XAUUSD --timeframe H1
 ```
 
 ### 2) Take-profit / stop-loss odds for a trade idea

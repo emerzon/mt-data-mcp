@@ -23,6 +23,8 @@ import type {
   BacktestResult,
   ConfluenceResponse,
   ExposureResponse,
+  RadarResponse,
+  SessionStripResponse,
   TradeIdeaPayload,
   VolumeProfileResponse,
 } from '../types'
@@ -288,6 +290,26 @@ export async function getVolumeProfile(params: {
 
 export async function getExposure(symbol: string): Promise<ExposureResponse> {
   const { data } = await api.get<ExposureResponse>(apiPath('/exposure'), { params: { symbol } })
+  return data
+}
+
+export async function getRadar(params: {
+  symbols?: string
+  timeframe?: string
+  rank_by?: string
+  limit?: number
+}): Promise<RadarResponse> {
+  const { data } = await api.get<RadarResponse>(apiPath('/radar'), { params })
+  return {
+    ...data,
+    rows: Array.isArray(data?.rows) ? data.rows : [],
+  }
+}
+
+export async function getSessionStrip(symbol?: string): Promise<SessionStripResponse> {
+  const { data } = await api.get<SessionStripResponse>(apiPath('/session-strip'), {
+    params: symbol ? { symbol } : undefined,
+  })
   return data
 }
 

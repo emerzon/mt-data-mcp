@@ -1,6 +1,6 @@
 # core/ — API-Facing Layer
 
-All 92 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
+All 93 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
 
 ## FILE MAP
 
@@ -73,6 +73,8 @@ All 92 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `web_api_runtime.py` | FastAPI app creation, CORS, uvicorn |
 | `web_api_handlers.py` | REST route handlers |
 | `web_api_geometry.py` | Compact confluence / volume-profile / exposure DTOs |
+| `radar.py` | Watchlist radar compose |
+| `web_api_radar.py` | Radar and session-strip HTTP routes |
 | `web_api_models.py` | Request/response Pydantic models |
 
 ### Infrastructure

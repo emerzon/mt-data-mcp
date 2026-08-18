@@ -173,6 +173,22 @@ Read-only open positions and pending orders for one symbol. No mutations.
 
 - **Query:** `symbol` (required).
 
+#### `GET /api/radar`
+
+Batched watchlist rows for the chart workspace. Cap is 20 symbols.
+
+- **Query:** `symbols` (comma-separated; omit to seed majors / top markets),
+  `timeframe` (default `H1`), `rank_by` (`watchlist` keeps requested order),
+  `limit` (1–20).
+- Unusable quotes stay in the list and are marked `quote_not_live_ready`.
+
+#### `GET /api/session-strip`
+
+Read-only account / news / exposure summary. Individual sections may fail
+without failing the whole payload.
+
+- **Query:** optional `symbol` for session status and related headlines.
+
 #### `POST /api/trade-ideas`
 
 Compose a **preview-only** research idea (session, forecast, volatility, one

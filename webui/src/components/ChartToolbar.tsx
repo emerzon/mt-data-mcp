@@ -43,6 +43,7 @@ type Props = {
   onOpenForecast: () => void
   onOpenTools: () => void
   onOpenIdea: () => void
+  onOpenRadar: () => void
   onToggleBid: () => void
   onToggleAsk: () => void
   onToggleLast: () => void
@@ -94,6 +95,7 @@ export function ChartToolbar({
   onOpenForecast,
   onOpenTools,
   onOpenIdea,
+  onOpenRadar,
   onToggleBid,
   onToggleAsk,
   onToggleLast,
@@ -249,6 +251,14 @@ export function ChartToolbar({
           </div>
         )}
 
+        <button
+          type="button"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm font-medium px-3 py-2 min-h-9 rounded-lg border border-slate-700 transition-colors"
+          onClick={onOpenRadar}
+          title="Open the watchlist radar"
+        >
+          Watch
+        </button>
         <button
           type="button"
           className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm font-medium px-3 py-2 min-h-9 rounded-lg border border-slate-700 transition-colors"

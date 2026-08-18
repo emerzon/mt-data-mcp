@@ -71,6 +71,7 @@ This is not an order.
 | Denoise | Smooth the line so structure is easier to see. This changes the *display*, not your broker history. |
 | Forecast | Side panel for price forecast, volatility (“how far might it move?”), and a rolling backtest. |
 | Idea | Preview-only compose: narrative, TP/SL, size, gates, and dry-run. Draws entry/TP/SL on the chart. Cannot place an order. |
+| Watch | Persistent watchlist with quote, spread, change, and a read-only session strip. Click a row to load the chart; Compose opens a preview-only idea. |
 | Tools | Search-and-run form for the full tool list (news, reports, orders, …). |
 | Auth | Paste an API token only if you started the server with `WEBAPI_AUTH_TOKEN`. It stays in this tab’s memory and clears on reload. |
 

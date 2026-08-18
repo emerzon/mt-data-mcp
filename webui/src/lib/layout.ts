@@ -36,6 +36,20 @@ export function forecastPanelPlacementClass(bp: LayoutBreakpoint): string {
   ].join(' ')
 }
 
+/** Watchlist / radar placement: left drawer on desktop, bottom sheet on mobile. */
+export function radarPanelPlacementClass(bp: LayoutBreakpoint): string {
+  if (bp === 'mobile') {
+    return forecastPanelPlacementClass(bp)
+  }
+  return [
+    'absolute top-0 left-0 bottom-0 z-30',
+    'w-full max-w-sm sm:w-[min(360px,100%)]',
+    'border-r border-slate-800',
+    'bg-slate-900/98 backdrop-blur-sm shadow-2xl',
+    'flex flex-col',
+  ].join(' ')
+}
+
 /** Whether the toolbar should collapse secondary actions into a More menu. */
 export function toolbarUsesOverflowMenu(bp: LayoutBreakpoint): boolean {
   return bp === 'mobile' || bp === 'tablet'

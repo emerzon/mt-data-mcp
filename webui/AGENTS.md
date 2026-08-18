@@ -20,6 +20,7 @@ React + Vite + Tailwind single-page app for chart visualization and forecast int
 | `src/components/DenoiseModal.tsx` | Denoise config modal (Esc to close) |
 | `src/components/ForecastPanel.tsx` | Price / volatility / backtest drawer/sheet (Esc to close) |
 | `src/components/IdeaPanel.tsx` | Preview-only trade-idea compose + send-to-chart |
+| `src/components/RadarPanel.tsx` | Persistent watchlist + session strip |
 | `src/components/ToolsRunnerPanel.tsx` | Schema-driven discovery + invoke for all MCP tools |
 | `src/components/ModelsBrowser.tsx` | Discoverable `GET /models` list |
 | `src/components/OHLCChart.tsx` | lightweight-charts candlestick surface |
@@ -32,6 +33,7 @@ React + Vite + Tailwind single-page app for chart visualization and forecast int
 | `src/hooks/useForecast.ts` | Methods, pivots, S/R, forecast run, chart overlays |
 | `src/hooks/useGeometry.ts` | Confluence, volume-profile, and exposure overlay toggles |
 | `src/lib/geometryOverlays.ts` | Price-line mapping for idea / confluence / VP / exposure |
+| `src/lib/watchlist.ts` | Persist, seed, and reorder the local watchlist |
 | `src/hooks/useViewportBreakpoint.ts` | mobile / tablet / desktop from window width |
 | **Lib (pure + tests)** | |
 | `src/lib/workspaceStatus.ts` | Chart surface status resolution |

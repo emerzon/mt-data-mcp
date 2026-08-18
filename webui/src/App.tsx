@@ -4,6 +4,7 @@ import { ChartToolbar } from './components/ChartToolbar'
 import { ChartWorkspaceStatusView } from './components/ChartWorkspaceStatus'
 import { ForecastPanel } from './components/ForecastPanel'
 import { IdeaPanel } from './components/IdeaPanel'
+import { RadarPanel } from './components/RadarPanel'
 import { ToolsRunnerPanel } from './components/ToolsRunnerPanel'
 import { useChartWorkspace } from './features/chart-workspace/useChartWorkspace'
 import { useViewportBreakpoint } from './hooks/useViewportBreakpoint'
@@ -13,6 +14,8 @@ export default function App() {
   const [showForecastPanel, setShowForecastPanel] = useState(false)
   const [showToolsPanel, setShowToolsPanel] = useState(false)
   const [showIdeaPanel, setShowIdeaPanel] = useState(false)
+  const [showRadarPanel, setShowRadarPanel] = useState(false)
+  const [ideaAutoKey, setIdeaAutoKey] = useState(0)
   const workspace = useChartWorkspace()
   const layoutBreakpoint = useViewportBreakpoint()
 
@@ -53,17 +56,26 @@ export default function App() {
           onOpenForecast={() => {
             setShowToolsPanel(false)
             setShowIdeaPanel(false)
+            setShowRadarPanel(false)
             setShowForecastPanel(true)
           }}
           onOpenTools={() => {
             setShowForecastPanel(false)
             setShowIdeaPanel(false)
+            setShowRadarPanel(false)
             setShowToolsPanel(true)
           }}
           onOpenIdea={() => {
             setShowForecastPanel(false)
             setShowToolsPanel(false)
+            setShowRadarPanel(false)
             setShowIdeaPanel(true)
+          }}
+          onOpenRadar={() => {
+            setShowForecastPanel(false)
+            setShowToolsPanel(false)
+            setShowIdeaPanel(false)
+            setShowRadarPanel(true)
           }}
           hasPivots={!!workspace.pivotLevels}
           hasSR={!!workspace.srLevels}
@@ -156,6 +168,23 @@ export default function App() {
           layoutBreakpoint={layoutBreakpoint}
         />
 
+        <RadarPanel
+          open={showRadarPanel}
+          onClose={() => setShowRadarPanel(false)}
+          symbol={workspace.symbol}
+          timeframe={workspace.timeframe}
+          onSelectSymbol={workspace.handleSymbolChange}
+          onComposeIdea={(name) => {
+            workspace.handleSymbolChange(name)
+            setShowRadarPanel(false)
+            setShowForecastPanel(false)
+            setShowToolsPanel(false)
+            setIdeaAutoKey((value) => value + 1)
+            setShowIdeaPanel(true)
+          }}
+          layoutBreakpoint={layoutBreakpoint}
+        />
+
         <IdeaPanel
           open={showIdeaPanel}
           onClose={() => setShowIdeaPanel(false)}
@@ -163,6 +192,7 @@ export default function App() {
           timeframe={workspace.timeframe}
           onIdea={workspace.handleIdeaResult}
           layoutBreakpoint={layoutBreakpoint}
+          autoComposeKey={ideaAutoKey || undefined}
         />
 
         <ToolsRunnerPanel

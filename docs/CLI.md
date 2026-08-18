@@ -323,6 +323,7 @@ Omit `--start` for latest-N retrieval.
 | `symbols_describe` | Get symbol details (pip size, contract, etc.) |
 | `symbols_top_markets` | Rank the top MT5 markets by spread, recent volume, or recent price change |
 | `market_scan` | Filter MT5 symbols by spread, price change, volume, RSI, and SMA |
+| `market_radar` | Compact watchlist scan (quote, spread, change, freshness; max 20 names) |
 | `data_fetch_candles` | Fetch OHLCV candles with optional indicators |
 | `data_fetch_ticks` | Fetch tick data |
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { composeTradeIdea, getErrorMessage } from '../api/client'
 import { forecastPanelPlacementClass, type LayoutBreakpoint } from '../lib/layout'
 import { useEscapeKey } from '../lib/useEscapeKey'
@@ -11,6 +11,7 @@ type Props = {
   timeframe: string
   onIdea: (idea: TradeIdeaPayload | null) => void
   layoutBreakpoint?: LayoutBreakpoint
+  autoComposeKey?: number
 }
 
 export function IdeaPanel({
@@ -20,6 +21,7 @@ export function IdeaPanel({
   timeframe,
   onIdea,
   layoutBreakpoint = 'desktop',
+  autoComposeKey,
 }: Props) {
   const [direction, setDirection] = useState<'auto' | 'long' | 'short'>('auto')
   const [template, setTemplate] = useState<'quick' | 'standard'>('quick')
@@ -30,11 +32,7 @@ export function IdeaPanel({
   const [error, setError] = useState<string | null>(null)
   useEscapeKey(open, onClose)
 
-  if (!open) return null
-
-  const panelClass = forecastPanelPlacementClass(layoutBreakpoint)
-
-  const run = async () => {
+  const run = useCallback(async () => {
     if (!symbol) return
     try {
       setIsLoading(true)
@@ -56,7 +54,16 @@ export function IdeaPanel({
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [direction, horizon, onIdea, riskPct, symbol, template, timeframe])
+
+  useEffect(() => {
+    if (!open || !autoComposeKey) return
+    void run()
+  }, [autoComposeKey, open, run])
+
+  if (!open) return null
+
+  const panelClass = forecastPanelPlacementClass(layoutBreakpoint)
 
   const gates = Object.entries(idea?.gates ?? {})
 

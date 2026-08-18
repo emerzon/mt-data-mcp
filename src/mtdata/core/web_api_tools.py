@@ -51,6 +51,7 @@ DEDICATED_UI_TOOLS: dict[str, str] = {
     "forecast_models_list": "forecast-panel/models-browser",
     "tools_list": "tools-runner/catalog",
     "trade_idea_compose": "idea-panel/compose",
+    "market_radar": "radar-panel/watchlist",
     "confluence_levels": "chart-workspace/confluence-overlay",
     "volume_profile_levels": "chart-workspace/volume-profile-overlay",
     "trade_get_open": "chart-workspace/exposure-overlay",

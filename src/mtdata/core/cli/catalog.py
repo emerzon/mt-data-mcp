@@ -59,6 +59,7 @@ CLI_COMMAND_NAMES = (
     "indicators_list",
     "labels_triple_barrier",
     "market_microstructure_analyze",
+    "market_radar",
     "market_relative_strength",
     "market_scan",
     "market_snapshot",

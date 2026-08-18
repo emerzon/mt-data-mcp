@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   forecastPanelPlacementClass,
+  radarPanelPlacementClass,
   resolveLayoutBreakpoint,
   toolbarUsesOverflowMenu,
 } from './layout'
@@ -33,6 +34,13 @@ describe('forecastPanelPlacementClass', () => {
     expect(tablet).toContain('right-0')
     expect(desktop).toContain('right-0')
     expect(tablet).not.toContain('fixed inset-x-0 bottom-0')
+  })
+})
+
+describe('radarPanelPlacementClass', () => {
+  it('uses a left drawer on desktop', () => {
+    expect(radarPanelPlacementClass('desktop')).toContain('left-0')
+    expect(radarPanelPlacementClass('desktop')).not.toContain('right-0')
   })
 })
 

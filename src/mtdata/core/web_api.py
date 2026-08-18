@@ -108,6 +108,12 @@ from .web_api_models import (
     ToolInvokeBody,
     TradeIdeaBody,
 )
+from .web_api_radar import (
+    get_radar_response as _get_radar_response,
+)
+from .web_api_radar import (
+    get_session_strip_response as _get_session_strip_response,
+)
 from .web_api_runtime import (
     SafeJSONResponse,
     create_web_api_app,
@@ -510,6 +516,26 @@ def get_exposure(symbol: str = Query(...)) -> Dict[str, Any]:
         open_tool=trade_get_open,
         pending_tool=trade_get_pending,
     )
+
+
+@api_router.get("/radar")
+def get_radar(
+    symbols: Optional[str] = Query(None),
+    timeframe: str = Query("H1"),
+    rank_by: str = Query("watchlist"),
+    limit: int = Query(20, ge=1, le=20),
+) -> Dict[str, Any]:
+    return _get_radar_response(
+        symbols=symbols,
+        timeframe=timeframe,
+        rank_by=rank_by,
+        limit=limit,
+    )
+
+
+@api_router.get("/session-strip")
+def get_session_strip(symbol: Optional[str] = Query(None)) -> Dict[str, Any]:
+    return _get_session_strip_response(symbol=symbol)
 
 
 @api_router.get("/tick")

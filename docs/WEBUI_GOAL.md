@@ -242,7 +242,7 @@ Use this document as the north star. Practical tracking options:
 | 1 Parity & reliability | Done | `/models`, health/ready chip, pivot method + S/R params, partial-failure banners |
 | 2 Responsive & modern shell | Done | Breakpoint helpers; toolbar More overflow; forecast bottom sheet / drawer; Esc closes panels/modals |
 | 3 Chart research depth | Partial | On-chart EMA/RSI/MACD/volume, confluence, volume profile, idea TP/SL, read-only exposure (2026-08-18). Regime tint still later. |
-| 4 Backend feature bridge | Done | Full MCP catalog via `GET/POST /api/v1/tools*`; SPA Tools runner; inventory in `docs/WEBUI_TOOL_COVERAGE.md` |
+| 4 Backend feature bridge | Done | Full MCP catalog via `GET/POST /api/v1/tools*`; SPA Tools runner; watchlist radar + session strip (2026-08-18) |
 | 5 Hardening & speed | Partial | Pure unit tests + typecheck/build; no e2e CI |
 
 ---

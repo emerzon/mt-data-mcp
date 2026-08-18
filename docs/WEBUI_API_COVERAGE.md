@@ -24,6 +24,8 @@ Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 | `/api/v1/confluence` | GET | used | Levels → Confluence | Compact zones for chart price lines. |
 | `/api/v1/volume-profile` | GET | used | Levels → Volume profile | POC / VAH / VAL. |
 | `/api/v1/exposure` | GET | used | Levels → Open exposure | Read-only positions and pending for the chart symbol. |
+| `/api/v1/radar` | GET | used | Watchlist radar | Batched watchlist quotes; cap 20. |
+| `/api/v1/session-strip` | GET | used | Watchlist session strip | Account, exposure count, news; non-blocking. |
 | `/api/v1/denoise/methods` | GET | used | `DenoiseModal` | |
 | `/api/v1/denoise/wavelets` | GET | used | `DenoiseModal` (wavelet method) | |
 | `/api/v1/dimred/methods` | GET | used | Forecast advanced options | |

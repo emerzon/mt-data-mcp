@@ -1651,6 +1651,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
     ),
+    "market_radar": (
+        f"{CLI_PROGRAM} market_radar --symbols EURUSD,GBPUSD,XAUUSD --timeframe H1",
+        f"{CLI_PROGRAM} market_radar --timeframe H1",
+    ),
     "trade_idea_compose": (
         f"{CLI_PROGRAM} trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quick",
         f"{CLI_PROGRAM} trade_idea_compose EURUSD --direction long --template standard --risk-pct 0.5",

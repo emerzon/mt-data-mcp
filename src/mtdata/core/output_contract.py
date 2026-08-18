@@ -38,6 +38,7 @@ _MISSING = object()
 _SUCCESS_RELATED_TOOLS = {
     "market_ticker": ["market_snapshot", "trade_session_context", "support_resistance_levels"],
     "market_snapshot": ["market_ticker", "report_generate", "trade_session_context"],
+    "market_radar": ["market_scan", "symbols_top_markets", "trade_idea_compose"],
     "data_fetch_candles": ["indicators_describe", "temporal_analyze", "stationarity_test"],
     "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
     "regime_detect": ["patterns_detect", "forecast_generate", "stationarity_test"],

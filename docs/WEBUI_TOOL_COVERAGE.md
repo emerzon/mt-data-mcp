@@ -56,6 +56,8 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `labels_triple_barrier` | research | generic_runner | tools-runner/generic | no |  |
 | `market_depth_fetch` | market | generic_runner | tools-runner/generic | no | gated by `MTDATA_ENABLE_MARKET_DEPTH_FETCH`; disabled |
 | `market_microstructure_analyze` | market | generic_runner | tools-runner/generic | no |  |
+| `market_radar` | market | dedicated_ui | radar-panel/watchlist | no | Watchlist radar; also via Tools |
+| `market_radar` | market | dedicated_ui | radar-panel/watchlist | no | Watchlist radar; also via Tools |
 | `market_relative_strength` | market | generic_runner | tools-runner/generic | no |  |
 | `market_scan` | market | generic_runner | tools-runner/generic | no |  |
 | `market_snapshot` | market | generic_runner | tools-runner/generic | no |  |
@@ -107,7 +109,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 - **generic_runner** — discoverable and invocable from the SPA Tools runner (schema-driven form).
 - **intentional_omit** — visible with a rationale but not invocable from the SPA. Long-running tuning remains available through CLI/MCP; mutations use confirm gates instead.
 
-**Total tools in inventory:** 93 (includes env-gated market_depth_fetch even when disabled).
+**Total tools in inventory:** 94 (includes env-gated market_depth_fetch even when disabled).
 
 Source of truth for runtime catalog: `GET /api/v1/tools` (bootstraps MCP tools).
 Classification helpers: `mtdata.core.web_api_tools`.
