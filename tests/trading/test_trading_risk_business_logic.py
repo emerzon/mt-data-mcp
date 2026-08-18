@@ -238,6 +238,7 @@ def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> N
         )
 
     assert out["position_sizing"] == {
+        "recommendation_status": "proposed",
         "suggested_volume": 1.2,
         "requested_risk_currency": 10.0,
         "requested_risk_pct": 1.0,
@@ -444,6 +445,7 @@ def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
 
     assert out["position_sizing"] == {
         "status": "risk_too_small_for_min_lot",
+        "recommendation_status": "blocked",
         "suggested_volume": 0.0,
         "requested_risk_currency": 1.0,
         "requested_risk_pct": 0.1,
@@ -818,7 +820,19 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
     assert "incremental candidate sizing" in out["position_sizing"]["sizing_notes"][-1]
 
 
-def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
+@pytest.mark.parametrize(
+    "sizing_request",
+    [
+        pytest.param(_fixed_sizing(0.1), id="fixed_fraction"),
+        pytest.param(
+            _kelly_sizing(0.55, 0.02, 0.01, max_risk_pct=0.1),
+            id="kelly",
+        ),
+    ],
+)
+def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default(
+    sizing_request,
+) -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -828,21 +842,29 @@ def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> Non
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            sizing=_fixed_sizing(0.1),
+            sizing=sizing_request,
             entry=100.0,
             stop_loss=80.0,
         )
 
     sizing = out["position_sizing"]
     assert sizing["status"] == "risk_too_small_for_min_lot"
+    assert sizing["recommendation_status"] == "blocked"
     assert sizing["suggested_volume"] == 0.0
     assert sizing["min_viable_volume"] == 0.1
     assert sizing["min_viable_risk_pct"] > sizing["requested_risk_pct"]
     assert sizing["volume_rounding"] == "blocked_by_min_volume_risk"
-    assert sizing["risk_over_target"] is True
+    assert sizing["risk_over_target"] is False
     assert sizing["risk_compliance"] == "blocked_min_volume_exceeds_requested_risk"
-    assert sizing["risk_overshoot_pct"] > 0.0
-    assert sizing["risk_over_target_reason"] == "min_volume_constraint"
+    assert sizing["risk_pct_diff"] == pytest.approx(
+        sizing["risk_pct"] - sizing["requested_risk_pct"]
+    )
+    assert sizing["risk_overshoot_pct"] == 0.0
+    assert sizing["risk_overshoot_currency"] == 0.0
+    assert sizing["risk_over_target_reason"] is None
+    assert sizing["min_viable_risk_over_target"] is True
+    assert sizing["min_viable_risk_over_target_reason"] == "min_volume_constraint"
+    assert sizing["min_viable_risk_overshoot_pct"] > 0.0
     assert sizing["strict_risk_hint"] == (
         "Skip trade or set strict_risk=false to accept the minimum-lot risk."
     )

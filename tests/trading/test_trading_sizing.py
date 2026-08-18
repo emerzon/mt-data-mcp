@@ -95,11 +95,19 @@ def test_min_volume_overshoot_blocks_by_default():
     assert meta["suggested_volume"] == 0.0
     assert meta["min_viable_volume"] == 0.1
     assert meta["volume_rounding"] == "blocked_by_min_volume_risk"
-    assert meta["risk_over_target"] is True
+    assert meta["recommendation_status"] == "blocked"
+    assert meta["risk_over_target"] is False
     assert meta["risk_compliance"] == "blocked_min_volume_exceeds_requested_risk"
-    assert meta["risk_over_target_reason"] == "min_volume_constraint"
-    assert meta["risk_overshoot_pct"] > 0.0
-    assert meta["risk_overshoot_currency"] > 0.0
+    assert meta["risk_pct_diff"] == pytest.approx(
+        meta["actual_risk_pct"] - meta["requested_risk_pct"]
+    )
+    assert meta["risk_over_target_reason"] is None
+    assert meta["risk_overshoot_pct"] == 0.0
+    assert meta["risk_overshoot_currency"] == 0.0
+    assert meta["min_viable_risk_over_target"] is True
+    assert meta["min_viable_risk_over_target_reason"] == "min_volume_constraint"
+    assert meta["min_viable_risk_overshoot_pct"] > 0.0
+    assert meta["min_viable_risk_overshoot_currency"] > 0.0
     assert any("minimum" in n.lower() for n in meta["notes"])
     assert any("exceeds the requested level" in n.lower() for n in meta["notes"])
     assert any("strict risk" in n.lower() for n in meta["notes"])

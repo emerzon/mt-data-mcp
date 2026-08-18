@@ -458,6 +458,8 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     assert "stop_loss must be below the live bid" in out.get("validation_error", "")
     assert out.get("no_action_reason") == "dry_run_validation_blocked"
     assert out.get("blockers") == ["invalid_protection_levels"]
+    assert "Local protection validation failed" in out["warnings"][0]
+    assert "checks passed" not in out["warnings"][0]
     mock_market.assert_not_called()
 
 

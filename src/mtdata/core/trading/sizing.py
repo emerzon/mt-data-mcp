@@ -309,15 +309,22 @@ def compute_risk_based_volume(  # noqa: C901
     min_viable_risk_pct = None
     min_viable_overshoot_pct = None
     min_viable_overshoot_currency = None
+    min_viable_over_target_reason = None
     if strict_risk_blocked:
         min_viable_volume = suggested
         min_viable_risk = actual_risk
         min_viable_risk_pct = actual_risk_pct
         min_viable_overshoot_pct = overshoot_pct
         min_viable_overshoot_currency = overshoot_currency
+        min_viable_over_target_reason = risk_over_target_reason
         suggested = 0.0
         actual_risk = 0.0
         actual_risk_pct = 0.0
+        risk_pct_diff = -requested_risk_pct
+        risk_over_target = False
+        overshoot_pct = 0.0
+        overshoot_currency = 0.0
+        risk_over_target_reason = None
         rounding_mode = "blocked_by_min_volume_risk"
         notes.append(
             "Strict risk is enabled; no broker-accepted volume fits the requested risk."
@@ -333,7 +340,11 @@ def compute_risk_based_volume(  # noqa: C901
         )
     )
     meta: Dict[str, Any] = {
-        **({"status": "blocked"} if strict_risk_blocked else {}),
+        **(
+            {"status": "blocked", "recommendation_status": "blocked"}
+            if strict_risk_blocked
+            else {"recommendation_status": "proposed"}
+        ),
         "strict_risk": bool(strict_risk),
         "suggested_volume": suggested,
         "raw_volume": round(raw_volume, 8),
@@ -369,6 +380,8 @@ def compute_risk_based_volume(  # noqa: C901
                 "min_viable_risk_overshoot_currency": round(
                     float(min_viable_overshoot_currency or 0.0), 2
                 ),
+                "min_viable_risk_over_target": True,
+                "min_viable_risk_over_target_reason": min_viable_over_target_reason,
             }
         )
     return suggested, meta

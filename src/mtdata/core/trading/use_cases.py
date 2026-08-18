@@ -962,6 +962,7 @@ def _build_trade_evaluation(
 
 _COMPACT_POSITION_SIZING_FIELDS = (
     "status",
+    "recommendation_status",
     "sizing_method",
     "suggested_volume",
     "requested_risk_currency",
@@ -1603,15 +1604,6 @@ def run_trade_place(  # noqa: C901
                 ),
                 "warnings": [
                     (
-                        "Dry run only. Local safety requirements failed; no order "
-                        "was sent and MT5/broker validation was not executed."
-                        if local_blockers
-                        else (
-                            "Dry run only. Routing and local safety checks passed; "
-                            "MT5/broker validation was not executed."
-                        )
-                    ),
-                    (
                         "Not validated in dry run: broker acceptance/enforcement, margin "
                         "reservation, fillability, and broker-side SL/TP attachment."
                     ),
@@ -1796,6 +1788,39 @@ def run_trade_place(  # noqa: C901
                     if isinstance(validation_payload, dict):
                         validation_payload["local_requirements_passed"] = False
                         validation_payload["blockers"] = ["symbol_not_found"]
+            validation_payload = preview.get("validation")
+            local_requirements_passed = bool(
+                isinstance(validation_payload, dict)
+                and validation_payload.get("local_requirements_passed") is True
+            )
+            if not local_requirements_passed:
+                final_safety_warning = (
+                    "Dry run only. Local protection validation failed; no order was "
+                    "sent and MT5/broker validation was not executed."
+                    if "invalid_protection_levels"
+                    in list(preview.get("blockers") or [])
+                    else (
+                        "Dry run only. Local safety requirements failed; no order was "
+                        "sent and MT5/broker validation was not executed."
+                    )
+                )
+            elif preview.get("preview_ok") is not True:
+                final_safety_warning = (
+                    "Dry run only. Local request checks passed, but preview validation "
+                    "did not pass; no order was sent and MT5/broker validation was not "
+                    "executed."
+                )
+            else:
+                final_safety_warning = (
+                    "Dry run only. Routing and local safety checks passed; "
+                    "MT5/broker validation was not executed."
+                )
+            existing_warnings = [
+                str(warning)
+                for warning in list(preview.get("warnings") or [])
+                if not str(warning).startswith("Dry run only.")
+            ]
+            preview["warnings"] = [final_safety_warning, *existing_warnings]
             if pending:
                 preview["requested_price"] = request.price
             if request.magic is not None:
@@ -5193,15 +5218,22 @@ def run_trade_risk_analyze(  # noqa: C901
                     min_viable_risk_pct = None
                     min_viable_overshoot_pct = None
                     min_viable_overshoot_currency = None
+                    min_viable_overshoot_reason = None
                     if strict_risk_blocked:
                         min_viable_volume = suggested_volume
                         min_viable_risk_currency = actual_risk
                         min_viable_risk_pct = actual_risk_pct
                         min_viable_overshoot_pct = overshoot_pct
                         min_viable_overshoot_currency = overshoot_currency
+                        min_viable_overshoot_reason = overshoot_reason
                         suggested_volume = 0.0
                         actual_risk = 0.0
                         actual_risk_pct = 0.0
+                        risk_pct_diff = -effective_risk_pct
+                        risk_over_target = False
+                        overshoot_pct = 0.0
+                        overshoot_currency = 0.0
+                        overshoot_reason = None
                         rounding_mode = "blocked_by_min_volume_risk"
                         sizing_notes.append(
                             "Strict risk is enabled; no broker-accepted volume fits the requested risk."
@@ -5292,6 +5324,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             if strict_risk_blocked
                             else {}
                         ),
+                        "recommendation_status": (
+                            "blocked" if strict_risk_blocked else "proposed"
+                        ),
                         **(
                             {"sizing_method": "kelly", "kelly": kelly_context}
                             if sizing_method == "kelly"
@@ -5378,6 +5413,10 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "min_viable_risk_overshoot_currency": round(
                                     float(min_viable_overshoot_currency or 0.0), 2
                                 ),
+                                "min_viable_risk_over_target": True,
+                                "min_viable_risk_over_target_reason": (
+                                    min_viable_overshoot_reason
+                                ),
                                 "strict_risk_hint": (
                                     "Skip trade or set strict_risk=false to accept "
                                     "the minimum-lot risk."
@@ -5398,11 +5437,12 @@ def run_trade_risk_analyze(  # noqa: C901
                                 },
                             }
                         )
-                    if risk_over_target:
+                    if strict_risk_blocked or risk_over_target:
                         if strict_risk_blocked:
                             result["position_sizing_warning"] = (
                                 f"Requested risk {effective_risk_pct:.2f}% but minimum tradable volume risks "
-                                f"{float(min_viable_risk_pct or 0.0):.2f}% (+{overshoot_pct:.2f}%); "
+                                f"{float(min_viable_risk_pct or 0.0):.2f}% "
+                                f"(+{float(min_viable_overshoot_pct or 0.0):.2f}%); "
                                 "suggested_volume is 0.0 because strict_risk is enabled."
                             )
                         else:
@@ -5417,17 +5457,31 @@ def run_trade_risk_analyze(  # noqa: C901
                                 if strict_risk_blocked
                                 else "risk_overshoot_after_volume_constraints"
                             ),
-                            "reason": overshoot_reason,
+                            "reason": (
+                                min_viable_overshoot_reason
+                                if strict_risk_blocked
+                                else overshoot_reason
+                            ),
                             "requested_risk_pct": effective_risk_pct,
                             "actual_risk_pct": round(
                                 float(min_viable_risk_pct or actual_risk_pct), 2
                             ),
-                            "overshoot_pct": round(overshoot_pct, 2),
+                            "overshoot_pct": round(
+                                float(min_viable_overshoot_pct or 0.0)
+                                if strict_risk_blocked
+                                else overshoot_pct,
+                                2,
+                            ),
                             "requested_risk_currency": round(risk_amount, 2),
                             "actual_risk_currency": round(
                                 float(min_viable_risk_currency or actual_risk), 2
                             ),
-                            "overshoot_currency": round(overshoot_currency, 2),
+                            "overshoot_currency": round(
+                                float(min_viable_overshoot_currency or 0.0)
+                                if strict_risk_blocked
+                                else overshoot_currency,
+                                2,
+                            ),
                         }
                 else:
                     result["position_sizing_error"] = _build_position_sizing_error(
@@ -5692,14 +5746,61 @@ def _position_mark_freshness(
         if all(value is False for value in stale_values)
         else None
     )
+    freshness_live = all(
+        str(item.get("freshness_state") or "").strip().lower() == "live"
+        for item in contexts
+    )
+
+    def _unusable_mark(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        symbol = str(item.get("symbol") or "")
+        if fallback_counts.get(symbol):
+            return {"symbol": symbol, "reason": "entry_price_fallback"}
+        if item.get("usable_for_live_trading") is True:
+            return None
+        if isinstance(item.get("quote_source_conflict"), dict):
+            return {"symbol": symbol, "reason": "quote_source_conflict"}
+        spread_quality = str(item.get("spread_quality") or "").strip().lower()
+        if item.get("spread_valid") is False:
+            spread_reasons = {
+                "locked": "locked_quote",
+                "one_sided": "one_sided_quote",
+                "crossed": "crossed_quote",
+            }
+            mark = {
+                "symbol": symbol,
+                "reason": spread_reasons.get(spread_quality, "invalid_spread"),
+                "spread_quality": spread_quality or "invalid",
+            }
+            if spread_quality in {"locked", "one_sided", "crossed"}:
+                mark["retry_hint"] = "Refresh the quote and retry."
+            return mark
+        if item.get("data_stale") is True:
+            return {
+                "symbol": symbol,
+                "reason": item.get("freshness_reason") or "quote_too_old",
+            }
+        market_status = str(item.get("market_status") or "").strip().lower()
+        if market_status and market_status not in {"open", "live"}:
+            return {"symbol": symbol, "reason": "market_closed"}
+        return {
+            "symbol": symbol,
+            "reason": item.get("freshness_reason") or "not_live_ready",
+        }
+
+    unusable_marks = [
+        mark
+        for item in contexts
+        if (mark := _unusable_mark(item)) is not None
+    ]
     out: Dict[str, Any] = {
         "mark_freshness_status": (
             "live"
-            if live_ready
+            if freshness_live and data_stale is False
             else "entry_price_fallback"
             if fallback_used
             else "stale_or_unverified"
         ),
+        "mark_usability_status": "usable" if live_ready else "not_live_ready",
         "usable_for_live_trading": live_ready,
         "data_stale": data_stale,
         "valuation_time": oldest.get("quote_time"),
@@ -5708,21 +5809,12 @@ def _position_mark_freshness(
             if live_ready
             else "entry_price_fallback"
             if fallback_used
+            else "position_marks_quote_not_live_ready"
+            if freshness_live and data_stale is False
             else "stale_or_unverified_position_marks"
         ),
         "marks_evaluated": len(contexts),
-        "unusable_marks": [
-            {
-                "symbol": item.get("symbol"),
-                "reason": (
-                    "quote_source_conflict"
-                    if isinstance(item.get("quote_source_conflict"), dict)
-                    else item.get("freshness_reason") or "not_live_ready"
-                ),
-            }
-            for item in contexts
-            if item.get("usable_for_live_trading") is not True
-        ],
+        "unusable_marks": unusable_marks,
     }
     if include_contexts:
         out["mark_freshness"] = contexts

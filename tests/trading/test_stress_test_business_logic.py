@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 
 from mtdata.core.trading.requests import TradeStressTestRequest
@@ -90,6 +91,34 @@ def test_trade_stress_test_labels_entry_price_fallback_as_non_live():
     assert result["mark_freshness_status"] == "entry_price_fallback"
     assert result["valuation_basis"] == "entry_price_fallback"
     assert result["usable_for_live_trading"] is False
+
+
+def test_trade_stress_test_names_locked_quote_as_usability_blocker():
+    gateway = _Gateway()
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.1,
+        ask=1.1,
+        time=int(time.time()),
+    )
+
+    result = run_trade_stress_test(
+        TradeStressTestRequest(shocks={"EURUSD": -1.0}),
+        gateway=gateway,
+    )
+
+    assert result["mark_freshness_status"] == "live"
+    assert result["mark_usability_status"] == "not_live_ready"
+    assert result["data_stale"] is False
+    assert result["usable_for_live_trading"] is False
+    assert result["valuation_basis"] == "position_marks_quote_not_live_ready"
+    assert result["unusable_marks"] == [
+        {
+            "symbol": "EURUSD",
+            "reason": "locked_quote",
+            "spread_quality": "locked",
+            "retry_hint": "Refresh the quote and retry.",
+        }
+    ]
 
 
 def test_trade_stress_test_rejects_failed_position_snapshot():
