@@ -190,8 +190,11 @@ Calibration requires a timezone-qualified provider `as_of` timestamp so the
 spot, implied volatilities, and valuation date describe one market snapshot.
 Compact and full results include the spot timestamp, source, session, age,
 freshness reason, and stale flag. Stale calibration inputs set
-`calibration_data_status: stale` and emit a warning. Omit `--valuation-date` to
-derive it from the chain snapshot.
+`calibration_data_status: stale`, set `usable_for_pricing: false`, add
+`stale_market_data` to `pricing_usability_failures`, and emit a warning. The
+numerical fit and its parameters remain available for research diagnostics,
+but calibrate a current snapshot before using them to price an option. Omit
+`--valuation-date` to derive it from the chain snapshot.
 When `--expiration` is omitted, calibration skips same-day and short-dated
 contracts that do not meet its seven-calendar-day minimum.
 

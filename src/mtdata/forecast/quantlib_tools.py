@@ -955,7 +955,11 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         else "unknown"
     )
     warnings = (
-        ["Heston calibration used stale options-provider market data."]
+        [
+            "Heston calibration used stale options-provider market data; the "
+            "fitted parameters are not usable for pricing until a current "
+            "snapshot is calibrated."
+        ]
         if calibration_data_stale
         else []
     )
@@ -988,6 +992,9 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
             + ", ".join(quality_failures)
             + "."
         )
+    pricing_usability_failures = list(quality_failures)
+    if calibration_data_stale:
+        pricing_usability_failures.append("stale_market_data")
 
     return {
         "success": True,
@@ -1019,8 +1026,9 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
         "calibration_error_rmse_unit": "absolute_implied_volatility",
         "calibration_status": "rejected" if quality_failures else "accepted",
-        "usable_for_pricing": not quality_failures,
+        "usable_for_pricing": not pricing_usability_failures,
         "calibration_quality_failures": quality_failures,
+        "pricing_usability_failures": pricing_usability_failures,
         "feller_satisfied": feller_satisfied,
         "feller_left": float(feller_left),
         "feller_right": float(feller_right),

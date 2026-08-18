@@ -403,8 +403,44 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["calibration_error_rmse_unit"] == "absolute_implied_volatility"
     assert out["calibration_status"] == "accepted"
     assert out["usable_for_pricing"] is True
+    assert out["pricing_usability_failures"] == []
     assert out["feller_satisfied"] is True
     assert out["rho_at_bound"] is False
+
+
+def test_calibrate_heston_marks_stale_snapshot_unusable_for_pricing(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "as_of": "2026-12-01T20:00:00Z",
+            "data_age_seconds": 3600.0,
+            "data_stale": True,
+            "freshness": "stale",
+            "freshness_reason": "provider_snapshot_too_old",
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+    )
+
+    assert out["success"] is True
+    assert out["calibration_data_status"] == "stale"
+    assert out["calibration_status"] == "accepted"
+    assert out["calibration_quality_failures"] == []
+    assert out["usable_for_pricing"] is False
+    assert out["pricing_usability_failures"] == ["stale_market_data"]
+    assert "not usable for pricing" in out["warnings"][0]
 
 
 def test_calibrate_heston_default_selects_nearest_eligible_expiration(monkeypatch):

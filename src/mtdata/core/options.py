@@ -485,6 +485,7 @@ def _apply_options_detail(
                 "calibration_status",
                 "usable_for_pricing",
                 "calibration_quality_failures",
+                "pricing_usability_failures",
                 "feller_satisfied",
                 "feller_left",
                 "feller_right",
@@ -800,7 +801,9 @@ def options_heston_calibrate(
     `calendar_days` maturity assumptions. The selected expiry must be at least
     seven calendar days after the chain observation date. Fits that hit
     parameter or IV-error quality gates return `usable_for_pricing=false` and
-    `calibration_status=rejected`.
+    `calibration_status=rejected`. Stale inputs also return
+    `usable_for_pricing=false`, while preserving the numerical calibration
+    status and parameters for diagnostics.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
