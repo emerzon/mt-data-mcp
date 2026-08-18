@@ -641,6 +641,7 @@ class TestFinvizService:
 
         assert [row["Ticker"] for row in result["earnings"]] == ["THU"]
         assert result["calendar_reference_date"] == "2026-08-12"
+        assert result["calendar_reference_at"] == "2026-08-12T12:00:00-04:00"
         assert result["calendar_timezone"] == "America/New_York"
         assert result["elapsed_filter_applied"] is True
         assert result["total"] == 2
@@ -655,7 +656,7 @@ class TestFinvizService:
         mock_market_date,
         mock_market_time,
     ):
-        from datetime import date, time
+        from datetime import date, datetime, time
 
         from mtdata.services.finviz import get_earnings_calendar
 
@@ -673,7 +674,10 @@ class TestFinvizService:
         result = get_earnings_calendar(period="This Week", limit=10, page=1)
 
         assert [row["Ticker"] for row in result["earnings"]] == ["UNKNOWN", "NEXT"]
-        assert result["calendar_reference_time"] == "18:12:00"
+        assert result["calendar_reference_at"] == "2026-08-13T18:12:00-04:00"
+        parsed_reference = datetime.fromisoformat(result["calendar_reference_at"])
+        assert parsed_reference.utcoffset() is not None
+        assert "calendar_reference_time" not in result
 
     def test_get_earnings_calendar_invalid_period(self):
         """Test earnings calendar with invalid period."""
@@ -2185,6 +2189,7 @@ class TestFinvizTools:
             "page": 1,
             "pages": 2,
             "calendar_reference_date": "2026-04-27",
+            "calendar_reference_at": "2026-04-27T13:47:25-04:00",
             "calendar_timezone": "America/New_York",
             "elapsed_filter_applied": True,
         }
@@ -2202,6 +2207,10 @@ class TestFinvizTools:
         assert result["calendar_order"] == "upcoming_date_ascending"
         assert result["includes_elapsed_dates"] is False
         assert result["elapsed_cutoff_date"] == "2026-04-27"
+        assert result["calendar_reference_at"] == "2026-04-27T13:47:25-04:00"
+        assert result["elapsed_cutoff_at"] == "2026-04-27T13:47:25-04:00"
+        assert "calendar_reference_time" not in result
+        assert "elapsed_cutoff_time" not in result
         assert result["pagination"]["more_available"] == 11
         assert result["items"] == [
             {

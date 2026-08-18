@@ -4600,12 +4600,12 @@ def finviz_earnings(
                 )
             ),
         }
-        if result.get("calendar_reference_time") not in (None, ""):
-            out["calendar_reference_time"] = result["calendar_reference_time"]
+        if result.get("calendar_reference_at") not in (None, ""):
+            out["calendar_reference_at"] = result["calendar_reference_at"]
         if result.get("elapsed_filter_applied") is True:
             out["elapsed_cutoff_date"] = reference_date.isoformat()
-            if result.get("calendar_reference_time") not in (None, ""):
-                out["elapsed_cutoff_time"] = result["calendar_reference_time"]
+            if result.get("calendar_reference_at") not in (None, ""):
+                out["elapsed_cutoff_at"] = result["calendar_reference_at"]
         units = _finviz_screen_units_for_rows(output_items)
         if units:
             out["units"] = units

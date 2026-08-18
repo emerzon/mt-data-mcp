@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 from ..news_text import normalize_news_text
 from .client import (
@@ -1031,6 +1032,10 @@ def get_earnings_calendar(
 
         reference_date = _finviz_market_date()
         reference_time = _finviz_market_time()
+        reference_at = datetime.datetime.combine(
+            reference_date,
+            reference_time,
+        ).replace(tzinfo=ZoneInfo(FINVIZ_CALENDAR_TIMEZONE))
         source_count = len(df.index)
         source_complete = source_count < fetch_limit
         elapsed_filter_applied = False
@@ -1088,7 +1093,7 @@ def get_earnings_calendar(
             "include_elapsed": bool(include_elapsed),
             "elapsed_filter_applied": elapsed_filter_applied,
             "calendar_reference_date": reference_date.isoformat(),
-            "calendar_reference_time": reference_time.isoformat(timespec="seconds"),
+            "calendar_reference_at": reference_at.isoformat(timespec="seconds"),
             "calendar_timezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items_list),
             "limit": safe_limit,

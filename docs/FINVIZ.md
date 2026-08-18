@@ -336,6 +336,9 @@ Get a period-based earnings calendar. Current-week and current-month results
 omit dates before the current New York calendar date before pagination, so the
 default first page starts with upcoming reports. Pass `--include-elapsed true`
 for the complete period-start archive. `previous-week` is always an archive.
+Filtered current periods expose `elapsed_cutoff_at` as an offset-qualified New
+York timestamp, alongside `calendar_timezone`, so it can be compared directly
+with UTC fetch timestamps.
 
 ```bash
 mtdata-cli finviz_earnings --period this-week --json
