@@ -17,7 +17,11 @@ export type HistoryBar = {
   low: number
   close: number
   tick_volume?: number
+  real_volume?: number
+  volume?: number
   close_dn?: number // denoised close (when denoising applied)
+  /** Indicator / derived columns from GET /history?indicators= */
+  [column: string]: number | string | boolean | undefined
 }
 
 export type RuntimeTimezoneMeta = {
@@ -43,6 +47,10 @@ export type HistoryResponse = {
   timeframe?: string
   symbol?: string
   success?: boolean
+  /** Display-normalized indicator columns present on each row. */
+  indicator_columns?: string[]
+  /** Normalized indicator spec that produced those columns. */
+  indicators_spec?: string
   has_forming_candle?: boolean
   forming_candle_status?: 'included' | 'skipped' | 'detected' | 'none'
   forming_candle_included?: boolean
@@ -436,14 +444,19 @@ export type BacktestMethodResult = {
 // Chart Overlay Types
 // ============================================================================
 
+export type ChartOverlayPane = 'price' | 'rsi' | 'macd' | 'volume'
+
 export type ChartOverlay = {
   name: string
-  points: { time: number; value: number }[]
+  points: { time: number; value: number; color?: string }[]
   color?: string
   lineWidth?: number
   lineStyle?: 'solid' | 'dashed' | 'dotted'
   priceScaleId?: string
   label?: string
+  pane?: ChartOverlayPane
+  kind?: 'line' | 'histogram'
+  referenceLines?: Array<{ price: number; color: string; title: string }>
 }
 
 // ============================================================================

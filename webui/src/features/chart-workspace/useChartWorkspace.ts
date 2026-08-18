@@ -3,6 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { getErrorMessage, getHistory, getTick } from '../../api/client'
 import { useChartOverlays, usePivotLevels, useSupportResistance } from '../../hooks/useForecast'
 import { ensureChartDenoiseCausality } from '../../lib/denoiseSpec'
+import {
+  buildIndicatorOverlays,
+  buildIndicatorsQuery,
+  chartIndicatorsActive,
+  DEFAULT_CHART_INDICATORS,
+  historyOhlcvForIndicators,
+  missingIndicatorMessages,
+  normalizeChartIndicators,
+  type ChartIndicatorSelection,
+} from '../../lib/indicatorSpec'
 import { loadJSON, saveJSON } from '../../lib/storage'
 import { toUtcSec } from '../../lib/time'
 import { chartWorkspaceLivePollMs, tfSeconds } from '../../lib/timeframes'
@@ -33,9 +43,18 @@ export function useChartWorkspace() {
   const [timezoneMode, setTimezoneMode] = useState<TimezoneMode>('local')
   const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
   const [chartDenoise, setChartDenoise] = useState<DenoiseSpecUI | undefined>(undefined)
+  const [chartIndicators, setChartIndicators] = useState<ChartIndicatorSelection>(DEFAULT_CHART_INDICATORS)
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
   const [historyPageError, setHistoryPageError] = useState<string | null>(null)
-  const historyContract = JSON.stringify({ symbol, timeframe, denoise: chartDenoise ?? null })
+  const indicatorsQuery = buildIndicatorsQuery(chartIndicators)
+  const indicatorsOhlcv = historyOhlcvForIndicators(chartIndicators)
+  const historyContract = JSON.stringify({
+    symbol,
+    timeframe,
+    denoise: chartDenoise ?? null,
+    indicators: indicatorsQuery ?? null,
+    ohlcv: indicatorsOhlcv ?? null,
+  })
   const historyContractRef = useRef(historyContract)
   historyContractRef.current = historyContract
 
@@ -51,7 +70,7 @@ export function useChartWorkspace() {
     isLoading: isHistoryLoading,
     isFetched: isHistoryFetched,
   } = useQuery({
-    queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
+    queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), indicatorsQuery, indicatorsOhlcv, isLive],
     queryFn: ({ signal }) =>
       getHistory({
         symbol,
@@ -60,18 +79,22 @@ export function useChartWorkspace() {
         end,
         denoise: chartDenoise,
         include_incomplete: isLive,
+        indicators: indicatorsQuery,
+        ohlcv: indicatorsOhlcv,
       }, signal),
     enabled: !!symbol,
   })
 
   const { data: liveDataResponse, error: liveHistoryError } = useQuery({
-    queryKey: ['hist-live', symbol, timeframe, JSON.stringify(chartDenoise || {})],
+    queryKey: ['hist-live', symbol, timeframe, JSON.stringify(chartDenoise || {}), indicatorsQuery, indicatorsOhlcv],
     queryFn: ({ signal }) => getHistory({
       symbol,
       timeframe,
       limit: 2,
       denoise: chartDenoise,
       include_incomplete: true,
+      indicators: indicatorsQuery,
+      ohlcv: indicatorsOhlcv,
     }, signal),
     enabled: isLive && !!symbol && !end,
     refetchInterval: livePollMs,
@@ -95,6 +118,7 @@ export function useChartWorkspace() {
     if (normalized && (!saved?.causality || saved.causality !== normalized.causality)) {
       saveJSON(`chart_dn:${symbol}:${timeframe}`, normalized)
     }
+    setChartIndicators(normalizeChartIndicators(loadJSON(`chart_ti:${symbol}:${timeframe}`)))
   }, [symbol, timeframe])
 
   const bars = useMemo(() => {
@@ -205,6 +229,8 @@ export function useChartWorkspace() {
           limit: QUERY_LIMIT,
           end: before,
           denoise: chartDenoise,
+          indicators: indicatorsQuery,
+          ohlcv: indicatorsOhlcv,
         })
         if (historyContractRef.current === requestedContract && older.data.length) {
           setExtraHistory((previous) => [...older.data, ...previous])
@@ -217,7 +243,7 @@ export function useChartWorkspace() {
         setIsLoadingMore(false)
       }
     },
-    [chartDenoise, historyContract, isFetching, isLoadingMore, symbol, timeframe]
+    [chartDenoise, historyContract, indicatorsOhlcv, indicatorsQuery, isFetching, isLoadingMore, symbol, timeframe]
   )
 
   const handleDenoiseChange = useCallback(
@@ -230,6 +256,19 @@ export function useChartWorkspace() {
       setMetrics(null)
       if (symbol && timeframe) {
         saveJSON(`chart_dn:${symbol}:${timeframe}`, normalized)
+      }
+    },
+    [symbol, timeframe]
+  )
+
+  const handleIndicatorsChange = useCallback(
+    (next: ChartIndicatorSelection) => {
+      const normalized = normalizeChartIndicators(next)
+      setChartIndicators(normalized)
+      setExtraHistory([])
+      setHistoryPageError(null)
+      if (symbol && timeframe) {
+        saveJSON(`chart_ti:${symbol}:${timeframe}`, normalized)
       }
     },
     [symbol, timeframe]
@@ -387,9 +426,18 @@ export function useChartWorkspace() {
     [bars, timeframe]
   )
 
+  const indicatorOverlays = useMemo(
+    () => buildIndicatorOverlays(bars, chartIndicators),
+    [bars, chartIndicators]
+  )
+  const forecastAndIndicatorOverlays = useMemo(
+    () => [...forecastOverlays, ...indicatorOverlays],
+    [forecastOverlays, indicatorOverlays]
+  )
+
   const chartOverlays = useChartOverlays(
     bars,
-    forecastOverlays,
+    forecastAndIndicatorOverlays,
     pivotState.levels,
     srState.levels,
     timeframe
@@ -429,10 +477,18 @@ export function useChartWorkspace() {
       timezoneMode === 'server' && !serverTimeZone
         ? 'Exchange timezone unavailable; configure an IANA MT5_SERVER_TZ value.'
         : null,
+      ...missingIndicatorMessages(
+        chartIndicators,
+        histDataResponse?.indicator_columns,
+        bars
+      ),
     ]
     return errors.filter((value): value is string => Boolean(value))
   }, [
+    bars,
+    chartIndicators,
     end,
+    histDataResponse?.indicator_columns,
     historyError,
     historyPageError,
     isLive,
@@ -455,6 +511,8 @@ export function useChartWorkspace() {
     timezoneMode,
     displayTimeZone,
     chartDenoise,
+    chartIndicators,
+    indicatorsActive: chartIndicatorsActive(chartIndicators),
     bars,
     displayBars,
     chartOverlays,
@@ -479,6 +537,7 @@ export function useChartWorkspace() {
     handleTimeframeChange,
     handleNeedMoreLeft,
     handleDenoiseChange,
+    handleIndicatorsChange,
     handleForecastResult,
     handlePivotToggle: pivotState.toggle,
     handlePivotMethodChange: pivotState.setMethod,

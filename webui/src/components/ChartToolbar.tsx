@@ -9,11 +9,13 @@ import { OverlayControls } from './OverlayControls'
 import { PivotIcon, RefreshIcon, SRIcon } from '../features/chart-workspace/toolbarIcons'
 import {
   DenoiseSelector,
+  IndicatorSelector,
   PriceLinesSelector,
   SymbolSelector,
   TimeframeSelector,
   TimezoneSelector,
 } from '../features/chart-workspace/toolbarMenus'
+import type { ChartIndicatorSelection } from '../lib/indicatorSpec'
 import { formatEpochTime } from '../lib/time'
 
 type Props = {
@@ -25,6 +27,8 @@ type Props = {
   hasPivots: boolean
   hasSR: boolean
   denoise?: DenoiseSpecUI
+  indicators: ChartIndicatorSelection
+  onIndicatorsChange: (value: ChartIndicatorSelection) => void
   showBid: boolean
   showAsk: boolean
   showLast: boolean
@@ -64,6 +68,8 @@ export function ChartToolbar({
   hasPivots,
   hasSR,
   denoise,
+  indicators,
+  onIndicatorsChange,
   showBid,
   showAsk,
   showLast,
@@ -149,6 +155,7 @@ export function ChartToolbar({
         onToggleLive={onToggleLive}
       />
       <div className="w-px h-5 bg-slate-700 hidden sm:block" />
+      <IndicatorSelector value={indicators} disabled={!symbol} onChange={onIndicatorsChange} />
       <DenoiseSelector value={denoise} disabled={!symbol} onChange={onDenoiseChange} />
     </>
   )

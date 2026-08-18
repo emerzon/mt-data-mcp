@@ -18,9 +18,10 @@ You will need the UI running: [WEBUI.md](WEBUI.md#you-will-need).
 
 1. Set symbol `EURUSD` and timeframe `H1`.
 2. Confirm candles appear (about 200 bars is plenty — scroll left if you want more history).
-3. Open **Tools**, run `data_fetch_candles` with indicators
-   `EMA(20), EMA(50), RSI(14), MACD(12,26,9)` if you want the same table as the
-   CLI guide. The chart itself already shows price.
+3. Open **Indicators** and click **Sample trade**. That draws EMA 20 and EMA 50
+   on the candles, plus RSI 14 and MACD in their own panes — the same set as
+   the CLI guide. You can also tick them one by one. The choice is remembered
+   for this symbol and timeframe.
 
 **How to read it:** price above both moving averages often means short-term
 strength. RSI near 70 is “stretched up,” near 30 is “stretched down.” None of

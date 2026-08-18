@@ -1039,6 +1039,8 @@ def _compact_candles_payload(
         "query_end_gap",
         "indicator_warmup_bars",
         "history_bars_fetched",
+        "indicator_columns",
+        "indicators_spec",
     ):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
@@ -1226,6 +1228,8 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "spread_estimate",
         "indicator_warmup_bars",
         "history_bars_fetched",
+        "indicator_columns",
+        "indicators_spec",
     ):
         if key in public_diagnostics:
             standard[key] = public_diagnostics[key]
@@ -1397,6 +1401,16 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noq
             )
         if isinstance(query, dict) and query.get("raw_bars_fetched") is not None:
             public["history_bars_fetched"] = int(query["raw_bars_fetched"])
+        added_columns = indicators.get("added_columns")
+        if isinstance(added_columns, list) and added_columns:
+            public["indicator_columns"] = [
+                str(column).strip()
+                for column in added_columns
+                if str(column).strip()
+            ]
+        spec_text = str(indicators.get("spec") or "").strip()
+        if spec_text:
+            public["indicators_spec"] = spec_text
 
     spread_estimate = diagnostics.get("spread_estimate")
     if isinstance(spread_estimate, dict):

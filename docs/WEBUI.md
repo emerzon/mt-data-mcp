@@ -62,6 +62,7 @@ You can stop there. That is already a full research glance.
 | Timeframe | How big each candle is (`M5`, `H1`, `D1`, …). |
 | Reload | Fetch the chart again. |
 | Pivot / S-R | Draw formula pivot levels and data-driven support/resistance. |
+| Indicators | Overlay moving averages on price and open RSI / MACD / volume panes. Start with **Sample trade** for EMA 20/50, RSI 14, and MACD. These are research overlays, not signals. |
 | Bid / Ask / Last | Draw the live buy price, sell price, and last trade (when the broker sends one). |
 | Denoise | Smooth the line so structure is easier to see. This changes the *display*, not your broker history. |
 | Forecast | Side panel for price forecast, volatility (“how far might it move?”), and a rolling backtest. |

@@ -1,6 +1,7 @@
 import {
   CandlestickSeries,
   createChart,
+  HistogramSeries,
   IChartApi,
   IPriceLine,
   ISeriesApi,
@@ -180,9 +181,30 @@ export function OHLCChart({
   useEffect(() => {
     if (!apiRef.current) return
     const chart = apiRef.current
-    const overlaySeries: ISeriesApi<'Line'>[] = []
+    const overlaySeries: Array<ISeriesApi<'Line'> | ISeriesApi<'Histogram'>> = []
 
-    overlays?.forEach(ov => {
+    const extraPanes = chart.panes()
+    for (let index = extraPanes.length - 1; index > 0; index -= 1) {
+      if (extraPanes[index].getSeries().length === 0) {
+        chart.removePane(index)
+      }
+    }
+
+    const usedPanes = new Set(
+      (overlays ?? [])
+        .map((overlay) => overlay.pane)
+        .filter((pane): pane is NonNullable<typeof pane> => Boolean(pane) && pane !== 'price')
+    )
+    const paneIndexByName = new Map<string, number>()
+    let nextPane = 1
+    for (const paneName of ['rsi', 'macd', 'volume'] as const) {
+      if (usedPanes.has(paneName)) {
+        paneIndexByName.set(paneName, nextPane)
+        nextPane += 1
+      }
+    }
+
+    overlays?.forEach((ov) => {
       if (!ov?.points?.length) return
 
       const style =
@@ -191,25 +213,66 @@ export function OHLCChart({
           : ov.lineStyle === 'dotted'
           ? LineStyle.Dotted
           : LineStyle.Solid
+      const paneIndex = ov.pane && ov.pane !== 'price' ? paneIndexByName.get(ov.pane) ?? 0 : 0
+      const points = ov.points.filter(
+        (point) => Number.isFinite(point.time) && Number.isFinite(point.value)
+      )
+      if (!points.length) return
 
-      const series = chart.addSeries(LineSeries, {
-        color: ov.color || '#60a5fa',
-        lineWidth: (ov.lineWidth ?? 2) as 1 | 2 | 3 | 4,
-        lineStyle: style,
-        priceScaleId: ov.priceScaleId || 'right',
-      })
-
-      series.setData(
-        ov.points
-          .filter(p => Number.isFinite(p.time) && Number.isFinite(p.value))
-          .map(p => ({
-            time: Math.floor(p.time) as unknown as Time,
-            value: p.value,
+      if (ov.kind === 'histogram') {
+        const series = chart.addSeries(
+          HistogramSeries,
+          {
+            color: ov.color || '#22c55e',
+            priceLineVisible: false,
+            lastValueVisible: Boolean(ov.label),
+            priceScaleId: ov.priceScaleId || 'right',
+          },
+          paneIndex
+        )
+        series.setData(
+          points.map((point) => ({
+            time: Math.floor(point.time) as unknown as Time,
+            value: point.value,
+            color: point.color,
           }))
+        )
+        if (ov.label && points.length > 0) {
+          const last = points[points.length - 1]
+          series.createPriceLine({
+            price: last.value,
+            color: ov.color || '#22c55e',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: ov.label,
+          })
+        }
+        overlaySeries.push(series)
+        return
+      }
+
+      const series = chart.addSeries(
+        LineSeries,
+        {
+          color: ov.color || '#60a5fa',
+          lineWidth: (ov.lineWidth ?? 2) as 1 | 2 | 3 | 4,
+          lineStyle: style,
+          priceScaleId: ov.priceScaleId || 'right',
+          lastValueVisible: Boolean(ov.label),
+        },
+        paneIndex
       )
 
-      if (ov.label && ov.points.length > 0) {
-        const last = ov.points[ov.points.length - 1]
+      series.setData(
+        points.map((point) => ({
+          time: Math.floor(point.time) as unknown as Time,
+          value: point.value,
+        }))
+      )
+
+      if (ov.label && points.length > 0) {
+        const last = points[points.length - 1]
         series.createPriceLine({
           price: last.value,
           color: ov.color || '#60a5fa',
@@ -219,12 +282,31 @@ export function OHLCChart({
           title: ov.label,
         })
       }
+      for (const line of ov.referenceLines ?? []) {
+        series.createPriceLine({
+          price: line.price,
+          color: line.color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: line.title,
+        })
+      }
 
       overlaySeries.push(series)
     })
 
+    const panes = chart.panes()
+    if (panes.length > 1) {
+      panes[0].setStretchFactor(0.72)
+      const extra = 0.28 / (panes.length - 1)
+      for (let index = 1; index < panes.length; index += 1) {
+        panes[index].setStretchFactor(extra)
+      }
+    }
+
     return () => {
-      overlaySeries.forEach(series => chart.removeSeries(series))
+      overlaySeries.forEach((series) => chart.removeSeries(series))
     }
   }, [overlays])
 

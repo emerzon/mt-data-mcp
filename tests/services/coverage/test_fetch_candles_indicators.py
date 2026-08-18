@@ -142,6 +142,8 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         self.assertIn('rsi_14', result['data'][0])
         self.assertIn('ema_20', result['data'][0])
         self.assertIn('atr_14', result['data'][0])
+        self.assertEqual(result['indicator_columns'], ['rsi_14', 'ema_20', 'atr_14'])
+        self.assertEqual(result['indicators_spec'], 'RSI(14),EMA(20),ATR(14)')
         self.assertEqual(result['data'][0]['ema_20'], 1.14384)
         self.assertEqual(
             result['indicator_rounding'],

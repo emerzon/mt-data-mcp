@@ -12,7 +12,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `confluence_levels` | research | generic_runner | tools-runner/generic | no |  |
 | `correlation_matrix` | research | generic_runner | tools-runner/generic | no |  |
 | `cross_correlation` | research | generic_runner | tools-runner/generic | no |  |
-| `data_fetch_candles` | data | dedicated_ui | chart-workspace/history | no |  |
+| `data_fetch_candles` | data | dedicated_ui | chart-workspace/history | no | Chart Indicators control sends `indicators` / optional `ohlcv` on `/history` |
 | `data_fetch_ticks` | data | generic_runner | tools-runner/generic | no |  |
 | `denoise_describe` | methods | dedicated_ui | chart-workspace/denoise-modal | no |  |
 | `denoise_list_methods` | methods | dedicated_ui | chart-workspace/denoise-modal | no |  |

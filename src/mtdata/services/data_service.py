@@ -2992,6 +2992,11 @@ def fetch_candles(  # noqa: C901
             payload["meta"]["diagnostics"]["mt5_time_alignment"] = (
                 dict(broker_time_check_result)
             )
+        if ti_added_cols:
+            payload["indicator_columns"] = list(ti_added_cols)
+            spec_text = _normalize_indicator_spec_for_display(ti_spec)
+            if spec_text:
+                payload["indicators_spec"] = spec_text
         if price_indicator_cols and price_digits > 0:
             rounding_meta = {
                 "price_columns": price_indicator_cols,

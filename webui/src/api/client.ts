@@ -117,6 +117,8 @@ export type HistoryParams = {
   end?: string
   denoise?: DenoiseSpecUI
   include_incomplete?: boolean
+  indicators?: string
+  ohlcv?: string
 }
 
 export async function getHistory(params: HistoryParams, signal?: AbortSignal): Promise<HistoryResponse> {
@@ -128,6 +130,8 @@ export async function getHistory(params: HistoryParams, signal?: AbortSignal): P
     end: params.end,
     include_incomplete: params.include_incomplete,
     timestamp_format: 'epoch',
+    indicators: params.indicators,
+    ohlcv: params.ohlcv,
   }
 
   const dn = params.denoise

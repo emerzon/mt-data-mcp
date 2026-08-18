@@ -59,6 +59,8 @@ export default function App() {
           hasPivots={!!workspace.pivotLevels}
           hasSR={!!workspace.srLevels}
           denoise={workspace.chartDenoise}
+          indicators={workspace.chartIndicators}
+          onIndicatorsChange={workspace.handleIndicatorsChange}
           barsCount={workspace.bars.length}
           showBid={workspace.showBid}
           showAsk={workspace.showAsk}

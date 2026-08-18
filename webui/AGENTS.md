@@ -34,6 +34,7 @@ React + Vite + Tailwind single-page app for chart visualization and forecast int
 | `src/lib/workspaceStatus.ts` | Chart surface status resolution |
 | `src/lib/connectionStatus.ts` | Health/ready chip resolution |
 | `src/lib/overlayParams.ts` | Pivot / S/R query builders and clamps |
+| `src/lib/indicatorSpec.ts` | Chart indicator presets, history query, overlay mapping |
 | `src/lib/layout.ts` | Breakpoints + panel placement class helpers |
 | `src/lib/toolCatalog.ts` | Catalog filter, param form defaults, invoke shaping, result format |
 | `src/lib/time.ts` / `timeframes.ts` / `storage.ts` / `utils.ts` | Time, TF, localStorage, coerce helpers |

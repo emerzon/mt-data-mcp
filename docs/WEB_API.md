@@ -126,12 +126,16 @@ Fetch OHLCV candles for a symbol.
   - `include_incomplete` (bool): Include the latest forming candle.
   - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `iso`; explicit epoch responses identify the unit as `unix_seconds_utc`.
   - `detail` (`compact` | `standard` | `summary` | `full`): Use `full` for diagnostics and runtime metadata.
+  - `indicators` (string, optional): Same compact spec as `data_fetch_candles` (for example `EMA(20), EMA(50), RSI(14), MACD(12,26,9)`). Extra numeric columns are attached to each row using the display-normalized names (`ema_20`, `rsi_14`, `macd_12_26_9`, `macd_h_12_26_9`, `macd_s_12_26_9`).
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or comma-separated `k=v` denoising settings. Both forms accept `when`, `causality`, `keep_original`, and `columns`; other keys are method parameters. Use JSON for multiple columns.
 - **Response Notes:**
   - Compact responses expose `server_utc_offset_seconds` when available.
     `detail=full` includes the full runtime timezone tree under
     `meta.runtime.timezone`. The legacy `used` compatibility field is not emitted.
+  - When `indicators` is set, compact responses keep the extra row columns plus
+    `indicator_columns` (added names) and `indicators_spec` (normalized request).
+    Unknown names fail the request; they are not silently dropped.
 
 #### `GET /api/tick`
 Get the latest quote using the same compact schema as `market_ticker`, including

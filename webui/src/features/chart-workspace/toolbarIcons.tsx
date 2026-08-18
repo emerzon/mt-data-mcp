@@ -48,6 +48,19 @@ export function DenoiseIcon() {
   )
 }
 
+export function IndicatorIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 19l4-6 4 3 8-10"
+      />
+    </svg>
+  )
+}
+
 export function LinesIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

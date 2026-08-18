@@ -32,7 +32,7 @@ The UI should not be a thin demo. It should be the default interactive surface f
 
 - **Chart workspace:** symbol search, timeframes, infinite left history, timezone modes (UTC / local / server)
 - **Live market:** tick poll (bid / ask / last), live incomplete candle, reload and empty/error status surface
-- **Overlays:** pivot levels, support/resistance, forecast series + anchor comparison metrics (MAE, MAPE, RMSE, direction)
+- **Overlays:** pivot levels, support/resistance, sample-trade indicators (EMA / RSI / MACD / volume panes), forecast series + anchor comparison metrics (MAE, MAPE, RMSE, direction)
 - **Preprocessing:** chart-level denoise with method metadata UI
 - **Analysis panel:** price forecast, volatility forecast, rolling backtest (with advanced options: dimred, denoise, params)
 - **Auth:** in-memory Bearer token for remote/tokenized API access
@@ -241,7 +241,7 @@ Use this document as the north star. Practical tracking options:
 | 0 Inventory | Done | Coverage matrix in `docs/WEBUI_API_COVERAGE.md`; `webui/AGENTS.md` refreshed |
 | 1 Parity & reliability | Done | `/models`, health/ready chip, pivot method + S/R params, partial-failure banners |
 | 2 Responsive & modern shell | Done | Breakpoint helpers; toolbar More overflow; forecast bottom sheet / drawer; Esc closes panels/modals |
-| 3 Chart research depth | Deferred | Out of success-criteria scope (needs broader backend surface) |
+| 3 Chart research depth | Partial | On-chart EMA/RSI/MACD/volume (2026-08-18). Confluence, barriers, and briefs remain later slices. |
 | 4 Backend feature bridge | Done | Full MCP catalog via `GET/POST /api/v1/tools*`; SPA Tools runner; inventory in `docs/WEBUI_TOOL_COVERAGE.md` |
 | 5 Hardening & speed | Partial | Pure unit tests + typecheck/build; no e2e CI |
 

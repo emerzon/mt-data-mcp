@@ -56,6 +56,55 @@ def test_history_uses_start_end_ohlcv_and_preserves_canonical_compact_shape() ->
     assert all(isinstance(row["time"], (int, float)) for row in res["data"])
 
 
+def test_history_forwards_indicators_and_keeps_compact_columns() -> None:
+    payload = {
+        "success": True,
+        "data": [
+            {
+                "time": 1735689600.0,
+                "open": 1.1,
+                "high": 1.2,
+                "low": 1.0,
+                "close": 1.15,
+                "ema_20": 1.14,
+                "rsi_14": 55.0,
+            }
+        ],
+        "indicator_columns": ["ema_20", "rsi_14"],
+        "indicators_spec": "EMA(20), RSI(14)",
+        "meta": {
+            "diagnostics": {
+                "indicators": {
+                    "requested": True,
+                    "spec": "EMA(20), RSI(14)",
+                    "added_columns": ["ema_20", "rsi_14"],
+                }
+            }
+        },
+    }
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._fetch_candles_impl", return_value=payload
+    ) as mock_fetch:
+        res = web_api.get_history(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=1,
+            indicators="EMA(20), RSI(14)",
+        )
+
+    assert res["data"][0]["ema_20"] == 1.14
+    assert res["data"][0]["rsi_14"] == 55.0
+    assert res["indicator_columns"] == ["ema_20", "rsi_14"]
+    assert res["indicators_spec"] == "EMA(20), RSI(14)"
+    assert "meta" not in res
+    forwarded = mock_fetch.call_args.kwargs["indicators"]
+    names = [
+        item.get("name") if isinstance(item, dict) else item
+        for item in (forwarded if isinstance(forwarded, list) else [forwarded])
+    ]
+    assert [str(name).upper() for name in names] == ["EMA", "RSI"]
+
+
 def test_history_passes_include_spread() -> None:
     payload = {
         "success": True,

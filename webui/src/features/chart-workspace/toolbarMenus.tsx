@@ -8,9 +8,17 @@ import {
   searchInstruments,
 } from '../../api/client'
 import { chartDenoiseFromMethod } from '../../lib/denoiseSpec'
+import {
+  CHART_INDICATOR_IDS,
+  DEFAULT_CHART_INDICATORS,
+  SAMPLE_TRADE_INDICATORS,
+  chartIndicatorsActive,
+  type ChartIndicatorId,
+  type ChartIndicatorSelection,
+} from '../../lib/indicatorSpec'
 import { loadJSON } from '../../lib/storage'
 import type { DenoiseMethodInfo, DenoiseSpecUI } from '../../types'
-import { ChevronDown } from './toolbarIcons'
+import { ChevronDown, IndicatorIcon } from './toolbarIcons'
 
 function useDismissiblePanel(onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null)
@@ -334,6 +342,116 @@ function DenoiseDropdown({
           </select>
         </div>
       )}
+    </div>
+  )
+}
+
+const INDICATOR_LABELS: Record<ChartIndicatorId, string> = {
+  ema20: 'EMA 20',
+  ema50: 'EMA 50',
+  rsi14: 'RSI 14',
+  macd: 'MACD',
+  volume: 'Volume',
+}
+
+export function IndicatorSelector({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ChartIndicatorSelection
+  disabled: boolean
+  onChange: (value: ChartIndicatorSelection) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = chartIndicatorsActive(value)
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className={`toolbar-btn ${active ? 'text-sky-400' : ''}`}
+        onClick={() => setOpen((current) => !current)}
+        disabled={disabled}
+        title="Chart indicators"
+        aria-expanded={open}
+        aria-pressed={active}
+      >
+        <IndicatorIcon />
+        <span>Indicators</span>
+        <ChevronDown />
+      </button>
+      {open && (
+        <IndicatorDropdown
+          value={value}
+          onChange={onChange}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function IndicatorDropdown({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: ChartIndicatorSelection
+  onChange: (value: ChartIndicatorSelection) => void
+  onClose: () => void
+}) {
+  const ref = useDismissiblePanel(onClose)
+
+  const toggle = (id: ChartIndicatorId) => {
+    onChange({ ...value, [id]: !value[id] })
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full right-0 mt-1 w-60 bg-slate-900 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50"
+      role="dialog"
+      aria-label="Chart indicators"
+    >
+      <div className="px-3 py-2 text-xs text-slate-400 border-b border-slate-700 font-medium">
+        Chart indicators
+      </div>
+      <div className="px-3 py-2 flex gap-2 border-b border-slate-800">
+        <button
+          type="button"
+          className="flex-1 text-xs px-2 py-1.5 rounded border border-slate-700 text-slate-200 hover:bg-slate-800"
+          onClick={() => onChange({ ...SAMPLE_TRADE_INDICATORS })}
+        >
+          Sample trade
+        </button>
+        <button
+          type="button"
+          className="flex-1 text-xs px-2 py-1.5 rounded border border-slate-700 text-slate-400 hover:bg-slate-800"
+          onClick={() => onChange({ ...DEFAULT_CHART_INDICATORS })}
+        >
+          Clear
+        </button>
+      </div>
+      <div className="py-1">
+        {CHART_INDICATOR_IDS.map((id) => (
+          <label
+            key={id}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 cursor-pointer"
+          >
+            <input
+              type="checkbox"
+              className="accent-sky-500"
+              checked={value[id]}
+              onChange={() => toggle(id)}
+            />
+            {INDICATOR_LABELS[id]}
+          </label>
+        ))}
+      </div>
+      <p className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+        Lines and panes are research overlays, not trade signals. Volume on FX is usually tick volume only.
+      </p>
     </div>
   )
 }

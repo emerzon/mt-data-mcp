@@ -17,7 +17,7 @@ Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 | `/api/v1/ready` | GET | used | `ConnectionStatus` → `readyCheck()` | MT5 readiness chip; non-blocking. |
 | `/api/v1/timeframes` | GET | used | `TimeframeSelector` | |
 | `/api/v1/instruments` | GET | used | `SymbolSelector` | |
-| `/api/v1/history` | GET | used | `useChartWorkspace` / history paging | Denoise + live incomplete candles. |
+| `/api/v1/history` | GET | used | `useChartWorkspace` / history paging | Denoise, optional `indicators`, volume via `ohlcv=ohlcv`, live incomplete candles. |
 | `/api/v1/tick` | GET | used | `useChartWorkspace` live quotes | Bid/ask/last price lines. |
 | `/api/v1/pivots` | GET | used | Overlay controls + `usePivotLevels` | Method selectable (classic/fibonacci/…). |
 | `/api/v1/support-resistance` | GET | used | Overlay controls + `useSupportResistance` | Lookback, min touches, max levels, tolerance. |
