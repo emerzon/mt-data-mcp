@@ -9,7 +9,7 @@ Covers:
 import importlib
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -335,6 +335,27 @@ class TestNormalizePendingExpiration:
     def test_iso8601_string(self, _mock):
         val, explicit = _normalize_pending_expiration("2025-06-01T12:00:00")
         assert isinstance(val, int) and explicit is True
+
+    def test_date_only_expiration_is_good_through_client_day(self):
+        with patch(
+            "mtdata.core.trading.time._to_server_time_naive",
+            side_effect=lambda dt: dt,
+        ), patch(
+            "mtdata.core.trading.time._server_time_naive_to_mt5_timestamp",
+            side_effect=lambda dt: int(dt.replace(tzinfo=timezone.utc).timestamp()),
+        ):
+            value, explicit = _normalize_pending_expiration("2026-08-20")
+
+        assert explicit is True
+        assert datetime.fromtimestamp(value, tz=timezone.utc) == datetime(
+            2026,
+            8,
+            20,
+            23,
+            59,
+            59,
+            tzinfo=timezone.utc,
+        )
 
     def test_string_negative_numeric(self):
         # "-1" may be parsed by dateparser as a relative date; the key point

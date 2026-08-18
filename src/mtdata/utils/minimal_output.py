@@ -977,6 +977,9 @@ def _normalize_trade_payload(  # noqa: C901
         out, "expiration_normalized", payload.get("expiration_normalized")
     )
     _maybe_add_trade_key(
+        out, "expiration_resolved_utc", payload.get("expiration_resolved_utc")
+    )
+    _maybe_add_trade_key(
         out, "requested_expiration", payload.get("requested_expiration")
     )
     _maybe_add_trade_key(out, "applied_expiration", payload.get("applied_expiration"))

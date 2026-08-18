@@ -1863,7 +1863,7 @@ class TestHarRvBlock:
         """Lines 1105-1106: invalid as_of returns error in intraday fetch."""
         intraday = _make_rates_ext(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[intraday]):
-            with patch(f"{MOD}._parse_start_datetime", return_value=None):
+            with patch(f"{MOD}._parse_as_of_bound", return_value=None):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         as_of="2024-03-01")
                 assert "error" in r

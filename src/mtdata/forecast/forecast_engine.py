@@ -36,14 +36,12 @@ from ..utils.time import (
     bar_close_epoch,
 )
 from ..utils.utils import (
-    _parse_start_datetime,
-)
-from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
 )
 from . import forecast_preprocessing as _forecast_preprocessing
 from .common import _normalize_weights as _normalize_weights_impl
 from .common import (
+    _parse_as_of_bound,
     default_seasonality,
     describe_forecast_calendar_treatment,
     is_standard_weekend_closed_epoch,
@@ -1493,10 +1491,14 @@ def _forecast_target_bar_states(
     return states
 
 
-def _forecast_bar_state_reference_epoch(as_of: Optional[str]) -> Optional[float]:
+def _forecast_bar_state_reference_epoch(
+    as_of: Optional[str],
+    *,
+    timeframe: Optional[str] = None,
+) -> Optional[float]:
     if not as_of:
         return None
-    parsed = _parse_start_datetime(as_of)
+    parsed = _parse_as_of_bound(as_of, timeframe=timeframe)
     if parsed is None:
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -2095,7 +2097,10 @@ def forecast_engine(  # noqa: C901
             symbol=symbol,
             timeframe=timeframe,
             target_info=target_info,
-            now_epoch=_forecast_bar_state_reference_epoch(as_of),
+            now_epoch=_forecast_bar_state_reference_epoch(
+                as_of,
+                timeframe=timeframe,
+            ),
         )
         if as_of is not None:
             result["bar_state_reference"] = "as_of"

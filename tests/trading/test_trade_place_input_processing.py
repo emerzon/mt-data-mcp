@@ -659,13 +659,16 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",
         return_value={"bid": 64999.0, "ask": 65001.0, "entry_price": 64500.0},
+    ), patch(
+        "mtdata.core.trading.time._normalize_pending_expiration",
+        return_value=(1787270399, True),
     ):
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
             order_type="BUY_LIMIT",
             price=64500,
-            expiration="GTC",
+            expiration="2026-08-20",
             dry_run=True,
             __cli_raw=True,
         )
@@ -681,7 +684,9 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "trade_gate_passed" not in out
     assert out.get("requested_price") == 64500
-    assert out.get("expiration") == "GTC"
+    assert out.get("expiration") == "2026-08-20"
+    assert out.get("expiration_normalized") == 1787270399
+    assert out.get("expiration_resolved_utc") == "2026-08-20T23:59:59Z"
     mock_pending.assert_not_called()
 
 

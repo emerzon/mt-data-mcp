@@ -1095,7 +1095,7 @@ def fetch_history(
                 raise RuntimeError("start must be before or equal to end.")
             rates = _mt5_copy_rates_range(symbol, mt5_tf, from_dt, to_dt)
         elif as_of or end:
-            to_dt = _parse_start_datetime(as_of) if as_of else (
+            to_dt = _parse_as_of_bound(as_of, timeframe=timeframe) if as_of else (
                 _parse_candle_calendar_bound(
                     end,
                     timeframe=timeframe,
@@ -1127,7 +1127,7 @@ def fetch_history(
 
     # Manual truncation if an upper bound was provided.
     if (as_of or end) and not df.empty and 'time' in df.columns:
-        to_dt = _parse_start_datetime(as_of) if as_of else (
+        to_dt = _parse_as_of_bound(as_of, timeframe=timeframe) if as_of else (
             _parse_candle_calendar_bound(
                 end,
                 timeframe=timeframe,
@@ -1178,6 +1178,25 @@ def fetch_history(
             "observed timeframe or verify the symbol/timeframe feed."
         )
     return df
+
+
+def _parse_as_of_bound(
+    value: Optional[str],
+    *,
+    timeframe: Optional[str] = None,
+) -> Optional[datetime]:
+    """Parse an as-of cutoff, treating a date label as inclusive through that day."""
+    if not value:
+        return None
+    if timeframe:
+        calendar_bound = _parse_candle_calendar_bound(
+            value,
+            timeframe=timeframe,
+            end_bound=True,
+        )
+        if calendar_bound is not None:
+            return calendar_bound
+    return _parse_end_datetime(value)
 
 
 def _history_spacing_quality(

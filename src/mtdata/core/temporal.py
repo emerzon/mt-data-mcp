@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+from ..services.data_service import _parse_candle_calendar_bound
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_fx_session_symbol
@@ -795,8 +796,16 @@ def _fetch_rates(
     mt5_tf = TIMEFRAME_MAP[timeframe]
 
     if start and end:
-        start_dt = _parse_start_datetime(start)
-        end_dt = _parse_end_datetime(end)
+        start_dt = _parse_candle_calendar_bound(
+            start,
+            timeframe=timeframe,
+            end_bound=False,
+        ) or _parse_start_datetime(start)
+        end_dt = _parse_candle_calendar_bound(
+            end,
+            timeframe=timeframe,
+            end_bound=True,
+        ) or _parse_end_datetime(end)
         if not start_dt or not end_dt:
             return None, "Invalid start/end date format."
         if start_dt > end_dt:
@@ -805,7 +814,11 @@ def _fetch_rates(
         return rates, None
 
     if start:
-        start_dt = _parse_start_datetime(start)
+        start_dt = _parse_candle_calendar_bound(
+            start,
+            timeframe=timeframe,
+            end_bound=False,
+        ) or _parse_start_datetime(start)
         if not start_dt:
             return None, "Invalid start date format."
         seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe)
@@ -816,7 +829,11 @@ def _fetch_rates(
         return rates, None
 
     if end:
-        end_dt = _parse_end_datetime(end)
+        end_dt = _parse_candle_calendar_bound(
+            end,
+            timeframe=timeframe,
+            end_bound=True,
+        ) or _parse_end_datetime(end)
         if not end_dt:
             return None, "Invalid end date format."
         rates = _mt5_copy_rates_from(symbol, mt5_tf, end_dt, int(limit))

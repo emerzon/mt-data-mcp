@@ -575,6 +575,34 @@ class TestStatsForGroup:
 # ===================================================================
 
 class TestFetchRates:
+    @patch(_P + "_mt5_copy_rates_range", return_value="rates")
+    @patch(_P + "_parse_candle_calendar_bound")
+    def test_daily_date_bounds_use_broker_session_calendar(
+        self,
+        mock_calendar_bound,
+        mock_rates_range,
+    ):
+        start_dt = datetime(2026, 8, 12, 21, 0)
+        end_dt = datetime(2026, 8, 13, 20, 59, 59)
+        mock_calendar_bound.side_effect = [start_dt, end_dt]
+
+        rates, error = _fetch_rates(
+            "EURUSD",
+            "D1",
+            10,
+            start="2026-08-13",
+            end="2026-08-13",
+            gateway=MagicMock(),
+        )
+
+        assert error is None
+        assert rates == "rates"
+        mock_rates_range.assert_called_once_with("EURUSD", 16408, start_dt, end_dt)
+        assert mock_calendar_bound.call_args_list == [
+            (("2026-08-13",), {"timeframe": "D1", "end_bound": False}),
+            (("2026-08-13",), {"timeframe": "D1", "end_bound": True}),
+        ]
+
     @patch(_P + "_mt5_copy_rates_from", return_value="rates")
     def test_preserves_native_utc_rates_for_open_ended_fetch(self, mock_rates_from):
         gateway = MagicMock()

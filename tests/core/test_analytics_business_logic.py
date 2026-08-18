@@ -21,6 +21,7 @@ from mtdata.analytics.engines import (
     _portfolio_mark_context,
     _relative_strength_quote_status,
     _tick_frame,
+    _window,
     analyze_execution_quality,
     analyze_microstructure,
     decompose_portfolio_risk,
@@ -1504,6 +1505,22 @@ def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
                 }
             ],
             cost_model="fixed",
+        )
+
+
+def test_analytics_window_expands_date_only_end_through_utc_day() -> None:
+    start, end = _window("2026-08-13", "2026-08-13", 60)
+
+    assert start == datetime(2026, 8, 13, tzinfo=timezone.utc)
+    assert end == datetime(2026, 8, 13, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+def test_analytics_window_keeps_explicit_equal_instants_invalid() -> None:
+    with pytest.raises(ValueError, match="start must be earlier than end"):
+        _window(
+            "2026-08-13T10:00:00Z",
+            "2026-08-13T10:00:00Z",
+            60,
         )
 
 

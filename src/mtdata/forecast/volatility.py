@@ -31,16 +31,17 @@ from ..utils.mt5 import (
 from ..utils.time import _format_time_minimal, bar_close_epoch
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime, parse_kv_or_json
 from .common import (
-    annualization_context as _annualization_context,
-)
-from .common import (
-    default_seasonality as _default_seasonality_period,
-)
-from .common import (
+    _parse_as_of_bound,
     describe_forecast_calendar_treatment,
     future_as_of_error,
     next_times_from_last,
     uses_standard_weekend_projection,
+)
+from .common import (
+    annualization_context as _annualization_context,
+)
+from .common import (
+    default_seasonality as _default_seasonality_period,
 )
 from .common import (
     log_returns_from_prices as _log_returns_from_prices,
@@ -873,7 +874,7 @@ def _fetch_mt5_rates_guarded(
             )
             return _remember(_closed_at(rates, end_dt)), None
         if as_of:
-            to_dt = _parse_start_datetime(as_of)
+            to_dt = _parse_as_of_bound(as_of, timeframe=timeframe)
             if not to_dt:
                 return None, "Invalid as_of time."
             rates = _mt5_copy_rates_from(

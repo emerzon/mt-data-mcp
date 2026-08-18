@@ -132,8 +132,14 @@ PARAM_HINTS = {
     "direction": "Trade direction (long/short).",
     "limit": "Maximum count; see command help for what is counted.",
     "offset": "Rows to skip before returning paginated results.",
-    "start": "Start time (dateparser).",
-    "end": "End time (dateparser).",
+    "start": (
+        "Inclusive start time. A date-only value starts at 00:00 UTC, except "
+        "session-based D1/W1/MN1 market-data windows use the broker calendar."
+    ),
+    "end": (
+        "Inclusive end time. A date-only value includes the full UTC day, except "
+        "session-based D1/W1/MN1 market-data windows use the broker calendar."
+    ),
     "search": "Case-insensitive search text used to filter returned rows.",
     "search_term": "Case-insensitive search text used to filter returned rows.",
     "category": "Category filter for catalog/listing tools.",
@@ -181,7 +187,7 @@ PARAM_HINTS = {
     "alpha": "Alpha parameter for the selected method.",
     "params": "Method parameters as JSON or k=v pairs. Examples: --params alpha=0.3,beta=0.1 or --params '{\"alpha\":0.3,\"beta\":0.1}'.",
     "params_per_method": "Per-method params map (e.g. {method: {k: v}}).",
-    "as_of": "Reference time override (dateparser).",
+    "as_of": "Inclusive reference cutoff; a date-only value includes that full trading day.",
     "ci_alpha": "Confidence interval alpha.",
     "features": "Feature spec as JSON or k=v pairs. Examples: --features lag=3,rolling=5 or --features '{\"lag\":3,\"rolling\":5}'.",
     "dimred": "Dimensionality-reduction method and its method-specific parameters.",
@@ -227,7 +233,11 @@ PARAM_HINTS = {
     "require_sl_tp": "For market orders, require both stop_loss and take_profit and fail if protection cannot be attached. Defaults to true.",
     "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to true.",
     "ticket": "Ticket/order ID.",
-    "expiration": "Expiration time/date. For trade orders accepts a dateparser string, UTC epoch seconds, or GTC token; for option tools accepts YYYY-MM-DD.",
+    "expiration": (
+        "Expiration time/date. Trade-order YYYY-MM-DD values last through 23:59:59 "
+        "in the client calendar; also accepts a dateparser string, UTC epoch seconds, "
+        "or GTC. Option tools accept YYYY-MM-DD."
+    ),
     "idempotency_key": "Optional durable SQLite dedupe key for retrying the same request. Completed outcomes persist across processes and restarts for the configured TTL (24 hours by default).",
     "dry_run": "Preview the action without applying changes.",
     "check_only": "Return sample sufficiency/status checks without running the full analysis.",

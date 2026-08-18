@@ -6,7 +6,6 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import dateparser
 import numpy as np
 import pandas as pd
 from scipy.stats import kurtosis, norm, skew
@@ -42,7 +41,11 @@ from ..utils.quote import (
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import bar_close_epoch, format_datetime_utc, format_epoch_utc
-from ..utils.utils import validate_historical_range
+from ..utils.utils import (
+    _parse_end_datetime,
+    _parse_start_datetime,
+    validate_historical_range,
+)
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -210,18 +213,26 @@ def _frame(rows: Any) -> pd.DataFrame:
     return pd.DataFrame([_mapping(row) for row in list(rows)])
 
 
-def _parse_time(value: Optional[str], default: datetime) -> datetime:
+def _parse_time(
+    value: Optional[str],
+    default: datetime,
+    *,
+    end_bound: bool = False,
+) -> datetime:
     if not value:
         return default
-    parsed = dateparser.parse(str(value), settings={"TIMEZONE": "UTC", "RETURN_AS_TIMEZONE_AWARE": True})
+    parser = _parse_end_datetime if end_bound else _parse_start_datetime
+    parsed = parser(str(value))
     if parsed is None:
         raise ValueError(f"Could not parse datetime: {value}")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
 
 def _window(start: Optional[str], end: Optional[str], minutes_back: int) -> Tuple[datetime, datetime]:
     now = datetime.now(timezone.utc)
-    to_dt = _parse_time(end, now)
+    to_dt = _parse_time(end, now, end_bound=True)
     from_dt = _parse_time(start, to_dt - timedelta(minutes=int(minutes_back)))
     if from_dt >= to_dt:
         raise ValueError("start must be earlier than end")

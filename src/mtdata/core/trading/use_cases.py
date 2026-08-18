@@ -160,6 +160,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "take_profit",
     "expiration",
     "expiration_normalized",
+    "expiration_resolved_utc",
     "quote_context",
 )
 
@@ -1809,6 +1810,14 @@ def run_trade_place(  # noqa: C901
                 preview["expiration"] = request.expiration
                 if normalized_expiration is not None:
                     preview["expiration_normalized"] = normalized_expiration
+                    preview["expiration_resolved_utc"] = (
+                        datetime.fromtimestamp(
+                            normalized_expiration,
+                            tz=timezone.utc,
+                        )
+                        .isoformat()
+                        .replace("+00:00", "Z")
+                    )
             return _shape_trade_place_preview(preview, detail=preview_detail)
 
         if not symbol_norm:

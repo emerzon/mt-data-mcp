@@ -10,6 +10,33 @@ import pytest
 from mtdata.forecast import common as fc
 
 
+def test_parse_as_of_bound_includes_date_only_day_and_preserves_timestamp():
+    assert fc._parse_as_of_bound("2026-08-13", timeframe="H1") == datetime(
+        2026,
+        8,
+        13,
+        23,
+        59,
+        59,
+        999999,
+    )
+    assert fc._parse_as_of_bound(
+        "2026-08-13T10:15:00Z",
+        timeframe="H1",
+    ) == datetime(2026, 8, 13, 10, 15)
+
+
+def test_parse_as_of_bound_uses_broker_calendar_for_daily_timeframe(monkeypatch):
+    expected = datetime(2026, 8, 13, 20, 59, 59)
+    monkeypatch.setattr(
+        fc,
+        "_parse_candle_calendar_bound",
+        lambda value, *, timeframe, end_bound: expected,
+    )
+
+    assert fc._parse_as_of_bound("2026-08-13", timeframe="D1") == expected
+
+
 def test_describe_forecast_calendar_treatment_labels_fx_crypto_and_unknown():
     hour = 3600
     day = 86400

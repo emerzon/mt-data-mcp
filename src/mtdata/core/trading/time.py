@@ -267,6 +267,19 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
         if upper_cleaned in _GTC_EXPIRATION_TOKENS:
             return None, True
 
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+            try:
+                end_of_client_day = datetime.fromisoformat(cleaned).replace(
+                    hour=23,
+                    minute=59,
+                    second=59,
+                    microsecond=999999,
+                )
+            except ValueError as exc:
+                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
+            server_dt = _to_server_time_naive(end_of_client_day)
+            return _server_time_naive_to_mt5_timestamp(server_dt), True
+
         match = _SIMPLE_RELATIVE_PATTERN.match(cleaned)
         if match:
             value = float(match.group(1))
