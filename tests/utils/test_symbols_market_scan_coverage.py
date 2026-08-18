@@ -459,7 +459,7 @@ def test_market_scan_bar_freshness_uses_timeframe_window():
             timeframe="H1",
         )
 
-    assert result["stale_after_seconds"] == 2 * 60 * 60
+    assert result["stale_after_seconds"] == 60 * 60
     assert result["data_stale"] is True
     assert result["freshness"] == "stale, bar 1d 1h ago"
 
@@ -626,6 +626,41 @@ def test_market_scan_completed_rates_drops_forming_bar(mock_rates, mock_time):
     )
 
     assert [bar["close"] for bar in result] == [1.0, 2.0]
+
+
+@patch("mtdata.core.symbols.time.time", return_value=20_000.0)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+def test_market_scan_completed_rates_refreshes_stale_open_session_tail(
+    mock_rates,
+    mock_time,
+):
+    from mtdata.core.symbols import _market_scan_completed_rates
+
+    stale = _make_bars([1.0, 2.0, 3.0])
+    fresh = _make_bars([4.0, 5.0, 6.0])
+    for row, timestamp in zip(
+        stale,
+        [20_000.0 - 5 * 3600, 20_000.0 - 4 * 3600, 20_000.0 - 3 * 3600],
+        strict=True,
+    ):
+        row["time"] = timestamp
+    for row, timestamp in zip(
+        fresh,
+        [20_000.0 - 3 * 3600, 20_000.0 - 2 * 3600, 20_000.0 - 3600],
+        strict=True,
+    ):
+        row["time"] = timestamp
+    mock_rates.side_effect = [stale, fresh]
+
+    result = _market_scan_completed_rates(
+        "EURUSD",
+        timeframe="H1",
+        mt5_timeframe=16385,
+        count=2,
+    )
+
+    assert [bar["close"] for bar in result] == [5.0, 6.0]
+    assert mock_rates.call_count == 2
 
 
 def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):

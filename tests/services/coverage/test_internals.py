@@ -778,6 +778,42 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertNotIn('freshness_policy_relaxed', diagnostics['freshness'])
 
     @patch(_RATES_FROM)
+    def test_latest_h1_rejects_tail_missing_completed_bars(self, mock_from):
+        stale_rates = _make_rates(
+            5,
+            base_ts=9 * 60 * 60,
+            step=60 * 60,
+        )
+        mock_from.return_value = stale_rates
+        diagnostics = {}
+
+        with (
+            patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2),
+            patch(f'{_DS}.FETCH_RETRY_DELAY', 0),
+            patch(f'{_DS}._utc_epoch_seconds', return_value=12 * 60 * 60),
+        ):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD',
+                16385,
+                'H1',
+                5,
+                0,
+                None,
+                None,
+                retry=True,
+                sanity_check=True,
+                diagnostics=diagnostics,
+            )
+
+        self.assertIsNone(result)
+        self.assertIn('allow_stale=true', err)
+        self.assertEqual(mock_from.call_count, 2)
+        self.assertEqual(
+            diagnostics['freshness']['freshness_cutoff_epoch'],
+            11 * 60 * 60,
+        )
+
+    @patch(_RATES_FROM)
     def test_weekend_completed_bars_report_closed_weekend(self, mock_from):
         now = datetime(2026, 6, 13, 12, 0, tzinfo=_UTC)
         latest = datetime(2026, 6, 12, 20, 0, tzinfo=_UTC)

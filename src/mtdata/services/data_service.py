@@ -889,8 +889,11 @@ def _fetch_rates_with_warmup(  # noqa: C901
             raise
         if rates is not None and len(rates) > 0:
             last_t = rates[-1]["time"]
-            freshness_cutoff = freshness_reference_ts - seconds_per_bar * (
-                SANITY_BARS_TOLERANCE + extra_bars
+            freshness_policy_bars = (
+                SANITY_BARS_TOLERANCE + extra_bars if range_query else 1
+            )
+            freshness_cutoff = (
+                freshness_reference_ts - seconds_per_bar * freshness_policy_bars
             )
             tail_is_forming = _is_last_bar_forming(
                 rates, timeframe, current_time_epoch=freshness_reference_ts

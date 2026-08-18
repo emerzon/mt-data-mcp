@@ -2064,7 +2064,7 @@ def _market_scan_points(value: Optional[float]) -> Optional[int | float]:
 def _market_scan_stale_bar_seconds(timeframe: Optional[str]) -> int:
     seconds = TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper())
     if seconds:
-        return max(1, int(seconds) * 2)
+        return max(1, int(seconds))
     return int(_MARKET_SCAN_STALE_BAR_SECONDS)
 
 
@@ -2319,17 +2319,60 @@ def _market_scan_completed_rates(
     count: int,
 ) -> Any:
     requested = max(1, int(count))
-    rates = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, requested + 1)
+
+    def _completed(raw_rates: Any, *, now_epoch: float) -> Any:
+        if raw_rates is None or len(raw_rates) < 1:
+            return raw_rates
+        completed = raw_rates
+        latest_time = _market_scan_float(completed[-1]["time"])
+        if (
+            latest_time is not None
+            and bar_close_epoch(latest_time, timeframe) > now_epoch
+        ):
+            completed = completed[:-1]
+        if len(completed) > requested:
+            completed = completed[-requested:]
+        return completed
+
+    now_epoch = float(time.time())
+    rates = _completed(
+        _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, requested + 1),
+        now_epoch=now_epoch,
+    )
     if rates is None or len(rates) < 1:
         return rates
     latest_time = _market_scan_float(rates[-1]["time"])
+    latest_close = (
+        bar_close_epoch(latest_time, timeframe)
+        if latest_time is not None
+        else None
+    )
+    age_seconds = (
+        max(0.0, now_epoch - latest_close)
+        if latest_close is not None
+        else None
+    )
+    closed_session = (
+        closed_session_context(
+            symbol,
+            now_epoch=now_epoch,
+            item="bar",
+            data_age_seconds=age_seconds,
+        )
+        if age_seconds is not None
+        else None
+    )
     if (
-        latest_time is not None
-        and bar_close_epoch(latest_time, timeframe) > time.time()
+        age_seconds is not None
+        and age_seconds > _market_scan_stale_bar_seconds(timeframe)
+        and not bool((closed_session or {}).get("freshness_policy_relaxed"))
     ):
-        rates = rates[:-1]
-    if len(rates) > requested:
-        rates = rates[-requested:]
+        refreshed = _completed(
+            _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, requested + 1),
+            now_epoch=now_epoch,
+        )
+        if refreshed is not None:
+            rates = refreshed
     return rates
 
 
