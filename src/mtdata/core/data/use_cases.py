@@ -28,6 +28,7 @@ from ...utils.quote import (
     tick_value,
 )
 from ...utils.symbol import symbol_suggestions_from_gateway
+from ...utils.utils import _iana_timezone_datetime_issue
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
@@ -462,8 +463,22 @@ def _normalize_candle_query_error(
     normalized = message.lower()
     error_code: Optional[str] = None
     remediation: Optional[str] = None
+    dst_issue = next(
+        (
+            (field, issue)
+            for field in ("start", "end")
+            if (value := getattr(request, field, None)) is not None
+            if (issue := _iana_timezone_datetime_issue(str(value))) is not None
+        ),
+        None,
+    )
 
-    if "not found" in normalized and "symbol" in normalized:
+    if dst_issue is not None:
+        _, issue = dst_issue
+        error_code = str(issue["error_code"])
+        message = str(issue["error"])
+        remediation = str(issue["remediation"])
+    elif "not found" in normalized and "symbol" in normalized:
         error_code = "symbol_not_found"
         message = f"Symbol '{request.symbol}' was not found in MT5."
         remediation = (
@@ -509,7 +524,11 @@ def _normalize_candle_query_error(
         "symbol": request.symbol,
         "timeframe": request.timeframe,
     }
-    if error_code == "symbol_not_found":
+    if dst_issue is not None:
+        field, issue = dst_issue
+        details.update(dict(issue.get("details") or {}))
+        details["field"] = field
+    elif error_code == "symbol_not_found":
         details["did_you_mean"] = symbol_suggestions_from_gateway(
             gateway,
             request.symbol,
@@ -1587,8 +1606,22 @@ def _normalize_tick_query_error(
     normalized = message.lower()
     error_code = "data_fetch_ticks_provider_failure"
     remediation = "Check the MT5 connection and broker data feed, then retry."
+    dst_issue = next(
+        (
+            (field, issue)
+            for field in ("start", "end")
+            if (value := getattr(request, field, None)) is not None
+            if (issue := _iana_timezone_datetime_issue(str(value))) is not None
+        ),
+        None,
+    )
 
-    if (
+    if dst_issue is not None:
+        _, issue = dst_issue
+        error_code = str(issue["error_code"])
+        message = str(issue["error"])
+        remediation = str(issue["remediation"])
+    elif (
         ("not found" in normalized and "symbol" in normalized)
         or "failed to select symbol" in normalized
         or "unknown symbol" in normalized
@@ -1642,7 +1675,11 @@ def _normalize_tick_query_error(
         "symbol": request.symbol,
         "timezone": "UTC",
     }
-    if error_code == "symbol_not_found":
+    if dst_issue is not None:
+        field, issue = dst_issue
+        details.update(dict(issue.get("details") or {}))
+        details["field"] = field
+    elif error_code == "symbol_not_found":
         details["did_you_mean"] = symbol_suggestions_from_gateway(
             gateway,
             request.symbol,

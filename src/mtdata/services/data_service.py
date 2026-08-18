@@ -121,6 +121,7 @@ from ..utils.time import (
 from ..utils.utils import (
     _calendar_period_bounds,
     _format_numeric_rows_from_df,
+    _iana_timezone_datetime_issue,
     _is_calendar_period_expression,
     _normalize_ohlcv_arg,
     _parse_end_datetime,
@@ -926,6 +927,9 @@ def _parse_fetch_datetime_arg(
     if parsed is None:
         parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
     if parsed is None:
+        issue = _iana_timezone_datetime_issue(value)
+        if issue is not None:
+            return None, f"{issue['error']} {issue['remediation']}"
         return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt_timezone.utc)
@@ -3461,6 +3465,9 @@ def fetch_ticks(  # noqa: C901
             if start:
                 from_date = _parse_start_datetime(start)
                 if not from_date:
+                    issue = _iana_timezone_datetime_issue(start)
+                    if issue is not None:
+                        return {"error": f"{issue['error']} {issue['remediation']}"}
                     return {"error": f"Could not parse start date {start!r}. {_DATE_FORMAT_HINT}"}
                 future_error = _future_start_error(start, from_date, 0)
                 if future_error:
@@ -3468,6 +3475,9 @@ def fetch_ticks(  # noqa: C901
                 if end:
                     to_date = _parse_end_datetime(end)
                     if not to_date:
+                        issue = _iana_timezone_datetime_issue(end)
+                        if issue is not None:
+                            return {"error": f"{issue['error']} {issue['remediation']}"}
                         return {"error": f"Could not parse end date {end!r}. {_DATE_FORMAT_HINT}"}
                     if from_date > to_date:
                         return {"error": "start must be before or equal to end."}
@@ -3503,6 +3513,9 @@ def fetch_ticks(  # noqa: C901
                 if end:
                     to_date = _parse_end_datetime(end)
                     if not to_date:
+                        issue = _iana_timezone_datetime_issue(end)
+                        if issue is not None:
+                            return {"error": f"{issue['error']} {issue['remediation']}"}
                         return {
                             "error": (
                                 f"Could not parse end date {end!r}. "

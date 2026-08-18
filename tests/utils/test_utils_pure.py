@@ -282,6 +282,9 @@ class TestParseStartDatetime:
     def test_iana_timezone_rejects_ambiguous_dst_local_time(self):
         assert _parse_start_datetime("2026-11-01 01:30 America/New_York") is None
 
+    def test_iana_timezone_rejects_nonexistent_dst_local_time(self):
+        assert _parse_start_datetime("2026-03-08 02:30 America/New_York") is None
+
     @pytest.mark.parametrize(
         "value",
         ["2026-13-01", "2026-02-30", "2025-02-29", "2026-00-10T12:00:00Z"],
@@ -341,6 +344,35 @@ def test_validate_historical_range_rejects_future_start() -> None:
 
     assert error["error_code"] == "future_date_range"
     assert "no historical data" in error["error"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_code", "message_fragment"),
+    [
+        (
+            "2026-03-08 02:30 America/New_York",
+            "nonexistent_local_time",
+            "does not exist",
+        ),
+        (
+            "2026-11-01 01:30 America/New_York",
+            "ambiguous_local_time",
+            "occurs twice",
+        ),
+    ],
+)
+def test_validate_historical_range_explains_dst_transition_conflicts(
+    value,
+    expected_code,
+    message_fragment,
+) -> None:
+    error = validate_historical_range(value, None)
+
+    assert error["error_code"] == expected_code
+    assert message_fragment in error["error"]
+    assert "explicit ISO 8601 offset" in error["remediation"]
+    assert error["details"]["timezone"] == "America/New_York"
+    assert error["details"]["field"] == "start"
 
 
 @pytest.mark.parametrize(

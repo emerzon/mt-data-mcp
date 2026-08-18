@@ -349,18 +349,20 @@ def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
     return tuple(a[mask] for a in conv)
 
 
-def _parse_iana_timezone_datetime(value: str) -> Optional[datetime]:
-    """Parse a local datetime ending in an IANA zone name into naive UTC."""
+def _resolve_iana_timezone_datetime(
+    value: str,
+) -> tuple[Optional[datetime], Optional[Dict[str, Any]]]:
+    """Resolve an IANA-zone local time or describe its DST transition conflict."""
     try:
         local_text, timezone_name = str(value).strip().rsplit(maxsplit=1)
     except ValueError:
-        return None
+        return None, None
     if "/" not in timezone_name:
-        return None
+        return None, None
     try:
         local_zone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError:
-        return None
+        return None, None
     local_time = dateparser.parse(
         local_text,
         settings={
@@ -369,18 +371,76 @@ def _parse_iana_timezone_datetime(value: str) -> Optional[datetime]:
         },
     )
     if local_time is None or local_time.tzinfo is not None:
-        return None
+        return None, None
 
     # A named local time at a daylight-saving transition can be nonexistent or
     # ambiguous. Do not silently select a different instant for either case.
     fold_zero = local_time.replace(tzinfo=local_zone, fold=0)
     fold_one = local_time.replace(tzinfo=local_zone, fold=1)
+    roundtrip_zero = fold_zero.astimezone(timezone.utc).astimezone(local_zone)
+    roundtrip_one = fold_one.astimezone(timezone.utc).astimezone(local_zone)
+    zero_is_valid = roundtrip_zero.replace(tzinfo=None) == local_time
+    one_is_valid = roundtrip_one.replace(tzinfo=None) == local_time
     if fold_zero.utcoffset() != fold_one.utcoffset():
-        return None
+        value_text = str(value).strip()
+        if zero_is_valid and one_is_valid:
+            choices = [fold_zero.isoformat(), fold_one.isoformat()]
+            return None, {
+                "success": False,
+                "error": (
+                    f"Local time {local_text!r} is ambiguous in {timezone_name}: "
+                    "it occurs twice when daylight-saving time ends."
+                ),
+                "error_code": "ambiguous_local_time",
+                "details": {
+                    "value": value_text,
+                    "timezone": timezone_name,
+                    "offset_choices": choices,
+                },
+                "remediation": (
+                    "Choose the intended instant with an explicit ISO 8601 offset, "
+                    f"for example {choices[0]} or {choices[1]}."
+                ),
+            }
+        nearby = sorted(
+            {
+                roundtrip_zero.replace(fold=0).isoformat(),
+                roundtrip_one.replace(fold=0).isoformat(),
+            }
+        )
+        return None, {
+            "success": False,
+            "error": (
+                f"Local time {local_text!r} does not exist in {timezone_name}: "
+                "the clock skips it when daylight-saving time starts."
+            ),
+            "error_code": "nonexistent_local_time",
+            "details": {
+                "value": value_text,
+                "timezone": timezone_name,
+                "nearest_valid_local_times": nearby,
+            },
+            "remediation": (
+                "Choose an existing local time with an explicit ISO 8601 offset, "
+                f"for example {nearby[-1]}."
+            ),
+        }
     utc_time = fold_zero.astimezone(timezone.utc)
-    if utc_time.astimezone(local_zone).replace(tzinfo=None) != local_time:
-        return None
-    return utc_time.replace(tzinfo=None)
+    if not zero_is_valid:
+        return None, None
+    return utc_time.replace(tzinfo=None), None
+
+
+def _iana_timezone_datetime_issue(value: str) -> Optional[Dict[str, Any]]:
+    """Return a structured DST issue for an otherwise valid IANA local time."""
+    _, issue = _resolve_iana_timezone_datetime(value)
+    return issue
+
+
+def _parse_iana_timezone_datetime(value: str) -> Optional[datetime]:
+    """Parse a local datetime ending in an IANA zone name into naive UTC."""
+    parsed, _ = _resolve_iana_timezone_datetime(value)
+    return parsed
 
 
 def _calendar_period_bounds(
@@ -510,8 +570,22 @@ def validate_historical_range(
     end_dt = _parse_end_datetime(end) if end else None
     invalid_fields = []
     if start and start_dt is None:
+        if issue := _iana_timezone_datetime_issue(start):
+            issue = dict(issue)
+            issue["details"] = {
+                **dict(issue.get("details") or {}),
+                "field": "start",
+            }
+            return issue
         invalid_fields.append({"field": "start", "value": str(start)[:200]})
     if end and end_dt is None:
+        if issue := _iana_timezone_datetime_issue(end):
+            issue = dict(issue)
+            issue["details"] = {
+                **dict(issue.get("details") or {}),
+                "field": "end",
+            }
+            return issue
         invalid_fields.append({"field": "end", "value": str(end)[:200]})
     if invalid_fields:
         invalid_text = ", ".join(

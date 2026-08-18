@@ -139,6 +139,40 @@ def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):
     assert result["details"]["symbol"] == "EURUSD.BAD"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected_code", "message_fragment"),
+    [
+        (
+            "2026-03-08 02:30 America/New_York",
+            "nonexistent_local_time",
+            "does not exist",
+        ),
+        (
+            "2026-11-01 01:30 America/New_York",
+            "ambiguous_local_time",
+            "occurs twice",
+        ),
+    ],
+)
+def test_data_fetch_candles_explains_dst_transition_conflicts(
+    value,
+    expected_code,
+    message_fragment,
+):
+    request = DataFetchCandlesRequest(symbol="EURUSD", start=value)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {"error": "invalid date"},
+    )
+
+    assert result["error_code"] == expected_code
+    assert message_fragment in result["error"]
+    assert "explicit ISO 8601 offset" in result["remediation"]
+    assert result["details"]["field"] == "start"
+
+
 def test_run_data_fetch_candles_returns_empty_envelope_for_no_rows():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -2155,6 +2189,24 @@ def test_run_data_fetch_ticks_classifies_query_errors(
         "start": start,
         "end": end,
     }
+
+
+def test_data_fetch_ticks_explains_ambiguous_dst_local_time() -> None:
+    start = "2026-11-01 01:30 America/New_York"
+
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", start=start),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {"error": "Could not parse start date"},
+    )
+
+    assert result["error_code"] == "ambiguous_local_time"
+    assert "occurs twice" in result["error"]
+    assert result["details"]["offset_choices"] == [
+        "2026-11-01T01:30:00-04:00",
+        "2026-11-01T01:30:00-05:00",
+    ]
+    assert result["details"]["field"] == "start"
 
 
 def test_run_data_fetch_ticks_maps_empty_historical_window_to_success() -> None:
