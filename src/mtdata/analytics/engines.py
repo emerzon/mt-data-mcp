@@ -1907,7 +1907,7 @@ def validate_strategies(  # noqa: C901
             "success": False,
             "error": (
                 "Transaction-cost spread is unavailable for the requested evaluation window. "
-                "Provide spread_bps with cost_model='fixed' or use a window whose "
+                "Provide --spread-bps with --cost-model fixed or use a window whose "
                 "completed bars include historical spread observations."
             ),
             "error_code": "cost_model_unavailable",
@@ -2196,7 +2196,7 @@ def validate_strategies(  # noqa: C901
     if not complete:
         warnings_out.append(
             "Historical spread coverage is below 90%; positive classification "
-            "is disabled. Use cost_model='fixed' with an explicit spread_bps for "
+            "is disabled. Use --cost-model fixed with an explicit --spread-bps for "
             "a controlled complete-cost comparison."
         )
     for item in results:

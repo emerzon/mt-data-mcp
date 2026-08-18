@@ -165,9 +165,9 @@ class StrategyValidateRequest(BaseModel):
     def _window(self) -> "StrategyValidateRequest":
         validate_complete_time_window(self.start, self.end)
         if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
-            raise ValueError("spread_bps is only valid with cost_model='fixed'")
+            raise ValueError("--spread-bps is only valid with --cost-model fixed")
         if self.cost_model == "fixed" and self.spread_bps is None:
-            raise ValueError("spread_bps is required with cost_model='fixed'")
+            raise ValueError("--spread-bps is required with --cost-model fixed")
         return self
 
 

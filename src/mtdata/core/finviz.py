@@ -1390,7 +1390,7 @@ def finviz_filters_list(
         "detail": detail_mode,
         "hint": (
             "Use finviz_screen filters as Filter=Value pairs or shorthand "
-            "tokens such as cap_largeover; pass filter_name or detail=full "
+            "tokens such as cap_largeover; pass --filter-name or --detail full "
             "for accepted values."
         ),
     }
@@ -3277,7 +3277,9 @@ def _compact_finviz_ratings_payload(
     out["detail"] = detail_mode
     if detail_mode == "full":
         if omitted:
-            out["show_all_hint"] = f"Increase limit to {len(normalized_rows)} to view all ratings."
+            out["show_all_hint"] = (
+                f"Increase --limit to {len(normalized_rows)} to view all ratings."
+            )
         return out
     compact_rows = [_compact_finviz_rating_row(row) for row in limited_rows]
     out["ratings"] = compact_rows
@@ -3286,7 +3288,7 @@ def _compact_finviz_ratings_payload(
     }
     if omitted:
         out["show_all_hint"] = (
-            f"Set detail='full' or limit={len(normalized_rows)} to view all ratings."
+            f"Set --detail full or --limit {len(normalized_rows)} to view all ratings."
         )
     return out
 
@@ -3329,7 +3331,7 @@ def _compact_finviz_peers_payload(
     )
     if omitted:
         out["show_all_hint"] = (
-            f"{omitted} more peers available; pass offset={offset_value + len(compact_peers)}."
+            f"{omitted} more peers available; pass --offset {offset_value + len(compact_peers)}."
         )
     return out
 
@@ -3593,7 +3595,7 @@ def _apply_finviz_description_detail(
     out["description"] = truncated
     out["description_truncated"] = True
     out["description_full_length"] = full_length
-    out["detail_hint"] = "Use detail='full' for the complete description."
+    out["detail_hint"] = "Use --detail full for the complete description."
     return out
 
 

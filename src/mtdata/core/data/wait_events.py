@@ -3033,7 +3033,7 @@ def _market_quote_alignment_error(
                 f"Wait-event tick history for {symbol} diverges from the executable "
                 f"quote by {difference:g}, above the {tolerance:g} alignment tolerance."
             ),
-            "error_code": "WAIT_EVENT_QUOTE_DIVERGENCE",
+            "error_code": "wait_event_quote_divergence",
             "diagnostics": {
                 "symbol": symbol,
                 "history_mid": history_mid,
@@ -3473,7 +3473,7 @@ def _market_tick_retention_error(
             f"({retained_tick_count} retained ticks > {_MARKET_TICK_RETENTION_MAX_TICKS}; "
             f"keeping {failure['retained_for_text']})."
         ),
-        "error_code": "WAIT_EVENT_TICK_RETENTION_CAP",
+        "error_code": "wait_event_tick_retention_cap",
         "diagnostics": {
             "retention_guardrail": failure["diagnostics"],
         },

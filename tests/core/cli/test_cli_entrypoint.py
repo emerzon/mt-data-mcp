@@ -111,8 +111,12 @@ def test_unknown_command_path_does_not_import_cli_api(capsys):
     with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
         status = main(["market-tickr"])
 
+    captured = capsys.readouterr()
     assert status == 2
-    assert "market_ticker" in capsys.readouterr().err
+    assert captured.err == ""
+    assert "success: false" in captured.out
+    assert "error_code: cli_unknown_command" in captured.out
+    assert "market_ticker" in captured.out
 
 
 def test_unknown_command_json_uses_standard_error_envelope(capsys):
@@ -121,7 +125,8 @@ def test_unknown_command_json_uses_standard_error_envelope(capsys):
     with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
         status = main(["no-such-command", "--json"])
 
-    payload = json.loads(capsys.readouterr().out)
+    rendered = capsys.readouterr().out
+    payload = json.loads(rendered)
     assert status == 2
     assert payload["success"] is False
     assert payload["error_code"] == "cli_unknown_command"
@@ -129,6 +134,7 @@ def test_unknown_command_json_uses_standard_error_envelope(capsys):
     assert payload["request_id"]
     assert payload["remediation"]
     assert payload["documentation"] == "docs/CLI.md"
+    assert rendered.startswith("{\n  \"success\": false")
 
 
 def test_module_unknown_command_uses_invocable_remediation():

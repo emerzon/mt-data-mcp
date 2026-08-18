@@ -494,7 +494,7 @@ class TestTradeClose:
         if isinstance(out, dict):
             error = str(out.get("error", "")).lower()
             assert "live bulk operation requires explicit confirmation" in error
-            assert "confirm_close_all=true" in error
+            assert "--confirm-close-all true" in error
         else:
             assert "live bulk operation requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
@@ -507,7 +507,7 @@ class TestTradeClose:
         if isinstance(out, dict):
             error = str(out.get("error", "")).lower()
             assert "bulk close requires explicit confirmation" in error
-            assert "close_all=true" in error
+            assert "--close-all true" in error
         else:
             assert "bulk close requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
@@ -519,8 +519,9 @@ class TestTradeClose:
         out = trade_close(dry_run=True, __cli_raw=True)
 
         assert out["success"] is False
-        assert out["error_code"] == "CLOSE_SCOPE_REQUIRED"
-        assert "close_all=true" in out["error"]
+        assert out["error_code"] == "close_scope_required"
+        assert "--close-all true" in out["error"]
+        assert "--ticket <ticket>" in out["error"]
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 

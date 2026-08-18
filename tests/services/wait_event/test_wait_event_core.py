@@ -1409,7 +1409,7 @@ def test_run_wait_event_returns_error_when_tick_retention_cap_is_exceeded(monkey
     assert "tick retention" in result["error"]
     assert "EURUSD" in result["error"]
     assert "5 retained ticks > 4" in result["error"]
-    assert result["error_code"] == "WAIT_EVENT_TICK_RETENTION_CAP"
+    assert result["error_code"] == "wait_event_tick_retention_cap"
     assert result["diagnostics"]["retention_guardrail"]["symbol"] == "EURUSD"
     assert result["diagnostics"]["retention_guardrail"]["retained_tick_count"] == 5
     assert result["diagnostics"]["retention_guardrail"]["retention_cap_ticks"] == 4

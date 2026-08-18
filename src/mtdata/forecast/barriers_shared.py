@@ -570,7 +570,7 @@ def _build_selection_diagnostics(  # noqa: C901
         ci_msg = f" (CI width: {ci_w:.1%})" if ci_w is not None else ""
         out["confidence_warning"] = (
             f"Win probability estimate has wide confidence interval{ci_msg}. "
-            "Increase n_sims or use search_profile='long' for tighter estimates."
+            "Increase --n-sims or use --search-profile long for tighter estimates."
         )
         out["low_confidence"] = True
         prob_win_val = _safe_float(row.get("prob_win"))
@@ -694,9 +694,9 @@ def _build_actionability_payload(
     if status != "ok":
         out["remediation"] = {
             "next_steps": [
-                "Retry with search_profile='long' or a wider TP/SL grid.",
+                "Retry with --search-profile long or a wider TP/SL grid.",
                 "Run forecast_barrier_prob with explicit TP/SL levels to inspect hit probabilities.",
-                "Use viable_only=false only for diagnostics; keep tradable=false setups out of execution.",
+                "Use --viable-only false only for diagnostics; keep non-tradable setups out of execution.",
             ]
         }
     return out

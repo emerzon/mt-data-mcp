@@ -1494,7 +1494,7 @@ def test_strategy_validation_historical_spread_can_receive_positive_classificati
 
 
 def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
-    with pytest.raises(ValueError, match="spread_bps is required"):
+    with pytest.raises(ValueError, match="--spread-bps is required"):
         StrategyValidateRequest(
             symbol="EURUSD",
             candidates=[
@@ -1542,7 +1542,7 @@ def test_execution_quality_rejects_future_only_history_window() -> None:
 
 
 def test_strategy_validation_historical_model_rejects_explicit_spread() -> None:
-    with pytest.raises(ValueError, match="spread_bps is only valid"):
+    with pytest.raises(ValueError, match="--spread-bps is only valid"):
         StrategyValidateRequest(
             symbol="EURUSD",
             candidates=[

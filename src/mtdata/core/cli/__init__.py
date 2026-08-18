@@ -5,6 +5,7 @@ import sys
 from difflib import get_close_matches
 from typing import Optional, Sequence
 
+from ...utils.minimal_output_toon import _format_to_toon
 from ..error_envelope import build_error_payload
 from .catalog import display_program_name, format_root_help, known_command_names
 from .output_format import (
@@ -107,21 +108,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         suggestions = get_close_matches(normalized_command, sorted(known_commands), n=3)
         if suggestions:
             message += f". Did you mean: {', '.join(suggestions)}?"
-        if _json_output_requested(effective_argv):
-            print(
-                json.dumps(
-                    build_error_payload(
-                        message,
-                        code="cli_unknown_command",
-                        operation="cli",
-                        remediation=f"Run '{program} --help' to list commands.",
-                        documentation="docs/CLI.md",
-                    )
-                )
-            )
-        else:
-            print(message, file=sys.stderr)
-            print(f"Run '{program} --help' to list commands.", file=sys.stderr)
+        payload = build_error_payload(
+            message,
+            code="cli_unknown_command",
+            operation="cli",
+            remediation=f"Run '{program} --help' to list commands.",
+            documentation="docs/CLI.md",
+        )
+        rendered = (
+            json.dumps(payload, ensure_ascii=False, indent=2)
+            if _json_output_requested(effective_argv)
+            else _format_to_toon(payload)
+        )
+        print(rendered)
         return 2
 
     from . import api

@@ -686,7 +686,7 @@ def test_strategy_backtest_request_rejects_invalid_ma_periods():
 
 
 def test_strategy_backtest_request_rejects_spread_with_historical_model():
-    with pytest.raises(ValueError, match="spread_bps is only valid"):
+    with pytest.raises(ValueError, match="--spread-bps is only valid"):
         StrategyBacktestRequest(symbol="EURUSD", spread_bps=1.0)
 
 
@@ -696,5 +696,5 @@ def test_strategy_backtest_request_rejects_removed_auto_cost_model():
 
 
 def test_strategy_backtest_request_requires_spread_with_fixed_model():
-    with pytest.raises(ValueError, match="spread_bps is required"):
+    with pytest.raises(ValueError, match="--spread-bps is required"):
         StrategyBacktestRequest(symbol="EURUSD", cost_model="fixed")

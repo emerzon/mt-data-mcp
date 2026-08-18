@@ -2750,7 +2750,7 @@ def _run_trade_close_once(  # noqa: C901
                 "error": (
                     "close_all cannot be combined with ticket. "
                     "Use ticket for a specific position or pending order, "
-                    "or omit ticket and pass close_all=true for a bulk close."
+                    "or omit --ticket and pass --close-all true for a bulk close."
                 )
             },
             scope="ticket",
@@ -2765,18 +2765,18 @@ def _run_trade_close_once(  # noqa: C901
             {
                 "error": (
                     "A live bulk operation requires explicit confirmation. Re-run with "
-                    "dry_run=true to preview, or pass confirm_close_all=true to "
+                    "--dry-run true to preview, or pass --confirm-close-all true to "
                     "execute the selected target and scope."
                 ),
-                "error_code": "CONFIRMATION_REQUIRED",
+                "error_code": "confirmation_required",
                 "close_all": request.close_all,
                 "target": target,
                 "dry_run": False,
-                "required_confirmation": "confirm_close_all=true",
+                "required_confirmation": "--confirm-close-all true",
                 "alternatives": [
-                    "Pass dry_run=true to preview matching objects",
-                    "Pass ticket=<ticket_number> for a specific target object",
-                    "Pass confirm_close_all=true only after reviewing exposure",
+                    "Pass --dry-run true to preview matching objects",
+                    "Pass --ticket <ticket_number> for a specific target object",
+                    "Pass --confirm-close-all true only after reviewing exposure",
                 ],
             },
             scope="bulk_confirmation",
@@ -2792,15 +2792,15 @@ def _run_trade_close_once(  # noqa: C901
         return _finish(
             {
                 "error": (
-                    "Close preview requires an explicit scope: specify ticket=<ticket>, "
-                    "symbol=<symbol>, magic=<number>, or close_all=true."
+                    "Close preview requires an explicit scope: specify --ticket <ticket>, "
+                    "--symbol <symbol>, --magic <number>, or --close-all true."
                 ),
-                "error_code": "CLOSE_SCOPE_REQUIRED",
+                "error_code": "close_scope_required",
                 "alternatives": [
-                    "Use ticket=<ticket_number> to preview a specific close",
-                    "Use symbol=<symbol> to preview positions for one symbol",
-                    "Use magic=<number> to preview one strategy's matching objects",
-                    "Pass close_all=true to preview the selected target account-wide",
+                    "Use --ticket <ticket_number> to preview a specific close",
+                    "Use --symbol <symbol> to preview positions for one symbol",
+                    "Use --magic <number> to preview one strategy's matching objects",
+                    "Pass --close-all true to preview the selected target account-wide",
                 ],
             },
             scope="request",
@@ -2816,15 +2816,15 @@ def _run_trade_close_once(  # noqa: C901
         return _finish(
             {
                 "error": (
-                    "Bulk close requires explicit confirmation: pass close_all=true "
-                    "for an account-wide operation, or specify ticket, symbol, or magic."
+                    "Bulk close requires explicit confirmation: pass --close-all true "
+                    "for an account-wide operation, or specify --ticket, --symbol, or --magic."
                 ),
-                "error_code": "CONFIRMATION_REQUIRED",
+                "error_code": "confirmation_required",
                 "suggestion": "Review matching positions before closing (irreversible action).",
                 "alternatives": [
-                    "Use ticket=<ticket_number> for one target object",
-                    "Use symbol=<symbol> or magic=<number> for a bounded bulk scope",
-                    "Use close_all=true for the selected target account-wide",
+                    "Use --ticket <ticket_number> for one target object",
+                    "Use --symbol <symbol> or --magic <number> for a bounded bulk scope",
+                    "Use --close-all true for the selected target account-wide",
                 ],
             },
             scope="bulk_confirmation",

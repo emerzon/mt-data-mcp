@@ -1250,11 +1250,11 @@ def strategy_backtest(  # noqa: C901
             }
         if cost_model_value == "historical_bar_spread" and spread_bps is not None:
             return {
-                "error": "spread_bps is only valid with cost_model='fixed'"
+                "error": "--spread-bps is only valid with --cost-model fixed"
             }
         if cost_model_value == "fixed" and spread_bps is None:
             return {
-                "error": "spread_bps is required with cost_model='fixed'"
+                "error": "--spread-bps is required with --cost-model fixed"
             }
         fixed_spread_bps = float(spread_bps or 0.0)
 
@@ -1831,8 +1831,8 @@ def strategy_backtest(  # noqa: C901
                 result["warnings"] = [
                     "Transaction costs are unavailable because the selected spread model "
                     "could not price any simulated trade. No transaction-cost-adjusted "
-                    "return is reported. Retry with cost_model='fixed' and an explicit "
-                    "spread_bps value."
+                    "return is reported. Retry with --cost-model fixed and an explicit "
+                    "--spread-bps value."
                     + spread_warning
                 ]
             result["summary"]["metrics_reliability"] = "unavailable"

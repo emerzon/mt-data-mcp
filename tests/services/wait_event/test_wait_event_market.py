@@ -528,7 +528,7 @@ def test_wait_event_fails_closed_when_history_quote_diverges() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["error_code"] == "WAIT_EVENT_QUOTE_DIVERGENCE"
+    assert result["error_code"] == "wait_event_quote_divergence"
     assert result["diagnostics"]["difference"] == pytest.approx(3.0)
 
 def test_run_wait_event_matches_volume_spike() -> None:
@@ -1373,7 +1373,7 @@ def test_market_tick_retention_error_reports_clear_cap_failure(monkeypatch) -> N
     assert "memory cap" in error["error"]
     assert "EURUSD" in error["error"]
     assert "5 retained ticks > 4" in error["error"]
-    assert error["error_code"] == "WAIT_EVENT_TICK_RETENTION_CAP"
+    assert error["error_code"] == "wait_event_tick_retention_cap"
     assert error["diagnostics"]["retention_guardrail"] == {
         "symbol": "EURUSD",
         "retained_tick_count": 5,

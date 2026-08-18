@@ -855,7 +855,9 @@ class TestFinvizProgressiveDisclosure:
             "more_available": 2,
         }
         assert result["summary"]["latest"] == expected_rows[0]
-        assert result["show_all_hint"] == "Set detail='full' or limit=5 to view all ratings."
+        assert result["show_all_hint"] == (
+            "Set --detail full or --limit 5 to view all ratings."
+        )
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_limit_controls_returned_rows(self, mock_get):
@@ -974,6 +976,9 @@ class TestFinvizProgressiveDisclosure:
             "has_more": True,
             "more_available": 1,
         }
+        assert result["show_all_hint"] == (
+            "1 more peers available; pass --offset 5."
+        )
 
     @patch("mtdata.core.finviz.get_stock_peers")
     def test_peers_limit_controls_returned_rows(self, mock_get):

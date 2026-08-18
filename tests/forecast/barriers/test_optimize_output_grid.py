@@ -465,6 +465,18 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
             actionability["actionability_flags"],
         )
 
+    def test_non_viable_remediation_uses_cli_flags(self):
+        actionability = _build_actionability_payload(
+            status="non_viable",
+            status_reason="No viable candidates.",
+        )
+
+        steps = actionability["remediation"]["next_steps"]
+        self.assertTrue(any("--search-profile long" in step for step in steps))
+        self.assertTrue(any("--viable-only false" in step for step in steps))
+        self.assertFalse(any("search_profile=" in step for step in steps))
+        self.assertFalse(any("viable_only=" in step for step in steps))
+
 
 if __name__ == '__main__':
     unittest.main()
