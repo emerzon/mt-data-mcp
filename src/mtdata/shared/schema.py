@@ -217,7 +217,13 @@ PARAM_HINTS = {
     "list_mode": "List mode (symbols or groups).",
     "search_mode": "Symbol search mode: auto, name, description, group, exact, or all.",
     "sections": "Comma-separated output sections to include.",
-    "include_sections": "Only include these report sections; comma-separated or repeated values.",
+    "include_sections": (
+        "Only execute these template sections; comma-separated or repeated values. "
+        "Names include context, pivot, contexts_multi, pivot_multi, volatility, "
+        "backtest, forecast, barriers, patterns, confluence, market, "
+        "execution_gates, session, news, temporal, volume_profile, regime, "
+        "volatility_har_rv, and forecast_conformal; availability varies by template."
+    ),
     "max_sections": "Maximum report sections to include after filtering.",
     "include_account": "Include account snapshot fields in the session context.",
     "region": "Market region filter or status region.",

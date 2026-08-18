@@ -93,7 +93,20 @@ Useful controls:
 - `--methods` supplies comma- or space-separated forecast methods.
 - `--include-sections` selects the sections to execute and return; required
   internal dependencies may run but cannot independently make the request
-  successful. `--max-sections` caps the selected count.
+  successful. Names must belong to the selected template:
+
+  | Template | Valid section names |
+  |----------|---------------------|
+  | `minimal` | `context`, `forecast` |
+  | `basic` | `context`, `pivot`, `contexts_multi`, `pivot_multi`, `volatility`, `backtest`, `forecast`, `barriers`, `patterns`, `confluence` |
+  | `advanced` | Basic sections plus `regime`, `volatility_har_rv`, `forecast_conformal` |
+  | `scalping` | `context`, `pivot`, `contexts_multi`, `pivot_multi`, `volatility`, `backtest`, `forecast`, `barriers`, `patterns`, `market`, `execution_gates`, `session` |
+  | `intraday` | Basic sections plus `market`, `execution_gates`, `session`, `news`, `temporal` |
+  | `swing` / `position` | Basic sections plus `volume_profile`, `news` |
+
+  Unknown or unavailable names fail before any report sections run, even when
+  `--allow-partial true`; `valid_sections` lists the selected template's names.
+  `--max-sections` caps the selected count.
 - `--max-runtime` supplies a cooperative wall-clock budget. The runner first
   schedules a section subset whose estimated cost fits, then stops starting
   report sub-tools once the deadline passes. An already-running native or MT5

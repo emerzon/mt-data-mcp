@@ -1774,21 +1774,20 @@ class TestReportWarnings:
                 format="toon",
             )
 
-        assert res["sections"] == {}
         assert res["success"] is False
-        assert res["section_run_status"] == "failed"
         assert res["error_code"] == "report_sections_not_found"
-        assert res["section_controls"]["missing_requested_sections"] == ["not-a-section"]
+        assert res["invalid_sections"] == ["not-a-section"]
+        assert "forecast" in res["valid_sections"]
+        assert "overall_assessment" not in res
+        mock_basic.assert_not_called()
 
     @pytest.mark.parametrize(
-        ("allow_partial", "expected_success", "expected_status"),
-        [(False, False, "failed"), (True, True, "partial")],
+        "allow_partial",
+        [False, True],
     )
-    def test_mixed_known_and_unknown_sections_respect_partial_policy(
+    def test_mixed_known_and_unknown_sections_fail_before_execution(
         self,
         allow_partial,
-        expected_success,
-        expected_status,
     ):
         fn = _get_report_generate()
         rep = _make_report(sections=_make_full_sections())
@@ -1803,14 +1802,12 @@ class TestReportWarnings:
                 format="toon",
             )
 
-        assert res["success"] is expected_success
-        assert res["section_run_status"] == expected_status
-        assert res["execution_progress"]["complete"] is False
-        assert res["execution_progress"]["missing_requested_sections"] == [
-            "not-a-section"
-        ]
-        if not allow_partial:
-            assert res["error_code"] == "report_sections_not_found"
+        assert res["success"] is False
+        assert res["error_code"] == "report_sections_not_found"
+        assert res["invalid_sections"] == ["not-a-section"]
+        assert "forecast" in res["valid_sections"]
+        assert "overall_assessment" not in res
+        mock_basic.assert_not_called()
 
     def test_forecast_selection_runs_dependency_without_summary_leak(self):
         fn = _get_report_generate()

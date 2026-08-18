@@ -2067,6 +2067,19 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="temporal_analyze")
         assert kwargs["help"] == "Exclude grouped rows with fewer than this many bars."
 
+    def test_report_include_sections_help_lists_template_section_names(self):
+        param = {
+            "name": "include_sections",
+            "type": Optional[List[str]],
+            "required": False,
+            "default": None,
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
+        assert "context" in kwargs["help"]
+        assert "confluence" in kwargs["help"]
+        assert "volume_profile" in kwargs["help"]
+        assert "availability varies by template" in kwargs["help"]
+
     def test_options_symbol_help_is_underlying_specific(self):
         param = {"name": "symbol", "type": str, "required": True, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="options_chain")

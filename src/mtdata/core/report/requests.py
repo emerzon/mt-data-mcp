@@ -66,7 +66,8 @@ class ReportGenerateRequest(BaseModel):
         None,
         description=(
             "Only execute and return these report sections (plus internal dependencies). "
-            "Accepts a list or comma/space separated names."
+            "Accepts a list or comma/space separated names. Unknown names and names "
+            "unavailable on the selected template are rejected with valid_sections."
         ),
     )
     max_sections: Optional[int] = Field(

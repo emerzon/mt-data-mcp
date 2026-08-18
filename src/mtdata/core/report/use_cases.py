@@ -1393,6 +1393,29 @@ def run_report_generate(  # noqa: C901
                 max_sections=request.max_sections,
                 max_runtime=request.max_runtime,
             )
+            if section_plan["missing"]:
+                missing = [str(item) for item in section_plan["missing"]]
+                valid = [str(item) for item in section_plan["available"]]
+                return {
+                    **build_error_payload(
+                        "Unknown or unavailable report sections for template "
+                        f"{name}: {', '.join(missing)}.",
+                        code="report_sections_not_found",
+                        operation="report_generate",
+                        details={
+                            "invalid_sections": missing,
+                            "valid_sections": valid,
+                            "template": name,
+                        },
+                        remediation=(
+                            "Choose section names from valid_sections or select a "
+                            "template that provides the requested section."
+                        ),
+                    ),
+                    "template": name,
+                    "invalid_sections": missing,
+                    "valid_sections": valid,
+                }
             params["_report_execution_sections"] = section_plan["execution"]
             params["_report_selected_sections"] = section_plan["selected"]
             params["_report_section_controls_active"] = bool(
