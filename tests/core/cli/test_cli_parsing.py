@@ -2057,6 +2057,16 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
         assert kwargs["help"].startswith("End date")
 
+    def test_temporal_min_bars_help_describes_group_filter(self):
+        param = {
+            "name": "min_bars",
+            "type": Optional[int],
+            "required": False,
+            "default": None,
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="temporal_analyze")
+        assert kwargs["help"] == "Exclude grouped rows with fewer than this many bars."
+
     def test_options_symbol_help_is_underlying_specific(self):
         param = {"name": "symbol", "type": str, "required": True, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="options_chain")

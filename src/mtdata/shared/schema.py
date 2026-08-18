@@ -210,7 +210,7 @@ PARAM_HINTS = {
     "threshold": "Change-point probability threshold (0-1).",
     "value_col": "Column name to use for value-based operations.",
     "lookback": "Historical bars to use.",
-    "min_bars": "Minimum bars required before computing the analysis.",
+    "min_bars": "Exclude grouped rows with fewer than this many bars.",
     "last_n_bars": "Restrict pattern checks to the most recent N bars.",
     "spacing_pct": "Spacing as percent of duration.",
     "history_kind": "History type (deals or orders).",
