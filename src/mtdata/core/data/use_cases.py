@@ -39,7 +39,6 @@ from .requests import (
     DATA_FETCH_CANDLES_DEFAULT_LIMIT,
     DATA_FETCH_CANDLES_MAX_LIMIT,
     DATA_FETCH_TICKS_DEFAULT_LIMIT,
-    DATA_FETCH_TICKS_MAX_LIMIT,
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
     WaitCandleRequest,
@@ -73,6 +72,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "empty_reason",
     "last_quote",
     "execution_quote",
+    "data_window",
     "timezone",
     "price_precision",
     "price_point",
@@ -147,9 +147,6 @@ def _effective_tick_limit(request: DataFetchTicksRequest) -> int:
         limit = max(1, int(request.limit))
     except Exception:
         limit = DATA_FETCH_TICKS_DEFAULT_LIMIT
-    fields_set = getattr(request, "model_fields_set", set())
-    if request.start and request.end and "limit" not in fields_set:
-        return DATA_FETCH_TICKS_MAX_LIMIT
     return limit
 
 
@@ -1583,6 +1580,12 @@ def _run_data_fetch_ticks_impl(
     applied_limit = (
         effective_limit if effective_limit is not None else request.limit
     )
+    limit_explicit = "limit" in getattr(request, "model_fields_set", set())
+    range_selection = (
+        "last_n"
+        if request.start and request.end and not limit_explicit
+        else "first_n"
+    )
     result = fetch_ticks_impl(
         symbol=request.symbol,
         limit=applied_limit,
@@ -1591,6 +1594,7 @@ def _run_data_fetch_ticks_impl(
         simplify=request.simplify,
         time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
+        range_selection=range_selection,
     )
     result = _normalize_tick_query_error(
         result,
@@ -1609,7 +1613,7 @@ def _run_data_fetch_ticks_impl(
         requested_limit=applied_limit,
         start=request.start,
         end=request.end,
-        limit_explicit="limit" in getattr(request, "model_fields_set", set()),
+        limit_explicit=limit_explicit,
     )
     return attach_mt5_source(result, gateway=gateway)
 
@@ -1766,6 +1770,10 @@ def _attach_tick_pagination(
             query_applied["default_limit"] = limit_value
             payload["default_limit"] = limit_value
         if limit_reached:
+            payload["truncated"] = True
+            data_window = payload.get("data_window")
+            if isinstance(data_window, dict):
+                data_window["truncated"] = True
             payload["pagination"] = {
                 "returned": count,
                 "limit": limit_value,

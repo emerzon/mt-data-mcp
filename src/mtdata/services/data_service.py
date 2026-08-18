@@ -3448,6 +3448,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "history_window_truncated",
         "history_window_limit_days",
         "history_window_floor",
+        "data_window",
         "query_applied",
         "warnings",
     ):
@@ -3480,6 +3481,7 @@ def fetch_ticks(  # noqa: C901
     simplify: Optional[SimplifySpec] = None,
     time_as_epoch: bool = False,
     format: Literal["summary", "stats", "rows", "full_rows"] = "summary",
+    range_selection: Literal["first_n", "last_n"] = "first_n",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
@@ -3498,6 +3500,9 @@ def fetch_ticks(  # noqa: C901
     try:
         symbol = resolve_broker_symbol_name(symbol)
         effective_limit = int(limit)
+        normalized_range_selection = str(range_selection or "first_n").strip().lower()
+        if normalized_range_selection not in {"first_n", "last_n"}:
+            return {"error": "range_selection must be first_n or last_n."}
         history_window_truncated = False
         history_window_floor: Optional[datetime] = None
         if effective_limit <= 0:
@@ -3552,12 +3557,20 @@ def fetch_ticks(  # noqa: C901
                     history_window_floor = to_date - timedelta(days=max_lookback_days)
                     history_window_truncated = from_date < history_window_floor
                     effective_from_date = max(from_date, history_window_floor)
-                    ticks = _fetch_ticks_forward(
-                        symbol,
-                        from_date=effective_from_date,
-                        to_date=to_date,
-                        limit=effective_limit,
-                    )
+                    if normalized_range_selection == "last_n":
+                        ticks = _fetch_recent_ticks_backwards(
+                            symbol,
+                            to_date=to_date,
+                            limit=effective_limit,
+                            min_from_date=effective_from_date,
+                        )
+                    else:
+                        ticks = _fetch_ticks_forward(
+                            symbol,
+                            from_date=effective_from_date,
+                            to_date=to_date,
+                            limit=effective_limit,
+                        )
                 else:
                     max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
                     history_to_date = datetime.now(dt_timezone.utc)
@@ -3621,6 +3634,13 @@ def fetch_ticks(  # noqa: C901
                     "mode": "historical" if start or end else "latest",
                     "start": start,
                     "end": end,
+                    "selection": (
+                        normalized_range_selection
+                        if start and end
+                        else "first_n"
+                        if start
+                        else "last_n"
+                    ),
                 },
             }
             if history_window_truncated:
@@ -3996,8 +4016,20 @@ def fetch_ticks(  # noqa: C901
                 query_applied: Dict[str, Any] = {
                     "mode": "historical",
                     "limit": int(effective_limit),
-                    "limit_anchor": "start" if start else "end",
-                    "selection": "first_n" if start else "last_n",
+                    "limit_anchor": (
+                        "end"
+                        if start and end and normalized_range_selection == "last_n"
+                        else "start"
+                        if start
+                        else "end"
+                    ),
+                    "selection": (
+                        normalized_range_selection
+                        if start and end
+                        else "first_n"
+                        if start
+                        else "last_n"
+                    ),
                     "order": "ascending",
                 }
                 if start:
@@ -4036,6 +4068,15 @@ def fetch_ticks(  # noqa: C901
                 if warning not in warnings:
                     warnings.append(warning)
             last_quote = payload.get("last_quote")
+            payload["data_window"] = {
+                "start": df_ticks["time"].iloc[0],
+                "end": df_ticks["time"].iloc[-1],
+            }
+            if isinstance(last_quote, dict):
+                last_quote["time"] = df_ticks["time"].iloc[-1]
+                last_quote["quote_scope"] = (
+                    "historical_sample" if start or end else "latest_sample"
+                )
             execution_quote = None
             if (
                 isinstance(last_quote, dict)

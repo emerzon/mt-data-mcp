@@ -2027,19 +2027,19 @@ def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
     assert simplified["limit_reached"] is True
 
 
-def test_run_data_fetch_ticks_range_uses_safety_cap_and_pagination():
+def test_run_data_fetch_ticks_bounded_default_uses_latest_small_page():
     observed = {}
 
     def _fetch(**kwargs):
         observed.update(kwargs)
         return {
             "success": True,
-            "count": 50_000,
-            "tick_count": 50_000,
+            "count": 20,
+            "tick_count": 20,
             "data": [],
             "query_applied": {
                 "mode": "historical",
-                "selection": "first_n",
+                "selection": "last_n",
                 "start": "2026-08-14 19:00",
                 "end": "2026-08-14 19:10",
             },
@@ -2056,13 +2056,16 @@ def test_run_data_fetch_ticks_range_uses_safety_cap_and_pagination():
         fetch_ticks_impl=_fetch,
     )
 
-    assert observed["limit"] == 50_000
+    assert observed["limit"] == 20
+    assert observed["range_selection"] == "last_n"
     assert result["limit_reached"] is True
     assert result["query_applied"]["limit_source"] == "default"
-    assert result["query_applied"]["default_limit"] == 50_000
-    assert result["default_limit"] == 50_000
+    assert result["query_applied"]["default_limit"] == 20
+    assert result["default_limit"] == 20
     assert result["pagination"]["has_more"] is True
-    assert result["pagination"]["limit"] == 50_000
+    assert result["pagination"]["limit"] == 20
+    assert result["pagination"]["selection"] == "last_n"
+    assert result["truncated"] is True
 
 
 def test_run_data_fetch_ticks_start_only_uses_small_default_page():
@@ -2355,7 +2358,7 @@ def test_run_data_fetch_ticks_maps_empty_historical_window_to_success() -> None:
     assert result["data"] == []
     assert result["empty"] is True
     assert result["empty_reason"] == "no_ticks_in_range"
-    assert result["requested_limit"] == 50_000
+    assert result["requested_limit"] == 20
     assert result["limit_reached"] is False
     assert "error_code" not in result
 

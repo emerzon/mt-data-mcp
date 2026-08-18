@@ -128,6 +128,11 @@ an `empty_reason` such as `market_closed_weekend`, `forming_bar_excluded`, or
 `no_ticks_in_range`. Connection, symbol, validation, and provider failures keep
 the normal error envelope and a nonzero CLI exit.
 
+For a fully bounded tick range, omitting `limit` returns the latest 20 matching
+ticks. Setting `limit` explicitly keeps start-anchored first-N paging. Historical
+tick responses label `last_quote.quote_scope` as `historical_sample` and include
+`last_quote.time`; it is the final quote in the returned sample, not a live quote.
+
 List-style tools return a normalized pagination block so you can page deterministically:
 
 Public `limit` parameters always cap returned rows (including returned candles or

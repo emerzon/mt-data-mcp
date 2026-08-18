@@ -53,6 +53,9 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('stats', result)
         self.assertIn('spread', result['stats'])
         self.assertIn('last_quote', result)
+        self.assertEqual(result['last_quote']['time'], result['data'][-1]['time'])
+        self.assertEqual(result['last_quote']['quote_scope'], 'latest_sample')
+        self.assertEqual(result['data_window']['end'], result['data'][-1]['time'])
         self.assertEqual(result["units"]["bid"], "absolute_price")
         self.assertEqual(result["units"]["ask"], "absolute_price")
         self.assertEqual(result["units"]["volume"], "last_trade_volume")
@@ -742,6 +745,39 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('summary', result['error'])
         self.assertIn('stats', result['error'])
         self.assertIn('rows', result['error'])
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_PARSE_START)
+    def test_bounded_range_can_select_latest_ticks(
+        self,
+        mock_parse,
+        mock_ctz,
+        mock_info,
+        mock_range,
+    ):
+        end = datetime.now().replace(microsecond=0)
+        start = end - timedelta(hours=1)
+        mock_parse.return_value = start
+        mock_range.return_value = _make_ticks(5, base_ts=end.timestamp())
+
+        result = fetch_ticks(
+            'EURUSD',
+            limit=3,
+            start='ignored-start',
+            end=end.isoformat(),
+            format='rows',
+            range_selection='last_n',
+        )
+
+        self.assertTrue(result.get('success'), result)
+        self.assertEqual(result['count'], 3)
+        self.assertEqual(result['query_applied']['limit_anchor'], 'end')
+        self.assertEqual(result['query_applied']['selection'], 'last_n')
+        self.assertEqual(result['last_quote']['time'], result['data'][-1]['time'])
+        self.assertEqual(result['last_quote']['quote_scope'], 'historical_sample')
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
