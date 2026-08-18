@@ -9,7 +9,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
+from ..shared.symbols import is_probably_crypto_symbol
 from ..utils.time import bar_close_epoch
 from ..utils.utils import to_float_np
 
@@ -390,14 +390,13 @@ def data_quality_warnings(  # noqa: C901
                 if gaps.size > 0 and float(np.nanmax(gaps)) > threshold:
                     expected_weekend_gaps = 0
                     unexpected_gaps = 0
-                    is_fx = is_probably_forex_symbol(symbol)
                     is_crypto = is_probably_crypto_symbol(symbol)
                     for idx, gap in enumerate(gaps):
                         if not np.isfinite(gap) or float(gap) <= threshold:
                             continue
                         start_epoch = float(times[idx])
                         end_epoch = float(times[idx + 1])
-                        if is_fx and not is_crypto and _crosses_weekend(
+                        if not is_crypto and _crosses_weekend(
                             start_epoch, end_epoch
                         ):
                             expected_weekend_gaps += 1

@@ -96,7 +96,8 @@ def test_data_quality_uses_tick_volume_when_real_volume_is_structural_zero():
     assert not any("zero-volume bars dominate" in warning for warning in warnings)
 
 
-def test_data_quality_suppresses_expected_fx_weekend_gap():
+@pytest.mark.parametrize("symbol", ["EURUSD", "XAUUSD", "US500"])
+def test_data_quality_suppresses_expected_session_weekend_gap(symbol):
     friday = pd.Timestamp("2026-05-29 20:00:00", tz="UTC").timestamp()
     sunday = pd.Timestamp("2026-05-31 21:00:00", tz="UTC").timestamp()
     df = pd.DataFrame(
@@ -110,9 +111,42 @@ def test_data_quality_suppresses_expected_fx_weekend_gap():
         }
     )
 
-    warnings = data_quality_warnings(df, symbol="EURUSD", timeframe_seconds=3600)
+    warnings = data_quality_warnings(df, symbol=symbol, timeframe_seconds=3600)
 
     assert not any("time gap" in warning for warning in warnings)
+
+
+def test_data_quality_keeps_crypto_weekend_and_metal_in_session_gaps():
+    friday = pd.Timestamp("2026-05-29 20:00:00", tz="UTC").timestamp()
+    sunday = pd.Timestamp("2026-05-31 21:00:00", tz="UTC").timestamp()
+    weekend_frame = pd.DataFrame(
+        {
+            "time": [friday - 3600, friday, sunday, sunday + 3600],
+            "close": [1.0, 1.1, 1.2, 1.3],
+            "tick_volume": [100, 100, 100, 100],
+        }
+    )
+    in_session_frame = pd.DataFrame(
+        {
+            "time": [friday, friday + 3600, friday + 3 * 3600, friday + 4 * 3600],
+            "close": [1.0, 1.1, 1.2, 1.3],
+            "tick_volume": [100, 100, 100, 100],
+        }
+    )
+
+    crypto_warnings = data_quality_warnings(
+        weekend_frame,
+        symbol="BTCUSD",
+        timeframe_seconds=3600,
+    )
+    metal_warnings = data_quality_warnings(
+        in_session_frame,
+        symbol="XAUUSD",
+        timeframe_seconds=3600,
+    )
+
+    assert any("unexpected time gap" in warning for warning in crypto_warnings)
+    assert any("unexpected time gap" in warning for warning in metal_warnings)
 
 
 def test_patterns_detect_returns_connection_error_payload(monkeypatch):
