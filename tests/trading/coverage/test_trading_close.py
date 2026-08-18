@@ -527,7 +527,7 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_symbol_bulk_close_dry_run_previews_without_confirmation(self, mock_close, mock_cancel):
+    def test_symbol_bulk_close_dry_run_discloses_missing_confirmation(self, mock_close, mock_cancel):
         mock_close.return_value = {
             "success": True,
             "matched_count": 0,
@@ -538,7 +538,13 @@ class TestTradeClose:
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
         assert out["success"] is True
         assert out["dry_run"] is True
-        assert out["preview_ok"] is True
+        assert out["preview_ok"] is False
+        assert out["confirm_close_all"] is False
+        assert out["required_confirmation"] == "--confirm-close-all true"
+        assert out["validation"] == {
+            "live_submission_eligible": False,
+            "blockers": ["bulk_confirmation_required"],
+        }
         assert out["would_send_order"] is False
         assert out["operation"] == "close_symbol_positions"
         assert out["symbol"] == "EURUSD"

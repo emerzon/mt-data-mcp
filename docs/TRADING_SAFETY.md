@@ -47,6 +47,9 @@ on `preview_ok` (and the equivalent nested `validation.live_submission_eligible`
 which is `false` when local requirements such as required SL/TP are missing.
 Closed-market and stale-quote previews also complete successfully, but retain
 `quote_not_live_ready` in `blockers` and keep `preview_ok=false`.
+Ticketless bulk `trade_close` previews likewise keep `preview_ok=false` until
+`--confirm-close-all true` is present; `required_confirmation` and
+`validation.live_submission_eligible` make that remaining live gate explicit.
 The CLI prints those blocked previews and exits `1`; an eligible preview exits `0`.
 Compact output always retains these gate fields and the broker-validation
 limitations; `guardrails_preview` remains a standard/full-detail section.
@@ -177,6 +180,11 @@ For `all_exposure`, the response keeps `closed_positions` and
 one failed leg does not prevent the other from being attempted. There is no
 separate "confirm" token for `trade_place`/`trade_modify`; the extra
 `--confirm-close-all` gate applies to every ticketless live bulk close.
+Dry-run bulk previews can still enumerate the matching exposure without the
+flag, but they report `preview_ok=false` and
+`required_confirmation="--confirm-close-all true"`. Add the confirmation to
+the preview as well when you want to verify that the same request is locally
+eligible to switch to `--dry-run false`.
 
 ---
 

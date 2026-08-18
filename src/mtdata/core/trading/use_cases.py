@@ -2572,6 +2572,7 @@ def _run_trade_close_once(  # noqa: C901
         confirm_close_all=request.confirm_close_all,
         magic=request.magic,
     )
+    bulk_request = False
 
     def _finish(
         result: Dict[str, Any],
@@ -2583,7 +2584,23 @@ def _run_trade_close_once(  # noqa: C901
             and result.get("success") is True
             and not str(result.get("error") or "").strip()
         ):
-            result.setdefault("preview_ok", True)
+            if bulk_request and not request.confirm_close_all:
+                result["preview_ok"] = False
+                result["confirm_close_all"] = False
+                result["required_confirmation"] = "--confirm-close-all true"
+                validation = (
+                    dict(result.get("validation"))
+                    if isinstance(result.get("validation"), dict)
+                    else {}
+                )
+                validation["live_submission_eligible"] = False
+                blockers = list(validation.get("blockers") or [])
+                if "bulk_confirmation_required" not in blockers:
+                    blockers.append("bulk_confirmation_required")
+                validation["blockers"] = blockers
+                result["validation"] = validation
+            else:
+                result.setdefault("preview_ok", True)
             result.setdefault("would_send_order", False)
         if request.detail == "compact":
             result = _compact_close_preview_payload(result)
