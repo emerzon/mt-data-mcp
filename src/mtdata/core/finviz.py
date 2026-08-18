@@ -1755,6 +1755,7 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "EPS past 3/5Y": "eps_past_3_5_y",
     "Sales past 3/5Y": "sales_past_3_5_y",
     "EPS (ttm)": "eps_ttm",
+    "EPS this Y": "eps_this_year_growth_pct",
     "EPS next Y": "eps_next_y",
     "EPS next Q": "eps_next_q",
     "52W High": "high_52w",
@@ -1843,7 +1844,7 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "price_to_cash",
         "price_to_free_cash_flow",
         "eps_ttm",
-        "eps_this_y",
+        "eps_this_year_growth_pct",
         "eps_next_y",
         "eps_next_q",
         "eps_next_5_y",
@@ -1947,6 +1948,13 @@ _FINVIZ_PERCENT_FUNDAMENTAL_KEYS = frozenset(
         "inst_own",
         "inst_trans",
         "short_float",
+    }
+)
+_FINVIZ_CURRENCY_PER_SHARE_FUNDAMENTAL_KEYS = frozenset(
+    {
+        "eps_ttm",
+        "eps_next_y",
+        "eps_next_q",
     }
 )
 _FINVIZ_LARGE_NUMBER_FORMAT_KEYS = frozenset(
@@ -2143,6 +2151,8 @@ def _finviz_fundamental_units(fundamentals: Dict[str, Any]) -> Dict[str, str]:
     for key in fundamentals:
         if key.endswith("_pct") or key in _FINVIZ_PERCENT_FUNDAMENTAL_KEYS:
             units[key] = "percent (1.0 = 1%)"
+        elif key in _FINVIZ_CURRENCY_PER_SHARE_FUNDAMENTAL_KEYS:
+            units[key] = "listing_currency_per_share"
     return units
 
 

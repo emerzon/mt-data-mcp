@@ -1851,8 +1851,13 @@ class TestFinvizTools:
         assert fundamentals["income_formatted"] == "122.58B"
         assert fundamentals["sales"] == 451_440_000_000
         assert fundamentals["sales_formatted"] == "451.44B"
-        assert fundamentals["eps_this_y"] == 17.26
+        assert fundamentals["eps_this_year_growth_pct"] == 17.26
         assert fundamentals["eps_next_y"] == 9.62
+        assert "eps_this_y" not in fundamentals
+        assert result["units"] == {
+            "eps_this_year_growth_pct": "percent (1.0 = 1%)",
+            "eps_next_y": "listing_currency_per_share",
+        }
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_canonicalizes_percent_aliases(
