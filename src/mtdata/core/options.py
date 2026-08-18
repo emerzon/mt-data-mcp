@@ -10,7 +10,11 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..shared.schema import DetailLiteral
-from ..shared.symbols import normalize_equity_provider_symbol
+from ..shared.symbols import (
+    is_probably_crypto_symbol,
+    is_probably_forex_symbol,
+    normalize_equity_provider_symbol,
+)
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -55,6 +59,24 @@ def _normalize_options_symbol(
                 "market-symbol characters: . ^ = _ / -."
             ),
             "error_code": "invalid_symbol",
+        }
+    if is_probably_forex_symbol(normalized) or is_probably_crypto_symbol(normalized):
+        return None, {
+            "success": False,
+            "error": (
+                f"{normalized} is not a supported US-listed options underlier."
+            ),
+            "error_code": "options_unsupported_symbol",
+            "symbol": normalized,
+            "remediation": (
+                "Use a US-listed equity ticker such as AAPL. Use market_ticker or "
+                "data_fetch_candles for broker FX and crypto instruments."
+            ),
+            "related_tools": [
+                "options_provider_status",
+                "market_ticker",
+                "symbols_list",
+            ],
         }
     return normalize_equity_provider_symbol(normalized), None
 

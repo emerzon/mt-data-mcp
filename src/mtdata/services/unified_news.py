@@ -1916,10 +1916,15 @@ class NewsAggregator:
                     "error_code": "news_symbol_unavailable",
                     "symbol": context.symbol if context is not None else symbol_norm,
                     "remediation": (
-                        "Verify the standard US equity ticker used by the news "
-                        "provider, or use finviz_screen to discover supported tickers."
+                        "Use symbols_list to verify a broker FX or crypto symbol, "
+                        "or verify the standard US equity ticker used by the news "
+                        "provider. Use finviz_screen to discover supported equities."
                     ),
-                    "related_tools": ["finviz_screen", "finviz_news"],
+                    "related_tools": [
+                        "symbols_list",
+                        "finviz_screen",
+                        "finviz_news",
+                    ],
                 }
             except Exception as exc:
                 logger.exception("Error collecting news from %s", name)

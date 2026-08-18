@@ -35,10 +35,22 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
     },
     "news_symbol_unavailable": {
         "remediation": (
-            "Verify the standard US equity ticker used by the news provider. "
-            "Use finviz_screen to discover supported tickers."
+            "Use symbols_list to verify a broker FX or crypto symbol, or verify "
+            "the standard US equity ticker used by the news provider. Use "
+            "finviz_screen to discover supported equity tickers."
         ),
-        "related_tools": ["finviz_screen", "finviz_news"],
+        "related_tools": ["symbols_list", "finviz_screen", "finviz_news"],
+    },
+    "options_unsupported_symbol": {
+        "remediation": (
+            "Options-chain tools require a US-listed underlier such as AAPL. Use "
+            "market_ticker or data_fetch_candles for broker FX and crypto symbols."
+        ),
+        "related_tools": [
+            "options_provider_status",
+            "market_ticker",
+            "symbols_list",
+        ],
     },
     "dependency_missing": {
         "remediation": (

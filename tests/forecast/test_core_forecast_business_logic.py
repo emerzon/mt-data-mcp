@@ -4276,6 +4276,34 @@ def test_options_tools_validate_and_normalize_symbols(monkeypatch):
     assert out["symbol"] == "BRK.B"
 
 
+def test_options_tools_reject_fx_symbols_before_provider_calls(monkeypatch):
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
+
+    def fail_call(**_kwargs):
+        raise AssertionError("options provider should not be queried for FX")
+
+    monkeypatch.setattr(options_service, "get_options_expirations", fail_call)
+    monkeypatch.setattr(options_service, "get_options_chain", fail_call)
+    monkeypatch.setattr(
+        quantlib_tools,
+        "calibrate_heston_quantlib_from_options",
+        fail_call,
+    )
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+
+    for tool in (raw_exp, raw_chain, raw_cal):
+        out = tool(symbol="EURUSD")
+        assert out["success"] is False
+        assert out["error_code"] == "options_unsupported_symbol"
+        assert "US-listed" in out["error"]
+        assert "options_provider_status" in out["related_tools"]
+
+
 def test_options_tools_validate_expiration_before_provider_calls(monkeypatch):
     raw_chain = _unwrap(opt.options_chain)
     raw_cal = _unwrap(opt.options_heston_calibrate)

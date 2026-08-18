@@ -255,6 +255,8 @@ def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
     assert result["error_code"] == "news_symbol_unavailable"
     assert result["symbol"] == "ZZZZZ"
     assert "MT5" not in result["remediation"]
+    assert "symbols_list" in result["remediation"]
+    assert "symbols_list" in result["related_tools"]
     assert "finviz_screen" in result["related_tools"]
 
 
