@@ -684,8 +684,39 @@ def test_inferred_symbol_schedule_normalizes_server_epochs_to_utc(monkeypatch) -
         now_utc=now_utc,
     )
 
-    assert result["active_hours_utc"] == {"monday": ["12:00-13:00"]}
+    assert result["active_intervals_utc"] == {"monday": ["12:00-12:01"]}
     assert result["current_time_in_active_session"] is True
+
+
+def test_inferred_symbol_schedule_respects_mid_hour_session_open() -> None:
+    prior_tuesday = datetime(2026, 8, 11, 13, 30, tzinfo=timezone.utc)
+
+    class Gateway:
+        TIMEFRAME_M1 = 1
+
+        def copy_rates_range(self, symbol, timeframe, start, end):
+            rows = [
+                {"time": (prior_tuesday + timedelta(minutes=minute)).timestamp()}
+                for minute in range(3)
+            ]
+            return [row for row in rows if start.timestamp() <= row["time"] <= end.timestamp()]
+
+    pre_open = market_status_mod._infer_symbol_schedule_from_recent_candles(
+        "AAPL.NAS",
+        Gateway(),
+        now_utc=datetime(2026, 8, 18, 13, 8, tzinfo=timezone.utc),
+    )
+    after_open = market_status_mod._infer_symbol_schedule_from_recent_candles(
+        "AAPL.NAS",
+        Gateway(),
+        now_utc=datetime(2026, 8, 18, 13, 31, tzinfo=timezone.utc),
+    )
+
+    assert pre_open["active_intervals_utc"] == {
+        "tuesday": ["13:30-13:33"]
+    }
+    assert pre_open["current_time_in_active_session"] is False
+    assert after_open["current_time_in_active_session"] is True
 
 
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
@@ -910,11 +941,14 @@ def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
     assert result["status"] == "quote_not_live_ready"
     assert result["can_open_new_positions"] is False
     assert result["trade_mode_allows_opening"] is True
-    assert result["current_time_in_recent_session"] is True
+    assert result["current_time_in_recent_session"] is False
+    assert result["session_context"]["schedule_match"] is True
+    assert result["session_context"]["quote_live_ready"] is False
+    assert result["session_context"]["local_session_open"] is False
     assert result["trades_on_weekends"] is True
     assert result["schedule_source"] == "recent_m1_candles"
-    assert result["inferred_schedule"]["active_hours_utc"] == {
-        "saturday": ["03:00-04:00"]
+    assert result["inferred_schedule"]["active_intervals_utc"] == {
+        "saturday": ["03:14-03:15"]
     }
     assert result["reason"] == "market_closed"
 

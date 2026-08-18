@@ -945,21 +945,28 @@ def _rate_epoch_seconds(row: Any) -> Optional[float]:
     return epoch
 
 
-def _hour_ranges(hours: List[int]) -> List[str]:
-    normalized = sorted({int(hour) for hour in hours if 0 <= int(hour) <= 23})
+def _minute_ranges(minutes: List[int]) -> List[str]:
+    """Format contiguous UTC minute-of-day slots as half-open intervals."""
+    normalized = sorted(
+        {int(minute) for minute in minutes if 0 <= int(minute) < 24 * 60}
+    )
     if not normalized:
         return []
+
+    def _label(minute: int) -> str:
+        hour, minute_of_hour = divmod(minute, 60)
+        return f"{hour:02d}:{minute_of_hour:02d}"
 
     ranges: List[str] = []
     start = normalized[0]
     previous = normalized[0]
-    for hour in normalized[1:]:
-        if hour == previous + 1:
-            previous = hour
+    for minute in normalized[1:]:
+        if minute == previous + 1:
+            previous = minute
             continue
-        ranges.append(f"{start:02d}:00-{previous + 1:02d}:00")
-        start = previous = hour
-    ranges.append(f"{start:02d}:00-{previous + 1:02d}:00")
+        ranges.append(f"{_label(start)}-{_label(previous + 1)}")
+        start = previous = minute
+    ranges.append(f"{_label(start)}-{_label(previous + 1)}")
     return ranges
 
 
@@ -976,7 +983,15 @@ def _infer_symbol_schedule_from_recent_candles(
         "timeframe": "M1",
     }
     timeframe = getattr(gateway, "TIMEFRAME_M1", _M1_TIMEFRAME_FALLBACK)
-    start_utc = now_utc - timedelta(days=lookback_days)
+    # Include the full matching weekday from the prior week. An exact rolling
+    # timestamp would discard later session minutes just when today reaches
+    # them, leaving no complete prior-day schedule to compare against.
+    start_utc = (now_utc - timedelta(days=lookback_days)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
 
     try:
         rates = gateway.copy_rates_range(symbol, timeframe, start_utc, now_utc)
@@ -1013,8 +1028,8 @@ def _infer_symbol_schedule_from_recent_candles(
             continue
         candle_count += 1
         weekday = candle_time.weekday()
-        hour = candle_time.hour
-        slots.add((weekday, hour))
+        minute_of_day = candle_time.hour * 60 + candle_time.minute
+        slots.add((weekday, minute_of_day))
         active_weekdays.add(weekday)
         if weekday >= 5:
             weekend_candles += 1
@@ -1030,15 +1045,15 @@ def _infer_symbol_schedule_from_recent_candles(
             "candles_analyzed": 0,
         }
 
-    current_slot = (now_utc.weekday(), now_utc.hour)
-    active_hours_by_day: Dict[str, List[str]] = {}
+    current_slot = (now_utc.weekday(), now_utc.hour * 60 + now_utc.minute)
+    active_intervals_by_day: Dict[str, List[str]] = {}
     for weekday in sorted(active_weekdays):
-        hours = [hour for day, hour in slots if day == weekday]
-        active_hours_by_day[_WEEKDAY_NAMES[weekday]] = _hour_ranges(hours)
+        minutes = [minute for day, minute in slots if day == weekday]
+        active_intervals_by_day[_WEEKDAY_NAMES[weekday]] = _minute_ranges(minutes)
 
     active_slot_count = len(slots)
-    active_hour_coverage = active_slot_count / (7 * 24)
-    inferred_24_7 = active_hour_coverage >= 0.90 and all(
+    active_minute_coverage = active_slot_count / (7 * 24 * 60)
+    inferred_24_7 = active_minute_coverage >= 0.90 and all(
         weekday in active_weekdays for weekday in range(7)
     )
     confidence = "medium" if candle_count >= 20 and active_slot_count >= 2 else "low"
@@ -1050,8 +1065,8 @@ def _infer_symbol_schedule_from_recent_candles(
         "confidence": confidence,
         "candles_analyzed": candle_count,
         "active_weekdays": [_WEEKDAY_NAMES[weekday] for weekday in sorted(active_weekdays)],
-        "active_hours_utc": active_hours_by_day,
-        "active_hour_coverage": round(active_hour_coverage, 3),
+        "active_intervals_utc": active_intervals_by_day,
+        "active_minute_coverage": round(active_minute_coverage, 6),
         # Sunday evening bars are the normal FX weekly reopen. Saturday
         # activity is the reliable discriminator for true weekend trading.
         "trades_on_weekends": saturday_candles > 0,
@@ -1147,6 +1162,15 @@ def _check_symbol_market_status(
         _coerce_optional_bool(schedule_status.get("current_time_in_active_session"))
         is True
     )
+    schedule_match = _coerce_optional_bool(
+        schedule_status.get("current_time_in_active_session")
+    )
+    if schedule_match is False or live_ready is False:
+        local_session_open: Optional[bool] = False
+    elif schedule_match is True and live_ready is True:
+        local_session_open = True
+    else:
+        local_session_open = None
     weekend_closed_now = is_standard_weekend_closure(now_utc)
     if (
         can_open is True
@@ -1210,15 +1234,16 @@ def _check_symbol_market_status(
         "tick_freshness": tick_freshness,
         "schedule_source": schedule_status["source"],
         "schedule_confidence": schedule_status["confidence"],
-        "current_time_in_recent_session": schedule_status.get(
-            "current_time_in_active_session"
-        ),
+        "current_time_in_recent_session": local_session_open,
         "trades_on_weekends": schedule_status.get("trades_on_weekends"),
         "inferred_24_7": schedule_status.get("inferred_24_7"),
         "session_context": {
-            "source": schedule_status["source"],
+            "source": "recent_m1_candles_and_quote_readiness",
+            "schedule_source": schedule_status["source"],
             "confidence": schedule_status["confidence"],
-            "local_session_open": schedule_status.get("current_time_in_active_session"),
+            "schedule_match": schedule_match,
+            "quote_live_ready": live_ready,
+            "local_session_open": local_session_open,
             "trades_on_weekends": schedule_status.get("trades_on_weekends"),
             "inferred_24_7": schedule_status.get("inferred_24_7"),
         },
