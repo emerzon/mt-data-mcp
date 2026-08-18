@@ -1381,7 +1381,8 @@ def _forecast_training_period(payload: Dict[str, Any]) -> Optional[Dict[str, Any
         ("history_bars_used", "history_bars_used"),
         ("target_points_used", "target_points_used"),
         ("lookback_bars_requested", "lookback_bars_requested"),
-        ("lookback_bars_fetched", "lookback_bars_fetched"),
+        ("minimum_history_bars_requested", "minimum_history_bars_requested"),
+        ("history_bars_received", "history_bars_received"),
     ):
         value = diagnostics.get(source_key)
         if value not in (None, "", [], {}):
@@ -3134,6 +3135,39 @@ def _attach_tuning_assumptions(
     return out
 
 
+def _attach_tuning_context(
+    result: Dict[str, Any],
+    request: ForecastTuneGeneticRequest | ForecastTuneOptunaRequest,
+) -> Dict[str, Any]:
+    """Echo the immutable evaluation identity on every tuning result."""
+    out = dict(result)
+    context: Dict[str, Any] = {
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "quantity": request.quantity,
+        "horizon": int(request.horizon),
+        "steps": int(request.steps),
+        "spacing": int(request.spacing),
+        "methods": list(request.methods),
+        "metric": str(request.metric),
+        "seed": int(request.seed),
+    }
+    for key in ("as_of", "start", "end"):
+        value = getattr(request, key, None)
+        if value is not None:
+            context[key] = value
+    for key in ("symbol", "timeframe", "quantity", "horizon", "steps", "spacing"):
+        out[key] = context[key]
+    out["methods"] = list(context["methods"])
+    out["tuning_context"] = context
+    summary = out.get("best_result_summary")
+    if isinstance(summary, dict):
+        summary = dict(summary)
+        summary["horizon"] = int(request.horizon)
+        out["best_result_summary"] = summary
+    return out
+
+
 def _validate_tuning_param_spec(path: str, spec: Any) -> Optional[str]:
     if not isinstance(spec, dict):
         return f"{path} must be an object with type/min/max or choices."
@@ -3215,6 +3249,89 @@ def _validate_tuning_search_space(search_space: Any) -> Optional[Dict[str, Any]]
         "error": "Invalid search_space: " + "; ".join(errors[:5]),
         "error_code": "invalid_search_space",
         "errors": errors[:10],
+    }
+
+
+def _validate_tuning_parameter_names(
+    search_space: Dict[str, Any],
+    methods: Iterable[str],
+) -> Optional[Dict[str, Any]]:
+    """Reject native tuner genes that the selected method cannot consume."""
+    method_names = [str(method).strip() for method in methods if str(method).strip()]
+    allowed_by_method: Dict[str, set[str]] = {}
+    for method in method_names:
+        # Library adapters validate their model-specific parameters at runtime.
+        if method.startswith(("sf_", "skt_", "mlf_")) or method in {
+            "statsforecast",
+            "sktime",
+            "mlforecast",
+        }:
+            continue
+        try:
+            params = getattr(ForecastRegistry.get_class(method), "PARAMS", ())
+        except Exception:
+            continue
+        allowed_by_method[method] = {
+            str(spec.get("name"))
+            for spec in params
+            if isinstance(spec, dict) and spec.get("name")
+        }
+
+    if not allowed_by_method:
+        return None
+
+    flat = any(
+        isinstance(value, dict)
+        and any(key in value for key in ("type", "min", "max", "choices"))
+        for key, value in search_space.items()
+        if key not in {"_method_spaces", "_shared"}
+    )
+    invalid: List[str] = []
+    if flat:
+        allowed_sets = list(allowed_by_method.values())
+        allowed = set.intersection(*allowed_sets) if allowed_sets else set()
+        invalid.extend(
+            str(name)
+            for name in search_space
+            if name not in {"method", "_method_spaces", "_shared"}
+            and name not in allowed
+        )
+    else:
+        sections = dict(search_space)
+        method_spaces = sections.pop("_method_spaces", None)
+        if isinstance(method_spaces, dict):
+            sections.update(method_spaces)
+        shared = sections.pop("_shared", {})
+        if isinstance(shared, dict):
+            allowed_sets = list(allowed_by_method.values())
+            shared_allowed = (
+                set.intersection(*allowed_sets) if allowed_sets else set()
+            )
+            invalid.extend(
+                f"_shared.{name}"
+                for name in shared
+                if name != "method" and name not in shared_allowed
+            )
+        for method, space in sections.items():
+            allowed = allowed_by_method.get(str(method))
+            if allowed is None or not isinstance(space, dict):
+                continue
+            invalid.extend(
+                f"{method}.{name}"
+                for name in space
+                if name != "method" and name not in allowed
+            )
+    if not invalid:
+        return None
+    return {
+        "success": False,
+        "error": (
+            "Invalid search_space parameter name(s): "
+            + ", ".join(sorted(invalid))
+            + ". Use forecast_list_methods to inspect the selected method's canonical parameters."
+        ),
+        "error_code": "invalid_search_space",
+        "invalid_parameters": sorted(invalid),
     }
 
 
@@ -3307,6 +3424,26 @@ def run_forecast_tune_genetic(
         )
         return result
     method_for_search, search_space = _resolve_tuning_search_space(request)
+    invalid_parameter_names = (
+        _validate_tuning_parameter_names(search_space, request.methods)
+        if request.search_space
+        else None
+    )
+    if invalid_parameter_names is not None:
+        result = _attach_tuning_context(invalid_parameter_names, request)
+        result = _attach_analysis_time_window(result, request)
+        result = _apply_tuning_detail(result, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     try:
         result = genetic_search_impl(
             symbol=request.symbol,
@@ -3316,6 +3453,7 @@ def run_forecast_tune_genetic(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            quantity=str(request.quantity),
             **_analysis_time_kwargs(request),
             search_space=search_space,
             metric=str(request.metric),
@@ -3348,6 +3486,7 @@ def run_forecast_tune_genetic(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
     )
+    result = _attach_tuning_context(result, request)
     result = _attach_analysis_time_window(result, request)
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
@@ -3434,6 +3573,26 @@ def run_forecast_tune_optuna(
         )
         return result
     method_for_search, search_space = _resolve_tuning_search_space(request)
+    invalid_parameter_names = (
+        _validate_tuning_parameter_names(search_space, request.methods)
+        if request.search_space
+        else None
+    )
+    if invalid_parameter_names is not None:
+        result = _attach_tuning_context(invalid_parameter_names, request)
+        result = _attach_analysis_time_window(result, request)
+        result = _apply_tuning_detail(result, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     try:
         result = optuna_search_impl(
             symbol=request.symbol,
@@ -3443,6 +3602,7 @@ def run_forecast_tune_optuna(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            quantity=str(request.quantity),
             **_analysis_time_kwargs(request),
             search_space=search_space,
             metric=str(request.metric),
@@ -3478,6 +3638,7 @@ def run_forecast_tune_optuna(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
     )
+    result = _attach_tuning_context(result, request)
     result = _attach_analysis_time_window(result, request)
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(

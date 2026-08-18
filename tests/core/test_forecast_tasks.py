@@ -528,6 +528,31 @@ class TestForecastModels:
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
         mock_store.describe_model.assert_not_called()
 
+    def test_compact_model_rows_show_training_anchor(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handle = TrainedModelHandle(
+            "sktime/EURUSD_H1/a",
+            "sktime",
+            "EURUSD_H1",
+            "a",
+            1000.0,
+            metadata={
+                "training_context": {
+                    "training_end_epoch": 1_700_000_000.0,
+                    "training_window_mode": "as_of",
+                }
+            },
+        )
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = [handle]
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)()
+
+        assert result["models"][0]["training_end"] == "2023-11-14T22:13:20Z"
+        assert result["models"][0]["training_window_mode"] == "as_of"
+
     def test_lists_models_with_stable_pagination(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
 
@@ -764,6 +789,27 @@ class TestForecastTrain:
             params=None,
             quantity="price",
         )
+
+    def test_training_resolves_registered_sktime_alias_like_generate(self):
+        from src.mtdata.core.forecast_tasks import forecast_train
+
+        task = _make_task(status="pending", method="sktime")
+        mock_tm = MagicMock()
+        mock_tm.submit_forecast_request.return_value = ("task-train-1", True)
+        mock_tm.get_status.return_value = task
+
+        with (
+            patch(_PATCH_TM, return_value=mock_tm),
+            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+        ):
+            result = _unwrap(forecast_train)(
+                ForecastTrainRequest(symbol="EURUSD", method="skt_naive")
+            )
+
+        call = mock_tm.submit_forecast_request.call_args.kwargs
+        assert call["method_name"] == "sktime"
+        assert call["params"]["estimator"].endswith("NaiveForecaster")
+        assert result["requested_method"] == "skt_naive"
 
     def test_training_can_wait_for_completed_model(self):
         from src.mtdata.core.forecast_tasks import forecast_train

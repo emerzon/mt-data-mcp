@@ -188,7 +188,7 @@ PARAM_HINTS = {
     "params": "Method parameters as JSON or k=v pairs. Examples: --params alpha=0.3,beta=0.1 or --params '{\"alpha\":0.3,\"beta\":0.1}'.",
     "params_per_method": "Per-method params map (e.g. {method: {k: v}}).",
     "as_of": "Inclusive reference cutoff; a date-only value includes that full trading day.",
-    "ci_alpha": "Confidence interval alpha.",
+    "ci_alpha": "Interval alpha = 1 - nominal coverage; 0.05 requests 95% bands.",
     "features": "Feature spec as JSON or k=v pairs. Examples: --features lag=3,rolling=5 or --features '{\"lag\":3,\"rolling\":5}'.",
     "dimred": "Dimensionality-reduction method and its method-specific parameters.",
     "target_spec": "Target spec (JSON or k=v).",

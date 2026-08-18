@@ -708,6 +708,13 @@ def build_training_context(
         features=features,
         target_spec=target_spec,
         exog=X,
+        training_window_mode=(
+            "as_of"
+            if as_of is not None
+            else "range"
+            if start is not None or end is not None
+            else "latest"
+        ),
     )
     return TrainingExecutionContext(
         method_l=method_l,
@@ -745,7 +752,8 @@ def _build_engine_diagnostics(
     fmt_time = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
     diagnostics: Dict[str, Any] = {
         "lookback_bars_requested": int(lookback) if lookback is not None else None,
-        "lookback_bars_fetched": int(need),
+        "minimum_history_bars_requested": int(need),
+        "history_bars_received": int(len(df)),
         "history_bars_used": int(len(df)),
         "target_points_used": int(len(target_series)),
         "seasonality_used": int(seasonality),
@@ -830,6 +838,7 @@ def _training_context_fingerprint(
     features: Any,
     target_spec: Any,
     exog: Optional[np.ndarray],
+    training_window_mode: str = "latest",
 ) -> Dict[str, Any]:
     if features in (None, {}):
         features = {}
@@ -842,6 +851,7 @@ def _training_context_fingerprint(
         "features": _stable_training_value(features),
         "target_spec": _stable_training_value(target_spec),
         "exog_columns": int(exog.shape[1]) if exog is not None and exog.ndim > 1 else 0,
+        "training_window_mode": str(training_window_mode),
     }
     target_transform = (
         str(target_spec.get("transform") or "").strip().lower()
@@ -1110,6 +1120,7 @@ def _run_registered_forecast_method(
     params: Dict[str, Any],
     ci_alpha: Optional[float],
     as_of: Optional[str],
+    training_window_mode: Optional[str] = None,
     quantity_l: str,
     symbol: str,
     timeframe: TimeframeLiteral,
@@ -1124,6 +1135,9 @@ def _run_registered_forecast_method(
     model_id: Optional[str] = None,
     model_cache: Literal["reuse", "ephemeral", "require_existing"] = "reuse",
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+    training_window_mode = str(
+        training_window_mode or ("as_of" if as_of is not None else "latest")
+    ).strip().lower()
     forecaster = ForecastRegistry.get(method_l)
     method_params = dict(params)
     declared_params = getattr(forecaster, "PARAMS", ())
@@ -1208,6 +1222,7 @@ def _run_registered_forecast_method(
             features=features,
             target_spec=target_spec,
             exog=X,
+            training_window_mode=training_window_mode,
         )
         expected_params_hash = _compute_model_key(
             forecaster, method_l, horizon, seasonality,
@@ -1231,7 +1246,7 @@ def _run_registered_forecast_method(
 
         model_rejection: Dict[str, Any] = {}
         live_model_update = (
-            as_of is None
+            training_window_mode == "latest"
             and bool(getattr(forecaster, "supports_live_model_update", False))
         )
         if cache_policy != "ephemeral":
@@ -2004,6 +2019,13 @@ def forecast_engine(  # noqa: C901
                 params=p,
                 ci_alpha=ci_alpha,
                 as_of=as_of,
+                training_window_mode=(
+                    "as_of"
+                    if as_of is not None
+                    else "range"
+                    if start is not None or end is not None
+                    else "latest"
+                ),
                 quantity_l=quantity_l,
                 symbol=symbol,
                 timeframe=timeframe,

@@ -23,10 +23,33 @@ def test_output_fields_reports_partially_unresolved_projection() -> None:
     result = _select_output_fields(payload, "symbol,details.missing")
 
     assert result == {
-        "success": True,
+        "success": False,
         "symbol": "EURUSD",
+        "error": "None of the requested output fields could be resolved: details.missing.",
+        "error_code": "output_fields_unresolved",
         "unresolved_output_fields": ["details.missing"],
         "valid_output_fields": ["details"],
+    }
+
+
+def test_output_fields_resolves_canonical_forecast_arrays_from_compact_rows() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "quantity": "price",
+        "forecast": [
+            {"time": "2026-08-18T02:00Z", "value": 1.15782},
+            {"time": "2026-08-18T03:00Z", "value": 1.15801},
+        ],
+    }
+
+    result = _select_output_fields(payload, "forecast_time,forecast_price")
+
+    assert result == {
+        "success": True,
+        "symbol": "EURUSD",
+        "forecast_time": ["2026-08-18T02:00Z", "2026-08-18T03:00Z"],
+        "forecast_price": [1.15782, 1.15801],
     }
 
 

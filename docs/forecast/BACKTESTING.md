@@ -88,13 +88,13 @@ mtdata-cli forecast_backtest_run <SYMBOL> [OPTIONS]
 | Parameter | Description |
 |-----------|-------------|
 | `--params` | Parameters applied to all methods (JSON or `k=v`) |
-| `--params-per-method` | Per-method parameters: `{"fourier_ols": {"m": 24, "K": 3}}` |
+| `--params-per-method` | Per-method parameters: `{"fourier_ols": {"seasonality": 24, "terms": 3}}` |
 
 **Example with per-method params:**
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
   --methods "fourier_ols arima" \
-  --params-per-method '{"fourier_ols": {"m": 24, "K": 3}, "arima": {"p": 2, "d": 1, "q": 2}}'
+  --params-per-method '{"fourier_ols": {"seasonality": 24, "terms": 3}, "arima": {"p": 2, "d": 1, "q": 2}}'
 ```
 
 ### Quantity
@@ -354,7 +354,7 @@ Define which parameters to search:
 
 ```bash
 mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols \
-  --search-space '{"m": {"type": "int", "min": 12, "max": 48}}'
+  --search-space '{"seasonality": {"type": "int", "min": 12, "max": 48}}'
 ```
 
 **Search space format:**
@@ -378,7 +378,7 @@ Each method has sensible defaults. Examples:
 |--------|-------------------|
 | `theta` | none (the canonical native Theta model fits its own smoothing parameters) |
 | `arima` | p (0-3), d (0-2), q (0-3) |
-| `fourier_ols` | m (8-96), K (1-6), trend (true/false) |
+| `fourier_ols` | seasonality (8-96), terms (1-6), trend (true/false) |
 | `sf_autoarima` | seasonality, stepwise, d, D |
 | `mlf_lightgbm` | n_estimators, learning_rate, num_leaves, max_depth |
 
@@ -412,7 +412,7 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --methods fourier_ols \
 
 # Step 2: Backtest with optimal params
 mtdata-cli forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
-  --methods fourier_ols --params "m=48 K=3" \
+  --methods fourier_ols --params "seasonality=48 terms=3" \
   --steps 50 --spacing 48 --slippage-bps 2
 ```
 
@@ -453,7 +453,7 @@ mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --horizon 12 \
 
 # Record best params, then test on next 3 months with those params
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods fourier_ols \
-  --params "m=24 K=3" --steps 30 --spacing 24
+  --params "seasonality=24 terms=3" --steps 30 --spacing 24
 
 # Repeat: re-optimize, test out-of-sample
 ```

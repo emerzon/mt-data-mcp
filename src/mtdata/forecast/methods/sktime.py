@@ -41,6 +41,25 @@ def _validated_estimator_path(value: Any) -> str:
         )
     return estimator_path
 
+
+def _requires_fh_in_fit(estimator: Any) -> bool:
+    """Read sktime's standard fit-horizon capability tag defensively."""
+    for getter_name in ("get_tag", "get_class_tag"):
+        getter = getattr(estimator, getter_name, None)
+        if not callable(getter):
+            continue
+        try:
+            return bool(getter("requires-fh-in-fit", False))
+        except TypeError:
+            try:
+                return bool(getter("requires-fh-in-fit"))
+            except Exception:
+                continue
+        except Exception:
+            continue
+    return False
+
+
 class SktimeMethod(ForecastMethod):
     """Base class for Sktime methods."""
     
@@ -122,10 +141,13 @@ class SktimeMethod(ForecastMethod):
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            fit_kwargs: Dict[str, Any] = {}
+            if _requires_fh_in_fit(estimator):
+                fit_kwargs["fh"] = np.arange(1, int(horizon) + 1)
             if X is not None:
-                estimator.fit(y, X=X)
+                estimator.fit(y, X=X, **fit_kwargs)
             else:
-                estimator.fit(y)
+                estimator.fit(y, **fit_kwargs)
 
         artifact_bytes = self.serialize_artifact(estimator)
         reporter.stage(3, "Training complete", force=True)
@@ -306,10 +328,13 @@ class SktimeMethod(ForecastMethod):
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
+                fit_kwargs: Dict[str, Any] = {}
+                if _requires_fh_in_fit(estimator):
+                    fit_kwargs["fh"] = fh
                 if X is not None:
-                    estimator.fit(y, X=X)
+                    estimator.fit(y, X=X, **fit_kwargs)
                 else:
-                    estimator.fit(y)
+                    estimator.fit(y, **fit_kwargs)
                     
                 if X_future is not None:
                     # Ensure X_future has correct index

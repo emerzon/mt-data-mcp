@@ -108,8 +108,8 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "theta": {},
     "fourier_ols": {
         # Fourier period (bars) and number of harmonics; allow optional trend toggle
-        "m": {"type": "int", "min": 8, "max": 96},
-        "K": {"type": "int", "min": 1, "max": 6},
+        "seasonality": {"type": "int", "min": 8, "max": 96},
+        "terms": {"type": "int", "min": 1, "max": 6},
         "trend": {"type": "categorical", "choices": [True, False]},
     },
     "seasonal_naive": {
@@ -338,6 +338,7 @@ def _eval_candidate(
     horizon: int,
     steps: int,
     spacing: int,
+    quantity: str = "price",
     as_of: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -366,6 +367,7 @@ def _eval_candidate(
         horizon=int(horizon),
         steps=int(steps),
         spacing=int(spacing),
+        quantity=str(quantity),
         as_of=as_of,
         start=start,
         end=end,
@@ -564,6 +566,7 @@ def optuna_search_forecast_params(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    quantity: str = "price",
     as_of: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -702,6 +705,7 @@ def optuna_search_forecast_params(  # noqa: C901
             horizon=horizon,
             steps=steps,
             spacing=spacing,
+            quantity=quantity,
             as_of=as_of,
             start=start,
             end=end,
@@ -802,7 +806,7 @@ def optuna_search_forecast_params(  # noqa: C901
             agg = None
         payload["best_method"] = sel
         if isinstance(agg, dict):
-            payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
+            payload["best_result_summary"] = {"horizon": int(horizon), "result": agg}
     if history:
         compact_tail = _compact_optuna_history_tail(history, limit=10)
         payload["history_tail"] = compact_tail
@@ -845,6 +849,7 @@ def genetic_search_forecast_params(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    quantity: str = "price",
     as_of: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -935,6 +940,7 @@ def genetic_search_forecast_params(  # noqa: C901
                 horizon=horizon,
                 steps=steps,
                 spacing=spacing,
+                quantity=quantity,
                 as_of=as_of,
                 start=start,
                 end=end,
@@ -1046,7 +1052,7 @@ def genetic_search_forecast_params(  # noqa: C901
             agg = None
         payload["best_method"] = sel
         if isinstance(agg, dict):
-            payload["best_result_summary"] = {"horizon": agg.get('horizon'), "result": agg}
+            payload["best_result_summary"] = {"horizon": int(horizon), "result": agg}
     # Optional: compact history preview (keeps payload small)
     try:
         tail_n = 50

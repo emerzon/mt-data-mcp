@@ -980,6 +980,46 @@ def _project_row_collection_field(
     return {}, False
 
 
+def _project_forecast_alias_field(
+    value: Dict[str, Any],
+    field: str,
+) -> tuple[Dict[str, Any], bool]:
+    """Resolve canonical forecast arrays from compact forecast rows."""
+    rows = value.get("forecast")
+    if not isinstance(rows, list) or not rows:
+        return {}, False
+    aliases = {
+        "forecast_time": ("time",),
+        "forecast_return": ("return",),
+        "lower_price": ("lower_price",),
+        "upper_price": ("upper_price",),
+        "lower_return": ("lower_return",),
+        "upper_return": ("upper_return",),
+    }
+    candidates = aliases.get(field)
+    if field == "forecast_price":
+        quantity = str(value.get("quantity") or "").strip().lower()
+        if quantity == "volatility":
+            return {}, False
+        candidates = ("price",) if quantity == "return" else ("price", "value")
+    if candidates is None:
+        return {}, False
+    projected: list[Any] = []
+    matched = False
+    for row in rows:
+        if not isinstance(row, dict):
+            projected.append(None)
+            continue
+        row_value = None
+        for candidate in candidates:
+            if candidate in row:
+                row_value = row[candidate]
+                matched = True
+                break
+        projected.append(row_value)
+    return ({field: projected}, True) if matched else ({}, False)
+
+
 def _select_output_fields(value: Any, fields: Any) -> Any:
     requested = _normalize_output_fields(fields)
     if not requested or not isinstance(value, dict):
@@ -990,6 +1030,13 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         if key in _FIELD_SELECTION_META_KEYS
     }
     unresolved: list[str] = []
+    resolved_domain_fields: list[str] = []
+    requested_domain_fields = [
+        field
+        for field in requested
+        if field not in _FIELD_SELECTION_META_KEYS
+        and field not in {"error", "error_code", "remediation", "documentation"}
+    ]
     for requested_field in requested:
         if "." in requested_field:
             filtered, matched = _filter_output_path(
@@ -999,10 +1046,15 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         elif requested_field in value:
             filtered, matched = {requested_field: value[requested_field]}, True
         else:
-            filtered, matched = _project_row_collection_field(
+            filtered, matched = _project_forecast_alias_field(
                 value,
                 requested_field,
             )
+            if not matched:
+                filtered, matched = _project_row_collection_field(
+                    value,
+                    requested_field,
+                )
             if not matched:
                 filtered, matched = {}, requested_field in {
                     "error",
@@ -1013,6 +1065,8 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         if not matched:
             unresolved.append(requested_field)
             continue
+        if requested_field in requested_domain_fields:
+            resolved_domain_fields.append(requested_field)
         selected = _merge_output_field_selection(selected, filtered)
     # Optional error-envelope fields may be absent on success. Other missing
     # paths are surfaced so projection typos cannot silently discard data.
@@ -1022,6 +1076,19 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
             str(key)
             for key in value
             if key not in _FIELD_SELECTION_META_KEYS
+        )
+    if (
+        requested_domain_fields
+        and not resolved_domain_fields
+        and value.get("success") is not False
+        and not value.get("error")
+    ):
+        selected["success"] = False
+        selected["error_code"] = "output_fields_unresolved"
+        selected["error"] = (
+            "None of the requested output fields could be resolved: "
+            + ", ".join(requested_domain_fields)
+            + "."
         )
     return selected
 

@@ -2351,7 +2351,7 @@ class TestEdgeCases:
         assert "extras" in payload["error"]
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_missing_optional_output_fields_do_not_fail(self, mock_discover, capsys):
+    def test_all_unresolved_output_fields_fail(self, mock_discover, capsys):
         def sample_tool(output_fields=None, **_kwargs):
             return {"success": True, "value": 1}
 
@@ -2368,9 +2368,11 @@ class TestEdgeCases:
         ):
             status = main()
 
-        assert status == 0
+        assert status == 1
         assert mock_discover.called
-        assert json.loads(capsys.readouterr().out)["success"] is True
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["success"] is False
+        assert payload["error_code"] == "output_fields_unresolved"
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_json_mode_formats_argparse_failures_as_json(self, mock_discover, capsys):

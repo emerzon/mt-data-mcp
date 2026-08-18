@@ -225,6 +225,37 @@ class TestComputeModelKey:
 
         assert first == second
 
+    def test_historical_training_anchor_affects_hash(self):
+        stub = _StubTrainable()
+        base_context = {
+            "base_col": "close",
+            "denoise": None,
+            "features": None,
+            "target_spec": None,
+            "exog_columns": 0,
+            "training_window_mode": "as_of",
+        }
+        first = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {"_training_context": {**base_context, "training_end_epoch": 2000.0}},
+            "H1",
+            False,
+        )
+        second = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {"_training_context": {**base_context, "training_end_epoch": 5600.0}},
+            "H1",
+            False,
+        )
+
+        assert first != second
+
 
 # ---------------------------------------------------------------------------
 # Tests: _try_predict_with_stored_model

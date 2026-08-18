@@ -216,6 +216,10 @@ class FourierOLSMethod(ClassicalMethod):
         f_vals = Xf @ coef
         return ForecastResult(
             forecast=f_vals.astype(float, copy=False), 
-            params_used={"m": m_eff, "K": K_eff, "trend": bool(trend)}
+            params_used={
+                "seasonality": m_eff,
+                "terms": K_eff,
+                "trend": bool(trend),
+            },
         )
 

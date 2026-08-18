@@ -151,12 +151,12 @@ class TestExtractMethodParamsFromGenotype:
         genotype = {
             'timeframe': 'H4',
             'method': 'fourier_ols',
-            'm': 24,
+            'seasonality': 24,
         }
         tf, method, params = extract_method_params_from_genotype(genotype, search_space)
         assert tf == 'H4'
         assert method == 'fourier_ols'
-        assert params.get('m') == 24
+        assert params.get('seasonality') == 24
 
     def test_handles_missing_keys(self):
         search_space = build_comprehensive_search_space()

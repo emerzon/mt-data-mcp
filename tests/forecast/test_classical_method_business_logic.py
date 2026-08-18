@@ -109,20 +109,20 @@ def test_fourier_ols_default_and_custom_params():
     series = pd.Series(np.linspace(10.0, 20.0, 24))
 
     default = method.forecast(series, horizon=3, seasonality=12, params={})
-    assert default.params_used == {"m": 12, "K": 3, "trend": True}
+    assert default.params_used == {"seasonality": 12, "terms": 3, "trend": True}
     assert default.forecast.shape == (3,)
     assert np.issubdtype(default.forecast.dtype, np.floating)
 
     no_seasonality = method.forecast(series, horizon=2, seasonality=0, params={"terms": None, "trend": False})
-    assert no_seasonality.params_used == {"m": 0, "K": 2, "trend": False}
+    assert no_seasonality.params_used == {"seasonality": 0, "terms": 2, "trend": False}
     assert no_seasonality.forecast.shape == (2,)
 
     custom = method.forecast(series, horizon=2, seasonality=24, params={"terms": 1, "trend": True})
-    assert custom.params_used == {"m": 24, "K": 1, "trend": True}
+    assert custom.params_used == {"seasonality": 24, "terms": 1, "trend": True}
     assert custom.forecast.shape == (2,)
 
     seasonality_one = method.forecast(series, horizon=2, seasonality=1, params={"terms": 3, "trend": True})
-    assert seasonality_one.params_used == {"m": 1, "K": 0, "trend": True}
+    assert seasonality_one.params_used == {"seasonality": 1, "terms": 0, "trend": True}
     assert seasonality_one.forecast.shape == (2,)
 
     with pytest.raises(ValueError, match="finite"):

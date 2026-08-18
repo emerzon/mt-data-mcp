@@ -280,6 +280,15 @@ def _serialize_model_handle(
         "created_at": format_epoch_utc(created_at_epoch) or created_at_epoch,
     }
     model_metadata = dict(getattr(handle, "metadata", {}) or {})
+    training_context = model_metadata.get("training_context")
+    if isinstance(training_context, dict):
+        training_end_epoch = training_context.get("training_end_epoch")
+        training_end = format_epoch_utc(training_end_epoch)
+        if training_end is not None:
+            payload["training_end"] = training_end
+        window_mode = training_context.get("training_window_mode")
+        if window_mode not in (None, ""):
+            payload["training_window_mode"] = str(window_mode)
     source_task_id = model_metadata.get("source_task_id")
     if source_task_id not in (None, ""):
         payload["source_task_id"] = str(source_task_id)
@@ -524,7 +533,8 @@ def _task_status_payload(
             payload["produced_model_ids"] = [task.result.model_id]
         payload["message"] = (
             f"Training complete. Model stored as '{task.result.model_id}'. "
-            "Matching live forecast_generate calls will reuse this model and report its staleness in bars."
+            "A forecast_generate request with the same method, parameters, and "
+            "training-window identity can reuse this model."
         )
         if detail == "full":
             payload["result"] = _serialize_model_handle(task.result, detail="full")
@@ -629,21 +639,33 @@ def _get_registry():
 def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
     """Start training, optionally waiting for the stored model artifact."""
     def _execute() -> Dict[str, Any]:
+        from ..forecast.capabilities import resolve_capability_request
         from ..utils.mt5 import ensure_mt5_connection_or_raise
 
         ensure_mt5_connection_or_raise()
+
+        _, resolved_method, resolved_params = resolve_capability_request(
+            library="native",
+            method=request.method,
+            params=request.params,
+        )
+        training_params = (
+            resolved_params
+            if request.params is not None or resolved_method != request.method
+            else None
+        )
 
         tm = _get_task_manager()
         task_id, _ = tm.submit_forecast_request(
             symbol=request.symbol,
             timeframe=request.timeframe,
-            method_name=request.method,
+            method_name=resolved_method,
             horizon=request.horizon,
             lookback=request.lookback,
             as_of=request.as_of,
             start=request.start,
             end=request.end,
-            params=request.params,
+            params=training_params,
             quantity=request.quantity,
         )
         task = tm.get_status(task_id)
@@ -657,20 +679,25 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
                         operation="forecast_train",
                     )
         if task is None:
-            return {
+            payload = {
                 "success": True,
                 "task_id": task_id,
                 "status": "pending",
-                "method": request.method,
+                "method": resolved_method,
                 "data_scope": f"{request.symbol}_{request.timeframe}",
                 "training_window": request.training_window(),
             }
+            if resolved_method != request.method:
+                payload["requested_method"] = request.method
+            return payload
         payload = _task_status_payload(
             task,
             detail="compact",
             runtime=tm.runtime_snapshot(),
         )
         payload["training_window"] = request.training_window()
+        if resolved_method != request.method:
+            payload["requested_method"] = request.method
         if request.wait:
             payload["foreground_wait"] = True
             if task.status == "failed":

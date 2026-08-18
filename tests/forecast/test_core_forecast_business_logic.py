@@ -753,7 +753,8 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
                 "history_bars_used": 200,
                 "target_points_used": 199,
                 "lookback_bars_requested": 250,
-                "lookback_bars_fetched": 240,
+                "minimum_history_bars_requested": 300,
+                "history_bars_received": 240,
             },
         },
     )
@@ -764,7 +765,8 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
         "history_bars_used": 200,
         "target_points_used": 199,
         "lookback_bars_requested": 250,
-        "lookback_bars_fetched": 240,
+        "minimum_history_bars_requested": 300,
+        "history_bars_received": 240,
         "note": "Forecast was fit on the historical window summarized here.",
     }
 
@@ -2961,6 +2963,12 @@ def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
     assert request.ci_alpha == 0.05
     assert request.detail == "compact"
 
+    assert ForecastConformalIntervalsRequest(
+        symbol="EURUSD", ci_alpha=0.10
+    ).ci_alpha == 0.10
+    with pytest.raises(ValidationError, match="less than or equal to 0.5"):
+        ForecastConformalIntervalsRequest(symbol="EURUSD", ci_alpha=0.95)
+
     with pytest.raises(ValidationError, match="spacing must be greater than or equal to horizon when steps > 1"):
         ForecastConformalIntervalsRequest(
             symbol="EURUSD",
@@ -3289,14 +3297,26 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     out = raw_tune(
         request=ForecastTuneGeneticRequest(
             symbol="EURUSD",
-            methods=["theta", "naive"],
-            search_space={"x": {"type": "int", "min": 1, "max": 3}},
+            methods=["fourier_ols", "naive"],
+            search_space={
+                "fourier_ols": {
+                    "terms": {"type": "int", "min": 1, "max": 3}
+                },
+                "naive": {},
+            },
         )
     )
     assert out["ok"] is True
     assert out["detail"] == "compact"
     assert out["compute_intensity"] == "high"
     assert captured["method"] is None
+    assert out["symbol"] == "EURUSD"
+    assert out["timeframe"] == "H1"
+    assert out["quantity"] == "price"
+    assert out["horizon"] == 12
+    assert out["steps"] == 5
+    assert out["spacing"] == 20
+    assert out["tuning_context"]["methods"] == ["fourier_ols", "naive"]
 
     monkeypatch.setattr(cf, "_genetic_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
     assert "Error in genetic tuning" in raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD"))["error"]
@@ -4048,8 +4068,13 @@ def test_forecast_tune_optuna_routing(monkeypatch):
     out = raw_tune(
         request=ForecastTuneOptunaRequest(
             symbol="EURUSD",
-            methods=["theta", "naive"],
-            search_space={"x": {"type": "int", "min": 1, "max": 3}},
+            methods=["fourier_ols", "naive"],
+            search_space={
+                "fourier_ols": {
+                    "terms": {"type": "int", "min": 1, "max": 3}
+                },
+                "naive": {},
+            },
         )
     )
     assert out["ok"] is True
@@ -4057,9 +4082,28 @@ def test_forecast_tune_optuna_routing(monkeypatch):
     assert out["compute_intensity"] == "high"
     assert "compute_cost" in out
     assert captured["method"] is None
+    assert out["tuning_context"]["symbol"] == "EURUSD"
+    assert out["tuning_context"]["quantity"] == "price"
 
     monkeypatch.setattr(cf, "_optuna_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
     assert "Error in optuna tuning" in raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD"))["error"]
+
+
+def test_forecast_tuning_rejects_unknown_fourier_parameter_names():
+    request = ForecastTuneGeneticRequest(
+        symbol="EURUSD",
+        methods=["fourier_ols"],
+        search_space={"m": {"type": "int", "min": 8, "max": 96}},
+    )
+
+    out = forecast_use_cases.run_forecast_tune_genetic(
+        request,
+        genetic_search_impl=lambda **kwargs: pytest.fail("invalid space was executed"),
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_search_space"
+    assert out["invalid_parameters"] == ["m"]
 
 
 def _ready_options_provider():

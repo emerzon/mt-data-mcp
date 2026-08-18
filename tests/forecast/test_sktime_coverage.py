@@ -62,6 +62,17 @@ class _FakeAutoETS(_FakeForecaster):
     pass
 
 
+class _RequiresFhForecaster(_FakeForecaster):
+    def get_tag(self, name, default=None):
+        return True if name == "requires-fh-in-fit" else default
+
+    def fit(self, y, X=None, fh=None):
+        if fh is None:
+            raise ValueError("fh is required")
+        self.fit_fh = list(fh)
+        return super().fit(y, X=X)
+
+
 # Build sktime stub modules
 _sktime = _make_module("sktime")
 _sktime_forecasting = _make_module("sktime.forecasting")
@@ -181,6 +192,26 @@ class TestSktimeMethodForecast:
         res = m.forecast(_series(), horizon=10, seasonality=12, params={})
         assert isinstance(res, ForecastResult)
         assert len(res.forecast) == 10
+
+    def test_forecast_passes_required_horizon_to_fit(self, monkeypatch):
+        estimator = _RequiresFhForecaster()
+        method = GenericSktimeMethod()
+        monkeypatch.setattr(method, "_get_estimator", lambda *_: estimator)
+
+        result = method.forecast(_series(), horizon=4, seasonality=12, params={})
+
+        assert len(result.forecast) == 4
+        assert estimator.fit_fh == [1, 2, 3, 4]
+
+    def test_train_passes_required_horizon_to_fit(self, monkeypatch):
+        estimator = _RequiresFhForecaster()
+        method = GenericSktimeMethod()
+        monkeypatch.setattr(method, "_get_estimator", lambda *_: estimator)
+
+        result = method.train(_series(), horizon=3, seasonality=12, params={})
+
+        assert result.artifact_bytes
+        assert estimator.fit_fh == [1, 2, 3]
 
     def test_forecast_with_datetime_index(self):
         m = GenericSktimeMethod()

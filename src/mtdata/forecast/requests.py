@@ -378,13 +378,13 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
     ci_alpha: float = Field(
         0.05,
         gt=0.0,
-        lt=1.0,
+        le=0.5,
         description=(
-            "Residual-quantile alpha for rolling-backtest absolute-error bands "
-            "(not a true conformal coverage guarantee). Defaults to 0.05, the "
-            "conformal tool's own 95% target; 0.10 targets 90%. "
+            "Residual-quantile alpha (alpha = 1 - nominal coverage) for "
+            "rolling-backtest absolute-error bands. Use 0.05 for 95% bands "
+            "or 0.10 for 90% bands. This is not a true conformal coverage guarantee. "
             "forecast_generate defaults to point-only output unless its ci_alpha is set. "
-            "Values outside 0.05-0.20 are warned."
+            "Values below 0.05 or above 0.20 are warned; values above 0.5 are rejected."
         ),
     )
     denoise: Optional[DenoiseSpec] = None
@@ -416,6 +416,7 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
+    quantity: Literal["price", "return", "volatility"] = "price"
     search_space: Optional[Dict[str, Any]] = None
     metric: TuningMetricLiteral = "avg_rmse"
     mode: TuningModeLiteral = Field(
@@ -484,6 +485,7 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
+    quantity: Literal["price", "return", "volatility"] = "price"
     search_space: Optional[Dict[str, Any]] = None
     metric: TuningMetricLiteral = "avg_rmse"
     mode: TuningModeLiteral = Field(

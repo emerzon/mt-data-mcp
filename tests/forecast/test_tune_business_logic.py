@@ -14,7 +14,8 @@ def test_default_search_space_modes():
     multi = tune.default_search_space(methods=["theta", "fourier_ols"])
     assert "_shared" in multi
     assert multi["theta"] == {}
-    assert "fourier_ols" in multi and "K" in multi["fourier_ols"]
+    assert "fourier_ols" in multi
+    assert set(multi["fourier_ols"]) == {"seasonality", "terms", "trend"}
 
     single_known = tune.default_search_space(method="theta")
     assert single_known == {}
@@ -276,6 +277,7 @@ def test_genetic_search_method_scoped_and_flat_spaces(monkeypatch):
     assert out["history_count"] == 8
     assert out["best_method"] in {"theta", "naive"}
     assert "best_result_summary" in out
+    assert out["best_result_summary"]["horizon"] == 3
     assert len(out["history_tail"]) <= 50
 
     flat_space = {
@@ -384,6 +386,7 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
     assert out["optimizer"] == "optuna"
     assert out["history_count"] == 8
     assert out["best_method"] in {"theta", "naive"}
+    assert out["best_result_summary"]["horizon"] == 3
     assert len(out["history_tail"]) <= 10
 
     flat_space = {
