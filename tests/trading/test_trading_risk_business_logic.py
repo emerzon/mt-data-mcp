@@ -632,7 +632,7 @@ def test_trade_risk_analyze_rejects_direction_inference_inside_spread() -> None:
     assert "position_sizing" not in out
 
 
-def test_trade_risk_analyze_sizes_from_stale_tick_as_reference_only() -> None:
+def test_trade_risk_analyze_blocks_sizing_from_stale_reference_quote() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -654,10 +654,41 @@ def test_trade_risk_analyze_sizes_from_stale_tick_as_reference_only() -> None:
     assert out["quote_context"]["usable_for_live_trading"] is False
     assert out["quote_context"]["freshness_state"] == "stale"
     assert out["quote_context"]["sizing_reference_only"] is True
-    assert "last available non-live quote" in out["quote_context"]["sizing_warning"]
-    assert out["position_sizing"]["entry"] == 100.2
-    assert out["position_sizing"]["entry_source"] == "last_available_tick_ask"
+    assert "geometry reference" in out["quote_context"]["sizing_warning"]
     assert out["trade_evaluation"]["entry_source"] == "last_available_tick_ask"
+    assert out["trade_evaluation"]["status"] == "valid"
+    assert out["success"] is False
+    assert out["candidate_valid"] is False
+    assert out["candidate_status"] == "blocked"
+    assert out["error_code"] == "quote_not_live_ready"
+    assert out["position_sizing_error"]["code"] == "quote_not_live_ready"
+    assert "position_sizing" not in out
+
+
+def test_trade_risk_analyze_blocks_sizing_from_locked_quote() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+    mt5.symbol_info_tick.return_value = SimpleNamespace(
+        bid=100.0,
+        ask=100.0,
+        time=time.time(),
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="BTCUSD",
+            direction="long",
+            sizing=_fixed_sizing(1.0),
+            stop_loss=95.0,
+        )
+
+    assert out["quote_context"]["spread_quality"] == "locked"
+    assert out["quote_context"]["usable_for_live_trading"] is False
+    assert out["candidate_valid"] is False
+    assert out["error_code"] == "quote_not_live_ready"
+    assert "position_sizing" not in out
 
 
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:

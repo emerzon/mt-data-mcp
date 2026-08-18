@@ -782,8 +782,8 @@ def _resolve_live_trade_risk_entry(
     if not live_quote:
         quote_context["sizing_reference_only"] = True
         quote_context["sizing_warning"] = (
-            "Position sizing uses the last available non-live quote as a reference; "
-            "refresh the entry before submitting an order."
+            "The last available non-live quote is retained as a geometry reference; "
+            "refresh the quote before requesting a sizing recommendation."
         )
 
     bid = _positive_trade_price(tick_value(tick, "bid"))
@@ -1106,6 +1106,38 @@ def _apply_trade_candidate_outcome(result: Dict[str, Any]) -> Dict[str, Any]:
 
     candidate_status = str(evaluation.get("status") or "").strip().lower()
     if candidate_status == "valid":
+        quote_context = result.get("quote_context")
+        if (
+            isinstance(quote_context, dict)
+            and quote_context.get("sizing_reference_only") is True
+            and quote_context.get("usable_for_live_trading") is not True
+        ):
+            reason = str(
+                quote_context.get("warning")
+                or quote_context.get("sizing_warning")
+                or "The resolved entry quote is not usable for live trading."
+            )
+            result.update(
+                {
+                    "success": False,
+                    "candidate_valid": False,
+                    "candidate_status": "blocked",
+                    "error_code": "quote_not_live_ready",
+                    "error": reason,
+                    "portfolio_snapshot_status": "available",
+                    "position_sizing_error": _build_position_sizing_error(
+                        code="quote_not_live_ready",
+                        reason=reason,
+                        entry=evaluation.get("entry"),
+                        remediation=(
+                            "Refresh the quote and rerun trade_risk_analyze, or provide "
+                            "an explicit entry for research-only geometry."
+                        ),
+                    ),
+                }
+            )
+            result.pop("position_sizing", None)
+            return result
         result["candidate_valid"] = True
         result["candidate_status"] = "valid"
         return result
