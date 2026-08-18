@@ -564,6 +564,14 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             if require_dom:
                 return {
                     "error": f"DOM not available for {symbol}. Use market_ticker for bid/ask snapshot instead.",
+                    "error_code": "dom_unavailable",
+                    "symbol": symbol,
+                    "depth_status": "unavailable",
+                    "capabilities": {
+                        "dom_available": False,
+                        "depth_status": "unavailable",
+                        "fallback_reason": "market_book_get returned no levels",
+                    },
                     "recommended_alternative": "market_ticker",
                 }
             quote_now = time.time()

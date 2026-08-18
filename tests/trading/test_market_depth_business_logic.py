@@ -319,6 +319,13 @@ def test_market_depth_compact_mode_fails_fast_without_dom() -> None:
         out = _raw_market_depth_fetch("BTCUSD", require_dom=True)
 
     assert out["error"] == "DOM not available for BTCUSD. Use market_ticker for bid/ask snapshot instead."
+    assert out["error_code"] == "dom_unavailable"
+    assert out["depth_status"] == "unavailable"
+    assert out["capabilities"] == {
+        "dom_available": False,
+        "depth_status": "unavailable",
+        "fallback_reason": "market_book_get returned no levels",
+    }
     assert out["recommended_alternative"] == "market_ticker"
 
 
