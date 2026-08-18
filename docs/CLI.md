@@ -192,6 +192,9 @@ mtdata-cli symbols_describe EURUSD --output-fields symbol,details.digits,details
 
 Bare field names address top-level keys; dotted paths address nested keys.
 Misspelled or unavailable paths are reported in `unresolved_output_fields`.
+Projection does not turn an otherwise successful tool call into an error when
+all requested paths are unavailable; use `valid_output_fields` to retry with
+the returned shape.
 
 ### Exit Codes
 

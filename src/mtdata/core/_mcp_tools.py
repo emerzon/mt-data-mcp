@@ -1035,13 +1035,6 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         if key in _FIELD_SELECTION_META_KEYS
     }
     unresolved: list[str] = []
-    resolved_domain_fields: list[str] = []
-    requested_domain_fields = [
-        field
-        for field in requested
-        if field not in _FIELD_SELECTION_META_KEYS
-        and field not in {"error", "error_code", "remediation", "documentation"}
-    ]
     for requested_field in requested:
         if "." in requested_field:
             filtered, matched = _filter_output_path(
@@ -1070,8 +1063,6 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         if not matched:
             unresolved.append(requested_field)
             continue
-        if requested_field in requested_domain_fields:
-            resolved_domain_fields.append(requested_field)
         selected = _merge_output_field_selection(selected, filtered)
     # Optional error-envelope fields may be absent on success. Other missing
     # paths are surfaced so projection typos cannot silently discard data.
@@ -1081,19 +1072,6 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
             str(key)
             for key in value
             if key not in _FIELD_SELECTION_META_KEYS
-        )
-    if (
-        requested_domain_fields
-        and not resolved_domain_fields
-        and value.get("success") is not False
-        and not value.get("error")
-    ):
-        selected["success"] = False
-        selected["error_code"] = "output_fields_unresolved"
-        selected["error"] = (
-            "None of the requested output fields could be resolved: "
-            + ", ".join(requested_domain_fields)
-            + "."
         )
     return selected
 

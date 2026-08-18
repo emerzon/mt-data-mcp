@@ -112,7 +112,9 @@ mtdata-cli symbols_describe EURUSD --output-fields symbol,details.digits,details
 Bare names select top-level keys only. Use a dotted path such as
 `general_news.title` to select nested values. Any requested path that is not
 present is returned in `unresolved_output_fields`; projection never silently
-searches unrelated nested objects for a matching key.
+searches unrelated nested objects for a matching key. If no requested path
+resolves, the original tool status remains successful and
+`valid_output_fields` lists the available top-level paths.
 
 `json` and `output_fields` are the shared output-shaping parameters available
 across tools. A domain-specific parameter named `fields` (currently used by

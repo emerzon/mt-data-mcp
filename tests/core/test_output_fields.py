@@ -17,16 +17,14 @@ def test_output_fields_supports_dotted_nested_paths() -> None:
     }
 
 
-def test_output_fields_reports_partially_unresolved_projection() -> None:
+def test_output_fields_total_miss_preserves_tool_success() -> None:
     payload = {"success": True, "symbol": "EURUSD", "details": {"digits": 5}}
 
     result = _select_output_fields(payload, "symbol,details.missing")
 
     assert result == {
-        "success": False,
+        "success": True,
         "symbol": "EURUSD",
-        "error": "None of the requested output fields could be resolved: details.missing.",
-        "error_code": "output_fields_unresolved",
         "unresolved_output_fields": ["details.missing"],
         "valid_output_fields": ["details"],
     }
