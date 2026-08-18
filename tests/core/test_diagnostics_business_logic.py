@@ -179,6 +179,69 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert result["items"][0]["period_duration_seconds"] == 43_200
 
 
+def test_seasonality_daily_duration_uses_observed_session_timestamps(monkeypatch):
+    x = np.arange(480, dtype=float)
+    frame = _session_bars(
+        100.0 + np.sin(2.0 * np.pi * x / 12.0),
+        bars_per_day=1,
+    )
+    monkeypatch.setattr(
+        diagnostics,
+        "create_mt5_gateway",
+        lambda **kwargs: _Gateway(),
+    )
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.seasonality_detect)(
+        symbol="EURUSD",
+        timeframe="D1",
+        target="close",
+        min_period=4,
+        max_period=30,
+    )
+
+    dominant = result["items"][0]
+    assert dominant["period_bars"] == 12
+    assert dominant["period_duration_basis"] == (
+        "median_observed_timestamp_lag"
+    )
+    assert dominant["period_duration_seconds"] > 12 * 86_400
+    assert dominant["nominal_period_duration_seconds"] == 12 * 86_400
+    assert dominant["period_duration_observed_range"]["min_seconds"] > (
+        12 * 86_400
+    )
+
+
+def test_seasonality_daily_duration_matches_nominal_for_continuous_market():
+    times = pd.date_range(
+        "2026-01-01",
+        periods=40,
+        freq="D",
+        tz="UTC",
+    )
+
+    context = diagnostics._seasonality_period_context(
+        7,
+        "D1",
+        observed_times=[value.timestamp() for value in times],
+    )
+
+    assert context["period_duration"] == "7 days"
+    assert context["period_duration_seconds"] == 7 * 86_400
+    assert context["period_duration_basis"] == "median_observed_timestamp_lag"
+    assert context["period_duration_observed_range"] == {
+        "min_seconds": 7 * 86_400,
+        "max_seconds": 7 * 86_400,
+        "min": "7 days",
+        "max": "7 days",
+        "pairs": 33,
+    }
+
+
 def test_seasonality_minimum_lookback_survives_preprocessing(monkeypatch):
     x = np.arange(31, dtype=float)
     frame = _bars(100.0 + np.sin(2.0 * np.pi * x / 6.0))

@@ -122,21 +122,53 @@ def _seasonality_signal_quality(score: float, acf: float, spectral_strength: flo
     return "strong"
 
 
-def _seasonality_period_context(period_bars: int, timeframe: str) -> Dict[str, Any]:
-    seconds_per_bar = int(TIMEFRAME_SECONDS.get(str(timeframe).upper(), 0) or 0)
-    duration_seconds = max(0, int(period_bars) * seconds_per_bar)
-    if duration_seconds <= 0:
-        return {}
+def _format_period_duration(duration_seconds: float) -> str:
     if duration_seconds % 86_400 == 0:
-        duration = f"{duration_seconds // 86_400:g} days"
-    elif duration_seconds >= 86_400:
-        duration = f"{duration_seconds / 86_400:.2f} days"
-    elif duration_seconds % 3_600 == 0:
-        duration = f"{duration_seconds // 3_600:g} hours"
-    elif duration_seconds >= 3_600:
-        duration = f"{duration_seconds / 3_600:.2f} hours"
+        return f"{duration_seconds / 86_400:g} days"
+    if duration_seconds >= 86_400:
+        return f"{duration_seconds / 86_400:.2f} days"
+    if duration_seconds % 3_600 == 0:
+        return f"{duration_seconds / 3_600:g} hours"
+    if duration_seconds >= 3_600:
+        return f"{duration_seconds / 3_600:.2f} hours"
+    return f"{duration_seconds / 60:g} minutes"
+
+
+def _seasonality_period_context(
+    period_bars: int,
+    timeframe: str,
+    *,
+    observed_times: Any = None,
+) -> Dict[str, Any]:
+    seconds_per_bar = int(TIMEFRAME_SECONDS.get(str(timeframe).upper(), 0) or 0)
+    nominal_seconds = max(0, int(period_bars) * seconds_per_bar)
+    if nominal_seconds <= 0:
+        return {}
+    observed_durations = np.asarray([], dtype=float)
+    try:
+        epochs = pd.to_numeric(pd.Series(observed_times), errors="coerce").to_numpy(
+            dtype=float
+        )
+        epochs = epochs[np.isfinite(epochs)]
+        if len(epochs) > int(period_bars):
+            observed_durations = epochs[int(period_bars) :] - epochs[: -int(period_bars)]
+            observed_durations = observed_durations[
+                np.isfinite(observed_durations) & (observed_durations > 0)
+            ]
+    except Exception:
+        observed_durations = np.asarray([], dtype=float)
+
+    if observed_durations.size:
+        duration_seconds = float(np.median(observed_durations))
+        basis = "median_observed_timestamp_lag"
     else:
-        duration = f"{duration_seconds / 60:g} minutes"
+        duration_seconds = float(nominal_seconds)
+        basis = "nominal_timeframe_seconds"
+    duration_seconds_out: int | float = (
+        int(round(duration_seconds))
+        if math.isclose(duration_seconds, round(duration_seconds), abs_tol=1e-9)
+        else round(duration_seconds, 3)
+    )
     aliases = {
         86_400: "calendar_day",
         604_800: "calendar_week",
@@ -144,9 +176,22 @@ def _seasonality_period_context(period_bars: int, timeframe: str) -> Dict[str, A
     }
     nearest = min(aliases, key=lambda value: abs(value - duration_seconds))
     out: Dict[str, Any] = {
-        "period_duration": duration,
-        "period_duration_seconds": duration_seconds,
+        "period_duration": _format_period_duration(duration_seconds),
+        "period_duration_seconds": duration_seconds_out,
+        "period_duration_basis": basis,
+        "nominal_period_duration": _format_period_duration(float(nominal_seconds)),
+        "nominal_period_duration_seconds": nominal_seconds,
     }
+    if observed_durations.size:
+        minimum = float(np.min(observed_durations))
+        maximum = float(np.max(observed_durations))
+        out["period_duration_observed_range"] = {
+            "min_seconds": int(round(minimum)),
+            "max_seconds": int(round(maximum)),
+            "min": _format_period_duration(minimum),
+            "max": _format_period_duration(maximum),
+            "pairs": int(observed_durations.size),
+        }
     if abs(nearest - duration_seconds) / nearest <= 0.05:
         out["calendar_alias"] = aliases[nearest]
     return out
@@ -426,7 +471,11 @@ def seasonality_detect(
             spectral_rounded = round(spectral_strength, 6)
             row: Dict[str, Any] = {
                 "period_bars": int(period),
-                **_seasonality_period_context(int(period), timeframe),
+                **_seasonality_period_context(
+                    int(period),
+                    timeframe,
+                    observed_times=frame.get("time"),
+                ),
                 "score": score_rounded,
                 "acf": acf_rounded,
                 "spectral_strength": spectral_rounded,
