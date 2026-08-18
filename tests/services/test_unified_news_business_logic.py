@@ -792,8 +792,62 @@ def test_finviz_economic_candidates_normalize_new_york_wall_time(monkeypatch) ->
 
     item = svc.FinvizNewsSource()._fetch_economic_candidates(limit=1)[0]
 
-    assert item.published_at == datetime(2026, 8, 13, 12, 30, tzinfo=timezone.utc)
+    assert item.published_at is None
+    assert item.scheduled_at == datetime(2026, 8, 13, 12, 30, tzinfo=timezone.utc)
     assert item.metadata["provider_timezone"] == "America/New_York"
+
+
+def test_equity_without_mt5_metadata_keeps_usd_calendar_out_of_impact(
+    monkeypatch,
+) -> None:
+    future_time = (
+        datetime.now(timezone.utc) + timedelta(hours=3)
+    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda _symbol: None)
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda **_kwargs: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_stock_news",
+        lambda *_args, **_kwargs: {"success": True, "news": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda **_kwargs: {
+            "success": True,
+            "items": [
+                {
+                    "date": future_time,
+                    "event": "EIA Crude Oil Stocks Change",
+                    "ticker": "USD",
+                    "importance": 2,
+                    "category": "Energy",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {"success": True, "news": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("AAPL")
+
+    assert [item["title"] for item in result["upcoming_events"]] == [
+        "EIA Crude Oil Stocks Change (USD)"
+    ]
+    event = result["upcoming_events"][0]
+    assert "published_at" not in event
+    assert event["scheduled_at"] is not None
+    assert result["impact_news"] == []
 
 
 def test_mt5_future_headline_is_clamped_and_flagged(monkeypatch) -> None:

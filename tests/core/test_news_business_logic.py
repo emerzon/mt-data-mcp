@@ -557,7 +557,8 @@ def test_news_output_uses_relative_time_for_future_events() -> None:
     assert item["title"] == "US CPI (USD)"
     assert item["relative_time"] == "in 3 hours"
     assert "time_utc" not in item
-    assert item["published_at"] == published_at.isoformat().replace("+00:00", "Z")
+    assert item["scheduled_at"] == published_at.isoformat().replace("+00:00", "Z")
+    assert "published_at" not in item
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
     assert item["relevance_score"] == 9.1
@@ -642,7 +643,8 @@ def test_news_output_compacts_upcoming_events_bucket() -> None:
     assert item["title"] == "US CPI (USD)"
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
-    assert item["published_at"] == published_at.isoformat().replace("+00:00", "Z")
+    assert item["scheduled_at"] == published_at.isoformat().replace("+00:00", "Z")
+    assert "published_at" not in item
     assert item["relative_time"].startswith("in ")
     assert "time_utc" not in item
     assert item["summary"] == "Expected: 3.2% | Prior: 3.1%"
@@ -683,7 +685,7 @@ def test_news_output_compacts_recent_events_bucket() -> None:
             "title": "US CPI (USD)",
             "source": "Finviz Economic Calendar",
             "kind": "economic_event",
-            "published_at": published_at.isoformat().replace("+00:00", "Z"),
+            "scheduled_at": published_at.isoformat().replace("+00:00", "Z"),
             "relative_time": "2 hours ago",
             "summary": "Actual: 3.2% | Expected: 3.1% | Prior: 3.0%",
         }

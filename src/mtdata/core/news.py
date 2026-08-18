@@ -140,6 +140,12 @@ def _strip_news_compact_item_fields(
     if not isinstance(value, dict):
         return value
 
+    kind = str(value.get("kind") or "").strip().lower()
+    economic_event = kind == "economic_event"
+    scheduled_at_value = value.get("scheduled_at")
+    if economic_event and scheduled_at_value in (None, ""):
+        scheduled_at_value = value.get("published_at")
+
     existing_relative_time = value.get("relative_time")
     if isinstance(existing_relative_time, str) and existing_relative_time.strip():
         time_field_name = "relative_time"
@@ -152,7 +158,7 @@ def _strip_news_compact_item_fields(
             if isinstance(metadata_relative, str) and metadata_relative.strip():
                 metadata_relative_time = metadata_relative.strip()
         time_field_name, time_field_value = _news_compact_time_field(
-            value.get("published_at"),
+            scheduled_at_value if economic_event else value.get("published_at"),
             metadata_relative_time=metadata_relative_time,
         )
         if not time_field_name:
@@ -171,12 +177,14 @@ def _strip_news_compact_item_fields(
     provider = value.get("provider")
     if include_provider and provider not in (None, ""):
         out["provider"] = provider
-    kind = value.get("kind")
-    if kind not in (None, ""):
-        out["kind"] = kind
+    kind_value = value.get("kind")
+    if kind_value not in (None, ""):
+        out["kind"] = kind_value
     published_at = value.get("published_at")
-    if published_at not in (None, ""):
+    if not economic_event and published_at not in (None, ""):
         out["published_at"] = _news_iso_utc(published_at)
+    if economic_event and scheduled_at_value not in (None, ""):
+        out["scheduled_at"] = _news_iso_utc(scheduled_at_value)
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
     if include_relevance and value.get("relevance_score") is not None:
@@ -200,6 +208,7 @@ def _strip_news_compact_item_fields(
             "provider",
             "kind",
             "published_at",
+            "scheduled_at",
             "relative_time",
             "time_utc",
         }:
@@ -209,6 +218,21 @@ def _strip_news_compact_item_fields(
         if key_text == "summary" and subvalue is None:
             continue
         out[key] = subvalue
+    return out
+
+
+def _normalize_news_item_timestamps(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    out = dict(value)
+    if str(out.get("kind") or "").strip().lower() == "economic_event":
+        scheduled_at = out.get("scheduled_at", out.get("published_at"))
+        out.pop("published_at", None)
+        if scheduled_at not in (None, ""):
+            out["scheduled_at"] = _news_iso_utc(scheduled_at)
+        return out
+    if out.get("published_at") not in (None, ""):
+        out["published_at"] = _news_iso_utc(out["published_at"])
     return out
 
 
@@ -268,13 +292,7 @@ def normalize_news_output(
             if not isinstance(rows, list):
                 continue
             out[bucket] = [
-                {
-                    **item,
-                    "published_at": _news_iso_utc(item.get("published_at")),
-                }
-                if isinstance(item, dict) and item.get("published_at") not in (None, "")
-                else item
-                for item in rows
+                _normalize_news_item_timestamps(item) for item in rows
             ]
         return out
 

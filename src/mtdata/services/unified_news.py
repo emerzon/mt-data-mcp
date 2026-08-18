@@ -364,6 +364,7 @@ class NewsItem:
     source: str
     kind: str = "headline"
     published_at: Optional[datetime] = None
+    scheduled_at: Optional[datetime] = None
     url: Optional[str] = None
     summary: Optional[str] = None
     category: Optional[str] = None
@@ -373,6 +374,13 @@ class NewsItem:
     importance_score: float = 0.0
 
     def __post_init__(self) -> None:
+        if (
+            self.kind == "economic_event"
+            and self.scheduled_at is None
+            and self.published_at is not None
+        ):
+            self.scheduled_at = self.published_at
+            self.published_at = None
         normalized_url, url_status = _normalize_article_url(
             self.url,
             source=self.source,
@@ -395,13 +403,15 @@ class NewsItem:
         title = re.sub(r"\s+", " ", self.title.strip().lower())
         return f"{self.provider}:{title}"
 
+    def event_time(self) -> Optional[datetime]:
+        return self.scheduled_at if self.kind == "economic_event" else self.published_at
+
     def to_dict(self) -> Dict[str, Any]:
-        payload = {
+        payload: Dict[str, Any] = {
             "title": self.title,
             "provider": self.provider,
             "source": self.source,
             "kind": self.kind,
-            "published_at": self.published_at.isoformat() if self.published_at else None,
             "url": self.url,
             "summary": self.summary,
             "category": self.category,
@@ -409,6 +419,10 @@ class NewsItem:
             "relevance_score": round(float(self.relevance_score), 4),
             "importance_score": round(float(self.importance_score), 4),
         }
+        if self.published_at is not None:
+            payload["published_at"] = self.published_at.isoformat()
+        if self.scheduled_at is not None:
+            payload["scheduled_at"] = self.scheduled_at.isoformat()
         if self.metadata:
             payload["metadata"] = self.metadata
         return payload
@@ -936,9 +950,10 @@ def _passes_related_gate(item: NewsItem, context: InstrumentContext) -> bool:
 
 
 def _passes_upcoming_event_gate(item: NewsItem, context: InstrumentContext) -> bool:
-    if item.kind != "economic_event" or item.published_at is None:
+    event_time = item.event_time()
+    if item.kind != "economic_event" or event_time is None:
         return False
-    if item.published_at <= datetime.now(timezone.utc):
+    if event_time <= datetime.now(timezone.utc):
         return False
 
     event_for = _safe_text(item.metadata.get("event_for")).upper()
@@ -955,21 +970,16 @@ def _passes_upcoming_event_gate(item: NewsItem, context: InstrumentContext) -> b
         return event_for == (context.quote_asset or "")
 
     if context.asset_class == "equity":
-        currency_hints = {
-            _safe_text(context.metadata_hints.get("currency_profit")).upper(),
-            _safe_text(context.metadata_hints.get("currency_margin")).upper(),
-            _safe_text(context.quote_asset).upper(),
-        }
-        currency_hints.discard("")
-        return event_for in currency_hints
+        return event_for in _equity_calendar_currencies(context)
 
     return False
 
 
 def _passes_recent_event_gate(item: NewsItem, context: InstrumentContext) -> bool:
-    if item.kind != "economic_event" or item.published_at is None:
+    event_time = item.event_time()
+    if item.kind != "economic_event" or event_time is None:
         return False
-    if item.published_at > datetime.now(timezone.utc):
+    if event_time > datetime.now(timezone.utc):
         return False
 
     event_for = _safe_text(item.metadata.get("event_for")).upper()
@@ -986,15 +996,21 @@ def _passes_recent_event_gate(item: NewsItem, context: InstrumentContext) -> boo
         return event_for == (context.quote_asset or "")
 
     if context.asset_class == "equity":
-        currency_hints = {
-            _safe_text(context.metadata_hints.get("currency_profit")).upper(),
-            _safe_text(context.metadata_hints.get("currency_margin")).upper(),
-            _safe_text(context.quote_asset).upper(),
-        }
-        currency_hints.discard("")
-        return event_for in currency_hints
+        return event_for in _equity_calendar_currencies(context)
 
     return False
+
+
+def _equity_calendar_currencies(context: InstrumentContext) -> set[str]:
+    currencies = {
+        _safe_text(context.metadata_hints.get("currency_profit")).upper(),
+        _safe_text(context.metadata_hints.get("currency_margin")).upper(),
+        _safe_text(context.quote_asset).upper(),
+    }
+    currencies.discard("")
+    if not currencies:
+        currencies.add("USD")
+    return currencies
 
 
 def _should_promote_general_item_to_related(item: NewsItem, context: InstrumentContext) -> bool:
@@ -1055,8 +1071,9 @@ def _score_importance(item: NewsItem) -> float:
         score += 1.0
     if item.kind == "market_snapshot":
         score += 0.6
-    if item.published_at is not None:
-        age_hours = max(0.0, (datetime.now(timezone.utc) - item.published_at).total_seconds() / 3600.0)
+    item_time = item.event_time()
+    if item_time is not None:
+        age_hours = max(0.0, (datetime.now(timezone.utc) - item_time).total_seconds() / 3600.0)
         score += max(0.0, 1.25 - min(age_hours, 48.0) / 48.0)
     return score
 
@@ -1087,7 +1104,8 @@ def _general_news_recency_boost(published_at: Optional[datetime]) -> float:
 def _sort_news_for_display(items: List[NewsItem]) -> List[NewsItem]:
     return sorted(
         items,
-        key=lambda item: item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda item: item.event_time()
+        or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
 
@@ -1713,7 +1731,7 @@ class FinvizNewsSource:
                         provider=self.name,
                         source="Finviz Economic Calendar",
                         kind="economic_event",
-                        published_at=_maybe_parse_finviz_datetime(item.get("date")),
+                        scheduled_at=_maybe_parse_finviz_datetime(item.get("date")),
                         summary=" | ".join(summary_parts) or None,
                         category="economic_calendar",
                         priority=priority,
@@ -1984,7 +2002,7 @@ class NewsAggregator:
                     filtered_related.append(item)
             upcoming_candidates.sort(
                 key=lambda item: (
-                    item.published_at or datetime.max.replace(tzinfo=timezone.utc),
+                    item.event_time() or datetime.max.replace(tzinfo=timezone.utc),
                     -float(item.priority),
                     -item.relevance_score,
                     -item.importance_score,
@@ -1995,7 +2013,7 @@ class NewsAggregator:
             recent_candidates.sort(
                 key=lambda item: (
                     "actual:" in _safe_text(item.summary).lower(),
-                    item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    item.event_time() or datetime.min.replace(tzinfo=timezone.utc),
                     item.relevance_score,
                     item.importance_score,
                 ),
@@ -2028,6 +2046,8 @@ class NewsAggregator:
             )
             impact_candidates: List[NewsItem] = []
             for item in impact_pool:
+                if item.kind == "economic_event":
+                    continue
                 systemic_score, impact_terms = _score_systemic_impact(item, context)
                 if systemic_score < 2.4 or item.importance_score < 3.0:
                     continue
@@ -2056,11 +2076,11 @@ class NewsAggregator:
                 (
                     item for item in global_calendar
                     if item.kind == "economic_event"
-                    and item.published_at is not None
-                    and item.published_at > current_time
+                    and item.event_time() is not None
+                    and item.event_time() > current_time
                 ),
                 key=lambda item: (
-                    item.published_at,
+                    item.event_time(),
                     -float(item.priority),
                     -item.importance_score,
                 ),
@@ -2069,12 +2089,12 @@ class NewsAggregator:
                 (
                     item for item in global_calendar
                     if item.kind == "economic_event"
-                    and item.published_at is not None
-                    and item.published_at <= current_time
+                    and item.event_time() is not None
+                    and item.event_time() <= current_time
                 ),
                 key=lambda item: (
                     "actual:" in _safe_text(item.summary).lower(),
-                    item.published_at,
+                    item.event_time(),
                     item.importance_score,
                 ),
                 reverse=True,

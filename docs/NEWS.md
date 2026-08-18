@@ -48,6 +48,10 @@ With a symbol, the result is split so you can scan quickly:
 | `upcoming_events` | **Future** calendar releases tied to this instrument — the “what is still ahead” list. |
 | `recent_events` | **Already published** calendar prints — useful for “what just came out.” |
 
+Headline rows use `published_at`. Economic-calendar rows use `scheduled_at`,
+including rows in both event buckets, so a future release time cannot be
+mistaken for an article publication time.
+
 Compact output keeps those lists short and readable. `--detail full` adds
 matching diagnostics and, when available, a `market_context` quote snapshot.
 Finviz snapshot performance is expressed in canonical `*_pct` metadata fields
