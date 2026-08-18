@@ -635,7 +635,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("trade_journal_analyze", "limit"): (
         "Maximum per-trade rows returned in full detail (default 50). Period "
-        "statistics always analyze every realized exit in the resolved window."
+        "statistics always analyze all realized exit deals in the resolved window."
     ),
     ("trade_execution_quality", "minutes_back"): (
         "Execution-history lookback in minutes (default 43200 = 30 days)."
@@ -682,6 +682,179 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("wait_event", "end_on"): (
         "Optional timeframe-mode boundaries. Explicit boundary timeframes must "
         "match the top-level timeframe."
+    ),
+    ("causal_discover_signals", "allow_partial"): (
+        "Keep symbols with usable history and report excluded symbols; false "
+        "fails the analysis when any requested symbol is unusable."
+    ),
+    ("cointegration_test", "k_ar_diff"): (
+        "Number of lagged differences in the Johansen test; ignored by the "
+        "Engle-Granger method."
+    ),
+    ("cointegration_test", "allow_partial"): (
+        "Keep symbols with usable aligned history and report exclusions; false "
+        "fails when any requested symbol is unusable."
+    ),
+    ("confluence_levels", "volume_profile_max_m1_bars"): (
+        "Maximum M1 bars used by the volume-profile component; limits work for "
+        "large confluence windows."
+    ),
+    ("correlation_matrix", "allow_partial"): (
+        "Keep symbols with sufficient aligned observations and report exclusions; "
+        "false fails when any requested symbol is unusable."
+    ),
+    ("cross_correlation", "window_bars"): (
+        "Historical bars per symbol used for the lagged cross-correlation window."
+    ),
+    ("cross_correlation", "bootstrap_samples"): (
+        "Bootstrap resample count used to estimate cross-correlation uncertainty."
+    ),
+    ("denoise_list_methods", "causality"): (
+        "Filter methods by causal real-time support or zero-phase offline support."
+    ),
+    ("finviz_filters_list", "filter_name"): (
+        "Exact Finviz screener filter name to describe; omit it to list filters."
+    ),
+    ("finviz_fundamentals", "fields"): (
+        "Comma-separated Finviz fundamental fields to return; this selects domain "
+        "data and is distinct from output_fields projection."
+    ),
+    ("forecast_barrier_optimize", "same_bar_policy"): (
+        "Resolve a candle that touches TP and SL: sl_first counts a loss, tp_first "
+        "counts a win, and neutral leaves the outcome unresolved."
+    ),
+    ("forecast_barrier_prob", "same_bar_policy"): (
+        "Resolve simulated TP/SL ties: sl_first assigns tie probability to SL, "
+        "tp_first assigns it to TP, and neutral reports it as unresolved."
+    ),
+    ("forecast_generate", "async_mode"): (
+        "Queue supported trainable forecasts in the in-process worker and return a "
+        "task ID; one-shot CLI calls must run synchronously."
+    ),
+    ("forecast_generate", "model_cache"): (
+        "Model policy: reuse loads or trains a compatible model, ephemeral never "
+        "persists one, and require_existing fails unless a compatible model exists."
+    ),
+    ("forecast_list_methods", "profile"): (
+        "Filter methods by forecast workflow profile, such as fast, statistical, "
+        "machine_learning, or pretrained."
+    ),
+    ("labels_triple_barrier", "same_bar_policy"): (
+        "Resolve a bar that touches TP and SL: sl_first labels -1, tp_first labels "
+        "+1, and neutral labels 0."
+    ),
+    ("market_relative_strength", "volatility_lookback"): (
+        "Return bars used to estimate volatility for risk-adjusted relative-strength "
+        "scores."
+    ),
+    ("market_relative_strength", "benchmark"): (
+        "Optional comparison symbol; each candidate's horizon return is measured "
+        "relative to this symbol before ranking."
+    ),
+    ("market_relative_strength", "max_symbols"): (
+        "Maximum symbols admitted from the selected broker universe before ranking."
+    ),
+    ("portfolio_risk_decompose", "horizon_bars"): (
+        "Forecast horizons expressed in bars of the requested timeframe."
+    ),
+    ("portfolio_risk_decompose", "ewma_half_life"): (
+        "EWMA volatility half-life in bars of the requested timeframe."
+    ),
+    ("portfolio_risk_decompose", "simulations"): (
+        "Monte Carlo scenario count used for portfolio tail-risk estimates."
+    ),
+    ("portfolio_risk_decompose", "proposed_trade"): (
+        "Optional JSON trade object with symbol, buy/sell side, and volume in lots "
+        "for incremental-risk analysis."
+    ),
+    ("portfolio_risk_decompose", "allow_partial"): (
+        "Omit positions without safe marks or sufficient history and report them; "
+        "false fails closed when any position is unusable."
+    ),
+    ("seasonality_detect", "min_period"): (
+        "Smallest candidate seasonal period, measured in observed bars."
+    ),
+    ("seasonality_detect", "min_cycles"): (
+        "Minimum complete cycles required for a candidate seasonal period."
+    ),
+    ("strategy_backtest", "cost_model"): (
+        "Spread source: historical_bar_spread uses each completed bar's broker "
+        "spread; fixed requires spread_bps."
+    ),
+    ("strategy_backtest", "spread_bps"): (
+        "Fixed round-trip spread cost in basis points, required only when "
+        "cost_model=fixed."
+    ),
+    ("strategy_validate", "n_splits"): (
+        "Number of chronological walk-forward validation folds."
+    ),
+    ("strategy_validate", "purge_bars"): (
+        "Bars removed between training and validation folds to prevent outcome-window "
+        "leakage; omit to derive it from the barrier horizon."
+    ),
+    ("strategy_validate", "embargo_bars"): (
+        "Bars withheld after each validation fold before later training data may be "
+        "used; omit to derive it from the barrier horizon."
+    ),
+    ("strategy_validate", "cost_model"): (
+        "Spread source: historical_bar_spread uses completed validation bars; fixed "
+        "requires spread_bps."
+    ),
+    ("strategy_validate", "spread_bps"): (
+        "Fixed round-trip spread cost in basis points, required only when "
+        "cost_model=fixed."
+    ),
+    ("strategy_validate", "commission_bps"): (
+        "Commission per fill side in basis points; validation applies it twice per "
+        "round trip."
+    ),
+    ("strategy_validate", "bootstrap_samples"): (
+        "Bootstrap resample count used for expectancy and win-rate confidence intervals."
+    ),
+    ("strategy_validate", "significance_alpha"): (
+        "Maximum multiple-testing-adjusted p-value accepted as statistically significant."
+    ),
+    ("strategy_validate", "min_positive_fold_share"): (
+        "Minimum fraction from 0 to 1 of walk-forward folds that must have positive "
+        "net expectancy."
+    ),
+    ("tools_list", "include_related"): (
+        "Include related-tool recommendations in each catalog row."
+    ),
+    ("trade_execution_quality", "benchmark"): (
+        "Slippage reference: arrival_quote uses the executable quote at order setup; "
+        "order_price uses the submitted price. Positive slippage bps is adverse."
+    ),
+    ("trade_execution_quality", "benchmark_fallback"): (
+        "When an arrival quote is unavailable, skip the fill or use its submitted "
+        "order price as the fallback benchmark."
+    ),
+    ("trade_execution_quality", "quote_window_seconds"): (
+        "Seconds searched backward from order setup or fill time for the latest "
+        "eligible quote."
+    ),
+    ("trade_execution_quality", "markout_seconds"): (
+        "Post-fill horizons in seconds. Markout bps is direction-adjusted price change; "
+        "positive values favor the trade."
+    ),
+    ("trade_history", "order"): (
+        "Sort history by event time: desc returns newest activity first; asc returns "
+        "oldest first."
+    ),
+    ("trade_stress_test", "include_unshocked"): (
+        "Include open positions whose symbol has no matching explicit or wildcard shock."
+    ),
+    ("volatility_term_structure", "percentiles"): (
+        "Comma-separated percentile levels strictly between 0 and 100, such as "
+        "10,25,50,75,90."
+    ),
+    ("volatility_term_structure", "annualize"): (
+        "Annualize realized volatility using observed bars per session and 365 crypto, "
+        "260 FX, or 252 other trading sessions per year."
+    ),
+    ("wait_event", "accept_preexisting"): (
+        "Return immediately when a state-style watcher is already satisfied at setup; "
+        "false waits for a new transition after startup."
     ),
 }
 
@@ -998,7 +1171,9 @@ def resolve_param_kwargs(
     override_help = _COMMAND_PARAM_HELP_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
     if override_help:
         hint = override_help
-    fallback_help = f"Value for {str(param['name']).replace('_', ' ')}."
+    fallback_help = (
+        f"Input parameter --{str(param['name']).replace('_', '-')} for this command."
+    )
     kwargs = {"help": _escape_argparse_help(hint) or fallback_help, "dest": param["name"]}
     is_mapping_type = False
 

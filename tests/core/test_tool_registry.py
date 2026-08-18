@@ -406,11 +406,41 @@ def test_tools_catalog_full_parameter_contracts_are_machine_described():
                 issues.append(f"{row['name']}.{name}: required is not boolean")
             if not str(parameter.get("description") or "").strip():
                 issues.append(f"{row['name']}.{name}: description missing")
+            if str(parameter.get("description") or "").startswith("Value for "):
+                issues.append(f"{row['name']}.{name}: placeholder description")
             cli = parameter.get("cli")
             if not isinstance(cli, dict) or "value_format" not in cli:
                 issues.append(f"{row['name']}.{name}: CLI binding missing")
 
     assert not issues, "Invalid full catalog parameter contracts:\n" + "\n".join(issues)
+
+
+def test_tools_catalog_documents_consequential_parameter_units_and_policies():
+    bootstrap_tools()
+    full = registered_tool_catalog(detail="full")
+    tools = {row["name"]: row for row in full["tools"]}
+
+    def description(tool: str, parameter: str) -> str:
+        return tools[tool]["parameters"][parameter]["description"]
+
+    assert "round-trip" in description("strategy_backtest", "spread_bps")
+    assert "basis points" in description("strategy_backtest", "spread_bps")
+    assert all(
+        policy in description("labels_triple_barrier", "same_bar_policy")
+        for policy in ("sl_first", "tp_first", "neutral")
+    )
+    assert "bars of the requested timeframe" in description(
+        "portfolio_risk_decompose", "ewma_half_life"
+    )
+    assert "seconds" in description("trade_execution_quality", "markout_seconds")
+    assert "between 0 and 100" in description(
+        "volatility_term_structure", "percentiles"
+    )
+    assert (
+        "[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
+        "\"strategy\":\"ema_cross\"}]"
+        in description("strategy_validate", "candidates")
+    )
 
 
 def test_tools_list_filters_and_paginates_rows():

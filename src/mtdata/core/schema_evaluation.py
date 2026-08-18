@@ -337,6 +337,15 @@ def _evaluate_tool(  # noqa: C901
                 parameter,
                 "Public parameters require a concise description.",
             )
+        elif description.startswith("Value for "):
+            _finding(
+                findings,
+                "error",
+                "placeholder_description",
+                name,
+                parameter,
+                "Public parameters require semantic help, not generated placeholder text.",
+            )
         elif len(description) > 180:
             _finding(
                 findings,

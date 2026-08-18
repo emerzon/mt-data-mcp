@@ -26,6 +26,7 @@ from ..shared.schema import (
     get_function_info as _get_function_info,
 )
 from ._mcp_tools import get_mcp_registry
+from .cli.parsing.discovery import _COMMAND_PARAM_HELP_OVERRIDES
 
 logger = logging.getLogger(__name__)
 _PUBLIC_TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {}
@@ -399,10 +400,26 @@ def _compact_optional_property_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     return updated
 
 
-def _compact_schema_shape(schema: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_command_parameter_help(schema: Dict[str, Any], command_name: str) -> None:
+    params_obj = _schema_obj(schema)
+    properties = params_obj.get("properties") if isinstance(params_obj, dict) else None
+    if not isinstance(properties, dict):
+        return
+    for name, property_schema in properties.items():
+        if not isinstance(property_schema, dict):
+            continue
+        description = _COMMAND_PARAM_HELP_OVERRIDES.get(
+            (str(command_name), str(name))
+        )
+        if description:
+            property_schema["description"] = description
+
+
+def _compact_schema_shape(schema: Dict[str, Any], *, command_name: str) -> Dict[str, Any]:
     source = copy.deepcopy(schema)
     hinted_value = _apply_param_hints(source)
     hinted = hinted_value if isinstance(hinted_value, dict) else source
+    _apply_command_parameter_help(hinted, command_name)
     compact = _strip_schema_noise(hinted, drop_descriptions=False)
     params_obj = _schema_obj(compact)
     props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
@@ -432,9 +449,12 @@ def _ensure_schema_descriptions(value: Any, *, property_name: str = "") -> None:
     if isinstance(value, dict):
         if property_name:
             description = value.get("description")
-            if not description:
-                description = f"Value for {property_name.replace('_', ' ')}."
-            value["description"] = _concise_schema_description(description)
+            if description:
+                normalized = _concise_schema_description(description)
+                if normalized.startswith("Value for "):
+                    value.pop("description", None)
+                else:
+                    value["description"] = normalized
         properties = value.get("properties")
         if isinstance(properties, dict):
             for name, prop in properties.items():
@@ -585,7 +605,9 @@ def _attach_schema_to_tool(
     for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ()):
         patcher(public_schema)
     _enforce_public_output_contract(public_schema)
-    public_schema = _prune_unused_defs(_compact_schema_shape(public_schema))
+    public_schema = _prune_unused_defs(
+        _compact_schema_shape(public_schema, command_name=name)
+    )
     _validate_local_def_refs(public_schema)
     _PUBLIC_TOOL_SCHEMAS[name] = copy.deepcopy(public_schema)
     internal_schema = _build_internal_schema(public_schema)

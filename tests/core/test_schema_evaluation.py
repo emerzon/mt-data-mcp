@@ -3,6 +3,7 @@ from __future__ import annotations
 from mtdata.core.schema_evaluation import (
     SchemaEvaluationReport,
     SchemaFinding,
+    _evaluate_tool,
     format_schema_evaluation,
 )
 
@@ -47,3 +48,42 @@ def test_schema_evaluation_report_error_is_machine_readable() -> None:
     assert report.ok is False
     assert report.to_dict()["error_count"] == 1
     assert "sample_tool.symbol" in format_schema_evaluation(report)
+
+
+def test_schema_evaluation_rejects_generated_placeholder_descriptions() -> None:
+    def sample_tool(symbol: str, json: bool = False, output_fields: list[str] | None = None):
+        return symbol, json, output_fields
+
+    findings: list[SchemaFinding] = []
+    _evaluate_tool(
+        "sample_tool",
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["symbol"],
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Value for symbol.",
+                },
+                "json": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Return JSON.",
+                },
+                "output_fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Fields to return.",
+                },
+            },
+        },
+        sample_tool,
+        findings,
+    )
+
+    assert any(
+        finding.code == "placeholder_description"
+        and finding.parameter == "symbol"
+        for finding in findings
+    )
