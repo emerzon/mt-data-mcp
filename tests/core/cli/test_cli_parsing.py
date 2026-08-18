@@ -81,6 +81,69 @@ def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
 
 
 @pytest.mark.parametrize(
+    ("command", "command_default"),
+    [
+        ("wait_event", None),
+        ("patterns_detect", "ALL"),
+        ("volume_profile_levels", None),
+    ],
+)
+def test_global_timeframe_does_not_change_mode_switch_commands(
+    command: str,
+    command_default: Optional[str],
+) -> None:
+    from mtdata.core.cli import api as cli_api
+
+    args = argparse.Namespace(
+        command=command,
+        timeframe=command_default,
+        _global_timeframe="H4",
+        _trade_days=None,
+    )
+    functions = {
+        command: {"_cli_func_info": {"params": [{"name": "timeframe"}]}}
+    }
+
+    result = cli_api._apply_global_cli_overrides(
+        args,
+        ["--timeframe", "H4", command],
+        functions=functions,
+    )
+
+    assert result.timeframe == command_default
+
+
+def test_shell_timeframe_support_matches_one_shot_inheritance_policy() -> None:
+    from mtdata.core.cli import api as cli_api
+
+    def timeframe_tool(timeframe: str = "H1") -> None:
+        pass
+
+    functions = {
+        name: {
+            "func": timeframe_tool,
+            "_cli_func_info": {"params": [{"name": "timeframe"}]},
+        }
+        for name in (
+            "data_fetch_candles",
+            "wait_event",
+            "patterns_detect",
+            "volume_profile_levels",
+        )
+    }
+
+    supported = cli_api._shell_timeframe_commands(functions)
+
+    assert "data_fetch_candles" in supported
+    assert "forecast_optimize_hints" in supported
+    assert {
+        "wait_event",
+        "patterns_detect",
+        "volume_profile_levels",
+    }.isdisjoint(supported)
+
+
+@pytest.mark.parametrize(
     "argv",
     [
         ["data_fetch_candles", "EURUSD"],

@@ -431,7 +431,10 @@ def _apply_global_cli_overrides(
     global_timeframe = getattr(args, "_global_timeframe", None)
     if command == "shell":
         global_timeframe = None
-    if global_timeframe is not None:
+    if (
+        global_timeframe is not None
+        and command not in _GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS
+    ):
         if functions is not None and command not in {
             "confluence_levels",
             "forecast_generate",
@@ -1673,6 +1676,15 @@ _TIMEFRAMELESS_GLOBAL_COMMANDS: set[str] = {
     "trade_risk_analyze",
 }
 
+# These tools expose a parameter named ``timeframe``, but it changes the
+# command's mode or narrows an intentionally multi-timeframe workflow. A root
+# or shell-session timeframe is therefore not a safe default for them.
+_GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS: set[str] = {
+    "patterns_detect",
+    "volume_profile_levels",
+    "wait_event",
+}
+
 
 def _format_cli_literal(value: Any) -> Optional[str]:
     if value is None:
@@ -2520,8 +2532,15 @@ def _shell_inherited_argv(args: Any) -> List[str]:
 
 def _shell_timeframe_commands(functions: Dict[str, ToolInfo]) -> set[str]:
     """Return shell child commands that can consume a session timeframe."""
-    supported = {"confluence_levels", "forecast_generate"}
+    supported = {
+        "confluence_levels",
+        "forecast_generate",
+        "forecast_optimize_hints",
+    }
     for name, tool in functions.items():
+        normalized_name = str(name).replace("-", "_")
+        if normalized_name in _GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS:
+            continue
         func_info = tool.get("_cli_func_info") or get_function_info(tool["func"])
         param_names = {
             str(param.get("name") or "")
@@ -2529,7 +2548,7 @@ def _shell_timeframe_commands(functions: Dict[str, ToolInfo]) -> set[str]:
             if isinstance(param, dict)
         }
         if "timeframe" in param_names:
-            supported.add(str(name).replace("-", "_"))
+            supported.add(normalized_name)
     return supported
 
 
