@@ -210,6 +210,31 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert all("start_epoch" not in item for item in result["liquidity_events"])
 
 
+def test_microstructure_full_windows_are_chronological_but_events_are_ranked() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(120, real_volume=True)
+    for index, row in enumerate(gateway.tick_rows):
+        if index >= 90:
+            row["ask"] = row["bid"] + 0.0005
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(
+            symbol="EURUSD",
+            minutes_back=60,
+            bucket_seconds=10,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    starts = [row["start_epoch"] for row in result["windows"]]
+    assert starts == sorted(starts)
+    assert result["windows_order"] == "chronological"
+    assert result["liquidity_events_order"] == "spread_p95_desc_then_ticks_desc"
+    event_spreads = [row["spread_p95"] for row in result["liquidity_events"]]
+    assert event_spreads == sorted(event_spreads, reverse=True)
+
+
 def test_microstructure_rejects_unknown_symbol_before_tick_fetch() -> None:
     gateway = FakeGateway()
     gateway.symbol_info = lambda _symbol: None
@@ -654,6 +679,29 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     assert result["data_quality"]["session_definition"]["basis"] == (
         "dst_aware_market_sessions"
     )
+    assert result["window"]["source"] == "minutes_back"
+    assert result["window"]["timezone"] == "UTC"
+    assert result["window"]["minutes_back_requested"] == 60
+    assert result["window"]["minutes_back_effective"] == pytest.approx(60.0)
+
+
+def test_execution_quality_empty_explicit_range_retains_analysis_window() -> None:
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            start="2020-01-01",
+            end="2020-01-02",
+            detail="full",
+        ),
+        FakeGateway(),
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["fills"] == 0
+    assert result["window"]["source"] == "explicit_range"
+    assert result["window"]["start"] == "2020-01-01T00:00:00Z"
+    assert result["window"]["end"] == "2020-01-02T23:59:59.999999Z"
+    assert result["sample"]["sample_start"] is None
+    assert result["sample"]["sample_end"] is None
 
 
 def test_execution_quality_fee_percentiles_use_positive_cost_magnitudes() -> None:
@@ -2006,6 +2054,12 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert component_total == pytest.approx(row["expected_shortfall"])
     assert "correlation_to_one_loss_proxy" not in result["stresses"]
     assert result["stresses"]["perfect_positive_correlation_1sigma"][0]["horizon_bars"] == 1
+    assert result["stresses"]["volatility_double"][0]["horizon_bars"] == 1
+    assert result["stresses"]["volatility_double"][0]["holding_period"] == "1 H1 bar"
+    assert result["stresses"]["volatility_double_worst_across_horizons"] == (
+        result["stresses"]["volatility_double"][0]
+    )
+    assert "volatility_double_worst_pnl" not in result["stresses"]
     assert result["timeframe"] == "H1"
     assert result["holding_periods"] == ["1 H1 bar"]
     assert row["holding_period"] == "1 H1 bar"
@@ -2550,7 +2604,46 @@ def test_relative_strength_full_detail_keeps_every_ranking_collection_bounded() 
     assert len(result["rankings"]) == 10
     assert "all_rankings" not in result
     assert len({row["symbol"] for row in result["rankings"]}) == 10
+    assert [row["rank"] for row in result["laggards"]] == sorted(
+        row["rank"] for row in result["laggards"]
+    )
     assert result["ranking_selection"]["method"] == "strongest_and_weakest_tails"
+
+
+def test_relative_strength_default_uses_dominant_endpoint_cohort() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows["WTI_U6"] = [
+        {**row, "time": row["time"] - 4 * 3600}
+        for row in _bars(drift=0.0003)
+    ]
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=4,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    alignment = result["data_window"]["endpoint_alignment"]
+    assert result["success"] is True
+    assert result["status"] == "ranked"
+    assert result["returned_count"] == 3
+    assert alignment["comparable"] is True
+    assert alignment["cohort_policy"] == "dominant_latest_endpoint_aligned_cohort"
+    assert alignment["excluded_symbols"] == [
+        {
+            "symbol": "WTI_U6",
+            "bar_close": alignment["excluded_symbols"][0]["bar_close"],
+            "reason": "outside dominant endpoint-aligned cohort",
+        }
+    ]
+    assert "WTI_U6" not in {
+        row["symbol"] for row in [*result["leaders"], *result["laggards"]]
+    }
 
 
 def test_relative_strength_reports_mixed_bar_endpoints_and_alignment_windows() -> None:

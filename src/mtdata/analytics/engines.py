@@ -622,7 +622,7 @@ def analyze_microstructure(  # noqa: C901
             "spread_p95": float(psq["spread"].quantile(0.95)) if len(psq) else None,
             "mid_volatility": float(np.nanstd(np.log(pq["mid"]).diff())) if len(pq) > 2 else None,
         })
-    windows.sort(key=lambda item: (-(item.get("spread_p95") or -1.0), -item["ticks"]))
+    windows.sort(key=lambda item: (float(item["start_epoch"]), int(item["bucket"])))
     summary: Dict[str, Any] = {
         "feed_tier": tier,
         "ticks": int(len(df)),
@@ -666,7 +666,17 @@ def analyze_microstructure(  # noqa: C901
                 summary["broker_tick_abs_return_per_real_volume"] = float(np.nanmean(np.abs(y) / np.maximum(np.abs(x), 1e-12)))
                 summary["volume_impact_observations"] = int(valid.sum())
     p95 = summary["spread"].get("p95")
-    event_windows = [item for item in windows if p95 is not None and item.get("spread_p95") is not None and item["spread_p95"] >= p95][:10]
+    ranked_event_windows = sorted(
+        windows,
+        key=lambda item: (-(item.get("spread_p95") or -1.0), -item["ticks"]),
+    )
+    event_windows = [
+        item
+        for item in ranked_event_windows
+        if p95 is not None
+        and item.get("spread_p95") is not None
+        and item["spread_p95"] >= p95
+    ][:10]
     events = [
         {
             key: value
@@ -893,7 +903,9 @@ def analyze_microstructure(  # noqa: C901
         "timezone": "UTC",
         "summary": summary,
         "liquidity_events": events,
+        "liquidity_events_order": "spread_p95_desc_then_ticks_desc",
         **({"windows": windows} if request.detail == "full" else {}),
+        **({"windows_order": "chronological"} if request.detail == "full" else {}),
         "data_quality": data_quality,
         "method_applicability": applicability,
         "estimator_scope": {
@@ -1013,6 +1025,28 @@ def analyze_execution_quality(  # noqa: C901
     if range_error is not None:
         return range_error
     start, end = _window(request.start, request.end, request.minutes_back)
+    window_source = (
+        "explicit_range"
+        if request.start and request.end
+        else "explicit_start_to_now"
+        if request.start
+        else "end_anchored_lookback"
+        if request.end
+        else "minutes_back"
+    )
+    analysis_window = {
+        "start": format_datetime_utc(start, timespec="auto"),
+        "end": format_datetime_utc(end, timespec="auto"),
+        "timezone": "UTC",
+        "source": window_source,
+        "minutes_back_requested": int(request.minutes_back),
+        "minutes_back_effective": round((end - start).total_seconds() / 60.0, 6),
+        "requested": {
+            "start": request.start,
+            "end": request.end,
+            "minutes_back": int(request.minutes_back),
+        },
+    }
     account_currency = None
     account_info = getattr(gateway, "account_info", None)
     if callable(account_info):
@@ -1521,6 +1555,7 @@ def analyze_execution_quality(  # noqa: C901
             else {}
         ),
         **({"currency": account_currency} if account_currency else {}),
+        "window": analysis_window,
         "summary": summary,
         **({"breakdowns": breakdowns} if request.detail != "compact" else {}),
         **({"items": fills} if request.detail == "full" else {}),
@@ -2651,8 +2686,25 @@ def decompose_portfolio_risk(  # noqa: C901
                 for symbol, value in horizon_vol.items()
             },
         })
+    volatility_double = [
+        {
+            "horizon_bars": int(horizon),
+            "holding_period": (
+                f"{horizon} {request.timeframe} "
+                f"bar{'s' if horizon != 1 else ''}"
+            ),
+            "pnl": float(np.min(values) * 2.0),
+        }
+        for horizon, values in sorted(scenario_details.items())
+    ]
+    worst_volatility_double = min(
+        volatility_double,
+        key=lambda row: float(row["pnl"]),
+        default=None,
+    )
     stresses = {
-        "volatility_double_worst_pnl": float(min(np.min(values) * 2.0 for values in scenario_details.values())),
+        "volatility_double": volatility_double,
+        "volatility_double_worst_across_horizons": worst_volatility_double,
         "perfect_positive_correlation_1sigma": perfect_correlation,
         "worst_historical_bar_pnl": float(worst_historical.min()),
     }
@@ -3055,6 +3107,50 @@ def rank_relative_strength(  # noqa: C901
         }
         scoring_histories[symbol] = bars
 
+    endpoint_cohort_exclusions: List[Dict[str, Any]] = []
+    endpoint_cohort_policy = "all_requested_symbols"
+    if not explicit and not request.group and len(scoring_histories) > 1:
+        tolerance = float(TIMEFRAME_SECONDS[request.timeframe])
+        endpoints = sorted(
+            (
+                bar_close_epoch(float(bars["time"].iloc[-1]), request.timeframe),
+                symbol,
+            )
+            for symbol, bars in scoring_histories.items()
+        )
+        best_start = 0
+        best_end = 0
+        left = 0
+        for right, (right_epoch, _symbol) in enumerate(endpoints):
+            while right_epoch - endpoints[left][0] > tolerance:
+                left += 1
+            current_size = right - left + 1
+            best_size = best_end - best_start + 1
+            if current_size > best_size or (
+                current_size == best_size
+                and right_epoch > endpoints[best_end][0]
+            ):
+                best_start, best_end = left, right
+        cohort_symbols = {
+            symbol for _epoch, symbol in endpoints[best_start : best_end + 1]
+        }
+        endpoint_cohort_policy = "dominant_latest_endpoint_aligned_cohort"
+        for endpoint, symbol in endpoints:
+            if symbol in cohort_symbols:
+                continue
+            exclusion = {
+                "symbol": symbol,
+                "bar_close": format_epoch_utc(endpoint),
+                "reason": "outside dominant endpoint-aligned cohort",
+            }
+            endpoint_cohort_exclusions.append(exclusion)
+            skipped.append(exclusion)
+        scoring_histories = {
+            symbol: bars
+            for symbol, bars in scoring_histories.items()
+            if symbol in cohort_symbols
+        }
+
     factor_histories = dict(scoring_histories)
     if benchmark_symbol and benchmark_symbol in histories:
         factor_histories[benchmark_symbol] = histories[benchmark_symbol]
@@ -3186,9 +3282,7 @@ def rank_relative_strength(  # noqa: C901
     leader_count = (returned_count + 1) // 2
     laggard_count = returned_count - leader_count
     leader_rows = ordered[:leader_count]
-    laggard_rows = (
-        list(reversed(ordered[-laggard_count:])) if laggard_count else []
-    )
+    laggard_rows = ordered[-laggard_count:] if laggard_count else []
     selected_rankings = sorted(
         [*leader_rows, *laggard_rows],
         key=lambda row: int(row["rank"]),
@@ -3240,6 +3334,8 @@ def rank_relative_strength(  # noqa: C901
         "status": "unavailable",
         "span_seconds": None,
         "lagging_symbols": [],
+        "cohort_policy": endpoint_cohort_policy,
+        "excluded_symbols": endpoint_cohort_exclusions,
     }
     if ranked_latest_epochs:
         earliest_endpoint = min(ranked_latest_epochs.values())
