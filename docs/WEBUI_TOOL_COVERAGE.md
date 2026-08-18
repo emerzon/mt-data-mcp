@@ -26,8 +26,8 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `finviz_futures` | market | generic_runner | tools-runner/generic | no |  |
 | `finviz_insider` | market | generic_runner | tools-runner/generic | no |  |
 | `finviz_insider_activity` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_market_news` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_news` | market | generic_runner | tools-runner/generic | no |  |
+| `finviz_market_news` | news | generic_runner | tools-runner/generic | no |  |
+| `finviz_news` | news | generic_runner | tools-runner/generic | no |  |
 | `finviz_peers` | market | generic_runner | tools-runner/generic | no |  |
 | `finviz_ratings` | market | generic_runner | tools-runner/generic | no |  |
 | `finviz_screen` | market | generic_runner | tools-runner/generic | no |  |
@@ -55,13 +55,13 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `indicators_list` | methods | generic_runner | tools-runner/generic | no |  |
 | `labels_triple_barrier` | research | generic_runner | tools-runner/generic | no |  |
 | `market_depth_fetch` | market | generic_runner | tools-runner/generic | no | gated by `MTDATA_ENABLE_MARKET_DEPTH_FETCH`; disabled |
-| `market_microstructure_analyze` | research | generic_runner | tools-runner/generic | no |  |
-| `market_relative_strength` | research | generic_runner | tools-runner/generic | no |  |
+| `market_microstructure_analyze` | market | generic_runner | tools-runner/generic | no |  |
+| `market_relative_strength` | market | generic_runner | tools-runner/generic | no |  |
 | `market_scan` | market | generic_runner | tools-runner/generic | no |  |
-| `market_snapshot` | research | generic_runner | tools-runner/generic | no |  |
+| `market_snapshot` | market | generic_runner | tools-runner/generic | no |  |
 | `market_status` | market | generic_runner | tools-runner/generic | no |  |
 | `market_ticker` | market | dedicated_ui | chart-workspace/live-quotes | no |  |
-| `news` | research | generic_runner | tools-runner/generic | no |  |
+| `news` | news | generic_runner | tools-runner/generic | no |  |
 | `options_barrier_price` | options | generic_runner | tools-runner/generic | no |  |
 | `options_chain` | options | generic_runner | tools-runner/generic | no |  |
 | `options_expirations` | options | generic_runner | tools-runner/generic | no |  |
@@ -70,7 +70,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `outliers_detect` | research | generic_runner | tools-runner/generic | no |  |
 | `patterns_detect` | pattern_regime | generic_runner | tools-runner/generic | no |  |
 | `pivot_compute_points` | analysis | dedicated_ui | chart-workspace/pivot-overlay | no |  |
-| `portfolio_risk_decompose` | research | generic_runner | tools-runner/generic | no |  |
+| `portfolio_risk_decompose` | trading | generic_runner | tools-runner/generic | no |  |
 | `regime_detect` | pattern_regime | generic_runner | tools-runner/generic | no |  |
 | `report_generate` | report | generic_runner | tools-runner/generic | no |  |
 | `seasonality_detect` | research | generic_runner | tools-runner/generic | no |  |

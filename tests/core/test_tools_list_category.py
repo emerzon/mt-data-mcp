@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
+from mtdata.bootstrap.tools import bootstrap_tools
 from mtdata.core.tools import tools_list
 
 
@@ -28,3 +29,16 @@ def test_tools_list_known_category_has_no_warning():
     known = sorted(categories.keys())[0]
     out = _call(category=known, detail="compact")
     assert "warning" not in out
+
+
+def test_tools_list_news_category_matches_news_help_family():
+    bootstrap_tools()
+
+    out = _call(category="news", detail="compact", limit=50)
+
+    assert out["success"] is True
+    assert {row["name"] for row in out["tools"]} == {
+        "finviz_market_news",
+        "finviz_news",
+        "news",
+    }

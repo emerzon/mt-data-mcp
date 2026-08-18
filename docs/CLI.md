@@ -95,11 +95,11 @@ mtdata-cli tools_list --limit 20 --offset 20 --json
 mtdata-cli tools_list --search portfolio_risk_decompose --detail full --json
 ```
 
-The broad headings in root help are navigation sections. The machine-readable
-catalog uses the narrower category identifiers accepted by `tools_list`:
-`analysis`, `data`, `forecast`, `market`, `methods`, `options`,
-`pattern_regime`, `report`, `research`, `symbols`, and `trading`. Command help
-lists these as choices and rejects unknown categories.
+Root-help headings use the same category identifiers accepted by `tools_list`:
+`analysis`, `data`, `forecast`, `market`, `methods`, `news`, `options`,
+`pattern_regime`, `report`, `research`, `symbols`, and `trading`. Each heading
+prints its corresponding `tools_list --category ID` filter, so the visible
+command group and machine-readable result stay identical.
 
 A bare `tools_list` returns the first 20 callable tools. Use `--offset` for the
 next page, or pass a sufficiently large explicit `--limit` when you need the

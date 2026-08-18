@@ -8,6 +8,7 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..shared.schema import DetailLiteral
+from ..shared.tool_categories import TOOL_CATEGORY_IDS
 from ._mcp_instance import mcp
 from ._mcp_tools import registered_tool_catalog
 from .execution_logging import run_logged_operation
@@ -17,19 +18,7 @@ logger = logging.getLogger(__name__)
 
 _TOOLS_LIST_DEFAULT_LIMIT = 20
 
-ToolCategory = Literal[
-    "analysis",
-    "data",
-    "forecast",
-    "market",
-    "methods",
-    "options",
-    "pattern_regime",
-    "report",
-    "research",
-    "symbols",
-    "trading",
-]
+ToolCategory = Literal[*TOOL_CATEGORY_IDS]
 
 
 @mcp.tool()
@@ -62,11 +51,7 @@ def tools_list(
             return {"error": "limit must be a positive integer."}
         category_filter = str(category or "").strip().lower()
         search_filter = str(search or "").strip().lower()
-        known_categories = {
-            str(row.get("category") or "").strip().lower()
-            for row in tools
-            if isinstance(row, dict) and str(row.get("category") or "").strip()
-        }
+        known_categories = set(TOOL_CATEGORY_IDS)
         detail_mode = str(catalog.get("detail") or detail or "compact").strip().lower()
         filtered = []
         filtered_gated = []

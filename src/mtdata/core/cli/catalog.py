@@ -7,7 +7,8 @@ catalog against drift from the dynamically registered MCP tools.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+
+from ...shared.tool_categories import TOOL_CATEGORY_IDS, tool_catalog_category
 
 CLI_COMMAND_NAMES = (
     "causal_discover_signals",
@@ -107,37 +108,6 @@ _OPTIONAL_COMMAND_ENV = {
     "market_depth_fetch": "MTDATA_ENABLE_MARKET_DEPTH_FETCH",
 }
 
-_CATEGORY_PREFIXES = (
-    ("DATA AND MARKET", ("data_", "market_", "symbols_", "wait_event")),
-    ("FORECAST", ("forecast_",)),
-    ("TRADING AND RISK", ("trade_", "portfolio_", "strategy_")),
-    ("NEWS, OPTIONS, AND FINVIZ", ("news", "options_", "finviz_")),
-    (
-        "ANALYSIS",
-        (
-            "causal_",
-            "cointegration_",
-            "confluence_",
-            "correlation_",
-            "cross_correlation",
-            "denoise_",
-            "indicators_",
-            "labels_",
-            "outliers_",
-            "patterns_",
-            "pivot_",
-            "regime_",
-            "seasonality_",
-            "stationarity_",
-            "support_",
-            "temporal_",
-            "volatility_",
-            "volume_",
-        ),
-    ),
-)
-
-
 def _env_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -165,10 +135,6 @@ def display_program_name(argv0: object) -> str:
     return basename or "mtdata-cli"
 
 
-def _matches_prefix(name: str, prefixes: Iterable[str]) -> bool:
-    return any(name == prefix or name.startswith(prefix) for prefix in prefixes)
-
-
 def format_root_help(program: str) -> str:
     """Render root help without importing any tool implementation modules."""
     names = available_command_names()
@@ -182,15 +148,21 @@ def format_root_help(program: str) -> str:
         "load only their tool family; use shell for repeated commands in one warm",
         "process. TOON is the default output format; pass --json for JSON.",
         "",
-        "Command sections (tools_list lists MCP tools only; shell is CLI-only):",
+        "Catalog categories (the same IDs are accepted by tools_list):",
         "  shell  Run interactive commands or a stdin batch in one warm process",
     ]
-    for category, prefixes in _CATEGORY_PREFIXES:
-        rows = [name for name in names if _matches_prefix(name, prefixes)]
+    for category in TOOL_CATEGORY_IDS:
+        rows = [name for name in names if tool_catalog_category(name) == category]
         if not rows:
             continue
         grouped_names.update(rows)
-        lines.extend(("", f"  {category}:", f"    {' '.join(rows)}"))
+        lines.extend(
+            (
+                "",
+                f"  {category.upper()} [tools_list --category {category}]:",
+                f"    {' '.join(rows)}",
+            )
+        )
     remaining = [name for name in names if name not in grouped_names]
     if remaining:
         lines.extend(("", "  OTHER:", f"    {' '.join(remaining)}"))

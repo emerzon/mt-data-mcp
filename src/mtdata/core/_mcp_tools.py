@@ -20,6 +20,7 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS,
     PUBLIC_OUTPUT_PARAMS,
 )
+from ..shared.tool_categories import tool_catalog_category
 from ..utils.coercion import UNPARSED_BOOL, coerce_scalar, parse_bool_like
 from .error_envelope import (
     build_error_payload,
@@ -183,32 +184,7 @@ _TOOL_OBJECT_REGISTRY: Dict[str, Any] = _ToolRegistryView("tool_object")
 
 def _tool_catalog_category(name: str, func: Any) -> str:
     module = str(getattr(func, "__module__", "") or "")
-    if name.startswith("trade_") or ".trading" in module:
-        return "trading"
-    if name.startswith("forecast_") or name.startswith("strategy_"):
-        return "forecast"
-    if name.startswith("finviz_") or name in {
-        "market_depth_fetch",
-        "market_scan",
-        "market_ticker",
-        "market_status",
-    }:
-        return "market"
-    if name.startswith("symbols_"):
-        return "symbols"
-    if name.startswith("data_") or name == "wait_event":
-        return "data"
-    if name.startswith("patterns_") or name.startswith("regime_"):
-        return "pattern_regime"
-    if name.startswith("options_"):
-        return "options"
-    if name.startswith("report_"):
-        return "report"
-    if name.startswith("denoise_") or name.startswith("indicators_"):
-        return "methods"
-    if name in {"pivot_compute_points", "support_resistance_levels", "temporal_analyze"}:
-        return "analysis"
-    return "research"
+    return tool_catalog_category(name, module=module)
 
 
 def _tool_catalog_description(func: Any) -> str:

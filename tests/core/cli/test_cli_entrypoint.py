@@ -168,6 +168,23 @@ def test_unknown_command_path_does_not_import_cli_api(capsys):
     assert "market_ticker" in captured.out
 
 
+def test_root_help_groups_commands_by_tools_list_category():
+    from mtdata.core.cli.catalog import available_command_names, format_root_help
+    from mtdata.shared.tool_categories import TOOL_CATEGORY_IDS, tool_catalog_category
+
+    rendered = format_root_help("mtdata-cli")
+    lines = rendered.splitlines()
+    names = available_command_names()
+
+    for category in TOOL_CATEGORY_IDS:
+        expected = [name for name in names if tool_catalog_category(name) == category]
+        if not expected:
+            continue
+        heading = f"  {category.upper()} [tools_list --category {category}]:"
+        index = lines.index(heading)
+        assert lines[index + 1].strip().split() == expected
+
+
 def test_unknown_command_json_uses_standard_error_envelope(capsys):
     from mtdata.core.cli import main
 
