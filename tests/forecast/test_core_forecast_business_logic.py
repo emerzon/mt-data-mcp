@@ -1963,6 +1963,22 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
     assert hints["history_tail_count"] == 1
 
 
+def test_forecast_optimize_hints_rejects_unknown_method_before_search():
+    result = forecast_use_cases.run_forecast_optimize_hints(
+        ForecastOptimizeHintsRequest(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["theta", "not_a_method"],
+        ),
+        optimize_hints_impl=lambda **kwargs: pytest.fail("search must not start"),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "unsupported_method"
+    assert result["method"] == "not_a_method"
+    assert result["valid_methods_tool"] == "forecast_list_methods"
+
+
 @pytest.mark.parametrize(
     ("implementation", "operation"),
     [

@@ -3093,13 +3093,20 @@ def _resolve_tuning_search_space(
 
 
 def _validate_tuning_methods(
-    request: ForecastTuneGeneticRequest | ForecastTuneOptunaRequest,
+    request: (
+        ForecastTuneGeneticRequest
+        | ForecastTuneOptunaRequest
+        | ForecastOptimizeHintsRequest
+    ),
 ) -> Optional[Dict[str, Any]]:
-    requested = (
-        list(request.methods)
-        if isinstance(request.methods, (list, tuple)) and len(request.methods) > 0
-        else [request.method]
-    )
+    request_methods = getattr(request, "methods", None)
+    if isinstance(request_methods, (list, tuple)) and request_methods:
+        requested = list(request_methods)
+    else:
+        default_method = getattr(request, "method", None)
+        if default_method in (None, ""):
+            return None
+        requested = [default_method]
     methods = [str(method or "").strip() for method in requested if str(method or "").strip()]
     valid_methods = list(get_forecast_method_names())
     valid_lookup = {str(method).lower(): str(method) for method in valid_methods}
@@ -4144,6 +4151,10 @@ def run_forecast_optimize_hints(
         timeframes_to_search = [request.timeframe]
     if not timeframes_to_search:
         timeframes_to_search = ['H1', 'H4', 'D1', 'W1']
+
+    invalid_method = _validate_tuning_methods(request)
+    if invalid_method is not None:
+        return _apply_tuning_detail(invalid_method, request.detail)
 
     invalid_sample = _validate_tuning_sample(request.fitness_metric, request.steps)
     if invalid_sample is not None:
