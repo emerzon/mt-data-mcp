@@ -87,20 +87,29 @@ class TestResolveDateRange:
         assert d_from == "2024-06-01"
         assert d_to == "2024-06-15"
 
-    def test_to_without_from_raises(self):
-        with pytest.raises(ValueError, match="date_from is required"):
-            svc._resolve_date_range(date_from=None, date_to="2024-06-15", default_days=7)
+    def test_end_only_defaults_start_to_new_york_today(self):
+        with patch(
+            "mtdata.services.finviz.dates._finviz_market_date",
+            return_value=datetime.date(2024, 6, 1),
+        ):
+            result = svc._resolve_date_range(
+                date_from=None,
+                date_to="2024-06-15",
+                default_days=7,
+            )
+
+        assert result == ("2024-06-01", "2024-06-15")
 
     def test_bad_from_raises(self):
-        with pytest.raises(ValueError, match="Invalid date_from"):
+        with pytest.raises(ValueError, match="Invalid start"):
             svc._resolve_date_range(date_from="not-a-date", date_to=None, default_days=7)
 
     def test_bad_to_raises(self):
-        with pytest.raises(ValueError, match="Invalid date_to"):
+        with pytest.raises(ValueError, match="Invalid end"):
             svc._resolve_date_range(date_from="2024-06-01", date_to="bad", default_days=7)
 
     def test_malformed_iso_suffix_raises(self):
-        with pytest.raises(ValueError, match="Invalid date_from"):
+        with pytest.raises(ValueError, match="Invalid start"):
             svc._resolve_date_range(
                 date_from="2024-06-01T12:34:56junk",
                 date_to=None,
@@ -108,7 +117,7 @@ class TestResolveDateRange:
             )
 
     def test_to_before_from_raises(self):
-        with pytest.raises(ValueError, match="date_to must be >= date_from"):
+        with pytest.raises(ValueError, match="end must be on or after start"):
             svc._resolve_date_range(date_from="2024-06-15", date_to="2024-06-01", default_days=7)
 
 class TestAlignToMondayIfWeekend:

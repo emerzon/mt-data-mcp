@@ -60,6 +60,7 @@ logger = logging.getLogger(__name__)
 _FINVIZ_HTTP_TIMEOUT = get_finviz_http_timeout()
 _FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
 _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
+_FINVIZ_CALENDAR_PROVIDER_PAGE_SIZE = 50
 
 def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str:
     """Sanitize exception messages to hide internal implementation details.
@@ -1195,15 +1196,14 @@ def get_earnings_calendar_api(
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
         date_from, date_to = resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
-        payload = _fetch_finviz_calendar_paged(
+        payload = _fetch_finviz_calendar_client_page(
             kind="earnings",
             date_from=date_from,
             date_to=date_to,
             page=safe_page,
-            page_size=safe_limit,
+            limit=safe_limit,
         )
         items = payload.get("items") or []
-        items = items[:safe_limit]
         total = int(payload.get("totalItemsCount") or len(items))
         pages = (total + safe_limit - 1) // safe_limit if total else 0
         return {
@@ -1215,7 +1215,7 @@ def get_earnings_calendar_api(
             "calendarTimezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items),
             "total": total,
-            "page": int(payload.get("page") or safe_page),
+            "page": safe_page,
             "pages": pages,
             "items": items,
         }
@@ -1237,15 +1237,14 @@ def get_dividends_calendar_api(
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
         date_from, date_to = resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
-        payload = _fetch_finviz_calendar_paged(
+        payload = _fetch_finviz_calendar_client_page(
             kind="dividends",
             date_from=date_from,
             date_to=date_to,
             page=safe_page,
-            page_size=safe_limit,
+            limit=safe_limit,
         )
         items = payload.get("items") or []
-        items = items[:safe_limit]
         total = int(payload.get("totalItemsCount") or len(items))
         pages = (total + safe_limit - 1) // safe_limit if total else 0
         return {
@@ -1257,7 +1256,7 @@ def get_dividends_calendar_api(
             "calendarTimezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items),
             "total": total,
-            "page": int(payload.get("page") or safe_page),
+            "page": safe_page,
             "pages": pages,
             "items": items,
         }
@@ -1377,6 +1376,89 @@ def _fetch_finviz_calendar_paged(
     items = data.get("items") or []
     data["items"] = [_clean_calendar_item(item) for item in items]
     return data
+
+
+def _fetch_finviz_calendar_client_page(
+    *,
+    kind: Literal["earnings", "dividends"],
+    date_from: str,
+    date_to: str,
+    page: int,
+    limit: int,
+) -> Dict[str, Any]:
+    """Map a client page onto Finviz's fixed-size provider pages."""
+    safe_limit, safe_page = _sanitize_pagination(limit, page)
+    client_offset = (safe_page - 1) * safe_limit
+
+    first_payload = _fetch_finviz_calendar_paged(
+        kind=kind,
+        date_from=date_from,
+        date_to=date_to,
+        page=1,
+        page_size=_FINVIZ_CALENDAR_PROVIDER_PAGE_SIZE,
+    )
+    try:
+        provider_page_size = max(
+            1,
+            int(
+                first_payload.get("pageSize")
+                or _FINVIZ_CALENDAR_PROVIDER_PAGE_SIZE
+            ),
+        )
+    except (TypeError, ValueError):
+        provider_page_size = _FINVIZ_CALENDAR_PROVIDER_PAGE_SIZE
+    first_items = list(first_payload.get("items") or [])
+    try:
+        provider_total = max(
+            0,
+            int(first_payload.get("totalItemsCount") or len(first_items)),
+        )
+    except (TypeError, ValueError):
+        provider_total = len(first_items)
+
+    first_provider_page = (client_offset // provider_page_size) + 1
+    last_client_index = client_offset + safe_limit - 1
+    last_provider_page = (last_client_index // provider_page_size) + 1
+    provider_payloads: Dict[int, Dict[str, Any]] = {1: first_payload}
+    for provider_page in range(first_provider_page, last_provider_page + 1):
+        if provider_page in provider_payloads:
+            continue
+        if provider_total and (provider_page - 1) * provider_page_size >= provider_total:
+            break
+        payload = _fetch_finviz_calendar_paged(
+            kind=kind,
+            date_from=date_from,
+            date_to=date_to,
+            page=provider_page,
+            page_size=_FINVIZ_CALENDAR_PROVIDER_PAGE_SIZE,
+        )
+        provider_payloads[provider_page] = payload
+        if not payload.get("items"):
+            break
+
+    window_start = (first_provider_page - 1) * provider_page_size
+    window_items: List[Any] = []
+    for provider_page in range(first_provider_page, last_provider_page + 1):
+        payload = provider_payloads.get(provider_page)
+        if payload is None:
+            break
+        window_items.extend(list(payload.get("items") or []))
+    local_offset = client_offset - window_start
+    items = window_items[local_offset : local_offset + safe_limit]
+
+    out = dict(first_payload)
+    out["items"] = items
+    out["page"] = safe_page
+    out["pageSize"] = safe_limit
+    out["totalItemsCount"] = provider_total
+    if not items and client_offset < provider_total:
+        out["providerTotalItemsCount"] = provider_total
+        out["totalItemsCount"] = client_offset
+        out["paginationWarning"] = (
+            "Finviz returned an empty provider page before its reported total; "
+            "pagination was closed at the last reachable offset."
+        )
+    return out
 
 
 def _clean_calendar_item(item: Dict[str, Any]) -> Dict[str, Any]:

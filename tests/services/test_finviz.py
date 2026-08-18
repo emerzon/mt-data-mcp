@@ -822,6 +822,63 @@ class TestFinvizService:
         assert [item["ticker"] for item in result["items"]] == ["SYM0", "SYM1", "SYM2"]
 
     @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
+    def test_calendar_client_pages_reuse_every_fixed_provider_row(
+        self,
+        mock_fetch_paged,
+    ):
+        from mtdata.services.finviz import get_earnings_calendar_api
+
+        def _provider_page(*, page, **_kwargs):
+            start = (page - 1) * 50
+            return {
+                "items": [
+                    {"ticker": f"SYM{i}", "date": "2026-01-05"}
+                    for i in range(start, min(start + 50, 120))
+                ],
+                "page": page,
+                "pageSize": 50,
+                "totalItemsCount": 120,
+                "totalPages": 3,
+            }
+
+        mock_fetch_paged.side_effect = _provider_page
+
+        first = get_earnings_calendar_api(
+            date_from="2026-01-05",
+            date_to="2026-01-12",
+            limit=3,
+            page=1,
+        )
+        second = get_earnings_calendar_api(
+            date_from="2026-01-05",
+            date_to="2026-01-12",
+            limit=3,
+            page=2,
+        )
+        boundary = get_earnings_calendar_api(
+            date_from="2026-01-05",
+            date_to="2026-01-12",
+            limit=3,
+            page=17,
+        )
+
+        assert [item["ticker"] for item in first["items"]] == [
+            "SYM0",
+            "SYM1",
+            "SYM2",
+        ]
+        assert [item["ticker"] for item in second["items"]] == [
+            "SYM3",
+            "SYM4",
+            "SYM5",
+        ]
+        assert [item["ticker"] for item in boundary["items"]] == [
+            "SYM48",
+            "SYM49",
+            "SYM50",
+        ]
+
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_success(self, mock_fetch_paged):
         """Test dividends calendar API fetch."""
         from mtdata.services.finviz import get_dividends_calendar_api

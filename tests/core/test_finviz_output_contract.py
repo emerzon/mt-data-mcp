@@ -336,8 +336,8 @@ class TestFinvizCalendarOutputContract:
             page=2,
         )
 
-        assert result["date_from"] == "2026-01-05"
-        assert result["date_to"] == "2026-01-12"
+        assert result["start"] == "2026-01-05"
+        assert result["end"] == "2026-01-12"
         assert result["timezone"] == "UTC"
         assert result["pagination"] == {
             "total": 3,
@@ -492,6 +492,42 @@ class TestFinvizCalendarOutputContract:
         assert [item["event"] for item in result["items"]] == ["Known"]
         assert result["unclassified_events_count"] == 1
         assert "unknown country attribution" in result["warnings"][0]
+        assert result["excluded_events"] == [
+            {
+                "event": "Unknown",
+                "date": "2099-01-01T14:00:00Z",
+                "source_id": "OPAQUE",
+                "reason": "unknown_country_attribution",
+            }
+        ]
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_attributes_known_us_release_names_before_filter(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {
+                    "symbol": "ICSA",
+                    "event": "Initial Jobless Claims",
+                    "date": "2099-01-01T08:30:00",
+                },
+                {
+                    "symbol": "OPAQUE",
+                    "event": "Industrial Production YoY",
+                    "date": "2099-01-01T09:15:00",
+                },
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(country="US", upcoming=False)
+
+        assert [item["event"] for item in result["items"]] == [
+            "Initial Jobless Claims"
+        ]
+        assert result["items"][0]["country_code"] == "US"
+        assert result["excluded_events"][0]["event"] == (
+            "Industrial Production YoY"
+        )
 
     @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_compact_drops_internal_fields(self, mock_get):

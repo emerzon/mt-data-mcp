@@ -162,29 +162,27 @@ def resolve_date_range(
 ) -> tuple[str, str]:
     """Resolve an ISO date range for Finviz API calls.
 
-    Defaults: ``date_from`` to the current America/New_York date when omitted; ``date_to`` to
-    ``date_from + default_days`` when omitted. Requires ``date_from`` when
-    ``date_to`` is provided, and enforces ``date_to >= date_from``.
+    Defaults: ``date_from`` to the current America/New_York date when omitted and
+    ``date_to`` to ``date_from + default_days`` when omitted. Enforces
+    ``date_to >= date_from``. Error messages use the public ``start``/``end``
+    names rather than provider field aliases.
     """
-    if date_to and not date_from:
-        raise ValueError("date_from is required when date_to is provided")
-
     if date_from:
-        df = parse_iso_date_input(date_from, field_name="date_from")
+        df = parse_iso_date_input(date_from, field_name="start")
         from_str = df.isoformat()
     else:
         df = _finviz_market_date()
         from_str = df.isoformat()
 
     if date_to:
-        dt = parse_iso_date_input(date_to, field_name="date_to")
+        dt = parse_iso_date_input(date_to, field_name="end")
         to_str = dt.isoformat()
     else:
         dt = df + datetime.timedelta(days=int(default_days))
         to_str = dt.isoformat()
 
     if dt < df:
-        raise ValueError("date_to must be >= date_from")
+        raise ValueError("end must be on or after start")
 
     return from_str, to_str
 

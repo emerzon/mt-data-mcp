@@ -1722,8 +1722,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Ticker": "symbol",
     "ticker": "symbol",
     "Value ($)": "value_usd",
-    "dateFrom": "date_from",
-    "dateTo": "date_to",
+    "dateFrom": "start",
+    "dateTo": "end",
     "earningsdate": "earnings_date",
     "EarningsDate": "earnings_date",
     "isearningdateestimate": "is_earning_date_estimate",
@@ -1803,6 +1803,8 @@ _FINVIZ_OUTPUT_KEY_MAP = {
 }
 _FINVIZ_OUTPUT_KEY_ALIASES = {
     "oper_margin": "operating_margin",
+    "date_from": "start",
+    "date_to": "end",
 }
 _FINVIZ_MARKET_CAP_BUCKETS = {
     "nano",
@@ -2522,6 +2524,11 @@ _FINVIZ_CALENDAR_EVENT_COUNTRY_KEYWORDS = (
     ("FEDERAL RESERVE", "United States", "US"),
     ("FOMC", "United States", "US"),
     ("FED ", "United States", "US"),
+    ("INITIAL JOBLESS CLAIMS", "United States", "US"),
+    ("API CRUDE OIL", "United States", "US"),
+    ("BAKER HUGHES", "United States", "US"),
+    ("WEEK BILL AUCTION", "United States", "US"),
+    ("YEAR BOND AUCTION", "United States", "US"),
 )
 _FINVIZ_CALENDAR_SOURCE_ID_COUNTRIES = {
     # Finviz uses indicator identifiers rather than ISO/currency prefixes for
@@ -2670,6 +2677,20 @@ def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _finviz_calendar_excluded_event(item: Dict[str, Any]) -> Dict[str, Any]:
+    source_id = item.get("source_id") or item.get("symbol")
+    return {
+        key: value
+        for key, value in {
+            "event": item.get("event") or item.get("title"),
+            "date": item.get("date") or item.get("earnings_date"),
+            "source_id": source_id,
+            "reason": "unknown_country_attribution",
+        }.items()
+        if value not in (None, "")
+    }
+
+
 def _finviz_calendar_item_is_upcoming(
     item: Dict[str, Any],
     *,
@@ -2791,11 +2812,12 @@ def _normalize_finviz_calendar_payload(
                 for item in normalized_items
             ]
         if country_code_filter:
-            unclassified_count = sum(
-                1
+            unclassified_items = [
+                item
                 for item in normalized_items
                 if not str(item.get("country_code") or "").strip()
-            )
+            ]
+            unclassified_count = len(unclassified_items)
             normalized_items = [
                 item
                 for item in normalized_items
@@ -2804,10 +2826,15 @@ def _normalize_finviz_calendar_payload(
             ]
             if unclassified_count:
                 out["unclassified_events_count"] = int(unclassified_count)
+                out["excluded_events"] = [
+                    _finviz_calendar_excluded_event(item)
+                    for item in unclassified_items
+                ]
                 warnings_out = list(out.get("warnings") or [])
                 warnings_out.append(
                     f"{unclassified_count} event(s) had unknown country attribution "
-                    "and were excluded by the country/currency filter."
+                    "and were excluded by the country/currency filter; see "
+                    "excluded_events for names and times."
                 )
                 out["warnings"] = warnings_out
         filtered_released_count = 0
@@ -4240,9 +4267,11 @@ def finviz_calendar(
     currency : str, optional
         Economic only: filter by affected currency (for example "USD").
     start : str, optional
-        Start date in ISO format: YYYY-MM-DD.
+        Start date in ISO format: YYYY-MM-DD. Defaults to the current
+        America/New_York date, including when only end is supplied.
     end : str, optional
-        End date in ISO format: YYYY-MM-DD.
+        Inclusive end date in ISO format: YYYY-MM-DD. May be supplied without
+        start; otherwise defaults from the resolved start date.
     upcoming : bool, optional
         Economic only: keep unreleased future events. Defaults to true for the
         live default window and false when start or end is supplied.
