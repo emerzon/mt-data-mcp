@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
+
+from pydantic import Field
 
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
@@ -12,6 +14,8 @@ from .execution_logging import run_logged_operation
 from .output_contract import build_pagination_meta
 
 logger = logging.getLogger(__name__)
+
+_TOOLS_LIST_DEFAULT_LIMIT = 20
 
 ToolCategory = Literal[
     "analysis",
@@ -32,8 +36,8 @@ ToolCategory = Literal[
 def tools_list(
     category: Optional[ToolCategory] = None,
     search: Optional[str] = None,
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1)] = _TOOLS_LIST_DEFAULT_LIMIT,
+    offset: Annotated[int, Field(ge=0)] = 0,
     include_related: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -50,14 +54,12 @@ def tools_list(
             return {"error": "offset must be a non-negative integer."}
         if offset_value < 0:
             return {"error": "offset must be a non-negative integer."}
-        limit_value: Optional[int] = None
-        if limit is not None:
-            try:
-                limit_value = int(limit)
-            except (TypeError, ValueError):
-                return {"error": "limit must be a positive integer."}
-            if limit_value < 1:
-                return {"error": "limit must be a positive integer."}
+        try:
+            limit_value = int(limit)
+        except (TypeError, ValueError):
+            return {"error": "limit must be a positive integer."}
+        if limit_value < 1:
+            return {"error": "limit must be a positive integer."}
         category_filter = str(category or "").strip().lower()
         search_filter = str(search or "").strip().lower()
         known_categories = {
@@ -86,10 +88,7 @@ def tools_list(
                 filtered.append(row)
 
         start = min(offset_value, len(filtered))
-        if limit_value is None:
-            paged = filtered[start:]
-        else:
-            paged = filtered[start : start + limit_value]
+        paged = filtered[start : start + limit_value]
         gated_tools: list[Dict[str, Any]] = []
         slimmed: list[Dict[str, Any]] = []
         compact_mode = detail_mode == "compact"

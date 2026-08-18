@@ -468,6 +468,21 @@ def test_tools_list_filters_and_paginates_rows():
     assert "output_extras" not in out
 
 
+def test_tools_list_defaults_to_short_page_and_allows_full_explicit_limit():
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    default_page = raw_tools_list()
+    full_catalog = raw_tools_list(limit=10_000)
+
+    assert default_page["count"] == 20
+    assert default_page["pagination"]["limit"] == 20
+    assert default_page["pagination"]["has_more"] is True
+    assert default_page["pagination"]["more_available"] > 0
+    assert full_catalog["count"] == full_catalog["pagination"]["total"]
+    assert full_catalog["pagination"]["has_more"] is False
+
+
 def test_tools_list_standard_includes_catalog_metadata():
     bootstrap_tools()
     raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)

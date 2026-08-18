@@ -88,6 +88,9 @@ mtdata-cli regime_detect --help
 # Tool catalog (filter / paginate)
 mtdata-cli tools_list --category forecast --json
 
+# Advance through the 20-tool default pages
+mtdata-cli tools_list --limit 20 --offset 20 --json
+
 # Machine-usable input schemas, constraints, defaults, and CLI forms
 mtdata-cli tools_list --search portfolio_risk_decompose --detail full --json
 ```
@@ -97,6 +100,10 @@ catalog uses the narrower category identifiers accepted by `tools_list`:
 `analysis`, `data`, `forecast`, `market`, `methods`, `options`,
 `pattern_regime`, `report`, `research`, `symbols`, and `trading`. Command help
 lists these as choices and rejects unknown categories.
+
+A bare `tools_list` returns the first 20 callable tools. Use `--offset` for the
+next page, or pass a sufficiently large explicit `--limit` when you need the
+complete catalog in one response.
 
 Compact catalog output points to the versioned full parameter schema. In
 `--detail full`, each tool includes its canonical `input_schema` plus per-field
