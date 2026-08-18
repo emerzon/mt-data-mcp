@@ -153,6 +153,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
     "guardrails_enabled",
+    "guardrails_preview",
     "magic",
     "comment",
     "requested_price",
@@ -207,7 +208,6 @@ _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
     "checks_not_performed",
     "validation_not_performed",
     "warnings",
-    "guardrails_preview",
 )
 
 
@@ -273,7 +273,20 @@ def _shape_trade_place_preview(
     if detail == "full":
         return dict(payload)
     keys = _TRADE_PLACE_BASIC_KEYS if detail == "basic" else _TRADE_PLACE_PREVIEW_KEYS
-    return {key: payload[key] for key in keys if key in payload}
+    out = {key: payload[key] for key in keys if key in payload}
+    if detail == "preview" and isinstance(out.get("guardrails_preview"), dict):
+        preview = out["guardrails_preview"]
+        out["guardrails_preview"] = {
+            key: preview[key]
+            for key in (
+                "enabled",
+                "blocked",
+                "ignored_for_demo",
+                "checks_not_performed",
+            )
+            if key in preview
+        }
+    return out
 
 
 def _standardize_trade_operation_payload(

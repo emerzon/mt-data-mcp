@@ -52,7 +52,9 @@ Ticketless bulk `trade_close` previews likewise keep `preview_ok=false` until
 `validation.live_submission_eligible` make that remaining live gate explicit.
 The CLI prints those blocked previews and exits `1`; an eligible preview exits `0`.
 Compact output always retains these gate fields and the broker-validation
-limitations; `guardrails_preview` remains a standard/full-detail section.
+limitations. Its `guardrails_preview` summary retains `enabled`, `blocked`,
+`ignored_for_demo`, and `checks_not_performed`; standard/full detail includes
+the complete guardrail diagnostics.
 
 **What a dry run *does* check:** required fields, order-type validity,
 market-vs-pending routing, an indicative margin estimate when MT5 exposes one,

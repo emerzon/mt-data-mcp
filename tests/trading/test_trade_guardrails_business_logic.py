@@ -840,6 +840,13 @@ def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(
 
     assert result["success"] is True
     assert result.get("guardrail_blocked") is not True
+    assert result["guardrails_enabled"] is True
+    assert result["guardrails_preview"] == {
+        "enabled": True,
+        "blocked": False,
+        "ignored_for_demo": True,
+        "checks_not_performed": [],
+    }
 
 
 def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guardrails):

@@ -342,7 +342,11 @@ def test_trade_place_dry_run_preview_detail_keeps_safety_lists() -> None:
     assert out["checks_not_performed"] == ["margin_estimate"]
     assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "validation_not_performed" not in out
-    assert "guardrails_preview" not in out
+    assert out["guardrails_preview"] == {
+        "enabled": False,
+        "blocked": False,
+        "checks_not_performed": [],
+    }
     assert out["guardrails_enabled"] is False
     assert out["validation_scope"] == "local_preview_plus_estimates"
     assert out["preview_ok"] is True
