@@ -262,10 +262,16 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("action") == "place_market_order"
     assert "preview_scope_summary" not in out
     assert "validation_not_performed" not in out
-    assert "warnings" not in out
+    assert out["warnings"][0].startswith("Dry run only.")
     assert out["validation_scope"] == "local_preview_plus_estimates"
     assert out["preview_ok"] is True
-    assert "broker_validation_not_performed" not in out
+    assert out["preview_checks_performed"] == [
+        "request_routing",
+        "local_safety_requirements",
+        "protection_level_preview",
+    ]
+    assert out["checks_not_performed"] == ["margin_estimate"]
+    assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
     assert out.get("bid") == 64999.0
@@ -313,7 +319,7 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
     mock_market.assert_not_called()
 
 
-def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
+def test_trade_place_dry_run_preview_detail_keeps_safety_lists() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",
         return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
@@ -332,7 +338,9 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert out.get("success") is True
     assert out.get("dry_run") is True
     assert "preview_scope_summary" not in out
-    assert "warnings" not in out
+    assert out["warnings"][0].startswith("Dry run only.")
+    assert out["checks_not_performed"] == ["margin_estimate"]
+    assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "validation_not_performed" not in out
     assert "guardrails_preview" not in out
     assert out["guardrails_enabled"] is False
@@ -668,7 +676,9 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("action") == "place_pending_order"
     assert out["preview_ok"] is True
     assert "preview_scope_summary" not in out
-    assert "warnings" not in out
+    assert out["warnings"][0].startswith("Dry run only.")
+    assert out["checks_not_performed"] == ["margin_estimate"]
+    assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "trade_gate_passed" not in out
     assert out.get("requested_price") == 64500
     assert out.get("expiration") == "GTC"

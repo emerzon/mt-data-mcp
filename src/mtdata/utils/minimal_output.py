@@ -983,12 +983,13 @@ def _normalize_trade_payload(  # noqa: C901
     _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
     _maybe_add_trade_key(out, "protection_error", protection_error)
     _maybe_add_trade_key(out, "validation_scope", payload.get("validation_scope"))
+    for key in (
+        "preview_checks_performed",
+        "checks_not_performed",
+        "broker_validation_not_performed",
+    ):
+        _maybe_add_trade_key(out, key, payload.get(key))
     if not is_successful_dry_run_preview:
-        _maybe_add_trade_key(
-            out,
-            "broker_validation_not_performed",
-            payload.get("broker_validation_not_performed"),
-        )
         _maybe_add_trade_key(
             out, "preview_scope_summary", payload.get("preview_scope_summary")
         )
@@ -1008,11 +1009,7 @@ def _normalize_trade_payload(  # noqa: C901
             out, "actionability_reason", payload.get("actionability_reason")
         )
 
-    warnings_out = (
-        []
-        if is_successful_dry_run_preview
-        else _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
-    )
+    warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
     if warnings_out:
         out["warnings"] = warnings_out
 
@@ -1336,6 +1333,8 @@ def _normalize_barrier_optimize_payload(
         "usable_for_live_trading",
         "execution_blockers",
         "recommendation",
+        "remediation",
+        "search_config",
         "warnings",
     ):
         value = payload.get(key)
@@ -1429,6 +1428,7 @@ def _normalize_barrier_prob_payload(
         "usable_for_live_trading",
         "execution_blockers",
         "status_reason",
+        "remediation",
         "already_hit",
         "denoise_status",
         "denoise_error",

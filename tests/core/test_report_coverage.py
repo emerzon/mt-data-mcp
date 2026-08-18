@@ -925,6 +925,27 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
     assert "sections" not in out
 
 
+def test_report_generate_compact_preserves_symbol_price_precision():
+    fn = _get_report_generate()
+    sections = _make_full_sections()
+    sections["context"] = {
+        "price_precision": 5,
+        "last_snapshot": {"close": 1.15825},
+    }
+    rep = _make_report(sections=sections)
+    mock_basic = MagicMock(return_value=rep)
+
+    with patch(
+        "mtdata.core.report_templates.template_basic", mock_basic, create=True
+    ):
+        out = fn("EURUSD", template="basic", horizon=3, detail="compact")
+
+    market = out["summary_structured"]["market"]
+    assert market["close"] == 1.15825
+    assert market["price_precision"] == 5
+    assert "Last close 1.15825" in out["summary_structured"]["narrative"]
+
+
 def test_report_generate_compact_exposes_template_focus():
     fn = _get_report_generate()
     sections = _make_full_sections()

@@ -151,11 +151,11 @@ def _symbol_precision_for_field(
     lowered = text.lower()
     if lowered == "mid" or lowered.endswith(".mid"):
         return min(15, precision + 1)
-    if lowered in _SYMBOL_PRICE_PRECISION_FIELDS:
+    if lowered in _SYMBOL_PRICE_PRECISION_FIELDS or lowered.endswith("_price"):
         return precision
     if "." in text:
         child = text.split(".")[-1].lower()
-        if child in _SYMBOL_PRICE_PRECISION_FIELDS:
+        if child in _SYMBOL_PRICE_PRECISION_FIELDS or child.endswith("_price"):
             return precision
     return None
 

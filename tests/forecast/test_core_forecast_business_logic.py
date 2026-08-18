@@ -3114,6 +3114,9 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
             "forecast_step_seconds": 3600,
             "forecast": [{"time": "2026-05-29 21:00", "value": 100.123456789}],
             "params_used": {"alpha": 0.2, "trend_slope": -0.000012493247702752267},
+            "last_price": 1.15825,
+            "last_price_source": "candle_close",
+            "digits": 5,
             "price_precision": 5,
             "last_price_age_seconds": 12.5,
             "last_price_stale": False,
@@ -3128,6 +3131,10 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
     assert result["last_price_stale"] is False
     assert result["data_stale"] is False
     assert result["history_policy_ok"] is True
+    assert result["last_price"] == 1.15825
+    assert result["last_price_source"] == "candle_close"
+    assert result["digits"] == 5
+    assert result["price_precision"] == 5
     # Compact mode folds point/interval series into forecast rows and drops the
     # parallel technical arrays/metadata fields.
     assert "forecast_time" not in result
@@ -3924,6 +3931,7 @@ def test_forecast_barrier_prob_compact_keeps_execution_blockers():
             "usable_for_live_trading": False,
             "usable_for_live_trading_basis": "model_history_and_reference_quote",
             "execution_blockers": ["live_reference_quote_not_used"],
+            "remediation": {"next_steps": ["Fetch a current two-sided quote."]},
         },
         ForecastBarrierProbRequest(
             symbol="EURUSD",
@@ -3939,6 +3947,9 @@ def test_forecast_barrier_prob_compact_keeps_execution_blockers():
 
     assert out["usable_for_live_trading"] is False
     assert out["execution_blockers"] == ["live_reference_quote_not_used"]
+    assert out["remediation"] == {
+        "next_steps": ["Fetch a current two-sided quote."]
+    }
 
 
 def test_forecast_barrier_optimize_uses_reference_price_context():
@@ -4290,6 +4301,8 @@ def test_options_chain_logs_finish_event(caplog, monkeypatch):
 def test_options_barrier_compact_keeps_numeric_pricing_inputs():
     payload = {
         "success": True,
+        "option_status": "knocked_out",
+        "status": "expired",
         "price": 1.23,
         "delta": 0.4,
         "params_used": {
@@ -4314,6 +4327,8 @@ def test_options_barrier_compact_keeps_numeric_pricing_inputs():
         "rate_unit": "decimal_fraction",
         "volatility_unit": "decimal_fraction",
     }
+    assert result["option_status"] == "knocked_out"
+    assert result["status"] == "expired"
 
 
 def test_options_tools_support_compact_and_full_detail(monkeypatch):

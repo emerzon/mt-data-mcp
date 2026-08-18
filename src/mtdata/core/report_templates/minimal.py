@@ -114,6 +114,10 @@ def template_minimal(
             timezone_label = ctx.get("timezone") if isinstance(ctx, dict) else None
             if timezone_label not in (None, "", [], {}):
                 ctx_obj["timezone"] = timezone_label
+            for key in ("price_precision", "price_point"):
+                value = ctx.get(key) if isinstance(ctx, dict) else None
+                if value not in (None, "", [], {}):
+                    ctx_obj[key] = value
             if compact:
                 ctx_obj["trend_compact"] = compact
                 ctx_obj["trend_compact_legend"] = dict(_TREND_COMPACT_LEGEND)

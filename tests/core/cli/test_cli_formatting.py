@@ -233,6 +233,27 @@ class TestFormatResultForCli:
             assert "spread: 0.00001" in rendered
             assert "1e-05" not in rendered
 
+    def test_conformal_toon_uses_declared_symbol_precision_for_last_price(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "detail": "compact",
+                "symbol": "EURUSD",
+                "method": "theta",
+                "forecast_time": ["2026-08-18T01:00Z"],
+                "forecast_price": [1.15925],
+                "last_price": 1.15825,
+                "last_price_source": "candle_close",
+                "digits": 5,
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_conformal_intervals",
+        )
+
+        assert "last_price: 1.15825" in result
+        assert "last_price: 1.158\n" not in result
+
     @patch("mtdata.core.cli.formatting._shared_minimal", side_effect=TypeError("bad"))
     def test_toon_format_fallback(self, mock_shared):
         result = _format_result_for_cli(
@@ -780,6 +801,7 @@ class TestFormatResultForCli:
                 "total_count": 6,
                 "offset": 0,
                 "has_more": True,
+                "pagination": {"offset": 0, "returned": 1, "has_more": True},
                 "scanned_symbols": 6,
                 "evaluated_symbols": 6,
                 "matched_symbols": 6,
@@ -789,6 +811,16 @@ class TestFormatResultForCli:
                 "freshness": "fresh",
                 "stale_rows": 0,
                 "data_as_of": "2026-05-29 19:00",
+                "price_change_period": {
+                    "requested_bars": 100,
+                    "returned_bars": 100,
+                },
+                "data_as_of_range": {
+                    "earliest": "2026-05-29 18:00",
+                    "latest": "2026-05-29 19:00",
+                },
+                "bar_time_alignment": "latest_completed_bar",
+                "price_change_comparable": True,
                 "session_status": "closed_weekend",
                 "units": {"close": "price"},
             },
@@ -814,6 +846,11 @@ class TestFormatResultForCli:
         assert "total_count: 6" in result
         assert "offset: 0" in result
         assert "has_more: true" in result
+        assert "pagination:" in result
+        assert "price_change_period:" in result
+        assert "data_as_of_range:" in result
+        assert "bar_time_alignment: latest_completed_bar" in result
+        assert "price_change_comparable: true" in result
         assert "freshness: fresh" in result
         assert "stale_rows: 0" in result
         assert 'data_as_of: "2026-05-29 19:00"' in result

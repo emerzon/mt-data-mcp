@@ -1035,7 +1035,10 @@ class TestFormatToToon:
                 "levels": {"PP": 1.16893, "R1": 1.17456, "S1": 1.16321},
                 "nearest": {"support": {"value": 1.16893}},
                 "interval_summary": {"first_low": 1.16987, "first_high": 1.17453},
-            }
+                "lower_price": 1.17,
+                "upper_price": 1.18,
+            },
+            price_precision=5,
         )
 
         assert "current_price: 1.17221" in result
@@ -1048,6 +1051,8 @@ class TestFormatToToon:
         assert "S1: 1.16321" in result
         assert "value: 1.16893" in result
         assert "first_low: 1.16987" in result
+        assert "lower_price: 1.17000" in result
+        assert "upper_price: 1.18000" in result
 
 
 class TestFormatResultMinimal:
@@ -1507,6 +1512,8 @@ class TestFormatResultMinimal:
                 "usable_for_live_trading": False,
                 "execution_blockers": ["ev_edge_conflict"],
                 "recommendation": "avoid",
+                "remediation": {"next_steps": ["Use a wider TP/SL search grid."]},
+                "search_config": {"tp_min": 0.25, "tp_max": 2.0},
                 "best": {
                     "tp": 1.0,
                     "sl": 0.5,
@@ -1524,6 +1531,9 @@ class TestFormatResultMinimal:
         assert "tradable: false" in compact
         assert "usable_for_live_trading: false" in compact
         assert "recommendation: avoid" in compact
+        assert "remediation.next_steps" in compact
+        assert "Use a wider TP/SL search grid." in compact
+        assert "search_config:" in compact
         assert "phantom_profit_risk: true" in compact
 
     def test_compact_patterns_output_prefers_highlights(self):
@@ -1713,6 +1723,9 @@ class TestFormatResultMinimal:
             "requested_tp": 67200.0,
             "expiration": "GTC",
             "validation_scope": "request_routing_only",
+            "preview_checks_performed": ["request_routing", "local_safety_requirements"],
+            "checks_not_performed": ["margin_estimate"],
+            "broker_validation_not_performed": ["broker_acceptance", "fillability"],
             "preview_scope_summary": "Routing and local request checks only.",
             "message": "Dry run only. No order was sent to MT5.",
             "actionability_reason": "Dry run did not execute MT5 or broker-side validation. Use this preview for request routing only.",
@@ -1732,10 +1745,13 @@ class TestFormatResultMinimal:
         assert "stop_loss: 64000" in result
         assert "take_profit: 67200" in result
         assert "validation_scope: request_routing_only" in result
+        assert "preview_checks_performed[2]: request_routing,local_safety_requirements" in result
+        assert "checks_not_performed[1]: margin_estimate" in result
+        assert "broker_validation_not_performed[2]: broker_acceptance,fillability" in result
         assert "message: Dry run only. No order was sent to MT5." in result
         assert "preview_scope_summary" not in result
         assert "actionability_reason" not in result
-        assert "warnings" not in result
+        assert "warnings[1]: Dry run only." in result
 
 
 @pytest.mark.parametrize(

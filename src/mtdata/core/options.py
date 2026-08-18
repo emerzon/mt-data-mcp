@@ -430,6 +430,8 @@ def _apply_options_detail(
                 "valuation_date_source",
                 "maturity_date",
                 "time_to_maturity_years",
+                "option_status",
+                "status",
                 "price",
                 "delta",
                 "gamma",

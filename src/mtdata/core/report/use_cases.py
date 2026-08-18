@@ -1508,10 +1508,22 @@ def run_report_generate(  # noqa: C901
                 ema50 = get_indicator_value(last, "EMA_50")
                 rsi = get_indicator_value(last, "RSI_14")
                 market_summary: Dict[str, Any] = {}
+                price_precision = ctx.get("price_precision")
+                try:
+                    price_precision = int(price_precision)
+                except (TypeError, ValueError):
+                    price_precision = None
                 if price is not None:
-                    summ.append(f"close={format_number(price)}")
+                    price_text = (
+                        format_number(price, decimals=price_precision)
+                        if price_precision is not None
+                        else format_number(price)
+                    )
+                    summ.append(f"close={price_text}")
                     market_summary["close"] = price
                     market_summary["price_source"] = "last_completed_candle_close"
+                    if price_precision is not None:
+                        market_summary["price_precision"] = price_precision
                 if price is not None and ema20 is not None and ema50 is not None:
                     trend_note = (
                         "above EMAs"
@@ -1946,7 +1958,14 @@ def run_report_generate(  # noqa: C901
                 market_summary = summary_structured.get("market")
                 if isinstance(market_summary, dict) and market_summary.get("close") is not None:
                     trend_note = market_summary.get("trend")
-                    close_text = format_number(market_summary.get("close"))
+                    price_precision = market_summary.get("price_precision")
+                    close_text = (
+                        format_number(
+                            market_summary.get("close"), decimals=price_precision
+                        )
+                        if isinstance(price_precision, int)
+                        else format_number(market_summary.get("close"))
+                    )
                     if trend_note:
                         narrative_parts.append(f"Last close {close_text} ({trend_note}).")
                     else:

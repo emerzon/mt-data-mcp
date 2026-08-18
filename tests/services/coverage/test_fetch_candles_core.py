@@ -124,7 +124,10 @@ class TestFetchCandlesCore(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
-    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(digits=5, point=0.00001),
+    )
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
@@ -136,6 +139,8 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['symbol'], 'EURUSD')
         self.assertEqual(result['timeframe'], 'H1')
+        self.assertEqual(result['price_precision'], 5)
+        self.assertEqual(result['price_point'], 0.00001)
         self.assertEqual(result['volume_type'], 'tick_count')
         self.assertRegex(result["data"][0]["time"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$")
 

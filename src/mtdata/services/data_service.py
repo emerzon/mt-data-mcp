@@ -2796,6 +2796,8 @@ def fetch_candles(  # noqa: C901
             "requested_limit": candles_requested,
             "returned_count": candles_returned,
             "as_of": format_epoch_utc(as_of_epoch),
+            "price_precision": int(price_digits),
+            "price_point": price_point,
             **time_normalization,
             **volume_metadata,
             **_candle_time_convention_metadata(timeframe),
