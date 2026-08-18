@@ -875,9 +875,11 @@ def _symbol_tick_snapshot(
     quote_epoch = tick_epoch(tick)
     if quote_epoch is not None:
         try:
-            out["last_tick_time"] = format_datetime_utc(
+            quote_as_of = format_datetime_utc(
                 datetime.fromtimestamp(quote_epoch, tz=timezone.utc)
             )
+            out["quote_as_of"] = quote_as_of
+            out["last_tick_time"] = quote_as_of
             freshness = build_tick_freshness_context(
                 symbol,
                 tick_epoch=quote_epoch,
@@ -886,6 +888,7 @@ def _symbol_tick_snapshot(
                 age_rounder=lambda value: round(value, 3),
             )
             if freshness:
+                out["data_age_seconds"] = freshness["data_age_seconds"]
                 out["last_tick_age_seconds"] = freshness["data_age_seconds"]
                 out["tick_freshness"] = freshness.get("freshness_state", "unknown")
                 for key in (
@@ -1299,7 +1302,9 @@ def _check_symbol_market_status(
                 result["authoritative_clock"] = authoritative_clock
         for key in (
             "tick_available",
+            "quote_as_of",
             "last_tick_time",
+            "data_age_seconds",
             "last_tick_age_seconds",
             "data_stale",
             "usable_for_live_trading",
@@ -1378,6 +1383,9 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
         return row
     keys = (
         "symbol",
+        "quote_as_of",
+        "data_age_seconds",
+        "data_stale",
         "status",
         "status_confidence",
         "heuristic_note",

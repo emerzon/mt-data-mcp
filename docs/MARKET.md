@@ -100,8 +100,16 @@ This is the “what is my account and this symbol doing right now?” bundle:
 session, quote, and open or pending exposure. It does not send orders.
 
 For “is this equity venue open?” vs “can I open a *new* position on this
-broker symbol?”, `market_status` reports both. `can_open_new_positions` needs
+broker symbol?", `market_status` reports both. `can_open_new_positions` needs
 a live-ready quote and an active session, not only a tradable symbol mode.
+
+The symbol forms of `market_ticker`, `market_status`, and `market_snapshot`
+share `quote_as_of` as the UTC tick join key. They also expose root
+`data_age_seconds`, `data_stale`, and `usable_for_live_trading` whenever a tick
+is available, so a pre-trade workflow can apply one freshness contract across
+all three responses. Tool-specific aliases such as ticker `time`, status
+`last_tick_time`, and compact snapshot `snapshot.time` remain descriptive
+views of the same quote instant.
 
 ---
 

@@ -400,7 +400,9 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["tick_freshness"] == "live"
     assert result["tick_available"] is True
     assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
+    assert result["quote_as_of"] == "2024-01-02T12:00:00Z"
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
+    assert result["data_age_seconds"] == 0.0
     assert result["is_tradable"] is True
     assert result["is_tradable_confidence"] == "broker_trade_mode"
     assert result["market_clock"] == "2024-01-02T12:00:00Z"
@@ -445,6 +447,8 @@ def test_symbol_tick_snapshot_prefers_millisecond_timestamp() -> None:
     )
 
     assert result["last_tick_time"] == "1970-01-01T00:16:40Z"
+    assert result["quote_as_of"] == "1970-01-01T00:16:40Z"
+    assert result["data_age_seconds"] == 0.25
     assert result["last_tick_age_seconds"] == 0.25
     assert result["tick_freshness"] == "live"
 

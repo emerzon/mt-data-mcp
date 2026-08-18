@@ -35,6 +35,7 @@ def test_compact_ticker_preserves_delayed_freshness_label() -> None:
         {
             "success": True,
             "symbol": "EURUSD",
+            "quote_as_of": "2026-08-18T17:45:25Z",
             "freshness": "delayed, tick 1m 3s ago",
             "freshness_state": "delayed",
             "data_age_seconds": 63.0,
@@ -44,6 +45,7 @@ def test_compact_ticker_preserves_delayed_freshness_label() -> None:
     )
 
     assert result["freshness"] == "delayed, tick 1m 3s ago"
+    assert result["quote_as_of"] == "2026-08-18T17:45:25Z"
     assert result["freshness_state"] == "delayed"
     assert result["data_stale"] is True
 

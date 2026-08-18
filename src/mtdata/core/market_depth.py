@@ -177,6 +177,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread_valid",
         "spread_quality",
         "market_status_reason",
+        "quote_as_of",
         "time",
         "time_epoch",
         "timezone",
@@ -919,6 +920,7 @@ def market_ticker(  # noqa: C901
                 out["spread_cost_currency"] = spread_cost_currency
             if tick_time is not None:
                 out["time_epoch"] = float(tick_time)
+                out["quote_as_of"] = _format_time_second_explicit(float(tick_time))
                 if _use_ctz:
                     out["time"] = _format_time_second_explicit_local(float(tick_time))
                 else:
@@ -1014,6 +1016,7 @@ def market_ticker(  # noqa: C901
                     "price_currency": price_currency,
                 }
                 for key in (
+                    "quote_as_of",
                     "time",
                     "time_epoch",
                     "timezone",

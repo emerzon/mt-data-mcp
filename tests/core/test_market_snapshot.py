@@ -670,9 +670,17 @@ def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
             return {
                 "success": True,
                 "symbol": symbol,
+                "bid": 1.1001,
+                "ask": 1.1003,
                 "mid": 1.1002,
-                "time": "2023-11-14 22:13 UTC",
-                "time_epoch": 1_700_000_000,
+                "time": "2026-06-15 19:34 UTC",
+                "time_epoch": 1_781_552_046,
+                "data_age_seconds": 2.0,
+                "data_stale": False,
+                "usable_for_live_trading": True,
+                "usable_for_live_trading_basis": (
+                    "quote_age_market_session_and_positive_spread"
+                ),
             }
         if name == "levels":
             return {"success": True, "supports": [], "resistances": []}
@@ -689,7 +697,13 @@ def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
         result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
 
     assert result["as_of"] == "2026-06-15T19:34:08Z"
-    assert result["quote_as_of"] == "2023-11-14T22:13:20Z"
+    assert result["quote_as_of"] == "2026-06-15T19:34:06Z"
+    assert result["data_age_seconds"] == 2.0
+    assert result["data_stale"] is False
+    assert result["usable_for_live_trading"] is True
+    assert result["usable_for_live_trading_basis"] == (
+        "quote_age_market_session_and_positive_spread"
+    )
     assert result["assembled_at"] == "2026-06-15T19:34:08Z"
     assert result["timezone"] == "UTC"
 

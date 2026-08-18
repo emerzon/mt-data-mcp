@@ -883,7 +883,8 @@ def market_snapshot(
     Timestamp semantics: `as_of` and `assembled_at` record in UTC when this
     snapshot payload was built; top-level `timezone` is `UTC` and `source`
     identifies the MT5 feed. `quote_as_of` records the normalized source quote
-    time when available. The quote runs
+    time when available; `data_stale` and `usable_for_live_trading` expose the
+    delivered quote's root readiness contract. The quote runs
     after analytical sections and its freshness is revalidated at `assembled_at`,
     so live-readiness describes the delivered snapshot rather than an early step.
     """
@@ -953,10 +954,20 @@ def market_snapshot(
         }
         if quote_as_of is not None:
             payload["quote_as_of"] = quote_as_of
+        quote_payload = section_payloads.get("quote")
+        if isinstance(quote_payload, dict):
+            for key in (
+                "data_age_seconds",
+                "data_stale",
+                "usable_for_live_trading",
+                "usable_for_live_trading_basis",
+                "freshness_state",
+            ):
+                if quote_payload.get(key) is not None:
+                    payload[key] = quote_payload[key]
         if resolved_symbol != str(symbol or "").strip():
             payload["symbol_input"] = symbol
         payload = attach_mt5_source(payload)
-        quote_payload = section_payloads.get("quote")
         if isinstance(quote_payload, dict):
             if isinstance(quote_payload.get("source"), dict):
                 payload["source"] = dict(quote_payload["source"])
