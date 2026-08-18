@@ -763,34 +763,36 @@ def _limit_option_contracts(
     *,
     option_type: str,
     limit: int,
+    offset: int = 0,
     underlying_price: Any,
 ) -> List[Dict[str, Any]]:
-    """Apply a bounded, two-sided selection when both sides are requested."""
+    """Return one deterministic page, balanced by side when both are requested."""
     safe_limit = max(1, int(limit))
+    safe_offset = max(0, int(offset))
     try:
         spot = float(underlying_price)
     except Exception:
         spot = float("nan")
 
-    def _key(item: Dict[str, Any]) -> tuple[float, float]:
+    def _key(item: Dict[str, Any]) -> tuple[float, float, str]:
         strike = float(item.get("strike", 0.0))
         distance = abs(strike - spot) if spot == spot else float("inf")
-        return distance, strike
+        contract = str(item.get("contract") or item.get("symbol") or "")
+        return distance, strike, contract
 
     if option_type != "both":
-        return sorted(items, key=_key)[:safe_limit]
+        ordered = sorted(items, key=_key)
+        return ordered[safe_offset : safe_offset + safe_limit]
 
     calls = sorted((item for item in items if item.get("side") == "call"), key=_key)
     puts = sorted((item for item in items if item.get("side") == "put"), key=_key)
-    selected: List[Dict[str, Any]] = []
+    ordered: List[Dict[str, Any]] = []
     for index in range(max(len(calls), len(puts))):
-        if index < len(calls) and len(selected) < safe_limit:
-            selected.append(calls[index])
-        if index < len(puts) and len(selected) < safe_limit:
-            selected.append(puts[index])
-        if len(selected) >= safe_limit:
-            break
-    return selected
+        if index < len(calls):
+            ordered.append(calls[index])
+        if index < len(puts):
+            ordered.append(puts[index])
+    return ordered[safe_offset : safe_offset + safe_limit]
 
 
 def _option_side_coverage(items: List[Dict[str, Any]]) -> str:
@@ -810,9 +812,12 @@ def _option_selection_metadata(
     *,
     option_type: str,
     limit: int,
+    offset: int = 0,
 ) -> Dict[str, Any]:
     available_count = len(available)
-    truncated = len(selected) < available_count
+    returned = len(selected)
+    page_end = min(available_count, max(0, int(offset)) + returned)
+    more_available = max(0, available_count - page_end)
     return {
         "available_count": available_count,
         "available_count_basis": "after_side_and_liquidity_filters",
@@ -822,26 +827,19 @@ def _option_selection_metadata(
         "available_puts_count": sum(
             1 for item in available if item.get("side") == "put"
         ),
-        "returned": len(selected),
-        "truncated": truncated,
-        "has_more": truncated,
+        "pagination": {
+            "total": available_count,
+            "returned": returned,
+            "offset": max(0, int(offset)),
+            "limit": int(limit),
+            "has_more": more_available > 0,
+            "more_available": more_available,
+        },
         "selection_order": (
             "nearest_strike_to_underlying_balanced_by_side"
             if option_type == "both"
             else "nearest_strike_to_underlying"
         ),
-        "complete_request": (
-            {
-                "limit": available_count,
-                "instruction": (
-                    f"Repeat the request with limit={available_count} to return "
-                    "the complete filtered chain."
-                ),
-            }
-            if truncated
-            else None
-        ),
-        "applied_limit": int(limit),
     }
 
 
@@ -1027,6 +1025,7 @@ def _get_tradier_options_chain(
     min_open_interest: int,
     min_volume: int,
     limit: int,
+    offset: int,
 ) -> Dict[str, Any]:
     symbol_norm = str(symbol).upper().strip()
     expirations = _extract_tradier_expiration_dates(
@@ -1068,6 +1067,7 @@ def _get_tradier_options_chain(
         available,
         option_type=option_type,
         limit=limit,
+        offset=offset,
         underlying_price=underlying_price,
     )
     return {
@@ -1093,6 +1093,7 @@ def _get_tradier_options_chain(
             normalized,
             option_type=option_type,
             limit=limit,
+            offset=offset,
         ),
         "options": normalized,
     }
@@ -1127,6 +1128,7 @@ def _get_yahoo_options_chain(
     min_open_interest: int,
     min_volume: int,
     limit: int,
+    offset: int,
 ) -> Dict[str, Any]:
     symbol_norm = str(symbol).upper().strip()
     base = _fetch_yahoo_options_payload(symbol_norm)
@@ -1213,6 +1215,7 @@ def _get_yahoo_options_chain(
         available,
         option_type=option_type,
         limit=limit,
+        offset=offset,
         underlying_price=underlying_price,
     )
 
@@ -1239,6 +1242,7 @@ def _get_yahoo_options_chain(
             combined,
             option_type=option_type,
             limit=limit,
+            offset=offset,
         ),
         "options": combined,
     }
@@ -1263,6 +1267,7 @@ def get_options_chain(
     min_open_interest: int = 0,
     min_volume: int = 0,
     limit: int = 200,
+    offset: int = 0,
 ) -> Dict[str, Any]:
     """Fetch options chain (calls/puts) for a symbol and expiration."""
     try:
@@ -1275,12 +1280,15 @@ def get_options_chain(
         )
         min_vol = _to_numeric(min_volume, int, 0, field_name="min_volume")
         max_rows = _to_numeric(limit, int, 200, field_name="limit")
+        start_index = _to_numeric(offset, int, 0, field_name="offset")
         if min_oi < 0:
             raise ValueError("min_open_interest must be greater than or equal to 0.")
         if min_vol < 0:
             raise ValueError("min_volume must be greater than or equal to 0.")
         if max_rows < 1:
             raise ValueError("limit must be greater than or equal to 1.")
+        if start_index < 0:
+            raise ValueError("offset must be greater than or equal to 0.")
 
         return _run_options_provider_query(
             operation="options chain",
@@ -1291,6 +1299,7 @@ def get_options_chain(
                 min_open_interest=min_oi,
                 min_volume=min_vol,
                 limit=max_rows,
+                offset=start_index,
             ),
             tradier_func=lambda: _get_tradier_options_chain(
                 symbol=symbol_norm,
@@ -1299,6 +1308,7 @@ def get_options_chain(
                 min_open_interest=min_oi,
                 min_volume=min_vol,
                 limit=max_rows,
+                offset=start_index,
             ),
         )
     except Exception as e:

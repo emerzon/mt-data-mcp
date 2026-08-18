@@ -4490,12 +4490,15 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "available_count_basis": "after_side_and_liquidity_filters",
             "available_calls_count": 13,
             "available_puts_count": 12,
-            "returned": 1,
-            "truncated": True,
-            "has_more": True,
+            "pagination": {
+                "total": 25,
+                "returned": 1,
+                "offset": kwargs["offset"],
+                "limit": kwargs["limit"],
+                "has_more": True,
+                "more_available": 24,
+            },
             "selection_order": "nearest_strike_to_underlying_balanced_by_side",
-            "complete_request": {"limit": 25},
-            "applied_limit": kwargs["limit"],
             "contract_terms_summary": {
                 "provider_classifications": ["REGULAR"],
                 "multiplier_statuses": [
@@ -4596,9 +4599,16 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     compact_chain = raw_chain("AAPL", detail="compact")
     assert compact_chain["detail"] == "compact"
     assert compact_chain["available_count"] == 25
-    assert compact_chain["returned"] == 1
-    assert compact_chain["truncated"] is True
-    assert compact_chain["complete_request"] == {"limit": 25}
+    assert compact_chain["pagination"] == {
+        "total": 25,
+        "returned": 1,
+        "offset": 0,
+        "limit": 20,
+        "has_more": True,
+        "more_available": 24,
+    }
+    assert "has_more" not in compact_chain
+    assert "limit" not in compact_chain
     assert "contract_size" not in compact_chain
     assert compact_chain["contract_terms_summary"][
         "uniform_contract_multiplier"
@@ -4677,8 +4687,20 @@ def test_options_chain_uses_detail_aware_default_limits(monkeypatch):
     import mtdata.services.options_service as options_service
 
     def fake_chain(**kwargs):
-        captured.append(kwargs["limit"])
-        return {"success": True, "options": [], "count": 0}
+        captured.append((kwargs["limit"], kwargs["offset"]))
+        return {
+            "success": True,
+            "options": [],
+            "count": 0,
+            "pagination": {
+                "total": 0,
+                "returned": 0,
+                "offset": kwargs["offset"],
+                "limit": kwargs["limit"],
+                "has_more": False,
+                "more_available": 0,
+            },
+        }
 
     monkeypatch.setattr(options_service, "get_options_chain", fake_chain)
     monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
@@ -4686,11 +4708,12 @@ def test_options_chain_uses_detail_aware_default_limits(monkeypatch):
     compact = raw_chain(symbol="AAPL")
     full = raw_chain(symbol="AAPL", detail="full")
 
-    assert captured == [20, 200]
-    assert compact["limit"] == 20
-    assert compact["limit_source"] == "compact_default"
-    assert full["limit"] == 200
-    assert full["limit_source"] == "full_default"
+    page = raw_chain(symbol="AAPL", limit=5, offset=10)
+
+    assert captured == [(20, 0), (200, 0), (5, 10)]
+    assert compact["pagination"]["limit"] == 20
+    assert full["pagination"]["limit"] == 200
+    assert page["pagination"]["offset"] == 10
 
 
 def test_forecast_barrier_optimize_routes_profile_args(monkeypatch):

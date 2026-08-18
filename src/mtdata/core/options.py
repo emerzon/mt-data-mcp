@@ -401,14 +401,8 @@ def _apply_options_detail(
                 "available_count_basis",
                 "available_calls_count",
                 "available_puts_count",
-                "returned",
-                "truncated",
-                "has_more",
+                "pagination",
                 "selection_order",
-                "complete_request",
-                "applied_limit",
-                "limit",
-                "limit_source",
                 "warnings",
                 "detail",
             )
@@ -592,6 +586,7 @@ def options_chain(
     min_open_interest: Annotated[int, Field(ge=0)] = 0,
     min_volume: Annotated[int, Field(ge=0)] = 0,
     limit: Annotated[Optional[int], Field(ge=1)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots using the configured chain provider.
@@ -605,7 +600,8 @@ def options_chain(
 
     Compact output defaults to the 20 contracts nearest the underlying price,
     balanced across calls and puts. Full detail defaults to 200 contracts.
-    Pass ``limit`` explicitly to override either default.
+    Pass ``limit`` explicitly to override either default and ``offset`` to
+    request the next deterministic page.
     """
     from ..services.options_service import get_options_chain as _impl
 
@@ -643,6 +639,7 @@ def options_chain(
                 ),
                 _validate_options_integer("min_volume", min_volume, minimum=0),
                 _validate_options_integer("limit", effective_limit, minimum=1),
+                _validate_options_integer("offset", offset, minimum=0),
             )
             if error is not None
         ),
@@ -664,6 +661,7 @@ def options_chain(
             expiration=expiration_value,
             option_type=option_type,
             limit=effective_limit,
+            offset=offset,
             detail=detail,
             func=lambda: gate,
         )
@@ -677,20 +675,15 @@ def options_chain(
         detail=detail,
         func=lambda: _apply_options_detail(
             _attach_options_symbol_mapping(
-                {
-                    **_impl(
-                        symbol=symbol_value,
-                        expiration=expiration_value,
-                        option_type=option_type,
-                        min_open_interest=int(min_open_interest),
-                        min_volume=int(min_volume),
-                        limit=effective_limit,
-                    ),
-                    "limit": effective_limit,
-                    "limit_source": (
-                        "request" if limit is not None else f"{detail_mode}_default"
-                    ),
-                },
+                _impl(
+                    symbol=symbol_value,
+                    expiration=expiration_value,
+                    option_type=option_type,
+                    min_open_interest=int(min_open_interest),
+                    min_volume=int(min_volume),
+                    limit=effective_limit,
+                    offset=int(offset),
+                ),
                 requested_symbol=symbol,
                 provider_symbol=symbol_value,
             ),

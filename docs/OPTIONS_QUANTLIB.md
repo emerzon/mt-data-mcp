@@ -71,13 +71,17 @@ mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 | `--min-open-interest` | 0 | Minimum open interest filter; must be at least 0 |
 | `--min-volume` | 0 | Minimum volume filter; must be at least 0 |
 | `--limit` | 20 compact; 200 full | Maximum contracts to return; must be at least 1 |
+| `--offset` | 0 | Zero-based index of the first contract in this page |
 
-Chain results report exact filtered `available_count` and `returned` values,
-plus `truncated`, `has_more`, and the
-nearest-strike `selection_order`. When a limit omits contracts,
-`complete_request.limit` gives the value to pass with `--limit` to retrieve the
-complete filtered chain. This is a bounded nearest-strike selection, not offset
-pagination.
+Chain results report exact filtered `available_count`, the nearest-strike
+`selection_order`, and the standard nested `pagination` object. Calls and puts
+share one deterministic order. Advance `--offset` by the returned page size
+while `pagination.has_more` is true:
+
+```bash
+mtdata-cli options_chain AAPL --limit 20 --offset 0 --json
+mtdata-cli options_chain AAPL --limit 20 --offset 20 --json
+```
 
 Each option row reports the provider's `contract_size` classification,
 `contract_multiplier`, multiplier status, deliverable status, and

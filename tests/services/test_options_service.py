@@ -182,9 +182,14 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["option_type"] == "call"
     assert out["count"] == 1
     assert out["available_count"] == 1
-    assert out["truncated"] is False
-    assert out["has_more"] is False
-    assert out["complete_request"] is None
+    assert out["pagination"] == {
+        "total": 1,
+        "returned": 1,
+        "offset": 0,
+        "limit": 10,
+        "has_more": False,
+        "more_available": 0,
+    }
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
@@ -232,6 +237,7 @@ def test_option_contract_terms_fail_closed_for_adjusted_and_missing_metadata():
         ({"min_open_interest": -1}, "min_open_interest"),
         ({"min_volume": -1}, "min_volume"),
         ({"limit": 0}, "limit"),
+        ({"offset": -1}, "offset"),
     ],
 )
 def test_get_options_chain_rejects_out_of_range_controls_before_provider(
@@ -269,6 +275,43 @@ def test_both_option_sides_share_the_global_limit():
     assert {item["strike"] for item in selected[:2]} == {100.0}
 
 
+def test_both_option_sides_support_nonoverlapping_offset_pages():
+    items = [
+        {"side": side, "strike": strike, "contract": f"{side}-{strike}"}
+        for side in ("call", "put")
+        for strike in (90.0, 100.0, 110.0)
+    ]
+
+    first = osvc._limit_option_contracts(
+        items,
+        option_type="both",
+        limit=4,
+        offset=0,
+        underlying_price=100.0,
+    )
+    second = osvc._limit_option_contracts(
+        items,
+        option_type="both",
+        limit=4,
+        offset=4,
+        underlying_price=100.0,
+    )
+
+    assert [item["contract"] for item in first] == [
+        "call-100.0",
+        "put-100.0",
+        "call-90.0",
+        "put-90.0",
+    ]
+    assert [item["contract"] for item in second] == [
+        "call-110.0",
+        "put-110.0",
+    ]
+    assert {item["contract"] for item in first}.isdisjoint(
+        item["contract"] for item in second
+    )
+
+
 def test_single_option_side_is_limited_nearest_to_spot():
     items = [
         {"side": "call", "strike": strike, "contract": f"call-{strike}"}
@@ -285,7 +328,7 @@ def test_single_option_side_is_limited_nearest_to_spot():
     assert [item["strike"] for item in selected] == [100.0, 95.0, 105.0]
 
 
-def test_option_selection_metadata_discloses_truncation_and_recovery():
+def test_option_selection_metadata_uses_normalized_pagination():
     available = [
         {"side": side, "strike": strike}
         for side in ("call", "put")
@@ -310,17 +353,15 @@ def test_option_selection_metadata_discloses_truncation_and_recovery():
         "available_count_basis": "after_side_and_liquidity_filters",
         "available_calls_count": 3,
         "available_puts_count": 3,
-        "returned": 4,
-        "truncated": True,
-        "has_more": True,
-        "selection_order": "nearest_strike_to_underlying_balanced_by_side",
-        "complete_request": {
-            "limit": 6,
-            "instruction": (
-                "Repeat the request with limit=6 to return the complete filtered chain."
-            ),
+        "pagination": {
+            "total": 6,
+            "returned": 4,
+            "offset": 0,
+            "limit": 4,
+            "has_more": True,
+            "more_available": 2,
         },
-        "applied_limit": 4,
+        "selection_order": "nearest_strike_to_underlying_balanced_by_side",
     }
 
 
@@ -429,7 +470,8 @@ def test_get_options_chain_uses_configured_tradier_provider(monkeypatch):
     assert out["underlying_price"] == 101.0
     assert out["count"] == 1
     assert out["available_count"] == 1
-    assert out["truncated"] is False
+    assert out["pagination"]["has_more"] is False
+    assert out["pagination"]["offset"] == 0
     assert out["calls_count"] == 1
     assert out["puts_count"] == 0
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
