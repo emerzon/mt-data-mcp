@@ -1020,6 +1020,23 @@ class TestFinvizTools:
             },
         ]
 
+        next_result = raw(limit=2, offset=2)
+        assert next_result["items"] == [
+            {
+                "symbol": "USDJPY",
+                "display_symbol": "USD/JPY",
+                "name": "US Dollar / Japanese Yen",
+            }
+        ]
+        assert next_result["pagination"] == {
+            "total": 3,
+            "returned": 1,
+            "offset": 2,
+            "limit": 2,
+            "has_more": False,
+            "more_available": 0,
+        }
+
     @patch("mtdata.core.finviz.get_forex_performance")
     def test_finviz_forex_filters_symbol_aliases(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex

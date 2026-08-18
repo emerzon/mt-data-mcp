@@ -694,6 +694,7 @@ def _normalize_finviz_market_payload(  # noqa: C901
     *,
     rows_key: str,
     limit: Optional[int] = None,
+    offset: Optional[int] = None,
     detail: str = "compact",
     tool: str,
     request: Dict[str, Any],
@@ -746,7 +747,8 @@ def _normalize_finviz_market_payload(  # noqa: C901
         default=requested_limit,
     )
     limit_value = min(requested_limit, effective_limit)
-    limited_rows = normalized_rows[:limit_value]
+    offset_value = _coerce_finviz_offset(offset)
+    limited_rows = normalized_rows[offset_value : offset_value + limit_value]
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         output_rows = [
             _compact_finviz_market_row(row, rows_key=rows_key)
@@ -784,7 +786,7 @@ def _normalize_finviz_market_payload(  # noqa: C901
         else None
     )
     pagination_has_more = bool(
-        out.get("has_more") or available > len(limited_rows)
+        out.get("has_more") or available > offset_value + len(limited_rows)
     )
     out.pop("omitted_item_count", None)
     _apply_finviz_pagination_contract(
@@ -792,6 +794,7 @@ def _normalize_finviz_market_payload(  # noqa: C901
         returned=len(output_rows),
         limit=limit_value,
         page=int(out.get("page") or request.get("page") or 1),
+        offset=offset_value if offset is not None else None,
         total=pagination_total,
         total_lower_bound=pagination_lower_bound,
         has_more=pagination_has_more,
@@ -940,6 +943,7 @@ def _apply_finviz_pagination_contract(
     returned: int,
     limit: int,
     page: int = 1,
+    offset: Optional[int] = None,
     total: Any = None,
     total_lower_bound: Any = None,
     has_more: Optional[bool] = None,
@@ -947,7 +951,11 @@ def _apply_finviz_pagination_contract(
     """Replace Finviz page aliases with the canonical offset pagination block."""
     limit_value = max(1, int(limit))
     page_value = max(1, int(page))
-    offset_value = (page_value - 1) * limit_value
+    offset_value = (
+        (page_value - 1) * limit_value
+        if offset is None
+        else _coerce_finviz_offset(offset)
+    )
     returned_value = max(0, int(returned))
 
     exact_total: Optional[int]
@@ -3288,7 +3296,11 @@ def _compact_finviz_insider_activity_payload(
 
 
 def _compact_finviz_ratings_payload(
-    result: Dict[str, Any], *, detail: str, limit: Optional[int]
+    result: Dict[str, Any],
+    *,
+    detail: str,
+    limit: Optional[int],
+    offset: Optional[int] = 0,
 ) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_ratings")
     if error is not None or not result.get("success"):
@@ -3300,22 +3312,26 @@ def _compact_finviz_ratings_payload(
     out = dict(result)
     normalized_rows = _normalize_finviz_rating_rows(rows)
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
-    limited_rows = normalized_rows[:limit_value]
-    omitted = max(0, len(normalized_rows) - len(limited_rows))
+    offset_value = _coerce_finviz_offset(offset)
+    limited_rows = normalized_rows[offset_value : offset_value + limit_value]
+    omitted = max(
+        0,
+        len(normalized_rows) - offset_value - len(limited_rows),
+    )
     out["ratings"] = limited_rows
     out["row_key"] = "ratings"
     out["count"] = len(limited_rows)
     out["pagination"] = build_pagination_meta(
         total=len(normalized_rows),
         returned=len(limited_rows),
-        offset=0,
+        offset=offset_value,
         limit=max(1, limit_value),
     )
     out["detail"] = detail_mode
     if detail_mode == "full":
         if omitted:
             out["show_all_hint"] = (
-                f"Increase --limit to {len(normalized_rows)} to view all ratings."
+                f"Use --offset {offset_value + len(limited_rows)} for the next ratings page."
             )
         return out
     compact_rows = [_compact_finviz_rating_row(row) for row in limited_rows]
@@ -3325,7 +3341,7 @@ def _compact_finviz_ratings_payload(
     }
     if omitted:
         out["show_all_hint"] = (
-            f"Set --detail full or --limit {len(normalized_rows)} to view all ratings."
+            f"Use --offset {offset_value + len(limited_rows)} for the next ratings page."
         )
     return out
 
@@ -3820,6 +3836,7 @@ def finviz_ratings(
     symbol: str,
     detail: Literal["compact", "full"] = "compact",
     limit: Annotated[int, Field(ge=1)] = 3,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -3836,6 +3853,8 @@ def finviz_ratings(
         latest limited rows plus a latest-rating summary.
     limit : int
         Maximum rating rows to return (default 3).
+    offset : int
+        Zero-based rating-row offset for deterministic pagination.
     Returns
     -------
     dict
@@ -3853,6 +3872,7 @@ def finviz_ratings(
                 get_stock_ratings(symbol_norm),
                 detail=detail,
                 limit=int(limit),
+                offset=int(offset),
             ),
             requested_symbol=symbol,
             finviz_ticker=symbol_norm,
@@ -3860,7 +3880,12 @@ def finviz_ratings(
 
     return _run_logged_tool(
         "finviz_ratings",
-        {"symbol": symbol, "detail": detail, "limit": limit},
+        {
+            "symbol": symbol,
+            "detail": detail,
+            "limit": limit,
+            "offset": offset,
+        },
         _run,
     )
 
@@ -4125,6 +4150,7 @@ def finviz_insider_activity(
 def finviz_forex(
     symbol: Optional[str] = None,
     limit: Annotated[int, Field(ge=1)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -4132,13 +4158,20 @@ def finviz_forex(
     
     Returns performance data for major currency pairs including
     daily change, weekly change, and other metrics.
+
+    Use offset with limit to retrieve consecutive non-overlapping rows.
     
     Returns
     -------
     dict
         Forex pairs performance data
     """
-    request = {"symbol": symbol, "limit": limit, "detail": detail}
+    request = {
+        "symbol": symbol,
+        "limit": limit,
+        "offset": offset,
+        "detail": detail,
+    }
 
     def _run() -> Dict[str, Any]:
         symbol_norm = None
@@ -4167,6 +4200,7 @@ def finviz_forex(
             get_forex_performance(),
             rows_key="pairs",
             limit=limit,
+            offset=offset,
             detail=detail,
             tool="finviz_forex",
             request=request,
@@ -4179,6 +4213,7 @@ def finviz_forex(
 @mcp.tool()
 def finviz_crypto(
     limit: Annotated[int, Field(ge=1)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -4186,13 +4221,15 @@ def finviz_crypto(
     
     Returns performance data for major cryptocurrencies including
     price, daily change, volume, and market cap.
+
+    Use offset with limit to retrieve consecutive non-overlapping rows.
     
     Returns
     -------
     dict
         Crypto performance data
     """
-    request = {"limit": limit, "detail": detail}
+    request = {"limit": limit, "offset": offset, "detail": detail}
 
     def _run() -> Dict[str, Any]:
         detail_error = _validate_finviz_detail(detail, operation="finviz_crypto")
@@ -4202,6 +4239,7 @@ def finviz_crypto(
             get_crypto_performance(),
             rows_key="coins",
             limit=limit,
+            offset=offset,
             detail=detail,
             tool="finviz_crypto",
             request=request,
@@ -4213,6 +4251,7 @@ def finviz_crypto(
 @mcp.tool()
 def finviz_futures(
     limit: Annotated[int, Field(ge=1)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -4222,13 +4261,14 @@ def finviz_futures(
     moves for major futures contracts across commodities, indices, bonds, and
     currencies, but Finviz does not expose current price or volume in this
     source. The response includes data_limitations.price when price is absent.
+    Use offset with limit to retrieve consecutive non-overlapping rows.
     
     Returns
     -------
     dict
         Futures performance data
     """
-    request = {"limit": limit, "detail": detail}
+    request = {"limit": limit, "offset": offset, "detail": detail}
 
     def _run() -> Dict[str, Any]:
         detail_error = _validate_finviz_detail(detail, operation="finviz_futures")
@@ -4238,6 +4278,7 @@ def finviz_futures(
             get_futures_performance(),
             rows_key="futures",
             limit=limit,
+            offset=offset,
             detail=detail,
             tool="finviz_futures",
             request=request,

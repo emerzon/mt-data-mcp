@@ -892,7 +892,7 @@ class TestFinvizProgressiveDisclosure:
         }
         assert result["summary"]["latest"] == expected_rows[0]
         assert result["show_all_hint"] == (
-            "Set --detail full or --limit 5 to view all ratings."
+            "Use --offset 3 for the next ratings page."
         )
 
     @patch("mtdata.core.finviz.get_stock_ratings")
@@ -907,6 +907,29 @@ class TestFinvizProgressiveDisclosure:
         assert result["count"] == 2
         assert result["pagination"]["total"] == 5
         assert result["pagination"]["more_available"] == 3
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_offset_fetches_followup_rows(self, mock_get):
+        rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
+
+        result = _unwrap(finviz_ratings)("AAPL", limit=2, offset=2)
+
+        assert [row["date"] for row in result["ratings"]] == [
+            "2026-01-03",
+            "2026-01-04",
+        ]
+        assert result["pagination"] == {
+            "total": 5,
+            "returned": 2,
+            "offset": 2,
+            "limit": 2,
+            "has_more": True,
+            "more_available": 1,
+        }
+        assert result["show_all_hint"] == (
+            "Use --offset 4 for the next ratings page."
+        )
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_compact_removes_duplicate_price_target_strings(self, mock_get):
