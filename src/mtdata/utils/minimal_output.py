@@ -1762,6 +1762,7 @@ def _normalize_forecast_methods_payload(
         else True,
     }
     for key in (
+        "catalog_source",
         "detail",
         "total",
         "total_filtered",
@@ -1881,6 +1882,9 @@ def _normalize_library_models_payload(  # noqa: C901
     library = payload.get("library")
     if not _is_empty_value(library):
         out["library"] = library
+    catalog_source = payload.get("catalog_source")
+    if not _is_empty_value(catalog_source):
+        out["catalog_source"] = catalog_source
 
     for key in ("total", "total_filtered", "available"):
         if key in payload and not _is_empty_value(payload.get(key)):

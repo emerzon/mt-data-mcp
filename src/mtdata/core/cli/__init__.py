@@ -2,12 +2,19 @@
 
 import json
 import sys
+from contextlib import redirect_stdout
 from difflib import get_close_matches
+from io import StringIO
 from typing import Optional, Sequence
 
 from ...utils.minimal_output_toon import _format_to_toon
 from ..error_envelope import build_error_payload
 from .catalog import display_program_name, format_root_help, known_command_names
+from .catalog_cache import (
+    is_cacheable_catalog_invocation,
+    load_catalog_output,
+    store_catalog_output,
+)
 from .output_format import (
     CLI_FORMAT_JSON,
     CLI_OUTPUT_FORMAT_CHOICES,
@@ -123,18 +130,56 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(rendered)
         return 2
 
+    cacheable = is_cacheable_catalog_invocation(
+        normalized_command,
+        effective_argv,
+    )
+    if cacheable:
+        cached_output = load_catalog_output(
+            command=normalized_command,
+            argv=effective_argv,
+            program=program,
+        )
+        if cached_output is not None:
+            sys.stdout.write(cached_output)
+            if not cached_output.endswith("\n"):
+                sys.stdout.write("\n")
+            return 0
+
     from . import api
+
+    def _run_api() -> int:
+        if argv is None:
+            return api.main()
+        original_argv = list(sys.argv)
+        try:
+            sys.argv = [original_argv[0], *effective_argv]
+            return api.main()
+        finally:
+            sys.argv = original_argv
 
     if effective_argv == ["shell"]:
         return api.run_shell(interactive=sys.stdin.isatty())
-    if argv is None:
-        return api.main()
+    if not cacheable:
+        return _run_api()
 
-    original_argv = list(sys.argv)
+    output_buffer = StringIO()
     try:
-        sys.argv = [original_argv[0], *effective_argv]
-        return api.main()
-    finally:
-        sys.argv = original_argv
+        with redirect_stdout(output_buffer):
+            status = _run_api()
+    except BaseException:
+        sys.stdout.write(output_buffer.getvalue())
+        raise
+    rendered_output = output_buffer.getvalue()
+    sys.stdout.write(rendered_output)
+    if status == 0 and rendered_output:
+        store_catalog_output(
+            command=normalized_command,
+            argv=effective_argv,
+            program=program,
+            output=rendered_output,
+        )
+    return status
+
 
 __all__ = ["main"]

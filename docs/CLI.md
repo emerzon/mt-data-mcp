@@ -104,6 +104,14 @@ Compact catalog output points to the versioned full parameter schema. In
 and positional/option CLI forms. Nested request objects remain linked through
 the schema's `$defs` references.
 
+One-shot `tools_list`, `forecast_list_methods`, and
+`forecast_list_library_models` results are cached on disk after a successful
+build. The key includes the command arguments, mtdata source state, relevant
+environment settings, and installed forecast-library versions. Responses expose
+`catalog_source: rebuilt|cached`; a source edit or dependency-version change
+causes an automatic rebuild. A single-library model query only discovers that
+library.
+
 ---
 
 ## Output contract

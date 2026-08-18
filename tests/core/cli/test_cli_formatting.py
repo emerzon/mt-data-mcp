@@ -1362,6 +1362,7 @@ class TestFormatResultForCli:
     def test_toon_format_compacts_forecast_list_methods_output(self):
         result = _format_result_for_cli(
             {
+                "catalog_source": "rebuilt",
                 "detail": "compact",
                 "total": 3,
                 "total_filtered": 3,
@@ -1411,6 +1412,7 @@ class TestFormatResultForCli:
         )
 
         assert "methods[2]{method,category,available,supports_ci,supports_training}" in result
+        assert "catalog_source: rebuilt" in result
         assert "category_summary" not in result
         assert "categories" not in result
         assert "params_count" not in result
@@ -1528,6 +1530,7 @@ class TestFormatResultForCli:
         result = _format_result_for_cli(
             {
                 "library": "native",
+                "catalog_source": "rebuilt",
                 "models": ["analog", "theta"],
                 "capabilities": [
                     {
@@ -1553,6 +1556,7 @@ class TestFormatResultForCli:
         )
 
         assert "models[2]{model,available}" in result
+        assert "catalog_source: rebuilt" in result
         assert "analog,true" in result
         assert "Nearest-neighbor analog forecast using pattern matching." not in result
         assert "capabilities" not in result

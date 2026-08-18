@@ -156,6 +156,7 @@ def tools_list(
             }
         if gated_tools:
             catalog["gated_tools"] = gated_tools
+        catalog["catalog_source"] = "rebuilt"
         return catalog
 
     return run_logged_operation(

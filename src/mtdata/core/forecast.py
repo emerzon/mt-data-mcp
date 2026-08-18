@@ -953,7 +953,7 @@ def forecast_list_library_models(
     - limit: page size. Omitted compact output uses 20, distributed round-robin
       across libraries; omitted full output is unbounded.
     """
-    return _run_forecast_operation(
+    result = _run_forecast_operation(
         "forecast_list_library_models",
         library=library,
         show_unavailable=show_unavailable,
@@ -972,6 +972,10 @@ def forecast_list_library_models(
             offset=offset,
         ),
     )
+    if isinstance(result, dict) and not result.get("error"):
+        result = dict(result)
+        result["catalog_source"] = "rebuilt"
+    return result
 
 
 @mcp.tool()
@@ -1078,7 +1082,7 @@ def forecast_list_methods(
     profile='quickstart' for a small native baseline set.
     """
     search_term_value = str(search_term or "").strip() or None
-    return _run_forecast_operation(
+    result = _run_forecast_operation(
         "forecast_list_methods",
         detail=detail,
         limit=limit,
@@ -1113,6 +1117,10 @@ def forecast_list_methods(
             show_unavailable=show_unavailable,
         ),
     )
+    if isinstance(result, dict) and not result.get("error"):
+        result = dict(result)
+        result["catalog_source"] = "rebuilt"
+    return result
 
 
 @mcp.tool()

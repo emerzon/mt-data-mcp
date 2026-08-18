@@ -2117,6 +2117,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
     out_native = raw_list_models("native", detail="full")
     assert out_native["library"] == "native"
+    assert out_native["catalog_source"] == "rebuilt"
     assert isinstance(out_native["models"], list)
     assert out_native["models"][0]["method"]
     assert out_native["models"][0]["available"] is True
@@ -2254,6 +2255,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     compact = _unwrap(cf.forecast_list_methods)(profile="quickstart")
+    assert compact["catalog_source"] == "rebuilt"
     assert "detail" not in compact
     assert compact["catalog_total"] == 2
     assert compact["available"] == 1
@@ -2507,6 +2509,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert _unwrap(cf.forecast_list_methods)() == {
         "methods": [1],
         "success": True,
+        "catalog_source": "rebuilt",
     }
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
@@ -2621,6 +2624,21 @@ def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     assert full_page["models_shown"] == 25
     assert full_page["filters"]["limit"] is None
     assert full_page["pagination"]["has_more"] is False
+
+
+def test_forecast_list_single_library_does_not_discover_siblings(monkeypatch):
+    requested_libraries = []
+
+    def capabilities(library, **_kwargs):
+        requested_libraries.append(library)
+        return []
+
+    monkeypatch.setattr(cf, "_get_library_forecast_capabilities", capabilities)
+
+    result = cf._forecast_list_library_models_impl("sktime")
+
+    assert result["library"] == "sktime"
+    assert requested_libraries == ["sktime"]
 
 
 def test_forecast_list_all_library_models_uses_one_global_page(monkeypatch):

@@ -105,6 +105,55 @@ def test_root_help_path_does_not_import_cli_api(capsys):
     assert "pass a broker symbol for MT5 tradability" in output
 
 
+def test_catalog_cache_hit_does_not_import_cli_api(monkeypatch, capsys):
+    import mtdata.core.cli as cli
+
+    monkeypatch.setattr(
+        cli,
+        "load_catalog_output",
+        lambda **_kwargs: (
+            '{"success":true,"catalog_source":"cached","tools":[]}\n'
+        ),
+    )
+    with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
+        status = cli.main(["tools_list", "--json"])
+
+    assert status == 0
+    assert json.loads(capsys.readouterr().out)["catalog_source"] == "cached"
+
+
+def test_catalog_cache_miss_stores_successful_rendered_output(
+    monkeypatch,
+    capsys,
+):
+    import mtdata.core.cli as cli
+    from mtdata.core.cli import api
+
+    stored = []
+    monkeypatch.setattr(cli, "load_catalog_output", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        cli,
+        "store_catalog_output",
+        lambda **kwargs: stored.append(kwargs) or True,
+    )
+    monkeypatch.setattr(
+        api,
+        "main",
+        lambda: print(
+            '{"success":true,"catalog_source":"rebuilt","tools":[]}'
+        )
+        or 0,
+    )
+
+    status = cli.main(["tools_list", "--json"])
+
+    rendered = capsys.readouterr().out
+    assert status == 0
+    assert json.loads(rendered)["catalog_source"] == "rebuilt"
+    assert stored[0]["command"] == "tools_list"
+    assert stored[0]["output"] == rendered
+
+
 def test_unknown_command_path_does_not_import_cli_api(capsys):
     from mtdata.core.cli import main
 
