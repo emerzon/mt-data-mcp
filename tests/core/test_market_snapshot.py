@@ -715,9 +715,14 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
         "quote": {
             "success": True,
             "time_epoch": 1_700_000_000.0,
+            "bid": 1.1,
+            "ask": 1.1002,
             "data_age_seconds": 29.0,
             "live_max_age_seconds": 30.0,
             "usable_for_live_trading": True,
+            "usable_for_live_trading_basis": (
+                "quote_age_market_session_and_positive_spread"
+            ),
         }
     }
 
@@ -730,6 +735,9 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
     quote = sections["quote"]
     assert quote["data_age_seconds"] == 31.0
     assert quote["usable_for_live_trading"] is False
+    assert quote["usable_for_live_trading_basis"] == (
+        "quote_age_market_session_and_positive_spread"
+    )
     assert quote["freshness_reason"] == "quote_age_exceeds_live_threshold"
     assert warning == {
         "code": "quote_expired_during_snapshot_assembly",
@@ -740,6 +748,33 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
         "quote_age_seconds": 31.0,
         "live_max_age_seconds": 30,
     }
+
+
+def test_market_snapshot_revalidation_keeps_executable_quote_basis() -> None:
+    sections = {
+        "quote": {
+            "success": True,
+            "time_epoch": 1_700_000_000.0,
+            "bid": 1.1,
+            "ask": 1.1002,
+            "usable_for_live_trading": True,
+            "usable_for_live_trading_basis": (
+                "quote_age_market_session_and_positive_spread"
+            ),
+        }
+    }
+
+    warning = snapshot_mod._revalidate_snapshot_quote(
+        sections,
+        symbol="EURUSD",
+        assembled_at_epoch=1_700_000_001.0,
+    )
+
+    assert warning is None
+    assert sections["quote"]["usable_for_live_trading"] is True
+    assert sections["quote"]["usable_for_live_trading_basis"] == (
+        "quote_age_market_session_and_positive_spread"
+    )
 
 
 def test_market_snapshot_revalidation_never_upgrades_locked_quote() -> None:

@@ -95,6 +95,7 @@ from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.quote import (
     canonical_quote_midpoint,
     canonical_quote_spread,
+    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
 )
@@ -4035,6 +4036,15 @@ def fetch_ticks(  # noqa: C901
             if isinstance(execution_quote, dict):
                 payload["usable_for_live_trading_basis"] = (
                     "quote_age_market_session_and_reconciled_spread"
+                )
+            elif (
+                isinstance(quote_for_gate, dict)
+                and quote_for_gate.get("spread_valid") is True
+            ):
+                enforce_quote_execution_readiness(
+                    payload,
+                    bid=quote_for_gate.get("bid"),
+                    ask=quote_for_gate.get("ask"),
                 )
             elif (
                 isinstance(quote_for_gate, dict)

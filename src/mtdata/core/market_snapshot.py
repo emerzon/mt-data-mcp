@@ -11,6 +11,7 @@ from ..shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_
 from ..utils.coercion import coerce_finite_float as _coerce_float
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import resolve_broker_symbol_name
+from ..utils.quote import enforce_quote_execution_readiness
 from ..utils.symbol import symbol_suggestions_from_gateway
 from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
@@ -175,7 +176,13 @@ def _revalidate_snapshot_quote(
         if prior_basis not in (None, ""):
             quote["usable_for_live_trading_basis"] = prior_basis
         return None
-    if not was_usable or quote.get("usable_for_live_trading") is True:
+    enforce_quote_execution_readiness(
+        quote,
+        bid=quote.get("bid"),
+        ask=quote.get("ask"),
+        quote_source_conflict=quote.get("quote_source_conflict"),
+    )
+    if quote.get("usable_for_live_trading") is True:
         return None
 
     warning = {

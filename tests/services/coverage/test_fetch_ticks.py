@@ -519,6 +519,24 @@ class TestFetchTicks(unittest.TestCase):
             'reconciled_one_sided_update',
         )
 
+    @patch(f'{_DS}.time.time', return_value=_NOW_TS + 1.0)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_two_sided_latest_tick_uses_executable_quote_basis(
+        self, mock_ctz, mock_info, mock_ticks, mock_time
+    ):
+        mock_ticks.return_value = _make_ticks(2)
+
+        result = fetch_ticks('EURUSD', limit=2, format='full_rows')
+
+        self.assertTrue(result['usable_for_live_trading'])
+        self.assertEqual(
+            result['usable_for_live_trading_basis'],
+            'quote_age_market_session_and_positive_spread',
+        )
+
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
