@@ -30,6 +30,7 @@ _MT5_TIMESTAMP_MODE_SERVER = "server_clock"
 _MT5_TIMESTAMP_MODE_TTL_SECONDS = 60.0
 _MT5_TIMESTAMP_MODE_FRESH_TOLERANCE_SECONDS = 15 * 60.0
 _MT5_TIMESTAMP_MODE_CLOSED_MARKET_MAX_AGE_SECONDS = 4 * 24 * 60 * 60.0
+_MT5_TIMESTAMP_MODE_PROBE_LIMIT = 64
 _mt5_timestamp_mode_cache: Dict[str, Tuple[str, float, int]] = {}
 _mt5_terminal_timestamp_mode: Optional[Tuple[str, float, int]] = None
 
@@ -495,7 +496,11 @@ def _timestamp_mode_from_tick(
     offset_seconds = _configured_server_offset_seconds(observed_now)
     tick_time = tick_epoch(tick)
     if tick_time is None:
-        return _valid_cached_timestamp_mode(symbol) or _MT5_TIMESTAMP_MODE_NATIVE
+        return (
+            _valid_cached_timestamp_mode(symbol)
+            or _valid_cached_timestamp_mode()
+            or _MT5_TIMESTAMP_MODE_NATIVE
+        )
     if offset_seconds == 0:
         return _cache_timestamp_mode(
             symbol,
@@ -532,7 +537,74 @@ def _timestamp_mode_from_tick(
             _MT5_TIMESTAMP_MODE_SERVER,
             offset_seconds=offset_seconds,
         )
-    return _valid_cached_timestamp_mode(symbol) or _MT5_TIMESTAMP_MODE_NATIVE
+    return (
+        _valid_cached_timestamp_mode(symbol)
+        or _valid_cached_timestamp_mode()
+        or _MT5_TIMESTAMP_MODE_NATIVE
+    )
+
+
+def _terminal_timestamp_probe_symbols(
+    module: Any,
+    *,
+    preferred_symbols: tuple[str, ...] = (),
+) -> list[str]:
+    """Return a bounded, deterministic set of symbols for terminal-clock probing."""
+    candidates: list[str] = []
+
+    def _add(value: Any) -> None:
+        text = str(value or "").strip()
+        if text and text.upper() not in {item.upper() for item in candidates}:
+            candidates.append(text)
+
+    for symbol in preferred_symbols:
+        _add(symbol)
+    try:
+        positions = module.positions_get()
+    except Exception:
+        positions = None
+    for row in list(positions or []):
+        _add(row.get("symbol") if isinstance(row, dict) else getattr(row, "symbol", None))
+
+    try:
+        symbol_rows = list(module.symbols_get() or [])
+    except Exception:
+        symbol_rows = []
+    symbol_rows.sort(
+        key=lambda row: (
+            not bool(row.get("visible") if isinstance(row, dict) else getattr(row, "visible", False)),
+            str(row.get("name") if isinstance(row, dict) else getattr(row, "name", "")),
+        )
+    )
+    for row in symbol_rows:
+        _add(row.get("name") if isinstance(row, dict) else getattr(row, "name", None))
+        if len(candidates) >= _MT5_TIMESTAMP_MODE_PROBE_LIMIT:
+            break
+    return candidates[:_MT5_TIMESTAMP_MODE_PROBE_LIMIT]
+
+
+def _probe_terminal_timestamp_mode(
+    module: Any,
+    *,
+    preferred_symbols: tuple[str, ...] = (),
+) -> str:
+    """Detect the terminal-wide epoch mode from any symbol with a usable tick."""
+    cached = _valid_cached_timestamp_mode()
+    if cached is not None:
+        return cached
+    for symbol in _terminal_timestamp_probe_symbols(
+        module,
+        preferred_symbols=preferred_symbols,
+    ):
+        try:
+            tick = module.symbol_info_tick(symbol)
+        except Exception:
+            tick = None
+        _timestamp_mode_from_tick(tick, symbol=symbol)
+        confident = _valid_cached_timestamp_mode(symbol)
+        if confident is not None:
+            return confident
+    return _MT5_TIMESTAMP_MODE_NATIVE
 
 
 def _timestamp_mode_for_symbol(module: Any, symbol: str) -> str:
@@ -540,7 +612,14 @@ def _timestamp_mode_for_symbol(module: Any, symbol: str) -> str:
         tick = module.symbol_info_tick(symbol)
     except Exception:
         tick = None
-    return _timestamp_mode_from_tick(tick, symbol=symbol)
+    detected = _timestamp_mode_from_tick(tick, symbol=symbol)
+    confident = _valid_cached_timestamp_mode(symbol) or _valid_cached_timestamp_mode()
+    if confident is not None:
+        return confident
+    return _probe_terminal_timestamp_mode(
+        module,
+        preferred_symbols=(str(symbol or ""),),
+    ) or detected
 
 
 def _timestamp_mode_for_object_rows(
@@ -558,7 +637,7 @@ def _timestamp_mode_for_object_rows(
             probe_symbol = ""
     if probe_symbol:
         return _timestamp_mode_for_symbol(module, probe_symbol)
-    return _cached_timestamp_mode()
+    return _probe_terminal_timestamp_mode(module)
 
 
 def _timestamp_mode_for_history_query(
@@ -583,9 +662,10 @@ def _timestamp_mode_for_history_query(
                 ).strip()
             except Exception:
                 probe_symbol = ""
-    if probe_symbol:
-        return _timestamp_mode_for_symbol(module, probe_symbol)
-    return _cached_timestamp_mode()
+    return _probe_terminal_timestamp_mode(
+        module,
+        preferred_symbols=(probe_symbol,) if probe_symbol else (),
+    )
 
 
 def _history_query_epoch(value: Any) -> float:
@@ -682,7 +762,11 @@ def _history_get_normalized(
 
 def get_mt5_timestamp_mode(symbol: Optional[str] = None) -> str:
     """Return the currently detected terminal timestamp mode."""
-    return _valid_cached_timestamp_mode(symbol) or _MT5_TIMESTAMP_MODE_NATIVE
+    return (
+        _valid_cached_timestamp_mode(symbol)
+        or _valid_cached_timestamp_mode()
+        or _MT5_TIMESTAMP_MODE_NATIVE
+    )
 
 
 def _server_epoch_to_utc(epoch_seconds: float) -> float:

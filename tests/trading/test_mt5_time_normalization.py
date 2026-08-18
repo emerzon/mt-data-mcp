@@ -431,7 +431,7 @@ def test_adapter_detects_server_clock_from_closed_market_future_tick(monkeypatch
     assert mt5_mod.get_mt5_timestamp_mode("EURUSD") == "server_clock"
 
 
-def test_stale_symbol_does_not_inherit_another_symbols_timestamp_mode(
+def test_stale_symbol_inherits_confident_terminal_timestamp_mode(
     monkeypatch,
 ) -> None:
     now = datetime(2026, 8, 14, 3, 30, tzinfo=timezone.utc)
@@ -459,8 +459,8 @@ def test_stale_symbol_does_not_inherit_another_symbols_timestamp_mode(
     assert mt5_mod._timestamp_mode_from_tick(
         stale_native_tick,
         symbol="AAPL.NAS",
-    ) == "native_utc"
-    assert mt5_mod.get_mt5_timestamp_mode("AAPL.NAS") == "native_utc"
+    ) == "server_clock"
+    assert mt5_mod.get_mt5_timestamp_mode("AAPL.NAS") == "server_clock"
 
     # Repeating the stale-symbol lookup after another live lookup is invariant.
     assert mt5_mod._timestamp_mode_from_tick(
@@ -470,7 +470,106 @@ def test_stale_symbol_does_not_inherit_another_symbols_timestamp_mode(
     assert mt5_mod._timestamp_mode_from_tick(
         stale_native_tick,
         symbol="AAPL.NAS",
-    ) == "native_utc"
+    ) == "server_clock"
+
+
+def test_closed_symbol_rates_use_live_symbol_terminal_clock_probe(monkeypatch) -> None:
+    now = datetime(2026, 8, 15, 9, 0, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    offset = 3 * 60 * 60
+    stale_tick = SimpleNamespace(
+        time=now_epoch - 12 * 60 * 60 + offset,
+        time_msc=(now_epoch - 12 * 60 * 60 + offset) * 1000,
+    )
+    live_tick = SimpleNamespace(
+        time=now_epoch + offset,
+        time_msc=(now_epoch + offset) * 1000,
+    )
+    raw_bar_epoch = now_epoch - 24 * 60 * 60 + offset
+    rows = np.array(
+        [(raw_bar_epoch, 1.15)],
+        dtype=[("time", float), ("close", float)],
+    )
+
+    module = SimpleNamespace(
+        positions_get=lambda: (),
+        symbols_get=lambda: (
+            SimpleNamespace(name="EURUSD", visible=True),
+            SimpleNamespace(name="BTCUSD", visible=True),
+        ),
+        symbol_info_tick=lambda symbol: live_tick if symbol == "BTCUSD" else stale_tick,
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: rows,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: offset,
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 180)
+
+    result = mt5_mod.MT5Adapter().copy_rates_from_pos("EURUSD", 16408, 0, 1)
+
+    assert result[0]["time"] == raw_bar_epoch - offset
+    assert mt5_mod.get_mt5_timestamp_mode("EURUSD") == "server_clock"
+    assert mt5_mod.describe_mt5_time_normalization(symbol="EURUSD")[
+        "time_normalization"
+    ] == "server_clock_to_utc"
+
+
+def test_unscoped_history_probes_terminal_and_matches_symbol_scoped_time(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 18, 1, 14, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    offset = 3 * 60 * 60
+    recent_utc = now_epoch - 60
+    raw_deal = SimpleNamespace(
+        ticket=1502890085,
+        symbol="EURUSD",
+        time=recent_utc + offset,
+    )
+    live_tick = SimpleNamespace(
+        time=now_epoch + offset,
+        time_msc=(now_epoch + offset) * 1000,
+    )
+    observed_bounds = []
+
+    def history_deals_get(dt_from, dt_to, **kwargs):
+        observed_bounds.append((dt_from, dt_to, dict(kwargs)))
+        return (raw_deal,)
+
+    module = SimpleNamespace(
+        positions_get=lambda: (),
+        symbols_get=lambda: (SimpleNamespace(name="EURUSD", visible=True),),
+        symbol_info_tick=lambda symbol: live_tick,
+        history_deals_get=history_deals_get,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: offset,
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 180)
+
+    adapter = mt5_mod.MT5Adapter()
+    unscoped = adapter.history_deals_get(now_epoch - 3600, now_epoch)
+    scoped = adapter.history_deals_get(
+        now_epoch - 3600,
+        now_epoch,
+        symbol="EURUSD",
+    )
+
+    assert unscoped[0].time == recent_utc
+    assert scoped[0].time == recent_utc
+    assert observed_bounds[0][:2] == (
+        now_epoch - 3600 + offset,
+        now_epoch + offset,
+    )
+    assert observed_bounds[1][:2] == observed_bounds[0][:2]
 
 
 def test_adapter_detects_clock_before_normalizing_positions_and_symbol_info(monkeypatch) -> None:

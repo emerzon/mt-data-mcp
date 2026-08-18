@@ -13,6 +13,7 @@ from ...utils.coercion import round_finite
 from ...utils.mt5 import (
     MT5ConnectionError,
     account_currency_from_gateway,
+    describe_mt5_time_normalization,
     ensure_mt5_connection_or_raise,
     mt5_adapter,
 )
@@ -124,6 +125,19 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         request=request,
         account_currency=account_currency_from_gateway(gateway),
     )
+    if isinstance(out, dict) and out.get("success") is True:
+        time_metadata = describe_mt5_time_normalization(symbol=request.symbol)
+        for key in (
+            "raw_time_basis",
+            "time_basis",
+            "time_normalization",
+            "broker_server_tz",
+            "broker_utc_offset_seconds",
+        ):
+            value = time_metadata.get(key)
+            if value not in (None, "", [], {}):
+                out[key] = value
+        out["raw_timestamp_mode"] = time_metadata.get("timestamp_mode")
     if (
         isinstance(out, dict)
         and out.get("success") is not False

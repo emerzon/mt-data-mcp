@@ -104,6 +104,10 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
         _mt5_epoch_to_utc(1700000000)
     )
     assert out["timezone"] == "UTC"
+    assert out["raw_time_basis"] == "mt5_utc_epoch"
+    assert out["time_basis"] == "utc"
+    assert out["raw_timestamp_mode"] == "native_utc"
+    assert out["time_normalization"] == "mt5_utc_native"
 
 
 def test_trade_history_flags_future_broker_fill_timestamp() -> None:

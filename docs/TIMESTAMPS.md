@@ -35,6 +35,9 @@ UTC request instant ──▶ MT5 adapter ──▶ terminal clock axis ──�
 - When a fresh tick is close to the configured broker offset rather than wall
   UTC, the adapter converts request bounds to the server-clock axis and
   returned `time`/`time_msc` values back to UTC exactly once.
+- Epoch encoding is a terminal-wide contract. If the requested symbol is stale,
+  the adapter probes a bounded set of visible symbols and reuses a confident
+  live-symbol mode for closed symbols and unscoped account history.
 - During a closed market, a configured positive broker offset is also applied
   when the raw tick is implausibly ahead of wall UTC but offset normalization
   places the last tick within the preceding four days. This keeps weekend
@@ -113,6 +116,9 @@ reports `raw_time_basis=mt5_server_clock_epoch`,
 `time_normalization=server_clock_to_utc` without exposing the raw mode as the
 public timestamp axis.
 The public timestamp values are UTC in both cases.
+Trade-history payloads expose the same `raw_time_basis`, `time_basis`,
+`raw_timestamp_mode`, and `time_normalization` fields, including when no symbol
+filter was supplied.
 
 MT5 stamps candles at bar open. Daily, weekly, and monthly candle rows also
 include `broker_session_date`; D1 rows include `broker_trading_day`. These
