@@ -37,6 +37,7 @@ from ..output_contract import (
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
+from ..runtime_metadata import attach_mt5_source
 from . import comments, safety, validation
 from .gateway import create_trading_gateway
 from .positions import normalize_trade_history_output
@@ -1050,10 +1051,13 @@ def trade_account_info(
         if margin_level_note:
             payload["margin_level_note"] = margin_level_note
         payload = _trade_account_payload_for_mode(payload, mode=requested_mode)
-        return ensure_common_meta(
-            payload,
-            tool_name="trade_account_info",
-            mt5_config=mt5_config,
+        return attach_mt5_source(
+            ensure_common_meta(
+                payload,
+                tool_name="trade_account_info",
+                mt5_config=mt5_config,
+            ),
+            gateway=mt5,
         )
 
     return run_logged_operation(

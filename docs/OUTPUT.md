@@ -34,10 +34,10 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 
 > **Scripting tip:** branch on `success` first, then read the tool-specific fields. On the CLI, also check the [exit code](CLI.md#exit-codes).
 
-### Broker data provenance
+### Data provenance
 
-Successful MT5 market-data, analytics, and forecast envelopes expose a root
-`source` object:
+Successful MT5 market-data, analytics, forecast, account, and broker-symbol
+status envelopes expose a root `source` object:
 
 ```json
 {
@@ -54,6 +54,13 @@ so detached results can be compared without exposing an account login or
 credentials. When account context is unavailable, `provider` remains `mt5` and
 `context_available` is false. Method-level lineage such as candle price basis or
 tick retrieval method remains in its tool-specific field.
+
+Payloads computed without MT5 identify their actual producer instead. For
+example, venue-level `market_status` uses
+`provider: mtdata_exchange_calendar` with its holiday-calendar provider.
+Pure timers omit `source` because they observe only elapsed time. A narrower
+legacy label may remain in `data_lineage`; it never replaces the structured
+root provenance object.
 
 ---
 

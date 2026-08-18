@@ -69,6 +69,11 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     assert result["success"] is True
     assert result["mode"] == "equity_exchanges"
     assert result["market_scope"] == "major_equity_exchanges"
+    assert result["source"] == {
+        "provider": "mtdata_exchange_calendar",
+        "holiday_provider": "python_holidays",
+        "context_available": True,
+    }
     assert "pass a broker symbol" in result["scope_note"].lower()
     assert result["timezone"] == "UTC"
     assert {market["venue"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
@@ -188,7 +193,12 @@ def test_market_status_reserved_venue_name_stays_in_symbol_mode(monkeypatch) -> 
 
     result = raw(symbol="ASX")
 
-    assert result == {"success": True, "mode": "symbol", "symbol": "ASX"}
+    assert result == {
+        "success": True,
+        "mode": "symbol",
+        "symbol": "ASX",
+        "source": {"provider": "mt5", "context_available": False},
+    }
     assert captured["symbol"] == "ASX"
 
 
@@ -373,6 +383,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
 
     assert result["mode"] == "symbol"
     assert result["symbol"] == "EURUSD"
+    assert result["source"] == {"provider": "mt5", "context_available": False}
     assert result["symbol_input"] == "EUR/USD"
     assert result["timezone"] == "UTC"
     assert result["status"] == "probably_open"

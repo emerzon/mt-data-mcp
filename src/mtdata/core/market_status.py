@@ -33,7 +33,7 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
-from .runtime_metadata import build_runtime_timezone_meta
+from .runtime_metadata import attach_mt5_source, build_runtime_timezone_meta
 
 logger = logging.getLogger(__name__)
 
@@ -1376,8 +1376,11 @@ def _check_symbol_market_status_batch(
     *,
     detail: str,
     timezone_display: str,
+    gateway: Any = None,
 ) -> Dict[str, Any]:
-    mt5_gateway = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
+    mt5_gateway = gateway or create_mt5_gateway(
+        ensure_connection_impl=ensure_mt5_connection_or_raise
+    )
     rows: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
     for symbol in symbols:
@@ -1523,6 +1526,9 @@ def market_status(  # noqa: C901
 
     def _run() -> Dict[str, Any]:
         if symbol_mode:
+            mt5_gateway = create_mt5_gateway(
+                ensure_connection_impl=ensure_mt5_connection_or_raise
+            )
             symbol_warnings = _market_status_symbol_mode_warnings(
                 region=region,
             )
@@ -1532,18 +1538,20 @@ def market_status(  # noqa: C901
                     symbol_list,
                     detail=detail_mode,
                     timezone_display=timezone_display_mode,
+                    gateway=mt5_gateway,
                 )
                 if symbol_warnings:
                     batch_result["warnings"] = symbol_warnings
-                return batch_result
+                return attach_mt5_source(batch_result, gateway=mt5_gateway)
             result = _check_symbol_market_status(
                 str(symbol),
                 detail=detail_mode,
                 timezone_display=timezone_display_mode,
+                gateway=mt5_gateway,
             )
             if symbol_warnings and not result.get("error"):
                 result["warnings"] = symbol_warnings
-            return result
+            return attach_mt5_source(result, gateway=mt5_gateway)
 
         # Map regions to markets
         region_map = {
@@ -1671,6 +1679,11 @@ def market_status(  # noqa: C901
         }
         payload = {
             "success": True,
+            "source": {
+                "provider": "mtdata_exchange_calendar",
+                "holiday_provider": "python_holidays",
+                "context_available": True,
+            },
             "mode": "equity_venue" if venue_mode else "equity_exchanges",
             "market_scope": (
                 "single_equity_venue" if venue_mode else "major_equity_exchanges"

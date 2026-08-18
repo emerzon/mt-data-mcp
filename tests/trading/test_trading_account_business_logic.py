@@ -162,6 +162,8 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
             trade_allowed=True,
             trade_expert=True,
             login=123456,
+            server="Demo-Server",
+            company="Broker LLC",
         ),
         terminal_info=lambda: None,
         build_trade_preflight=lambda account_info=None, terminal_info=None: {
@@ -182,7 +184,11 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
         out = raw(detail="compact")
 
     assert out["balance"] == 10000.0
-    assert out["source"] == "mt5_account_snapshot"
+    assert out["source"]["provider"] == "mt5"
+    assert out["source"]["broker_company"] == "Broker LLC"
+    assert out["source"]["server"] == "Demo-Server"
+    assert "login" not in out["source"]
+    assert out["data_lineage"] == "mt5_account_snapshot"
     assert out["timezone"] == "UTC"
     assert out["retrieved_at"].endswith("Z")
     assert "as_of" not in out

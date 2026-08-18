@@ -884,6 +884,7 @@ def test_symbol_less_duration_timer_completes_when_clock_expires() -> None:
     assert result["criteria"]["watch_for"] == []
     assert result["criteria"]["watch_for_inferred"] is False
     assert result["timer_only"] is True
+    assert "source" not in result
 
 
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:

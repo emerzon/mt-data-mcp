@@ -226,6 +226,8 @@ def run_wait_event(
         ),
     )
     payload = to_dict(result) if isinstance(result, (Ok, Err)) else result
+    if not _wait_event_needs_gateway(request):
+        return payload
     return attach_mt5_source(payload, gateway=gateway)
 
 
