@@ -424,6 +424,30 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_tick_counts_name_copy_ticks_all_and_quote_update_bases(
+        self, mock_ctz, mock_info, mock_ticks,
+    ):
+        ticks = _make_ticks(4)
+        for tick, flags in zip(ticks, (2, 4, 6, 4), strict=True):
+            tick["flags"] = flags
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks("EURUSD", limit=4, format="summary")
+
+        self.assertEqual(result["tick_count"], 4)
+        self.assertEqual(result["tick_count_event_basis"], "mt5_copy_ticks_all_records")
+        self.assertEqual(result["quote_update_count"], 4)
+        self.assertEqual(
+            result["quote_update_count_event_basis"],
+            "records_with_bid_or_ask_update_flag",
+        )
+        self.assertEqual(result["bid_update_count"], 2)
+        self.assertEqual(result["ask_update_count"], 3)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_zero_spread_snapshots_preserve_both_quote_sides(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(3)
         ticks[0].update({"bid": 1.1000, "ask": 1.1000, "flags": 4})
@@ -898,6 +922,31 @@ class TestFetchTicks(unittest.TestCase):
                              simplify={'mode': 'select', 'points': 5})
         self.assertTrue(result.get('success'))
         self.assertLessEqual(result['count'], 20)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_simplify_reports_overall_target_and_returned_rows(
+        self, mock_ctz, mock_info, mock_ticks,
+    ):
+        mock_ticks.return_value = _make_ticks(235)
+
+        for target in (20, 50, 100):
+            with self.subTest(target=target):
+                result = fetch_ticks(
+                    "EURUSD",
+                    limit=235,
+                    format="rows",
+                    simplify={"mode": "select", "method": "lttb", "points": target},
+                )
+
+                self.assertTrue(result.get("success"), result)
+                self.assertEqual(result["count"], target)
+                self.assertEqual(result["simplify"]["points"], target)
+                self.assertEqual(result["simplify"]["target_points"], target)
+                self.assertEqual(result["simplify"]["returned_rows"], target)
+                self.assertLess(result["simplify"]["per_column_target"], target)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())

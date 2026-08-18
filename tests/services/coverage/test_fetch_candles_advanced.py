@@ -215,8 +215,9 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
 
         self.assertEqual(observed["close"], [10.0, 20.0, 30.0])
         self.assertEqual(df["close"].tolist(), [1.0, 2.0, 3.0])
-        self.assertEqual(df["test"].tolist(), [20.0, 40.0, 60.0])
-        self.assertEqual(columns, ["test"])
+        self.assertNotIn("test", df.columns)
+        self.assertEqual(df["test_dn"].tolist(), [20.0, 40.0, 60.0])
+        self.assertEqual(columns, ["test_dn"])
 
     @patch(_MT5_CONFIG)
     @patch(f'{_DS}._normalize_denoise_spec')

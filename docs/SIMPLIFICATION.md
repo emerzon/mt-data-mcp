@@ -37,6 +37,11 @@ When `simplify` is enabled, mtdata selects a subset of rows that approximates th
 - `simplified: true`
 - `simplify: {mode, method, points, original_rows, returned_rows, ...}`
 
+`points` and `target_points` are the overall requested row target;
+`returned_rows` is the actual result size. Multi-column tick selection can also
+report `per_column_target`, an internal sampling budget that is combined and
+refined to the overall target.
+
 ---
 
 ## Key Parameters

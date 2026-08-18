@@ -243,7 +243,11 @@ and zero-volume fields, but always include `spread_valid`; the response-level
 `last_unavailable` and `volume_fields` describe omissions. The volume fields
 describe the current last trade, not a row-level tick count; use full-detail
 `flags` to identify trade-change events. Candle rows continue to use
-`tick_volume` for the broker's per-bar tick count.
+`tick_volume` for the broker's per-bar Bid-update count. Tick history uses all
+`COPY_TICKS_ALL` records, so its `tick_count` can be larger when ask-only updates
+occur. Use `bid_update_count` to compare the tape with candle `tick_volume`;
+the response fields `tick_volume_event_basis` and `tick_count_event_basis`
+make both definitions explicit.
 
 See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
 

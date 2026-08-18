@@ -142,6 +142,11 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertEqual(result['price_precision'], 5)
         self.assertEqual(result['price_point'], 0.00001)
         self.assertEqual(result['volume_type'], 'tick_count')
+        self.assertEqual(
+            result["tick_volume_event_basis"],
+            "mt5_broker_bar_bid_updates",
+        )
+        self.assertEqual(result["tick_volume_tape_equivalent"], "bid_update_count")
         self.assertRegex(result["data"][0]["time"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$")
 
     @patch(_MT5_CONFIG)

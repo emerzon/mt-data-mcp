@@ -13,6 +13,12 @@ from .freshness import (
 )
 
 TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
+TICK_VOLUME_EVENT_BASIS = "mt5_broker_bar_bid_updates"
+TICK_VOLUME_TAPE_EQUIVALENT = "bid_update_count"
+TICK_VOLUME_COMPARISON_NOTE = (
+    "MT5 candle tick_volume follows Bid-chart updates. It can differ from "
+    "data_fetch_ticks.tick_count when COPY_TICKS_ALL includes ask-only updates."
+)
 
 FRESHNESS_ANCHOR_QUERY_EXPECTED_END = "query_expected_end"
 FRESHNESS_ANCHOR_WALL_CLOCK = "wall_clock"
@@ -31,6 +37,9 @@ def attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
         "mt5_tick_volume",
     }:
         payload["volume_semantics"] = TICK_VOLUME_SEMANTICS
+        payload["tick_volume_event_basis"] = TICK_VOLUME_EVENT_BASIS
+        payload["tick_volume_tape_equivalent"] = TICK_VOLUME_TAPE_EQUIVALENT
+        payload["tick_volume_comparison_note"] = TICK_VOLUME_COMPARISON_NOTE
 
 
 def normalize_policy_relaxed(value: Any) -> bool:

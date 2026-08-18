@@ -56,6 +56,9 @@ from ..utils.market_metadata import (
     FRESHNESS_ANCHOR_WALL_CLOCK,
     FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
     FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
+    TICK_VOLUME_COMPARISON_NOTE,
+    TICK_VOLUME_EVENT_BASIS,
+    TICK_VOLUME_TAPE_EQUIVALENT,
     build_tick_freshness_context,
 )
 
@@ -128,6 +131,9 @@ from ..utils.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TICK_COUNT_EVENT_BASIS = "mt5_copy_ticks_all_records"
+_QUOTE_UPDATE_COUNT_EVENT_BASIS = "records_with_bid_or_ask_update_flag"
 
 
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
@@ -1612,6 +1618,9 @@ def _candle_volume_metadata(headers: List[str]) -> Dict[str, Any]:
         meta["volume_note"] = (
             "MT5 tick_volume is broker tick count for the bar, not exchange traded volume."
         )
+        meta["tick_volume_event_basis"] = TICK_VOLUME_EVENT_BASIS
+        meta["tick_volume_tape_equivalent"] = TICK_VOLUME_TAPE_EQUIVALENT
+        meta["tick_volume_comparison_note"] = TICK_VOLUME_COMPARISON_NOTE
         units["tick_volume"] = "broker_tick_count"
     if "real_volume" in headers:
         meta["real_volume_type"] = "traded_volume"
@@ -1855,6 +1864,26 @@ def _apply_indicator_stage(
     ]
     ti_cols = list(dict.fromkeys([*reported_columns, *created_columns]))
     ti_cols = _normalize_indicator_columns_for_display(df, ti_cols)
+    if denoised_sources:
+        rename_map: Dict[str, str] = {}
+        renamed_columns: List[str] = []
+        for column in ti_cols:
+            denoised_name = (
+                column if column.endswith(suffix) else f"{column}{suffix}"
+            )
+            if (
+                denoised_name != column
+                and column in df.columns
+                and denoised_name not in df.columns
+                and denoised_name not in rename_map.values()
+            ):
+                rename_map[column] = denoised_name
+                renamed_columns.append(denoised_name)
+            else:
+                renamed_columns.append(column)
+        if rename_map:
+            df.rename(columns=rename_map, inplace=True)
+        ti_cols = renamed_columns
     _extend_unique_headers(headers, ti_cols)
 
     if denoise and ti_cols:
@@ -2988,6 +3017,10 @@ def fetch_candles(  # noqa: C901
                     if "pre_ti" in denoise_stages
                     else "raw_ohlcv"
                 )
+                if "pre_ti" in denoise_stages:
+                    payload["indicator_column_suffix"] = str(
+                        (denoise or {}).get("suffix") or "_dn"
+                    )
             if "post_ti" in denoise_stages:
                 pipeline.append("denoise_post_ti")
             payload["processing_pipeline"] = pipeline
@@ -3316,8 +3349,14 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "duration_seconds": out.get("duration_seconds"),
         "tick_rate_per_second": out.get("tick_rate_per_second"),
         "tick_count": out.get("tick_count", out.get("count")),
+        "tick_count_event_basis": out.get("tick_count_event_basis"),
         "trade_event_count": out.get("trade_event_count"),
         "quote_update_count": out.get("quote_update_count"),
+        "quote_update_count_event_basis": out.get(
+            "quote_update_count_event_basis"
+        ),
+        "bid_update_count": out.get("bid_update_count"),
+        "ask_update_count": out.get("ask_update_count"),
         "timezone": out.get("timezone"),
         "stats": {"spread": compact_spread},
     }
@@ -3489,6 +3528,11 @@ def fetch_ticks(  # noqa: C901
                 "symbol": symbol,
                 "count": 0,
                 "tick_count": 0,
+                "tick_count_event_basis": _TICK_COUNT_EVENT_BASIS,
+                "quote_update_count": 0,
+                "quote_update_count_event_basis": _QUOTE_UPDATE_COUNT_EVENT_BASIS,
+                "bid_update_count": 0,
+                "ask_update_count": 0,
                 "data": [],
                 "empty": True,
                 "empty_reason": "no_ticks_in_range",
@@ -3639,6 +3683,11 @@ def fetch_ticks(  # noqa: C901
             update_type in {"bid_only_update", "ask_only_update"}
             for update_type in quote_update_types
         )
+        bid_update_count = int(sum(bid_changed_flags))
+        ask_update_count = int(sum(ask_changed_flags))
+        quote_update_count = int(
+            sum(flag & quote_update_mask != 0 for flag in flags)
+        )
         zero_spread_count = sum(
             quote_type == "bid_ask"
             and (
@@ -3725,6 +3774,14 @@ def fetch_ticks(  # noqa: C901
             if simplify_present
             else SIMPLIFY_DEFAULT_MODE
         )
+        simplify_target_points: Optional[int] = None
+        if simplify_present and simplify_mode != "resample":
+            try:
+                simplify_target_points = _choose_simplify_points(
+                    original_count, simplify_used
+                )
+            except Exception:
+                simplify_target_points = None
 
         df_ticks = pd.DataFrame({
             "__epoch": _epochs,
@@ -4071,10 +4128,12 @@ def fetch_ticks(  # noqa: C901
                 "duration_seconds": duration_seconds,
                 "tick_rate_per_second": tick_rate_per_second,
                 "tick_count": int(len(df_stats)),
+                "tick_count_event_basis": _TICK_COUNT_EVENT_BASIS,
                 "trade_event_count": int(sum(trade_events)),
-                "quote_update_count": int(
-                    sum(flag & quote_update_mask != 0 for flag in flags)
-                ),
+                "quote_update_count": quote_update_count,
+                "quote_update_count_event_basis": _QUOTE_UPDATE_COUNT_EVENT_BASIS,
+                "bid_update_count": bid_update_count,
+                "ask_update_count": ask_update_count,
                 "timezone": _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz),
                 "stats": {
                     "spread": (
@@ -4244,10 +4303,12 @@ def fetch_ticks(  # noqa: C901
             trade_event_mask = df_stats["trade_event"].astype(bool)
             trade_event_count = int(trade_event_mask.sum())
             out["tick_count"] = int(len(df_stats))
+            out["tick_count_event_basis"] = _TICK_COUNT_EVENT_BASIS
             out["trade_event_count"] = trade_event_count
-            out["quote_update_count"] = int(
-                sum(flag & quote_update_mask != 0 for flag in flags)
-            )
+            out["quote_update_count"] = quote_update_count
+            out["quote_update_count_event_basis"] = _QUOTE_UPDATE_COUNT_EVENT_BASIS
+            out["bid_update_count"] = bid_update_count
+            out["ask_update_count"] = ask_update_count
             if detailed_stats:
                 out["stats"]["tick_count"] = {
                     "kind": "tick_count",
@@ -4391,9 +4452,7 @@ def fetch_ticks(  # noqa: C901
                 payload["units"] = units
             payload["tick_count"] = int(original_count)
             payload["trade_event_count"] = int(sum(trade_events))
-            payload["quote_update_count"] = int(
-                sum(flag & quote_update_mask != 0 for flag in flags)
-            )
+            payload["quote_update_count"] = quote_update_count
             _add_tick_summary_fields(payload)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -4407,6 +4466,11 @@ def fetch_ticks(  # noqa: C901
                     + (["volume"] if has_volume else [])
                     + (["volume_real"] if has_real_volume else [])
                 ]
+                meta["original_rows"] = int(original_count)
+                meta["returned_rows"] = int(len(rows))
+                if simplify_target_points is not None:
+                    meta["points"] = int(simplify_target_points)
+                    meta["target_points"] = int(simplify_target_points)
                 payload["simplify"] = meta
             _add_tick_data_quality(payload)
             _add_tick_last_quality(payload)
@@ -4426,7 +4490,11 @@ def fetch_ticks(  # noqa: C901
                     cols.append('volume')
                 if has_real_volume:
                     cols.append('volume_real')
-                n_out = _choose_simplify_points(original_count, simplify_used)
+                n_out = (
+                    simplify_target_points
+                    if simplify_target_points is not None
+                    else _choose_simplify_points(original_count, simplify_used)
+                )
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
                 params_accum: Dict[str, Any] = {}
@@ -4583,9 +4651,7 @@ def fetch_ticks(  # noqa: C901
             payload["units"] = units
         payload["tick_count"] = int(original_count)
         payload["trade_event_count"] = int(sum(trade_events))
-        payload["quote_update_count"] = int(
-            sum(flag & quote_update_mask != 0 for flag in flags)
-        )
+        payload["quote_update_count"] = quote_update_count
         _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -4616,6 +4682,19 @@ def fetch_ticks(  # noqa: C901
                             meta[key] = (simplify or {})[key]
             except Exception:
                 pass
+            meta["returned_rows"] = int(len(rows))
+            if simplify_target_points is not None:
+                meta["points"] = int(simplify_target_points)
+                meta["target_points"] = int(simplify_target_points)
+                meta["per_column_target"] = max(
+                    3,
+                    int(
+                        round(
+                            simplify_target_points
+                            / max(1, len(meta.get("columns") or []))
+                        )
+                    ),
+                )
             payload["simplify"] = meta
         return _json_safe_payload(payload)
     except Exception as e:

@@ -60,8 +60,12 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "symbol",
     "count",
     "tick_count",
+    "tick_count_event_basis",
     "trade_event_count",
     "quote_update_count",
+    "quote_update_count_event_basis",
+    "bid_update_count",
+    "ask_update_count",
     "feed_tier",
     "data",
     "empty",
@@ -1118,7 +1122,14 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
                 projected_fields.update(str(key) for key in row if str(key) != "time")
     payload.pop("ohlcv_filter_applied", None)
     if not projected_fields or projected_fields.isdisjoint({"tick_volume", "volume"}):
-        for key in ("volume_type", "volume_unit", "volume_semantics"):
+        for key in (
+            "volume_type",
+            "volume_unit",
+            "volume_semantics",
+            "tick_volume_event_basis",
+            "tick_volume_tape_equivalent",
+            "tick_volume_comparison_note",
+        ):
             payload.pop(key, None)
     if not projected_fields or "real_volume" not in projected_fields:
         for key in ("real_volume_type", "real_volume_unit"):
@@ -1611,6 +1622,11 @@ def _normalize_tick_query_error(
                 "symbol": request.symbol,
                 "count": 0,
                 "tick_count": 0,
+                "tick_count_event_basis": "mt5_copy_ticks_all_records",
+                "quote_update_count": 0,
+                "quote_update_count_event_basis": "records_with_bid_or_ask_update_flag",
+                "bid_update_count": 0,
+                "ask_update_count": 0,
                 "data": [],
                 "empty": True,
                 "empty_reason": "no_ticks_in_range",

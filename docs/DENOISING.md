@@ -54,7 +54,9 @@ Tip: `GET /api/denoise/methods` (see [WEB_API.md](WEB_API.md)) reports availabil
 
 ### Pre-Indicator (`when=pre_ti`)
 Add a suffixed denoised price series, then calculate indicators on the smoothed
-values while retaining broker OHLC in the canonical columns.
+values while retaining broker OHLC in the canonical columns. Indicators derived
+from those smoothed inputs use the same suffix (`rsi_14_dn`, for example), so
+they cannot be mistaken for indicators calculated from the raw `close` column.
 
 **Use when:** You want smoother inputs for trend estimation.
 
