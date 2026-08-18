@@ -422,7 +422,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("options_chain", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "
         "Omit to use the next live listed expiration (skips the same-day weekly "
-        "after the regular US cash close). Explicit expired dates are labeled."
+        "after the regular US cash close). A listed date is labeled live or "
+        "expired; an unlisted date returns the provider's current expiration list."
     ),
     ("options_heston_calibrate", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "

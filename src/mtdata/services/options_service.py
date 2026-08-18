@@ -260,6 +260,35 @@ def _select_options_expiration(
     return expirations[0], "expired", True
 
 
+def _expiration_not_listed_payload(
+    *,
+    symbol: str,
+    expiration: str,
+    expiration_status: str,
+    expirations: List[str],
+    provider: str,
+) -> Dict[str, Any]:
+    """Return a typed, actionable response for an unlisted expiration."""
+    return {
+        "success": False,
+        "error": (
+            f"Requested expiration {expiration} is not listed for {symbol} by "
+            f"the {provider.title()} options provider."
+        ),
+        "error_code": "options_expiration_not_listed",
+        "provider": provider,
+        "symbol": symbol,
+        "expiration": expiration,
+        "expiration_status": expiration_status,
+        "expirations": list(expirations),
+        "remediation": (
+            "Choose a date from expirations or omit expiration to use the next "
+            "live listed expiration."
+        ),
+        "related_tools": ["options_expirations"],
+    }
+
+
 def _build_yahoo_session() -> requests.Session:
     """Create a configured Yahoo HTTP session."""
     return requests.Session()
@@ -479,6 +508,12 @@ def _run_options_provider_query(
                     for item_provider, error in failures
                 ],
             )
+
+        if (
+            isinstance(payload, dict)
+            and payload.get("error_code") == "options_expiration_not_listed"
+        ):
+            return payload
 
         provider_error = _provider_error_from_payload(payload)
         if provider_error is None:
@@ -1056,10 +1091,13 @@ def _get_tradier_options_chain(
         expiration,
     )
     if chosen_expiry not in expirations:
-        return {
-            "error": f"Requested expiration {chosen_expiry} not available for {symbol_norm}",
-            "expirations": expirations,
-        }
+        return _expiration_not_listed_payload(
+            symbol=symbol_norm,
+            expiration=chosen_expiry,
+            expiration_status=expiration_status,
+            expirations=expirations,
+            provider="tradier",
+        )
     quote: Dict[str, Any] = {}
     try:
         quote = _extract_tradier_quote(_fetch_tradier_quote_payload(symbol_norm))
@@ -1161,10 +1199,13 @@ def _get_yahoo_options_chain(
     )
     chosen_expiry_epoch = int(available_map.get(chosen_expiry_ymd, -1))
     if chosen_expiry_epoch < 0:
-        return {
-            "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
-            "expirations": sorted(available_map),
-        }
+        return _expiration_not_listed_payload(
+            symbol=symbol_norm,
+            expiration=chosen_expiry_ymd,
+            expiration_status=expiration_status,
+            expirations=sorted(available_map),
+            provider="yahoo",
+        )
 
     payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
     quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}

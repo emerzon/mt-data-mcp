@@ -406,10 +406,15 @@ def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
         },
     )
 
-    out = osvc.get_options_chain(symbol="AAPL", expiration="2026-05-15")
-    assert "error" in out
-    assert "not available" in out["error"]
+    out = osvc.get_options_chain(symbol="AAPL", expiration="2000-01-21")
+    assert out["success"] is False
+    assert out["error_code"] == "options_expiration_not_listed"
+    assert out["provider"] == "yahoo"
+    assert out["symbol"] == "AAPL"
+    assert out["expiration"] == "2000-01-21"
+    assert out["expiration_status"] == "expired"
     assert out["expirations"] == ["2026-04-17"]
+    assert out["related_tools"] == ["options_expirations"]
 
 
 def test_get_options_expirations_uses_configured_tradier_provider(monkeypatch):

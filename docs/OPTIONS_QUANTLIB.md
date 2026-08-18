@@ -56,8 +56,8 @@ Fetch an options chain snapshot with filtering.
 # Compact chain snapshot (calls + puts)
 mtdata-cli options_chain AAPL --json
 
-# Calls only for a specific expiration
-mtdata-cli options_chain AAPL --expiration 2026-04-17 --option-type call --json
+# Calls from the next live listed expiration
+mtdata-cli options_chain AAPL --option-type call --json
 
 # Filter by liquidity
 mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
@@ -66,7 +66,7 @@ mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `symbol` | (required) | Stock ticker |
-| `--expiration` | (nearest) | Specific expiration date `YYYY-MM-DD` |
+| `--expiration` | (nearest) | Currently listed expiration date `YYYY-MM-DD`; use `options_expirations` to discover valid dates |
 | `--option-type` | `both` | `call`, `put`, or `both` |
 | `--min-open-interest` | 0 | Minimum open interest filter; must be at least 0 |
 | `--min-volume` | 0 | Minimum volume filter; must be at least 0 |
@@ -173,9 +173,9 @@ Calibrate the Heston stochastic volatility model from live options data. The Hes
 # Calibrate from call options
 mtdata-cli options_heston_calibrate AAPL --option-type call --json
 
-# Calibrate from a specific expiration with liquidity filters
+# Calibrate from the nearest eligible expiration with liquidity filters
 mtdata-cli options_heston_calibrate TSLA \
-  --expiration 2026-04-17 --option-type both \
+  --option-type both \
   --min-open-interest 50 --min-volume 10 --max-contracts 30 --json
 ```
 

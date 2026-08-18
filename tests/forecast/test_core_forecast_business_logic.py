@@ -4332,6 +4332,34 @@ def test_options_tools_validate_expiration_before_provider_calls(monkeypatch):
             assert out["expected_format"] == "YYYY-MM-DD"
 
 
+def test_options_chain_preserves_unlisted_expiration_contract(monkeypatch):
+    raw_chain = _unwrap(opt.options_chain)
+
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+    monkeypatch.setattr(
+        options_service,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": False,
+            "error": "Requested expiration is not listed.",
+            "error_code": "options_expiration_not_listed",
+            "expiration": "2000-01-21",
+            "expiration_status": "expired",
+            "expirations": ["2099-01-16"],
+            "remediation": "Choose a listed expiration.",
+        },
+    )
+
+    out = raw_chain(symbol="AAPL", expiration="2000-01-21")
+
+    assert out["success"] is False
+    assert out["error_code"] == "options_expiration_not_listed"
+    assert out["expiration_status"] == "expired"
+    assert out["expirations"] == ["2099-01-16"]
+
+
 @pytest.mark.parametrize(
     ("tool_name", "kwargs", "parameter", "error_code"),
     [
