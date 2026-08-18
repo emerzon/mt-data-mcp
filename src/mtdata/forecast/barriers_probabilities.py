@@ -739,9 +739,13 @@ def forecast_barrier_closed_form(
                 if denoise_warning not in existing_warnings:
                     existing_warnings.append(denoise_warning)
                 result["warnings"] = existing_warnings
-        if freshness_context.get("data_as_of"):
-            result["reference_price_time"] = freshness_context.get("data_as_of")
-            result["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
+        if freshness_context.get("last_observation_close_time"):
+            result["reference_price_time"] = freshness_context.get(
+                "last_observation_close_time"
+            )
+            result["reference_price_time_epoch"] = freshness_context.get(
+                "last_observation_close_epoch"
+            )
         if price_precision is not None:
             result["price_precision"] = int(price_precision)
         if already_hit:

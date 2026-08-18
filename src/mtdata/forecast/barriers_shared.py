@@ -880,8 +880,10 @@ def _history_freshness_context(
         {
             "history_last_bar_open": _format_barrier_epoch(last_epoch),
             "history_last_bar_open_epoch": float(last_epoch),
-            "data_as_of": _format_barrier_epoch(completed_bar_end),
-            "data_as_of_epoch": float(completed_bar_end),
+            "data_as_of": _format_barrier_epoch(last_epoch),
+            "data_as_of_epoch": float(last_epoch),
+            "last_observation_close_time": _format_barrier_epoch(completed_bar_end),
+            "last_observation_close_epoch": float(completed_bar_end),
             "data_freshness_seconds": age_seconds,
             "data_stale": data_stale,
             "stale_after_seconds": stale_after,
@@ -893,7 +895,7 @@ def _history_freshness_context(
     if first_epoch is not None:
         out["history_window"] = {
             "start": _format_barrier_epoch(first_epoch),
-            "end": _format_barrier_epoch(completed_bar_end),
+            "end": _format_barrier_epoch(last_epoch),
             "bars_used": int(len(df)),
             "timezone": "UTC",
             "input_bar_policy": "closed_bars_only",
@@ -1039,9 +1041,13 @@ def _apply_barrier_freshness_contract(
     else:
         reference_ready = False
         blockers.append("live_reference_quote_not_used")
-        if history_context.get("data_as_of"):
-            out["reference_price_time"] = history_context.get("data_as_of")
-            out["reference_price_time_epoch"] = history_context.get("data_as_of_epoch")
+        if history_context.get("last_observation_close_time"):
+            out["reference_price_time"] = history_context.get(
+                "last_observation_close_time"
+            )
+            out["reference_price_time_epoch"] = history_context.get(
+                "last_observation_close_epoch"
+            )
 
     execution_ready = bool(model_ready and reference_ready)
     out["usable_for_live_trading"] = execution_ready

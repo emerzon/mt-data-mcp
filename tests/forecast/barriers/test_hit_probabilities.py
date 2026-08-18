@@ -58,7 +58,10 @@ def test_barrier_history_age_uses_completed_bar_end():
     )
 
     assert result["history_last_bar_open_epoch"] == bar_open
-    assert result["data_as_of_epoch"] == bar_open + 3600
+    assert result["data_as_of_epoch"] == bar_open
+    assert result["data_as_of"] == result["history_last_bar_open"]
+    assert result["history_window"]["end"] == result["data_as_of"]
+    assert result["last_observation_close_epoch"] == bar_open + 3600
     assert result["data_freshness_seconds"] == 25 * 60
     assert result["data_stale"] is False
 
