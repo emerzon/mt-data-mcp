@@ -136,8 +136,8 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `start` / `end` | — | Calendar window for the profile. |
-| `timeframe` | — | When set without `limit`, the window defaults to the latest 200 completed bars. |
-| `limit` | — | Completed `timeframe` bars to include. The window follows actual market bars, so closures and weekend gaps do not consume the limit. |
+| `timeframe` | — | When set without `lookback`, the window defaults to the latest 200 completed bars. |
+| `lookback` | — | Completed `timeframe` bars to include. The window follows actual market bars, so closures and weekend gaps do not consume the lookback. |
 | `source` | `auto` | `auto` uses bounded ticks for short windows and M1 bars for larger ones; force with `ticks` or `m1_bars`. |
 | `price_source` | `mid` | Price used per tick: `mid`, `last`, `bid`, or `ask`. `mid` is the safe FX default because tick `last` is often unavailable. |
 | `volume_source` | `auto` | `auto`, candle `real_volume`/`tick_volume`, tick-snapshot `volume_real`/`volume`, or `tick_count`. Snapshot volume is counted only on MT5 trade-change flags. |
