@@ -64,7 +64,7 @@ class TestBarrierStatisticalSignificance(unittest.TestCase):
         self.assertIn("confidence_warning", diag)
         self.assertIn("min_sims_recommended", diag)
         self.assertGreaterEqual(diag["min_sims_recommended"], 2000)
-        self.assertIn("n_sims", diag["confidence_warning"].lower())
+        self.assertIn("--n-sims", diag["confidence_warning"].lower())
 
     def test_no_confidence_warning_for_narrow_ci(self):
         row = {

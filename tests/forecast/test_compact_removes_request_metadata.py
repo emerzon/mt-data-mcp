@@ -136,6 +136,8 @@ def test_strategy_backtest_full_includes_request_metadata() -> None:
             strategy="sma_cross",
             lookback=50,
             detail="full",
+            cost_model="fixed",
+            spread_bps=1.0,
         )
 
     # In full mode, request SHOULD be present

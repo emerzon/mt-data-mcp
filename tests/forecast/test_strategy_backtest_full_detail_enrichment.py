@@ -179,7 +179,8 @@ def test_strategy_backtest_compact_excludes_analytical_detail(monkeypatch):
         fast_period=2,
         slow_period=3,
         detail="compact",
-        cost_model="historical_bar_spread",
+        cost_model="fixed",
+        spread_bps=1.0,
     )
 
     assert out["success"] is True
