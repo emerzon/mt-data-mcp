@@ -68,19 +68,29 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
         mock_from.return_value = rates
 
         def reduce_rows(df, hdrs, spec):
-            reduced = df.iloc[:3].copy()
+            reduced = df.iloc[[0, 5, 9]].copy()
             meta = {'method': 'lttb', 'original_rows': len(df), 'returned_rows': 3}
             return reduced, meta
 
         mock_simp.side_effect = reduce_rows
 
-        result = fetch_candles('EURUSD', limit=10, simplify={'mode': 'select', 'points': 3})
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='M1',
+            limit=10,
+            simplify={'mode': 'select', 'points': 3},
+        )
         self.assertTrue(result.get('success'))
         self.assertTrue(result.get('simplified'))
         self.assertEqual(result['series_type'], 'downsampled_visualization')
         self.assertFalse(result['equal_interval'])
         self.assertFalse(result['analysis_compatible'])
         self.assertIn('irregular time gaps', result['warnings'][0])
+        self.assertEqual(result['bar_spacing']['intervals_checked'], 2)
+        self.assertFalse(result['bar_spacing']['spacing_matches_timeframe'])
+        self.assertFalse(result['bar_spacing']['spacing_complete'])
+        self.assertEqual(result['bar_spacing']['status'], 'simplified_irregular')
+        self.assertTrue(result['source_bar_spacing']['spacing_matches_timeframe'])
 
     @patch(_MT5_CONFIG)
     @patch(_SIMPLIFY_EXT)

@@ -2592,7 +2592,8 @@ class TestEdgeCases:
             "params": {"process_var": "0.1"},
         }
 
-    def test_ranged_candle_command_preserves_omitted_limit(self):
+    @pytest.mark.parametrize("cmd_name", ["data_fetch_candles", "data_fetch_ticks"])
+    def test_ranged_data_commands_preserve_omitted_limit(self, cmd_name):
         mock_fn = MagicMock(return_value={"success": True})
         func_info = {
             "func": mock_fn,
@@ -2601,11 +2602,11 @@ class TestEdgeCases:
                     "name": "limit",
                     "type": int,
                     "required": False,
-                    "default": 200,
+                    "default": 20,
                 }
             ],
         }
-        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        cmd_fn = create_command_function(func_info, cmd_name=cmd_name)
 
         assert cmd_fn(argparse.Namespace(json=False, verbose=False)) == 0
         assert "limit" not in mock_fn.call_args.kwargs

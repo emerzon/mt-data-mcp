@@ -806,6 +806,11 @@ _FIELD_SELECTION_META_KEYS = frozenset(
         "total",
         "truncated",
         "pagination",
+        "warnings",
+        "history_window_truncated",
+        "history_window_limit_days",
+        "history_window_floor",
+        "effective_start",
     }
 )
 

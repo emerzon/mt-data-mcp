@@ -92,9 +92,10 @@ Compact candle responses retain the thin public time contract (`time_basis`,
 `timestamp_mode=utc`, and `public_timestamp_mode=utc`). Latest-N queries expose `limit_satisfied`; historical
 ranges expose `range_complete`, `limit_reached`, and a `query_applied` block
 that states whether the limit was anchored at the start or end. An omitted
-range limit uses the 20-row compact default and is reported as `default_limit`,
-not as a user-requested count. Timestamp ends use `end_filter=bar_close`; only
-bars closed by the requested instant are returned.
+range limit uses the 100,000-bar range safety cap and is reported as
+`default_limit`, not as a user-requested count. Latest-N queries still default
+to 20 rows. Timestamp ends use `end_filter=bar_close`; only bars closed by the
+requested instant are returned.
 Request full detail
 to inspect the full normalization contract:
 

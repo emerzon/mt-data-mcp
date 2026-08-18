@@ -147,3 +147,20 @@ def test_output_fields_preserves_pagination_metadata() -> None:
         "tools": [{"name": "forecast_generate"}],
         "pagination": {"offset": 0, "limit": 1, "returned": 1, "total": 8},
     }
+
+
+def test_output_fields_preserves_history_truncation_warnings() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "data": [{"time": 1, "bid": 1.1}],
+        "history_window_truncated": True,
+        "history_window_limit_days": 30,
+        "history_window_floor": "2026-07-16T00:00Z",
+        "effective_start": "2026-07-16T00:00Z",
+        "warnings": ["Requested start was outside the tick-history budget."],
+    }
+
+    result = _select_output_fields(payload, "data")
+
+    assert result == payload

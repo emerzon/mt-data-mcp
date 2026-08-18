@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 _TICK_DETAIL_FORMATS = {
     "compact": "rows",
     "summary": "summary",
-    "standard": "stats",
+    "standard": "full_rows",
     "full": "full_rows",
 }
 
@@ -733,7 +733,10 @@ def _reconcile_returned_window_completeness(result: Dict[str, Any]) -> None:
     last = data[-1]
     if not isinstance(last, dict):
         return
-    last_is_complete = str(last.get("bar_state") or "closed").strip().lower() not in {
+    last_state = last.get("bar_state")
+    if last_state in (None, ""):
+        return
+    last_is_complete = str(last_state).strip().lower() not in {
         "forming",
         "incomplete",
         "open",
@@ -743,13 +746,6 @@ def _reconcile_returned_window_completeness(result: Dict[str, Any]) -> None:
     data_window = result.get("data_window")
     if isinstance(data_window, dict):
         data_window["latest_bar_complete"] = True
-    if result.get("forming_candle_status") == "skipped":
-        result["forming_candle_status"] = "none"
-        result.pop("hint", None)
-        if result.get("range_incomplete_reason") == "forming_bar_excluded":
-            result.pop("range_incomplete_reason", None)
-            if result.get("range_complete") is False and not result.get("truncated"):
-                result["range_complete"] = True
 
 
 def _apply_range_limit_cap(
@@ -1689,7 +1685,10 @@ def _attach_tick_pagination(
             query_applied = {}
             payload["query_applied"] = query_applied
         query_applied["limit"] = limit_value
-        query_applied["limit_source"] = "user" if limit_explicit else "range_cap"
+        query_applied["limit_source"] = "user" if limit_explicit else "default"
+        if not limit_explicit:
+            query_applied["default_limit"] = limit_value
+            payload["default_limit"] = limit_value
         if limit_reached:
             payload["pagination"] = {
                 "returned": count,

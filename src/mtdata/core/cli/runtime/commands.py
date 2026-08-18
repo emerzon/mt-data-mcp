@@ -392,7 +392,7 @@ def create_command_function(  # noqa: C901
                 )
                 return 2
             if (
-                cmd_name == "data_fetch_candles"
+                cmd_name in {"data_fetch_candles", "data_fetch_ticks"}
                 and param_name == "limit"
                 and not hasattr(args, param_name)
             ):

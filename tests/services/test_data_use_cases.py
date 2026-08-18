@@ -843,7 +843,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["query_type"] == "historical"
 
 
-def test_start_anchored_range_does_not_mark_closed_window_incomplete():
+def test_start_anchored_range_keeps_observed_forming_bar_disclosure():
     rows = [{"time": f"t{i}", "close": i, "bar_state": "closed"} for i in range(5)]
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -866,8 +866,8 @@ def test_start_anchored_range_does_not_mark_closed_window_incomplete():
     )
 
     assert result["data_window"]["latest_bar_complete"] is True
-    assert result["forming_candle_status"] == "none"
-    assert "include_incomplete" not in str(result.get("hint") or "")
+    assert result["forming_candle_status"] == "skipped"
+    assert "include_incomplete" in str(result.get("hint") or "")
 
 
 def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
@@ -1850,7 +1850,7 @@ def test_run_data_fetch_ticks_logs_connection_error(caplog):
     [
         ("compact", "rows"),
         ("summary", "summary"),
-        ("standard", "stats"),
+        ("standard", "full_rows"),
         ("full", "full_rows"),
     ],
 )
@@ -1930,7 +1930,9 @@ def test_run_data_fetch_ticks_range_uses_safety_cap_and_pagination():
 
     assert observed["limit"] == 50_000
     assert result["limit_reached"] is True
-    assert result["query_applied"]["limit_source"] == "range_cap"
+    assert result["query_applied"]["limit_source"] == "default"
+    assert result["query_applied"]["default_limit"] == 50_000
+    assert result["default_limit"] == 50_000
     assert result["pagination"]["has_more"] is True
     assert result["pagination"]["limit"] == 50_000
 

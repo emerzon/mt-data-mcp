@@ -2641,6 +2641,16 @@ def fetch_candles(  # noqa: C901
         original_rows = len(df)
         simplify_eff = _normalize_simplify_spec(simplify, limit=limit, fallback_rows=original_rows)
         df, simplify_meta = _simplify_dataframe_rows_ext(df, headers, simplify_eff if simplify_eff is not None else simplify)
+        if simplify_meta is not None and len(df) < original_rows:
+            source_spacing_quality = spacing_quality
+            spacing_quality = _candle_spacing_quality(df, timeframe=timeframe)
+            if spacing_quality is not None:
+                spacing_quality["spacing_complete"] = bool(
+                    spacing_quality.get("spacing_matches_timeframe") is True
+                )
+                spacing_quality["session_gap_count"] = len(session_gaps)
+                if spacing_quality.get("spacing_matches_timeframe") is not True:
+                    spacing_quality["status"] = "simplified_irregular"
         # If simplify changed representation, respect returned headers
         if simplify_meta is not None and 'headers' in simplify_meta and isinstance(simplify_meta['headers'], list):
             headers = [h for h in simplify_meta['headers'] if isinstance(h, str)]
@@ -2838,13 +2848,19 @@ def fetch_candles(  # noqa: C901
         })
         if spacing_quality is not None:
             payload["bar_spacing"] = spacing_quality
+            simplified_rows_reduced = simplify_meta is not None and len(df) < original_rows
+            if simplified_rows_reduced:
+                payload["source_bar_spacing"] = source_spacing_quality
             if spacing_quality.get("spacing_matches_timeframe") is False:
-                payload["timeframe_spacing_mismatch"] = True
-                payload.setdefault("warnings", []).append(
-                    "Observed candle spacing does not match the requested "
-                    f"{timeframe} timeframe; treat this history as partial or "
-                    "coarser broker data."
-                )
+                if simplified_rows_reduced:
+                    payload["returned_spacing_irregular"] = True
+                else:
+                    payload["timeframe_spacing_mismatch"] = True
+                    payload.setdefault("warnings", []).append(
+                        "Observed candle spacing does not match the requested "
+                        f"{timeframe} timeframe; treat this history as partial or "
+                        "coarser broker data."
+                    )
         if broker_time_check_result is not None:
             payload["meta"]["diagnostics"]["mt5_time_alignment"] = (
                 dict(broker_time_check_result)

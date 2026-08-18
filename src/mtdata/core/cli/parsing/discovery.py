@@ -84,6 +84,7 @@ _NAMED_ONLY_REQUIRED_PARAMS: set[tuple[str, str]] = {
 
 _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
     ("data_fetch_candles", "limit"),
+    ("data_fetch_ticks", "limit"),
 }
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
@@ -233,7 +234,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Maximum ticks returned (maximum 50000). Latest queries default to 20. "
         "On an explicit --start/--end range, omission returns matching ticks up "
         "to the 50000-tick safety cap. Start-bounded queries keep the earliest "
-        "ticks when the cap binds. Date-only start/end values are UTC midnight, "
+        "ticks when the cap binds. Historical retrieval is limited to the 30 days "
+        "ending at --end (or now); responses disclose any rewritten start as "
+        "history_window_truncated. Date-only start/end values are UTC midnight, "
         "not the broker session day."
     ),
     ("market_status", "symbol"): (
