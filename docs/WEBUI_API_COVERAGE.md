@@ -31,6 +31,7 @@ Root probes (`/`, `/health`, `/ready`) are listed when the UI surfaces them.
 | `/api/v1/forecast/price` | POST | used | Forecast price tab | |
 | `/api/v1/forecast/volatility` | POST | used | Volatility tab | |
 | `/api/v1/backtest` | POST | used | Backtest tab | |
+| `/api/v1/trade-ideas` | POST | intentional-omit | — | Dedicated compose route; SPA still uses Tools invoke until the Idea panel ships. |
 | `/api/v1/tools` | GET | used | Tools runner catalog | Full MCP tool list + surface meta |
 | `/api/v1/tools/{name}` | GET | used | Tools runner detail | Parameter field descriptors |
 | `/api/v1/tools/{name}/invoke` | POST | used | Tools runner run | Mutation tools require `confirm=true` |

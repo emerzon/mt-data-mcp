@@ -36,8 +36,9 @@ How we write these pages: [STYLE.md](STYLE.md) (Contributor).
 2. [GLOSSARY.md](GLOSSARY.md) — Words used across the docs (start here if markets are new)
 3. Pick a surface: [WEBUI.md](WEBUI.md) · [CLI.md](CLI.md) · [MCP.md](MCP.md)
 4. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) or [SAMPLE-TRADE-WEBUI.md](SAMPLE-TRADE-WEBUI.md)
-5. [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — regimes, intervals, tighter gates
-6. Deep dives as needed: [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md), [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md)
+5. [TRADE_IDEAS.md](TRADE_IDEAS.md) — one preview-only compose command
+6. [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — regimes, intervals, tighter gates
+7. Deep dives as needed: [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md), [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md)
 
 ## Getting Started
 
@@ -102,6 +103,7 @@ How we write these pages: [STYLE.md](STYLE.md) (Contributor).
 
 | Document | Audience | Description |
 |----------|----------|-------------|
+| [TRADE_IDEAS.md](TRADE_IDEAS.md) | User | Preview-only compose: forecast, barriers, size, dry-run |
 | [TRADING_SAFETY.md](TRADING_SAFETY.md) | User | Dry-run, guardrails, account/journal (read-only first) |
 | [TRADING_RISK.md](TRADING_RISK.md) | User | Sizing, VaR/CVaR, stress tests (read-only) |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | User | Take-profit / stop-loss probabilities |
@@ -114,7 +116,7 @@ These are **not** tutorials. They track coverage and dependency work.
 |----------|-------------|
 | [WEBUI_GOAL.md](WEBUI_GOAL.md) | Chart-workspace product goal |
 | [WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md) | Route × UI matrix |
-| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 92 tools × UI surface |
+| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 93 tools × UI surface |
 | [DEPENDENCY_MIGRATION.md](DEPENDENCY_MIGRATION.md) | Python 3.14 package snapshot |
 | [STYLE.md](STYLE.md) | Docs persona and page contract |
 
@@ -129,6 +131,12 @@ Research-only snippets (not financial advice). For a guided narrative, use
 mtdata-cli symbols_describe EURUSD --json
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 --json
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta --json
+```
+
+### 1b) Preview-only trade idea
+
+```bash
+mtdata-cli trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quick
 ```
 
 ### 2) Take-profit / stop-loss odds for a trade idea

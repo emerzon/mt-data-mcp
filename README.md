@@ -66,6 +66,7 @@ Optional guardrails (allowed symbols, max volume, max risk % of equity) are docu
 | **Indicators & denoise** | 100+ technicals; smooth noise to see structure | `--indicators`, `--denoise` |
 | **Multi-asset & diagnostics** | Correlation, cointegration, stationarity, outliers, seasonality | `correlation_matrix`, `stationarity_test`, `outliers_detect` |
 | **Strategy & risk** | Simple rule backtests; VaR/CVaR, stress, position sizing | `strategy_backtest`, `trade_var_cvar_calculate` |
+| **Trade ideas** | One preview-only research idea: forecast, barriers, size, dry-run | `trade_idea_compose` |
 | **Trading** | Place/manage orders with guardrails when you opt in | `trade_place`, `trade_close` |
 | **News & fundamentals** | Ranked news/calendar; Finviz equity screens | `news`, `finviz_screen` |
 | **Options** | Chains + QuantLib barrier pricing | `options_chain`, `options_barrier_price` |
@@ -183,7 +184,7 @@ Dependency caveats (NeuralForecast optional installs, Python 3.14 exclusions, op
 |------------|--------------|
 | [Setup](docs/SETUP.md) | [Troubleshooting](docs/TROUBLESHOOTING.md), [Env vars](docs/ENV_VARS.md) |
 | [Web UI](docs/WEBUI.md) · [AI assistant (MCP)](docs/MCP.md) · [CLI](docs/CLI.md) | [Glossary](docs/GLOSSARY.md#quick-find), [Market discovery](docs/MARKET.md), [News](docs/NEWS.md) |
-| [Sample trade](docs/SAMPLE-TRADE.md) · [Sample trade (UI)](docs/SAMPLE-TRADE-WEBUI.md) | [Advanced playbook](docs/SAMPLE-TRADE-ADVANCED.md), [Example loop](docs/EXAMPLE.md) |
+| [Sample trade](docs/SAMPLE-TRADE.md) · [Sample trade (UI)](docs/SAMPLE-TRADE-WEBUI.md) | [Trade ideas](docs/TRADE_IDEAS.md), [Advanced playbook](docs/SAMPLE-TRADE-ADVANCED.md), [Example loop](docs/EXAMPLE.md) |
 | [Forecasting](docs/FORECAST.md) | [Methods](docs/forecast/METHODS.md), [Backtesting](docs/forecast/BACKTESTING.md), [Uncertainty](docs/forecast/UNCERTAINTY.md) |
 | [Regimes](docs/forecast/REGIMES.md) · [Barriers](docs/BARRIER_FUNCTIONS.md) · [Patterns](docs/forecast/PATTERN_SEARCH.md) | [Indicators](docs/TECHNICAL_INDICATORS.md), [Levels](docs/LEVELS.md), [Denoising](docs/DENOISING.md) |
 | [Trading safety](docs/TRADING_SAFETY.md) · [Risk analytics](docs/TRADING_RISK.md) | [Wait for events](docs/WAIT_EVENT.md), [Web API](docs/WEB_API.md), [Deployment](docs/DEPLOYMENT.md) |

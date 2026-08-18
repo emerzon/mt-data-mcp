@@ -241,7 +241,7 @@ Use this document as the north star. Practical tracking options:
 | 0 Inventory | Done | Coverage matrix in `docs/WEBUI_API_COVERAGE.md`; `webui/AGENTS.md` refreshed |
 | 1 Parity & reliability | Done | `/models`, health/ready chip, pivot method + S/R params, partial-failure banners |
 | 2 Responsive & modern shell | Done | Breakpoint helpers; toolbar More overflow; forecast bottom sheet / drawer; Esc closes panels/modals |
-| 3 Chart research depth | Partial | On-chart EMA/RSI/MACD/volume (2026-08-18). Confluence, barriers, and briefs remain later slices. |
+| 3 Chart research depth | Partial | On-chart EMA/RSI/MACD/volume (2026-08-18). Confluence, barriers, and briefs remain later slices. `trade_idea_compose` + `POST /api/v1/trade-ideas` landed (2026-08-18); Idea panel still later. |
 | 4 Backend feature bridge | Done | Full MCP catalog via `GET/POST /api/v1/tools*`; SPA Tools runner; inventory in `docs/WEBUI_TOOL_COVERAGE.md` |
 | 5 Hardening & speed | Partial | Pure unit tests + typecheck/build; no e2e CI |
 

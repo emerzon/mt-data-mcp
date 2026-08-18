@@ -89,6 +89,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `trade_get_open` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_get_pending` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_history` | trading | generic_runner | tools-runner/generic | no |  |
+| `trade_idea_compose` | trading | generic_runner | tools-runner/generic | no | Preview-only composer; dedicated Idea panel is a later slice |
 | `trade_journal_analyze` | trading | generic_runner | tools-runner/generic | no |  |
 | `trade_modify` | trading | generic_runner | tools-runner/generic | yes | mutation gate |
 | `trade_place` | trading | generic_runner | tools-runner/generic | yes | mutation gate |
@@ -106,7 +107,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 - **generic_runner** — discoverable and invocable from the SPA Tools runner (schema-driven form).
 - **intentional_omit** — visible with a rationale but not invocable from the SPA. Long-running tuning remains available through CLI/MCP; mutations use confirm gates instead.
 
-**Total tools in inventory:** 92 (includes env-gated market_depth_fetch even when disabled).
+**Total tools in inventory:** 93 (includes env-gated market_depth_fetch even when disabled).
 
 Source of truth for runtime catalog: `GET /api/v1/tools` (bootstraps MCP tools).
 Classification helpers: `mtdata.core.web_api_tools`.

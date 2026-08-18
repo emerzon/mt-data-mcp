@@ -1443,6 +1443,52 @@ def _normalize_barrier_prob_payload(
     return out or None
 
 
+def _normalize_trade_idea_payload(
+    payload: Dict[str, Any],
+    *,
+    verbose: bool,
+    tool_name: str,
+) -> Optional[Dict[str, Any]]:
+    if tool_name != "trade_idea_compose" or verbose:
+        return None
+    if payload.get("error"):
+        return _compact_error_envelope(payload)
+
+    keys = (
+        "success",
+        "symbol",
+        "timeframe",
+        "horizon",
+        "template",
+        "direction",
+        "suggested_direction",
+        "actionability",
+        "narrative",
+        "quote",
+        "structure",
+        "forecast",
+        "volatility",
+        "barriers",
+        "geometry",
+        "sizing",
+        "gates",
+        "preview",
+        "partial_failure",
+        "failed_sections",
+        "section_errors",
+        "warnings",
+        "as_of",
+        "assembled_at",
+        "timezone",
+    )
+    out: Dict[str, Any] = {}
+    for key in keys:
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+    return out or None
+
+
 def _normalize_trade_risk_payload(
     payload: Dict[str, Any],
     *,
@@ -2469,6 +2515,13 @@ def format_result_minimal(  # noqa: C901
         if trade_table_norm is not None:
             normalized = trade_table_norm
         if isinstance(result, dict):
+            trade_idea_norm = _normalize_trade_idea_payload(
+                result,
+                verbose=verbose,
+                tool_name=resolved_tool_name,
+            )
+            if trade_idea_norm is not None:
+                normalized = trade_idea_norm
             trade_risk_norm = _normalize_trade_risk_payload(
                 result,
                 verbose=verbose,

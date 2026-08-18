@@ -62,8 +62,8 @@ class SchemaEvaluationReport:
         }
 
 
-_EXPECTED_DEFAULT_TOOL_COUNT = 91
-_EXPECTED_GATED_TOOL_COUNT = 92
+_EXPECTED_DEFAULT_TOOL_COUNT = 92
+_EXPECTED_GATED_TOOL_COUNT = 93
 _OUTPUT_CONTROLS = frozenset({"json", "output_fields"})
 _LEGACY_OUTPUT_CONTROLS = frozenset({"extras"})
 _FINVIZ_DOMAIN_FIELDS = frozenset({"finviz_fundamentals"})

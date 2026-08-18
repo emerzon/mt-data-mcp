@@ -1416,6 +1416,30 @@ class TestFormatResultMinimal:
         assert "notional_exposure" not in compact
         assert "raw_volume" in verbose
 
+    def test_compact_trade_idea_output_hides_source_calls(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "direction": "long",
+            "actionability": "preview_only",
+            "narrative": "EURUSD research idea.",
+            "preview": {"dry_run": True, "preview_ok": True, "would_send_order": False},
+            "source_tool_calls": [{"name": "session", "status": "ok"}],
+        }
+        compact = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name="trade_idea_compose",
+        )
+        verbose = format_result_minimal(
+            payload,
+            verbose=True,
+            tool_name="trade_idea_compose",
+        )
+        assert "preview_only" in compact
+        assert "source_tool_calls" not in compact
+        assert "source_tool_calls" in verbose
+
     def test_compact_barrier_probability_output_hides_confidence_bands(self):
         payload = {
             "success": True,

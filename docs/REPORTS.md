@@ -9,8 +9,10 @@ context, forecast, level, pattern, barrier, news, and regime tools separately.
 Reports are research output, not trade instructions. A report can also be
 partial when a provider, optional dependency, or sub-analysis is unavailable;
 inspect its section statuses and diagnostics before relying on it.
+For a sized dry-run preview of one idea, use [trade_idea_compose](TRADE_IDEAS.md)
+instead of treating a report as an order ticket.
 
-**Related:** [CLI](CLI.md) · [Output contract](OUTPUT.md) · [Forecasting](FORECAST.md) · [Levels](LEVELS.md) · [Regimes](forecast/REGIMES.md) · [Barriers](BARRIER_FUNCTIONS.md) · [News](NEWS.md)
+**Related:** [CLI](CLI.md) · [Trade ideas](TRADE_IDEAS.md) · [Output contract](OUTPUT.md) · [Forecasting](FORECAST.md) · [Levels](LEVELS.md) · [Regimes](forecast/REGIMES.md) · [Barriers](BARRIER_FUNCTIONS.md) · [News](NEWS.md)
 
 ---
 

@@ -18,8 +18,10 @@ from ..shared.schema import (
     DetailLiteral,
     DimensionalityReductionSpec,
     ForecastLibraryLiteral,
+    TimeframeLiteral,
     reject_removed_field,
 )
+from .trading.ideas_requests import DEFAULT_RISK_PCT, TradeIdeaComposeRequest
 
 
 class _ForecastWebBody(BaseModel):
@@ -152,6 +154,31 @@ class BacktestBody(_ForecastWebBody):
             dimred=self.dimred,
             slippage_bps=self.slippage_bps,
             trade_threshold=self.trade_threshold,
+            detail=self.detail,
+        )
+
+
+class TradeIdeaBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str
+    timeframe: TimeframeLiteral = Field("H1")
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
+    direction: Literal["auto", "long", "short"] = Field("auto")
+    template: Literal["quick", "standard"] = Field("quick")
+    risk_pct: float = Field(DEFAULT_RISK_PCT, gt=0.0, le=100.0)
+    as_of: Optional[str] = None
+    detail: DetailLiteral = Field("compact")
+
+    def to_domain_request(self) -> TradeIdeaComposeRequest:
+        return TradeIdeaComposeRequest(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            horizon=self.horizon,
+            direction=self.direction,
+            template=self.template,
+            risk_pct=self.risk_pct,
+            as_of=self.as_of,
             detail=self.detail,
         )
 

@@ -87,11 +87,15 @@ from .web_api_handlers import (
 from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
+from .web_api_handlers import (
+    post_trade_idea_response as _post_trade_idea_response,
+)
 from .web_api_models import (
     BacktestBody,
     ForecastPriceBody,
     ForecastVolBody,
     ToolInvokeBody,
+    TradeIdeaBody,
 )
 from .web_api_runtime import (
     SafeJSONResponse,
@@ -499,6 +503,13 @@ def post_forecast_volatility(body: ForecastVolBody) -> Dict[str, Any]:
 @api_router.post("/backtest")
 def post_backtest(body: BacktestBody) -> Dict[str, Any]:
     return _post_backtest_response(body=body, backtest_use_case=_run_forecast_backtest_impl)
+
+
+@api_router.post("/trade-ideas")
+def post_trade_idea(body: TradeIdeaBody) -> Dict[str, Any]:
+    from .trading.ideas import run_trade_idea_compose
+
+    return _post_trade_idea_response(body=body, compose_impl=run_trade_idea_compose)
 
 
 @api_router.get("/health")

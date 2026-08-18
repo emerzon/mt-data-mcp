@@ -944,6 +944,19 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_u
     )
 
 
+def post_trade_idea_response(*, body: Any, compose_impl: Callable[..., Any]) -> Dict[str, Any]:
+    return _post_use_case_response(
+        body=body,
+        use_case=compose_impl,
+        operation="post_trade_idea",
+        domain_error_code="trade_idea_error",
+        mt5_error_code="trade_idea_mt5_unavailable",
+        internal_error_code="trade_idea_internal_error",
+        internal_message="Trade idea composition failed.",
+        result_error_code="trade_idea_tool_error",
+    )
+
+
 def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
     return _post_use_case_response(
         body=body,

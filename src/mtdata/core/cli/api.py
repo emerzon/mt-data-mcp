@@ -1651,6 +1651,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
     ),
+    "trade_idea_compose": (
+        f"{CLI_PROGRAM} trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quick",
+        f"{CLI_PROGRAM} trade_idea_compose EURUSD --direction long --template standard --risk-pct 0.5",
+    ),
     "trade_risk_analyze": (
         f'{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --sizing \'{{"method":"fixed_fraction","risk_pct":1}}\' --entry 66317 --stop-loss 65000',
         f'{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --sizing \'{{"method":"fixed_fraction","risk_pct":1}}\' --entry 66317 --stop-loss 65000 --take-profit 69000',

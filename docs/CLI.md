@@ -444,6 +444,7 @@ Denoising is applied to data via the `--denoise`/`--denoise-params` flags (see [
 |---------|-------------|
 | `trade_account_info` | Get account info |
 | `trade_session_context` | Snapshot of broker/session/server-time context for downstream trading prompts |
+| `trade_idea_compose` | Compose a preview-only research idea (forecast, barriers, size, dry-run) |
 | `trade_place` | Place orders |
 | `trade_close` | Close positions |
 | `trade_modify` | Modify orders |

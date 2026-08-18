@@ -93,6 +93,7 @@ and [risk](TRADING_RISK.md) before you size a trade.
 **Tools** lists the same catalog as the CLI and MCP. Search by name or category,
 fill the form, and run.
 
+- `trade_idea_compose` is a preview-only research idea (forecast, barriers, size, dry-run). It does not need confirm and cannot place an order.
 - Research tools (candles, news, forecasts, reports) do not need a confirm tick.
 - Order changes (`trade_place`, `trade_modify`, `trade_close`) and a few
   destructive model/task tools require **confirm**. Preview still defaults to

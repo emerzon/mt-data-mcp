@@ -20,6 +20,7 @@ from .execution import (
     _modify_position,
     _resolve_close_dry_run_target,
 )
+from .ideas import trade_idea_compose
 from .orders import (
     _place_market_order,
     _place_pending_order,

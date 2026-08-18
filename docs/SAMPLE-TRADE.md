@@ -13,6 +13,16 @@ This is a **research example**, not financial advice. Numbers below are illustra
 Prefer clicking to typing? Use [SAMPLE-TRADE-WEBUI.md](SAMPLE-TRADE-WEBUI.md).
 When you are comfortable with this flow, continue to [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) for regimes, HAR-RV, conformal intervals, Monte Carlo barriers, and tighter risk gates.
 
+### Fast path
+
+The same questions as this walkthrough can be asked in one preview-only command:
+
+```bash
+mtdata-cli trade_idea_compose EURUSD --timeframe H1 --horizon 12 --template quick
+```
+
+That returns a narrative, suggested direction, TP/SL geometry, a sized volume, gates, and a **dry-run** preview. It cannot place an order. Details: [TRADE_IDEAS.md](TRADE_IDEAS.md). The numbered steps below remain the explicit tool-by-tool path.
+
 ---
 
 ## 1. Pull the most recent price data (candles)

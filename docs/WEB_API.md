@@ -155,6 +155,20 @@ Calculate pivot points.
   - `timeframe` (string): Default "H1".
   - `method` (string): "classic", "fibonacci", "woodie", "camarilla", "demark".
 
+#### `POST /api/trade-ideas`
+
+Compose a **preview-only** research idea (session, forecast, volatility, one
+barrier pair, optional confluence, sizing, dry-run `trade_place`). The
+composer cannot send a live order. See [TRADE_IDEAS.md](TRADE_IDEAS.md).
+
+- **Body:** `symbol` (required), `timeframe` (default `H1`), `horizon` (default
+  `12`), `direction` (`auto` / `long` / `short`), `template` (`quick` /
+  `standard`), `risk_pct` (default `0.5`), optional `as_of`, `detail`.
+- **Response:** compact `TradeIdea` with `actionability` of `preview_only` or
+  `research`. Historical `as_of` ideas skip sizing and preview.
+
+Also available at `POST /api/v1/trade-ideas`.
+
 #### `GET /api/support-resistance`
 Identify support and resistance levels, plus Fibonacci retracement/extension levels from the most relevant completed swing.
 

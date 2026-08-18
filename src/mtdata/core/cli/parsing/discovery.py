@@ -117,6 +117,19 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "always wait so the in-process worker stays alive; the flag only "
         "applies in interactive shell, MCP, and Web API sessions."
     ),
+    ("trade_idea_compose", "template"): (
+        "Idea template: quick runs session, forecast, volatility, one barrier "
+        "pair, and sizing; standard also adds confluence and snaps exits "
+        "toward nearby structure."
+    ),
+    ("trade_idea_compose", "direction"): (
+        "Trade direction. auto suggests long or short from the forecast path "
+        "and stands down when evidence disagrees."
+    ),
+    ("trade_idea_compose", "risk_pct"): (
+        "Fixed-fraction account risk in percentage points (0.5 means 0.5% of "
+        "equity). Used only for preview sizing."
+    ),
     ("forecast_tune_optuna", "n_trials"): (
         "Optuna trial count. Each trial runs --steps rolling backtests; the "
         "defaults evaluate 40*5=200 rolling backtests."

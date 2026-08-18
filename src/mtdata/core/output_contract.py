@@ -42,6 +42,7 @@ _SUCCESS_RELATED_TOOLS = {
     "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
     "regime_detect": ["patterns_detect", "forecast_generate", "stationarity_test"],
     "trade_session_context": ["market_ticker", "trade_risk_analyze", "trade_get_open"],
+    "trade_idea_compose": ["report_generate", "forecast_barrier_prob", "trade_risk_analyze"],
     "support_resistance_levels": ["confluence_levels", "pivot_compute_points", "data_fetch_candles"],
     "pivot_compute_points": ["confluence_levels", "support_resistance_levels", "market_status"],
     "confluence_levels": ["pivot_compute_points", "support_resistance_levels", "data_fetch_candles"],

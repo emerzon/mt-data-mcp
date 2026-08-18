@@ -4,11 +4,11 @@
 
 If you only skim one trading doc, make it this one. The `trade_*` tools send **real requests** to the MT5 account currently logged into the terminal. This runbook covers previewing orders, validation, account guardrails, and broker quirks for `trade_place`, `trade_modify`, and `trade_close`.
 
-> **These tools default to preview mode.** `dry_run` defaults to **`true`**. A request reaches MT5 only when you explicitly set `--dry-run false`. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode.
+> **These tools default to preview mode.** `dry_run` defaults to **`true`**. A request reaches MT5 only when you explicitly set `--dry-run false`. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode. `trade_idea_compose` is stricter: it is preview-only and has no live-send flag.
 
 **Dense terms:** [Dry-run](GLOSSARY.md#dry-run) · [Trade guardrails](GLOSSARY.md#trade-guardrails) · [Slippage](GLOSSARY.md#slippage) · [Lot size](GLOSSARY.md#lot-size) · [TP/SL](GLOSSARY.md#tpsl-take-profit--stop-loss)
 
-**Related:** [Risk analytics](TRADING_RISK.md) · [Env vars (guardrails)](ENV_VARS.md#trade-guardrails) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Glossary](GLOSSARY.md)
+**Related:** [Trade ideas](TRADE_IDEAS.md) · [Risk analytics](TRADING_RISK.md) · [Env vars (guardrails)](ENV_VARS.md#trade-guardrails) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Glossary](GLOSSARY.md)
 
 ---
 

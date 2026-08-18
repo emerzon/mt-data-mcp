@@ -1,6 +1,6 @@
 # core/ — API-Facing Layer
 
-All 91 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
+All 92 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
 
 ## FILE MAP
 
@@ -49,6 +49,8 @@ All 91 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `trading/comments.py` | 209 | Order comment encoding |
 | `trading/time.py` | 322 | Trading time helpers |
 | `trading/requests.py` | 565 | Request models |
+| `trading/ideas.py` | — | Preview-only trade-idea composer |
+| `trading/ideas_requests.py` | — | Trade-idea request model |
 
 ### Reports
 

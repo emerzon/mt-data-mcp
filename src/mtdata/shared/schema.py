@@ -230,6 +230,9 @@ PARAM_HINTS = {
     "timezone_display": "Display timezone for market-hours timestamps.",
     "price_field": "Quote field to use as the ticker price, such as bid, ask, last, or mid.",
     "volume": "Order volume (lots).",
+    "risk_pct": (
+        "Account risk in percentage points (0.5 means 0.5% of equity)."
+    ),
     "comment": "Order comment tag.",
     "deviation": "Max slippage (points).",
     "order_type": "Required order type: BUY/SELL for market orders, or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders.",
