@@ -1430,7 +1430,7 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noq
             query_gap_value is None
             and query_mode == "range"
             and freshness.get("data_freshness_anchor")
-            == FRESHNESS_ANCHOR_QUERY_EXPECTED_END
+            != FRESHNESS_ANCHOR_WALL_CLOCK
         ):
             query_gap_value = freshness.get("data_freshness_seconds")
         if query_mode == "range" and query_gap_value is not None:

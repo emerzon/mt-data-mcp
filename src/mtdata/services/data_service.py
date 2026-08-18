@@ -576,6 +576,20 @@ def _build_candle_freshness_diagnostics(
     return diagnostics
 
 
+def _latest_candle_freshness_cutoff(
+    *,
+    reference_epoch: float,
+    last_bar_open_epoch: Any,
+    seconds_per_bar: int,
+) -> float:
+    """Align the latest-query freshness window to the provider's bar grid."""
+    last_open = float(last_bar_open_epoch)
+    bar_seconds = float(seconds_per_bar)
+    elapsed = max(0.0, float(reference_epoch) - last_open)
+    current_bar_open = last_open + math.floor(elapsed / bar_seconds) * bar_seconds
+    return current_bar_open - bar_seconds
+
+
 def _relax_live_completed_bar_freshness(
     *,
     symbol: str,
@@ -892,9 +906,17 @@ def _fetch_rates_with_warmup(  # noqa: C901
             freshness_policy_bars = (
                 SANITY_BARS_TOLERANCE + extra_bars if range_query else 1
             )
-            freshness_cutoff = (
-                freshness_reference_ts - seconds_per_bar * freshness_policy_bars
-            )
+            if range_query:
+                freshness_cutoff = (
+                    freshness_reference_ts
+                    - seconds_per_bar * freshness_policy_bars
+                )
+            else:
+                freshness_cutoff = _latest_candle_freshness_cutoff(
+                    reference_epoch=freshness_reference_ts,
+                    last_bar_open_epoch=last_t,
+                    seconds_per_bar=seconds_per_bar,
+                )
             tail_is_forming = _is_last_bar_forming(
                 rates, timeframe, current_time_epoch=freshness_reference_ts
             )
