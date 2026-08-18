@@ -502,12 +502,11 @@ def _volatility_price_column(
     return effective_denoise_base_col(frame, spec, base_col=name)
 
 
-def _daily_realized_variance(
+def _realized_variance_rows(
     frame: pd.DataFrame,
     *,
     close_col: str = "close",
-) -> tuple[pd.Series, int]:
-    """Calculate intraday RV without treating an overnight gap as an intraday return."""
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     values = pd.DataFrame(
         {
             "time": pd.to_numeric(frame.get("time"), errors="coerce"),
@@ -521,7 +520,66 @@ def _daily_realized_variance(
     )
     finite = values[np.isfinite(values["return"])].copy()
     finite["r2"] = np.square(finite["return"].astype(float))
+    return values, finite
+
+
+def _daily_realized_variance(
+    frame: pd.DataFrame,
+    *,
+    close_col: str = "close",
+) -> tuple[pd.Series, int]:
+    """Calculate intraday RV without treating an overnight gap as an intraday return."""
+    _, finite = _realized_variance_rows(frame, close_col=close_col)
     return finite.groupby("day", sort=True)["r2"].sum().astype(float), int(len(finite))
+
+
+def _har_daily_realized_variance(
+    frame: pd.DataFrame,
+    *,
+    close_col: str = "close",
+    minimum_coverage_fraction: float = 0.9,
+) -> tuple[pd.Series, int, Dict[str, Any]]:
+    """Exclude an incomplete trailing UTC day from comparable HAR-RV lags."""
+    values, finite = _realized_variance_rows(frame, close_col=close_col)
+    daily_rv = finite.groupby("day", sort=True)["r2"].sum().astype(float)
+    bar_counts = values.groupby("day", sort=True)["time"].count().astype(int)
+    if bar_counts.empty:
+        return daily_rv, int(len(finite)), {}
+
+    final_day = bar_counts.index[-1]
+    prior_counts = bar_counts.iloc[1:-1].tail(20)
+    if prior_counts.empty:
+        prior_counts = bar_counts.iloc[:-1].tail(20)
+    expected_bars = (
+        max(1, int(round(float(prior_counts.median()))))
+        if not prior_counts.empty
+        else int(bar_counts.iloc[-1])
+    )
+    observed_bars = int(bar_counts.iloc[-1])
+    coverage = float(observed_bars) / float(max(1, expected_bars))
+    complete = coverage >= float(minimum_coverage_fraction)
+    final_values = values[values["day"] == final_day]
+    final_finite = finite[finite["day"] == final_day]
+    if not complete:
+        daily_rv = daily_rv.drop(final_day, errors="ignore")
+
+    first_epoch = float(final_values["time"].iloc[0])
+    last_epoch = float(final_values["time"].iloc[-1])
+    metadata: Dict[str, Any] = {
+        "utc_day": final_day.strftime("%Y-%m-%d"),
+        "start": _format_time_minimal(first_epoch),
+        "end": _format_time_minimal(last_epoch),
+        "observed_bars": observed_bars,
+        "expected_bars": expected_bars,
+        "coverage_fraction": round(coverage, 4),
+        "minimum_coverage_fraction": float(minimum_coverage_fraction),
+        "complete": bool(complete),
+        "included_in_har": bool(complete),
+        "policy": "exclude_final_utc_day_below_recent_median_coverage",
+        "expected_bars_basis": "median_of_up_to_20_prior_utc_days",
+    }
+    returns_used = int(len(finite) - (0 if complete else len(final_finite)))
+    return daily_rv, returns_used, metadata
 
 
 def _volatility_input_context(
@@ -1577,9 +1635,11 @@ def forecast_volatility(  # noqa: C901
                 )
                 if len(dfrv) < 10:
                     return {"error": "Insufficient intraday bars for RV"}
-                daily_rv, realized_returns = _daily_realized_variance(
+                daily_rv, realized_returns, final_daily_aggregate = (
+                    _har_daily_realized_variance(
                     dfrv,
                     close_col=_volatility_price_column(dfrv, dn_spec_used, "close"),
+                    )
                 )
                 if len(daily_rv) < max(30, m + 5):
                     return {"error": "Not enough daily RV observations for HAR-RV"}
@@ -1626,7 +1686,19 @@ def forecast_volatility(  # noqa: C901
                                       "beta": [float(b) for b in beta.tolist()],
                                       "days": days,
                                       "bars_per_session": float(bars_per_session),
-                                      "daily_rv_gap_policy": "within_utc_day_returns_only"},
+                                      "daily_rv_gap_policy": "within_utc_day_returns_only",
+                                      "partial_day_policy": final_daily_aggregate.get("policy"),
+                                      "minimum_daily_coverage_fraction": final_daily_aggregate.get(
+                                          "minimum_coverage_fraction"
+                                      )},
+                     "final_daily_aggregate": final_daily_aggregate,
+                     **(
+                         {"warnings": [
+                             "Excluded the final incomplete UTC-day realized-variance aggregate from HAR lags."
+                         ]}
+                         if not final_daily_aggregate.get("included_in_har", True)
+                         else {}
+                     ),
                      "denoise_used": dn_spec_used},
                     df=dfrv,
                     symbol=symbol,

@@ -1892,6 +1892,65 @@ class TestHarRvBlock:
             [math.log(1.01) ** 2, math.log(1.01) ** 2]
         )
 
+    def test_har_rv_excludes_and_reports_partial_final_utc_day(self):
+        full_days = 50
+        bars_per_day = 288
+        partial_bars = 28
+        complete = _make_rates_ext(
+            full_days * bars_per_day,
+            bar_secs=300,
+            start_epoch=int(
+                datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+            ),
+            seed=123,
+        )
+        partial = _make_rates_ext(
+            partial_bars,
+            base_price=float(complete["close"][-1]),
+            bar_secs=300,
+            start_epoch=int(
+                datetime(2026, 2, 20, tzinfo=timezone.utc).timestamp()
+            ),
+            seed=456,
+        )
+        with_partial = np.concatenate([complete, partial])
+
+        with _mock_env(rates_side_effect=[complete]):
+            complete_result = forecast_volatility(
+                "BTCUSD", "H4", 3, method="har_rv", detail="full"
+            )
+        with _mock_env(rates_side_effect=[with_partial]):
+            partial_result = forecast_volatility(
+                "BTCUSD", "H4", 3, method="har_rv", detail="full"
+            )
+
+        assert complete_result["success"] is True
+        assert partial_result["success"] is True
+        assert partial_result["volatility_per_bar"] == pytest.approx(
+            complete_result["volatility_per_bar"]
+        )
+        aggregate = partial_result["final_daily_aggregate"]
+        assert aggregate == {
+            "utc_day": "2026-02-20",
+            "start": "2026-02-20T00:00Z",
+            "end": "2026-02-20T02:15Z",
+            "observed_bars": 28,
+            "expected_bars": 288,
+            "coverage_fraction": pytest.approx(28 / 288, abs=0.0001),
+            "minimum_coverage_fraction": 0.9,
+            "complete": False,
+            "included_in_har": False,
+            "policy": "exclude_final_utc_day_below_recent_median_coverage",
+            "expected_bars_basis": "median_of_up_to_20_prior_utc_days",
+        }
+        assert partial_result["data_window"]["returns_used"] == (
+            full_days * (bars_per_day - 1)
+        )
+        assert any(
+            "Excluded the final incomplete UTC-day" in warning
+            for warning in partial_result["warnings"]
+        )
+
     def test_invalid_rv_timeframe(self):
         """Line 1090-1091: rv_timeframe not in TIMEFRAME_MAP."""
         with _mock_env(rates_side_effect=self._har_rv_side_effect()):

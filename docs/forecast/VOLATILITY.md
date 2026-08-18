@@ -128,6 +128,12 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
 - `window_w`: Weekly window (default: 5)
 - `window_m`: Monthly window (default: 22)
 
+HAR-RV computes returns only within each UTC day, so overnight gaps are not
+counted as intraday variance. It estimates normal daily coverage from the
+median bar count of up to 20 prior UTC days and excludes the final day when it
+has less than 90% of that coverage. Full output reports the final aggregate's
+observed time range, observed and expected bars, coverage, and inclusion status.
+
 **When to use:** When you need the most accurate volatility forecasts and have access to intraday data.
 
 ---
