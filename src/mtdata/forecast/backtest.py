@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from ..core.output_contract import normalize_output_verbosity_detail
-from ..shared.constants import TIMEFRAME_MAP
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
@@ -1004,6 +1004,7 @@ def _build_strategy_trade(
     spread_cost_available: bool,
     spread_cost_source: str,
     exit_reason: str,
+    exit_time_basis: Literal["bar_open_time", "bar_close_time"] = "bar_open_time",
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
     if gross_return <= -0.999:
@@ -1024,8 +1025,16 @@ def _build_strategy_trade(
         "exit_time": _format_time_minimal(float(exit_time)),
         "entry_price": float(entry_price),
         "exit_price": float(exit_price),
-        "bars_held": int(max(1, exit_idx - entry_idx)),
+        "bars_held": int(
+            max(
+                1,
+                exit_idx
+                - entry_idx
+                + (1 if exit_time_basis == "bar_close_time" else 0),
+            )
+        ),
         "exit_reason": exit_reason,
+        "exit_time_basis": exit_time_basis,
         "spread_cost_bps": float(abs(spread_bps) or 0.0),
         "spread_cost_status": "included" if spread_cost_available else "missing",
         "spread_cost_source": spread_cost_source,
@@ -1058,7 +1067,8 @@ def _longest_continuous_exposure_bars(trades: List[Dict[str, Any]]) -> int:
     intervals = sorted(
         (
             int(trade["_entry_idx"]),
-            int(trade["_exit_idx"]),
+            int(trade["_exit_idx"])
+            + (1 if trade.get("exit_time_basis") == "bar_close_time" else 0),
         )
         for trade in trades
     )
@@ -1093,6 +1103,65 @@ def _historical_bar_spread_prices(symbol: str, frame: Any) -> Tuple[Optional[np.
         return None, coverage
     spread_prices = np.where(valid, spread_points * point, np.nan)
     return spread_prices, coverage
+
+
+def _current_spread_bps_suggestion(symbol: str) -> Optional[float]:
+    """Return a current quoted spread only as explicit fixed-cost guidance."""
+    try:
+        tick = mt5.symbol_info_tick(symbol)
+        bid = float(getattr(tick, "bid", 0.0) or 0.0)
+        ask = float(getattr(tick, "ask", 0.0) or 0.0)
+        mid = (bid + ask) / 2.0
+    except Exception:
+        return None
+    if not all(math.isfinite(value) for value in (bid, ask, mid)):
+        return None
+    if bid <= 0.0 or ask <= bid or mid <= 0.0:
+        return None
+    return round((ask - bid) / mid * 10_000.0, 4)
+
+
+def _cost_model_unavailable_error(
+    *,
+    symbol: str,
+    coverage: float,
+    observations: int,
+    bars_checked: int,
+) -> Dict[str, Any]:
+    suggested_spread = _current_spread_bps_suggestion(symbol)
+    fixed_value = (
+        f"{suggested_spread:g}" if suggested_spread is not None else "<round-trip-bps>"
+    )
+    out: Dict[str, Any] = {
+        "success": False,
+        "error_code": "cost_model_unavailable",
+        "error": (
+            "Historical bar spread coverage is incomplete for the evaluation data; "
+            "strategy evaluation was not run because transaction-cost-adjusted "
+            "metrics would be unusable."
+        ),
+        "symbol": symbol,
+        "cost_model": {
+            "requested_type": "historical_bar_spread",
+            "source": (
+                "mt5_historical_bar_spread"
+                if observations > 0
+                else "unavailable"
+            ),
+            "historical_bar_observations": int(observations),
+            "bars_checked": int(bars_checked),
+            "coverage_pct": round(float(coverage) * 100.0, 2),
+            "complete": False,
+        },
+        "remediation": (
+            "Retry with complete historical spread data or pass "
+            f"--cost-model fixed --spread-bps {fixed_value}."
+        ),
+    }
+    if suggested_spread is not None:
+        out["suggested_fixed_spread_bps"] = suggested_spread
+        out["suggestion_basis"] = "current_bid_ask_snapshot"
+    return out
 
 
 def _historical_trade_spread_bps(
@@ -1253,8 +1322,25 @@ def strategy_backtest(  # noqa: C901
                 "error": "--spread-bps is only valid with --cost-model fixed"
             }
         if cost_model_value == "fixed" and spread_bps is None:
+            suggested_spread = _current_spread_bps_suggestion(symbol)
+            fixed_value = (
+                f"{suggested_spread:g}"
+                if suggested_spread is not None
+                else "<round-trip-bps>"
+            )
             return {
-                "error": "--spread-bps is required with --cost-model fixed"
+                "success": False,
+                "error_code": "invalid_cost_model_parameters",
+                "error": "--spread-bps is required with --cost-model fixed",
+                "remediation": f"Pass --cost-model fixed --spread-bps {fixed_value}.",
+                **(
+                    {
+                        "suggested_fixed_spread_bps": suggested_spread,
+                        "suggestion_basis": "current_bid_ask_snapshot",
+                    }
+                    if suggested_spread is not None
+                    else {}
+                ),
             }
         fixed_spread_bps = float(spread_bps or 0.0)
 
@@ -1350,6 +1436,18 @@ def strategy_backtest(  # noqa: C901
             historical_spread_prices, historical_spread_coverage = (
                 _historical_bar_spread_prices(symbol, df)
             )
+            historical_spread_observations = (
+                int(np.sum(np.isfinite(historical_spread_prices)))
+                if historical_spread_prices is not None
+                else 0
+            )
+            if historical_spread_coverage < 1.0:
+                return _cost_model_unavailable_error(
+                    symbol=symbol,
+                    coverage=historical_spread_coverage,
+                    observations=historical_spread_observations,
+                    bars_checked=len(df),
+                )
 
         signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
             df,
@@ -1527,7 +1625,10 @@ def strategy_backtest(  # noqa: C901
                     entry_idx=int(entry_idx),
                     exit_idx=int(final_exit_idx),
                     entry_time=float(entry_time),
-                    exit_time=float(times[final_exit_idx]),
+                    exit_time=(
+                        float(times[final_exit_idx])
+                        + float(TIMEFRAME_SECONDS[timeframe])
+                    ),
                     entry_price=float(entry_price),
                     exit_price=float(final_exit_price),
                     slippage_bps=float(slippage_bps),
@@ -1535,6 +1636,7 @@ def strategy_backtest(  # noqa: C901
                     spread_cost_available=spread_cost_available,
                     spread_cost_source=trade_spread_source,
                     exit_reason="end_of_data",
+                    exit_time_basis="bar_close_time",
                 )
             )
 
@@ -1881,20 +1983,18 @@ def strategy_backtest(  # noqa: C901
                 # Build equity curve with timestamps
                 equity_curve = []
                 cumulative_net = 1.0
-                trade_exit_times = {}
-                for i, trade in enumerate(trades):
-                    exit_idx = trade.get("_exit_idx")
-                    if exit_idx is not None:
-                        trade_exit_times[int(exit_idx)] = i
-                
-                for idx in sorted(trade_exit_times.keys()):
-                    trade_idx = trade_exit_times[idx]
+                ordered_trades = sorted(
+                    trades,
+                    key=lambda trade: int(trade.get("_exit_idx") or 0),
+                )
+
+                for trade in ordered_trades:
                     trade_known_cost_return = float(
-                        trades[trade_idx].get("return_after_known_costs") or 0.0
+                        trade.get("return_after_known_costs") or 0.0
                     )
                     cumulative_net *= (1.0 + trade_known_cost_return)
                     equity_curve.append({
-                        "time": _format_time_minimal(float(times[idx])),
+                        "time": trade["exit_time"],
                         "equity": cumulative_net,
                     })
                 

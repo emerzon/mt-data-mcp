@@ -1657,7 +1657,9 @@ def _rates(
     now = datetime.now(timezone.utc).timestamp()
     seconds = TIMEFRAME_SECONDS[timeframe]
     df = df[df["time"] + seconds <= now]
-    return df.tail(int(count)).reset_index(drop=True)
+    if not (start and end):
+        df = df.tail(int(count))
+    return df.reset_index(drop=True)
 
 
 def _builtin_signal(close: pd.Series, candidate: StrategyCandidate) -> pd.Series:
@@ -2264,7 +2266,27 @@ def validate_strategies(  # noqa: C901
             "barrier_window": "entry_bar_through_horizon",
         },
         "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "window": spread_window, "complete": complete},
-        "data_quality": {"bars": len(df), "cost_model_complete": complete},
+        "data_quality": {
+            "bars": len(df),
+            "cost_model_complete": complete,
+            "history_selection": {
+                "mode": (
+                    "explicit_range"
+                    if request.start and request.end
+                    else "latest_lookback"
+                ),
+                "lookback_bars_requested": int(request.lookback),
+                "lookback_applied": not bool(request.start and request.end),
+                "bars_used": int(len(df)),
+                "requested_start": request.start,
+                "requested_end": request.end,
+                "first_bar_open": format_epoch_utc(float(df["time"].iloc[0])),
+                "last_bar_close": format_epoch_utc(
+                    float(df["time"].iloc[-1])
+                    + float(TIMEFRAME_SECONDS[request.timeframe])
+                ),
+            },
+        },
         "units": {
             "net_expectancy": "return_fraction_per_trade",
             "max_drawdown": "return_fraction",

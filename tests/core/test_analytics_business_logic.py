@@ -1422,6 +1422,44 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
 
 
+def test_strategy_validation_explicit_range_is_not_tailed_to_lookback() -> None:
+    gateway = FakeGateway()
+    rows = gateway.bar_rows["EURUSD"]
+    start = datetime.fromtimestamp(rows[0]["time"], timezone.utc).isoformat()
+    end = datetime.fromtimestamp(rows[-1]["time"], timezone.utc).isoformat()
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=200,
+        start=start,
+        end=end,
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+                "params": {"fast_period": 5, "slow_period": 20},
+            }
+        ],
+        barrier={"horizon": 1, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=2,
+        cost_model="fixed",
+        spread_bps=1.0,
+        bootstrap_samples=100,
+    )
+
+    result = validate_strategies(request, gateway)
+
+    selection = result["data_quality"]["history_selection"]
+    assert result["success"] is True
+    assert result["data_quality"]["bars"] == len(rows)
+    assert selection["mode"] == "explicit_range"
+    assert selection["lookback_bars_requested"] == 200
+    assert selection["lookback_applied"] is False
+    assert selection["bars_used"] == len(rows)
+    assert selection["requested_start"] == start
+    assert selection["requested_end"] == end
+
+
 @pytest.mark.parametrize(
     ("fold_windows", "indices", "skipped_reason"),
     [
