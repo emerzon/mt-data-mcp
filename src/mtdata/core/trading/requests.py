@@ -383,8 +383,8 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
         default=50,
         ge=1,
         description=(
-            "Maximum realized exit deals to analyze. The command pages through "
-            "raw deal history as needed. Default 50 keeps post-session review fast."
+            "Maximum per-trade rows returned in full detail. Period statistics "
+            "always analyze all realized exits in the resolved time window."
         ),
     )
     breakdown_limit: int = Field(default=10, ge=1)

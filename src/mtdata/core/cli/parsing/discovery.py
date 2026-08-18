@@ -634,8 +634,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "when start/end and minutes_back are omitted."
     ),
     ("trade_journal_analyze", "limit"): (
-        "Maximum realized exit deals to analyze. The command pages through raw "
-        "history rows as needed (default 50)."
+        "Maximum per-trade rows returned in full detail (default 50). Period "
+        "statistics always analyze every realized exit in the resolved window."
     ),
     ("trade_execution_quality", "minutes_back"): (
         "Execution-history lookback in minutes (default 43200 = 30 days)."

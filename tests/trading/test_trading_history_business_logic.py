@@ -1662,19 +1662,21 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
     assert "best_trades" not in out
     assert "worst_trades" not in out
     assert out["sample_provenance"] == {
-        "requested_exit_limit": 50,
+        "output_item_limit": 50,
         "history_rows_scanned": 2,
-        "exit_deals_returned": 2,
-        "exit_target_satisfied": False,
+        "period_exit_deals_analyzed": 2,
+        "analysis_complete": True,
+        "items_returned": 0,
+        "items_truncated": False,
         "history_has_more": False,
     }
 
 
-def test_trade_journal_limit_pages_until_requested_exit_count() -> None:
+def test_trade_journal_pages_until_period_history_is_complete() -> None:
     pages = {
         0: [
-            {"ticket": 1, "symbol": "EURUSD", "entry": "In", "profit": 0.0},
-            {"ticket": 2, "symbol": "GBPUSD", "entry": "In", "profit": 0.0},
+            {"ticket": 1, "symbol": "EURUSD", "entry": "Out", "profit": 3.0},
+            {"ticket": 2, "symbol": "GBPUSD", "entry": "Out", "profit": 4.0},
         ],
         2: [
             {"ticket": 3, "symbol": "EURUSD", "entry": "Out", "profit": 2.0},
@@ -1707,14 +1709,59 @@ def test_trade_journal_limit_pages_until_requested_exit_count() -> None:
         out = trade_journal_analyze(limit=2, __cli_raw=True)
 
     assert observed_offsets == [0, 2]
-    assert out["sample_size"] == 2
+    assert out["sample_size"] == 4
     assert out["sample_provenance"] == {
-        "requested_exit_limit": 2,
+        "output_item_limit": 2,
         "history_rows_scanned": 4,
-        "exit_deals_returned": 2,
-        "exit_target_satisfied": True,
+        "period_exit_deals_analyzed": 4,
+        "analysis_complete": True,
+        "items_returned": 0,
+        "items_truncated": False,
         "history_has_more": False,
         "history_rows_available": 4,
+    }
+
+
+def test_trade_journal_limit_caps_items_not_period_statistics() -> None:
+    rows = [
+        {
+            "ticket": index,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "profit": float(index),
+        }
+        for index in range(1, 61)
+    ]
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": len(rows),
+            "items": rows,
+            "pagination": {
+                "total": len(rows),
+                "returned": len(rows),
+                "offset": 0,
+                "limit": 100,
+                "has_more": False,
+            },
+        },
+    ):
+        out = trade_journal_analyze(limit=50, detail="full", __cli_raw=True)
+
+    assert out["summary"]["closed_deals"] == 60
+    assert out["summary"]["net_pnl"] == 1830.0
+    assert out["sample_size"] == 60
+    assert len(out["items"]) == 50
+    assert out["sample_provenance"] == {
+        "output_item_limit": 50,
+        "history_rows_scanned": 60,
+        "period_exit_deals_analyzed": 60,
+        "analysis_complete": True,
+        "items_returned": 50,
+        "items_truncated": True,
+        "history_has_more": False,
+        "history_rows_available": 60,
     }
 
 
@@ -1864,7 +1911,8 @@ def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
     assert out["minutes_back_effective"] == 60
     assert "note" not in out
     assert "Only 0 realized exit deal" in out["sample_warning"]
-    assert "Increase limit to analyze more exit deals" in out["sample_warning"]
+    assert "Increase minutes_back" in out["sample_warning"]
+    assert "Increase limit" not in out["sample_warning"]
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:

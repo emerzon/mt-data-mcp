@@ -437,8 +437,8 @@ def _run_trade_journal_request(  # noqa: C901
     )
     if side_filter is not None:
         period_context["side_filter"] = side_filter
-    requested_exit_limit = int(request.limit)
-    page_limit = min(1_000, max(50, requested_exit_limit * 2))
+    requested_item_limit = int(request.limit)
+    page_limit = min(1_000, max(100, requested_item_limit * 2))
     raw_rows: List[Dict[str, Any]] = []
     currency: Optional[str] = None
     message: Any = None
@@ -459,18 +459,6 @@ def _run_trade_journal_request(  # noqa: C901
         ).strip().lower()
         return actual == value or actual.startswith(f"{value} ") or actual.startswith(
             f"{value}_"
-        )
-
-    def _usable_exit_count() -> int:
-        return sum(
-            1
-            for row in raw_rows
-            if isinstance(row, dict)
-            and row.get("timestamp_anomaly") is not True
-            and str(row.get("symbol") or "").strip()
-            and _matches_requested_side(row)
-            and _is_exit_deal_row(row)
-            and _trade_journal_net_pnl(row) is not None
         )
 
     while True:
@@ -512,7 +500,7 @@ def _run_trade_journal_request(  # noqa: C901
         else:
             history_has_more = False
             next_offset = None
-        if _usable_exit_count() >= requested_exit_limit or not history_has_more:
+        if not history_has_more:
             break
         try:
             next_offset_value = int(next_offset)
@@ -523,11 +511,20 @@ def _run_trade_journal_request(  # noqa: C901
         page_offset = next_offset_value
 
     def _sample_provenance(exit_deals: int) -> Dict[str, Any]:
+        items_returned = (
+            min(int(exit_deals), requested_item_limit)
+            if detail_mode == "full"
+            else 0
+        )
         out = {
-            "requested_exit_limit": requested_exit_limit,
+            "output_item_limit": requested_item_limit,
             "history_rows_scanned": len(raw_rows),
-            "exit_deals_returned": int(exit_deals),
-            "exit_target_satisfied": int(exit_deals) >= requested_exit_limit,
+            "period_exit_deals_analyzed": int(exit_deals),
+            "analysis_complete": not history_has_more,
+            "items_returned": items_returned,
+            "items_truncated": bool(
+                detail_mode == "full" and int(exit_deals) > requested_item_limit
+            ),
             "history_has_more": history_has_more,
         }
         if history_total_count is not None:
@@ -611,8 +608,6 @@ def _run_trade_journal_request(  # noqa: C901
                     enriched[money_key] = rounded_value
         enriched["net_pnl"] = net_pnl
         analyzed_rows.append(enriched)
-        if len(analyzed_rows) >= requested_exit_limit:
-            break
 
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
@@ -720,7 +715,8 @@ def _run_trade_journal_request(  # noqa: C901
         ]
     if detail_mode == "full":
         payload["items"] = [
-            _trade_journal_trade_snapshot(row) for row in analyzed_rows
+            _trade_journal_trade_snapshot(row)
+            for row in analyzed_rows[:requested_item_limit]
         ]
         payload["item_schema"] = "trade_journal_analyzed_exit.v2"
         payload["best_trades"] = [
@@ -758,7 +754,6 @@ def _trade_journal_sample_quality(exit_deals: int, *, minimum: int = 30) -> Dict
     }
     if count < recommended:
         quality["suggestions"] = [
-            "Increase limit to analyze more realized exit deals.",
             "Increase minutes_back or provide a wider start/end range.",
             "Remove symbol or side filters if you want account-level statistics.",
         ]
@@ -771,8 +766,8 @@ def _trade_journal_sample_warning(exit_deals: int, *, minimum: int = 30) -> Opti
         return None
     return (
         f"Only {int(exit_deals)} realized exit deal(s) were analyzed; "
-        f"{recommended}+ is recommended for basic journal statistics. Increase limit to analyze more exit deals, "
-        "increase minutes_back, or provide a wider start/end range."
+        f"{recommended}+ is recommended for basic journal statistics. Increase "
+        "minutes_back or provide a wider start/end range."
     )
 
 
