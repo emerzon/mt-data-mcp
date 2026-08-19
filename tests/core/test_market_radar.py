@@ -95,6 +95,25 @@ def test_market_radar_full_detail_requests_full_scan_rows() -> None:
     assert observed["detail"] == "full"
 
 
+def test_market_radar_live_ranking_requires_usable_quotes() -> None:
+    observed: Dict[str, Any] = {}
+
+    def caller(name: str, kwargs: Dict[str, Any]) -> Any:
+        observed.update(kwargs)
+        return _scan_rows("EURUSD")
+
+    run_market_radar(
+        MarketRadarRequest(
+            symbols="EURUSD",
+            rank_by="abs_live_price_change_pct",
+        ),
+        call_section=caller,
+    )
+
+    assert observed["rank_by"] == "abs_live_price_change_pct"
+    assert observed["quote_usable_only"] is True
+
+
 def test_market_radar_reports_missing_names() -> None:
     result = run_market_radar(
         MarketRadarRequest(symbols="EURUSD,NOPE"),

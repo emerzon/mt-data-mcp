@@ -82,6 +82,8 @@ class MarketRadarRequest(BaseModel):
     rank_by: Literal[
         "watchlist",
         "abs_price_change_pct",
+        "abs_live_price_change_pct",
+        "live_price_change_pct",
         "price_change_pct",
         "spread_pct",
         "tick_volume",
@@ -293,12 +295,16 @@ def run_market_radar(
         requested = list(_DEFAULT_SEED[:limit])
 
     scan_rank = "abs_price_change_pct" if request.rank_by == "watchlist" else request.rank_by
+    live_rank = scan_rank in {
+        "abs_live_price_change_pct",
+        "live_price_change_pct",
+    }
     scan_kwargs = {
         "symbols": ",".join(requested),
         "timeframe": request.timeframe,
         "limit": limit,
         "rank_by": scan_rank,
-        "quote_usable_only": False,
+        "quote_usable_only": live_rank,
         "detail": request.detail,
     }
     scan = caller("scan", scan_kwargs)
@@ -334,7 +340,7 @@ def run_market_radar(
                 "timeframe": request.timeframe,
                 "limit": limit,
                 "rank_by": scan_rank,
-                "quote_usable_only": False,
+                "quote_usable_only": live_rank,
                 "detail": "compact",
             },
         )

@@ -585,13 +585,16 @@ mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03
 rows expose `bid`, `ask`, `mid`, and `quote_as_of`; use those fields for a live
 mark and the bar fields for ranking and indicator context. Price-change rows
 also expose `live_price_change_pct`, measured from the previous completed close
-to the current midpoint, so a forming-bar reversal is explicit. Spread-ranked scans
-and the `tight_spread` preset exclude quotes that are not usable for live
-trading before pagination; pass `--quote-usable-only false` only when inspecting
-stale or otherwise non-executable snapshots intentionally. Other rankings keep
-such rows by default because their scores use completed bars; compact rows
-therefore include `spread_quality` and `quote_usable_for_live_trading` so a
-locked or otherwise unsafe live quote cannot look executable.
+to the current midpoint, so a forming-bar reversal is explicit. Use
+`--rank-by live_price_change_pct` for gainers or
+`--rank-by abs_live_price_change_pct` for two-sided live movers. Spread-ranked
+and live-ranked scans plus the `tight_spread` preset exclude quotes that are not
+usable for live trading before pagination; pass `--quote-usable-only false`
+only when inspecting stale or otherwise non-executable snapshots intentionally.
+Other rankings keep such rows by default because their scores use completed
+bars; compact rows therefore include `spread_quality` and
+`quote_usable_for_live_trading` so a locked or otherwise unsafe live quote
+cannot look executable.
 
 Price-change rankings compare the previous completed close with the latest
 completed close over exactly one requested `timeframe` bar. Responses expose

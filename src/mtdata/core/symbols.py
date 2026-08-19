@@ -3431,6 +3431,10 @@ def _market_scan_missing_required_metric(
     requirements: List[tuple[str, str]] = []
     if rank_by in {"abs_price_change_pct", "price_change_pct"}:
         requirements.append(("price_change_pct", "price-change data is unavailable."))
+    elif rank_by in {"abs_live_price_change_pct", "live_price_change_pct"}:
+        requirements.append(
+            ("live_price_change_pct", "Live price-change data is unavailable.")
+        )
     elif rank_by == "gap_pct":
         requirements.append(("gap_pct", "Gap data is unavailable."))
     elif rank_by == "tick_volume":
@@ -3536,12 +3540,31 @@ def _market_scan_sort_rows(
             )
         )
         return
+    if rank_by == "abs_live_price_change_pct":
+        rows.sort(
+            key=lambda row: (
+                row.get("quote_usable_for_live_trading") is not True,
+                bool(row.get("bar_stale")),
+                row.get("live_price_change_pct") is None,
+                (
+                    abs(float(row.get("live_price_change_pct") or 0.0))
+                    if order == "asc"
+                    else -abs(float(row.get("live_price_change_pct") or 0.0))
+                ),
+                row.get("symbol") or "",
+            )
+        )
+        return
 
     missing_value = float("inf") if order == "asc" else 0.0
 
     rows.sort(
         key=lambda row: (
             rank_by == "spread_pct" and row.get("spread_valid") is not True,
+            (
+                rank_by == "live_price_change_pct"
+                and row.get("quote_usable_for_live_trading") is not True
+            ),
             bool(row.get("bar_stale")),
             row.get(rank_by) is None,
             (
@@ -3556,6 +3579,8 @@ def _market_scan_sort_rows(
 
 _RANK_BY_ALIASES = {
     "abs_price_change": "abs_price_change_pct",
+    "abs_live_price_change": "abs_live_price_change_pct",
+    "live_price_change": "live_price_change_pct",
     "price_change": "price_change_pct",
     "spread": "spread_pct",
 }
@@ -3571,6 +3596,10 @@ _SYMBOLS_TOP_MARKETS_INTERNAL_RANK_BY = {
 _MARKET_SCAN_RANK_BY_CHOICES = (
     "abs_price_change_pct",
     "abs_price_change",
+    "abs_live_price_change_pct",
+    "abs_live_price_change",
+    "live_price_change_pct",
+    "live_price_change",
     "price_change_pct",
     "price_change",
     "gap_pct",
@@ -3630,6 +3659,18 @@ def _market_scan_ranking_label(
         )
     if rank_by == "price_change_pct":
         return "lowest_price_change_pct" if order == "asc" else "highest_price_change_pct"
+    if rank_by == "abs_live_price_change_pct":
+        return (
+            "smallest_abs_live_price_change_pct"
+            if order == "asc"
+            else "largest_abs_live_price_change_pct"
+        )
+    if rank_by == "live_price_change_pct":
+        return (
+            "lowest_live_price_change_pct"
+            if order == "asc"
+            else "highest_live_price_change_pct"
+        )
     if rank_by == "gap_pct":
         return "lowest_gap_pct" if order == "asc" else "highest_gap_pct"
     if rank_by == "tick_volume":
@@ -4386,7 +4427,7 @@ def market_scan(  # noqa: C901
     rsi_below: Optional[float] = None,
     rsi_above: Optional[float] = None,
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
-    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "gap_pct", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
+    rank_by: Literal["abs_price_change_pct", "abs_price_change", "abs_live_price_change_pct", "abs_live_price_change", "live_price_change_pct", "live_price_change", "price_change_pct", "price_change", "gap_pct", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
     rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
     quote_usable_only: Optional[bool] = None,
 ) -> Dict[str, Any]:
@@ -4394,17 +4435,19 @@ def market_scan(  # noqa: C901
 
     Pass `symbols` for one instrument or a comma-separated list. `price_change_pct`
     is the return from the previous completed bar close to the latest completed
-    bar close. `data` is the canonical flat row payload. Compact detail is the
+    bar close. Use `live_price_change_pct` or `abs_live_price_change_pct` to rank
+    from the previous completed close to the current quote midpoint. `data` is
+    the canonical flat row payload. Compact detail is the
     default; use
     `detail="full"` when you also want the explicit `columns` ordering hint
     for compatibility. Broad scans use the visible universe; `universe="all"`
     must be combined with `symbols` or `group` to avoid unbounded hidden-symbol
     activation. Use `symbols_top_markets` for a quick all-market overview with
     separate spread, volume, and mover leaderboards. `quote_usable_only` defaults
-    to true for spread rankings and the `tight_spread` preset, excluding stale,
-    future, locked, inverted, and one-sided quotes before pagination. Set it
-    explicitly for other rankings. Locked or invalid quotes cannot satisfy a
-    maximum-spread filter.
+    to true for spread and live-price-change rankings and the `tight_spread`
+    preset, excluding stale, future, locked, inverted, and one-sided quotes
+    before pagination. Set it explicitly for other rankings. Locked or invalid
+    quotes cannot satisfy a maximum-spread filter.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -4439,7 +4482,9 @@ def market_scan(  # noqa: C901
 
     normalized_rank_by, _ = _normalize_market_scan_rank_by(rank_by)
     quote_usable_only_value = (
-        normalized_rank_by == "spread_pct" or preset_value == "tight_spread"
+        normalized_rank_by
+        in {"spread_pct", "live_price_change_pct", "abs_live_price_change_pct"}
+        or preset_value == "tight_spread"
         if quote_usable_only is None
         else bool(quote_usable_only)
     )
@@ -4532,7 +4577,7 @@ def market_scan(  # noqa: C901
             request["rank_by"] = rank_by_value
             if rank_by_input != rank_by_value:
                 request["rank_by_input"] = rank_by_input
-            if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "gap_pct", "tick_volume", "rsi", "spread_pct"}:
+            if rank_by_value not in {"abs_price_change_pct", "abs_live_price_change_pct", "live_price_change_pct", "price_change_pct", "gap_pct", "tick_volume", "rsi", "spread_pct"}:
                 return _market_scan_error(
                     (
                         "rank_by must be one of: "
@@ -5099,6 +5144,12 @@ def market_scan(  # noqa: C901
                     "excluded_examples": quote_eligibility_examples,
                 },
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
+                "ranking_basis": (
+                    "previous_completed_close_to_live_quote_mid"
+                    if rank_by_value
+                    in {"live_price_change_pct", "abs_live_price_change_pct"}
+                    else "completed_bar_metric"
+                ),
                 "price_change_period": {
                     "bars": 1,
                     "timeframe": timeframe,

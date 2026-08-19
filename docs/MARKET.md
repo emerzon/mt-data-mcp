@@ -72,8 +72,10 @@ bands, and similar). Price-change ranks compare the previous completed close
 with the latest completed close over exactly one requested timeframe bar.
 Each compact row includes that bar's `time` and `live_price_change_pct`, which
 compares the previous completed close with the current quote midpoint. A
-mixed-session result omits a
-single `data_as_of` and exposes `data_as_of_range` plus
+forming-bar leaderboard can use `--rank-by live_price_change_pct` for gainers
+or `--rank-by abs_live_price_change_pct` for two-sided movers. Those live modes
+exclude quotes that are not usable for live trading by default. A mixed-session
+result omits a single `data_as_of` and exposes `data_as_of_range` plus
 `bar_time_alignment.comparable=false`.
 
 ---

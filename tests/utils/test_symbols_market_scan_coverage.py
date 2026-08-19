@@ -61,6 +61,12 @@ def test_quote_filter_names_source_conflict_before_freshness() -> None:
     [
         ("abs_price_change_pct", "asc", "smallest_abs_price_change_pct"),
         ("abs_price_change_pct", "desc", "largest_abs_price_change_pct"),
+        (
+            "abs_live_price_change_pct",
+            "desc",
+            "largest_abs_live_price_change_pct",
+        ),
+        ("live_price_change_pct", "asc", "lowest_live_price_change_pct"),
         ("price_change_pct", "asc", "lowest_price_change_pct"),
         ("price_change_pct", "desc", "highest_price_change_pct"),
         ("gap_pct", "asc", "lowest_gap_pct"),
@@ -84,6 +90,117 @@ def test_market_scan_ranking_label_matches_effective_order(
         _market_scan_ranking_label(rank_by, rank_order=rank_order)
         == expected
     )
+
+
+def test_market_scan_can_rank_forming_bar_live_change() -> None:
+    from mtdata.core.symbols import _market_scan_sort_rows
+
+    rows = [
+        {
+            "symbol": "CLOSED_BAR_LEADER",
+            "price_change_pct": -5.0,
+            "live_price_change_pct": -0.5,
+            "quote_usable_for_live_trading": True,
+        },
+        {
+            "symbol": "LIVE_LEADER",
+            "price_change_pct": 1.0,
+            "live_price_change_pct": 3.0,
+            "quote_usable_for_live_trading": True,
+        },
+    ]
+
+    _market_scan_sort_rows(
+        rows,
+        rank_by="abs_live_price_change_pct",
+        rank_order="auto",
+        rsi_above=None,
+        rsi_below=None,
+    )
+
+    assert [row["symbol"] for row in rows] == [
+        "LIVE_LEADER",
+        "CLOSED_BAR_LEADER",
+    ]
+
+
+def test_market_scan_live_rank_puts_unusable_quotes_last() -> None:
+    from mtdata.core.symbols import _market_scan_sort_rows
+
+    rows = [
+        {
+            "symbol": "UNUSABLE",
+            "live_price_change_pct": 5.0,
+            "quote_usable_for_live_trading": False,
+        },
+        {
+            "symbol": "USABLE",
+            "live_price_change_pct": 1.0,
+            "quote_usable_for_live_trading": True,
+        },
+    ]
+
+    _market_scan_sort_rows(
+        rows,
+        rank_by="live_price_change_pct",
+        rank_order="desc",
+        rsi_above=None,
+        rsi_below=None,
+    )
+
+    assert [row["symbol"] for row in rows] == ["USABLE", "UNUSABLE"]
+
+
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_market_scan_live_rank_changes_public_leaderboard(
+    mock_symbols_get,
+    mock_tick,
+    mock_rates,
+    mock_group,
+) -> None:
+    now = 1_700_010_800.0
+    mock_symbols_get.return_value = [
+        _make_symbol("CLOSED_BAR_LEADER", digits=2, point=0.01),
+        _make_symbol("LIVE_LEADER", digits=2, point=0.01),
+    ]
+    mock_tick.side_effect = lambda symbol: {
+        "CLOSED_BAR_LEADER": SimpleNamespace(
+            bid=99.49,
+            ask=99.51,
+            time=now - 1.0,
+        ),
+        "LIVE_LEADER": SimpleNamespace(
+            bid=102.99,
+            ask=103.01,
+            time=now - 1.0,
+        ),
+    }[symbol]
+    mock_rates.side_effect = lambda symbol, *_args: {
+        "CLOSED_BAR_LEADER": _make_bars([100.0, 100.0, 95.0]),
+        "LIVE_LEADER": _make_bars([100.0, 100.0, 101.0]),
+    }[symbol]
+
+    with patch("mtdata.core.symbols.time.time", return_value=now):
+        result = _get_market_scan()(
+            symbols="CLOSED_BAR_LEADER,LIVE_LEADER",
+            timeframe="H1",
+            lookback=3,
+            limit=2,
+            rank_by="abs_live_price_change_pct",
+            detail="full",
+        )
+
+    assert result["success"] is True
+    assert [row["symbol"] for row in result["data"]] == [
+        "LIVE_LEADER",
+        "CLOSED_BAR_LEADER",
+    ]
+    assert result["ranking"] == "largest_abs_live_price_change_pct"
+    assert result["ranking_basis"] == "previous_completed_close_to_live_quote_mid"
+    assert result["quote_usable_only"] is True
 
 
 def test_market_scan_spread_cost_uses_account_currency() -> None:

@@ -178,9 +178,11 @@ Read-only open positions and pending orders for one symbol. No mutations.
 Batched watchlist rows for the chart workspace. Cap is 20 symbols.
 
 - **Query:** `symbols` (comma-separated; omit to seed majors / top markets),
-  `timeframe` (default `H1`), `rank_by` (`watchlist` keeps requested order),
-  `limit` (1–20).
-- Unusable quotes stay in the list and are marked `quote_not_live_ready`.
+  `timeframe` (default `H1`), `rank_by` (`watchlist` keeps requested order;
+  `live_price_change_pct` and `abs_live_price_change_pct` rank forming-bar
+  movers), `limit` (1–20).
+- Unusable quotes stay in ordinary watchlists and are marked
+  `quote_not_live_ready`; live-change rankings exclude them.
 
 #### `GET /api/session-strip`
 
