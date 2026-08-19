@@ -456,19 +456,55 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(result["method"], "garch")
 
     def test_forecast_barrier_closed_form(self):
-        result = forecast_barrier_closed_form(
-            symbol="EURUSD",
-            timeframe="H1",
-            horizon=10,
-            direction="long",
-            barrier=1.2
-        )
+        with patch(
+            f'{_BARRIER_PROB_ROOT}._get_live_reference_price',
+            return_value=(1.125, "live_tick_ask"),
+        ), patch(
+            f'{_BARRIER_PROB_ROOT}._live_reference_time_context',
+            return_value={
+                "reference_price_time": "2026-08-19T19:31:24Z",
+                "reference_price_stale": False,
+                "reference_usable_for_live": True,
+            },
+        ):
+            result = forecast_barrier_closed_form(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                direction="long",
+                barrier=1.2
+            )
         self.assertIn("success", result)
         self.assertTrue(result["success"])
         self.assertIn("prob_hit", result)
-        self.assertEqual(result["last_price_source"], "candle_close")
+        self.assertEqual(result["last_price"], 1.125)
+        self.assertEqual(result["last_price_close"], float(self.df["close"].iloc[-1]))
+        self.assertEqual(result["last_price_source"], "live_tick_ask")
+        self.assertEqual(result["reference_price_time"], "2026-08-19T19:31:24Z")
+        self.assertEqual(result["analysis_mode"], "live_reference")
         self.assertEqual(result["bars_per_year"], 6240.0)
         self.assertEqual(result["annualization_basis"], "260_fx_weekdays_24h")
+
+    def test_closed_form_historical_anchor_does_not_query_live_tick(self):
+        with patch(
+            f'{_BARRIER_PROB_ROOT}._get_live_reference_price'
+        ) as live_reference:
+            result = forecast_barrier_closed_form(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                direction="long",
+                barrier=1.2,
+                as_of="2023-01-20T00:00:00Z",
+            )
+
+        live_reference.assert_not_called()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["last_price"], float(self.df["close"].iloc[-1]))
+        self.assertEqual(result["last_price_source"], "candle_close")
+        self.assertEqual(result["analysis_mode"], "historical_research")
+        self.assertFalse(result["usable_for_live_trading"])
+        self.assertIn("live_reference_quote_not_used", result["execution_blockers"])
 
     def test_closed_form_discloses_denoise_failure(self):
         with patch(

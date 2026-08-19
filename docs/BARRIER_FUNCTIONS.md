@@ -1372,6 +1372,13 @@ mtdata-cli forecast_barrier_prob \
   --method closed_form --direction long --barrier '{"kind":"single_price","level":1.1000}'
 ```
 
+For a current request, the closed-form calculation measures the barrier from
+the same direction-aware live side used by the simulation methods (ask for a
+long, bid for a short), while estimating drift and volatility from completed
+bars. `last_price_close` retains that model-data anchor. Requests with
+`--as-of`, `--start`, or `--end` remain candle-close-anchored historical
+research and are labeled `analysis_mode=historical_research`.
+
 ---
 
 ## Further Reading

@@ -592,7 +592,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "error": f"Error computing barrier probabilities: {str(e)}",
         }
 
-def forecast_barrier_closed_form(
+def forecast_barrier_closed_form(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
@@ -653,7 +653,23 @@ def forecast_barrier_closed_form(
         prices = prices[np.isfinite(prices)]
         if prices.size < 5:
             return {"error": "Insufficient prices"}
-        s0 = float(prices[-1])
+        (
+            last_price_close,
+            s0,
+            last_price_source,
+            price_warning,
+            price_error,
+        ) = _resolve_reference_prices(
+            prices,
+            symbol=symbol,
+            direction=direction_norm,
+            use_live_price=not bool(as_of or start or end),
+            live_price_getter=_get_live_reference_price,
+        )
+        if price_error:
+            return {"error": price_error}
+        if as_of or start or end:
+            last_price_source = "candle_close"
         if barrier <= 0:
             return {"error": "Provide a positive barrier price"}
         tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0)
@@ -703,7 +719,8 @@ def forecast_barrier_closed_form(
             "horizon": int(horizon),
             "direction": direction_norm,
             "last_price": s0,
-            "last_price_source": "candle_close",
+            "last_price_close": float(last_price_close),
+            "last_price_source": last_price_source,
             "barrier": float(barrier),
             "mu_annual": float(gbm_drift),
             "log_drift_annual": float(log_drift),
@@ -712,13 +729,30 @@ def forecast_barrier_closed_form(
             "annualization_basis": annualization_basis,
             "override_units": "annual_decimal_return_fraction",
             "prob_hit": float(prob),
+            "analysis_mode": (
+                "historical_research"
+                if as_of or start or end
+                else "live_reference"
+                if str(last_price_source or "").startswith("live_tick")
+                else "research_close_fallback"
+            ),
         }
         result.update(freshness_context)
+        if price_warning:
+            result["warnings"] = [price_warning]
+        reference_context: Dict[str, Any] = {}
+        if str(last_price_source or "").startswith("live_tick"):
+            reference_context = _live_reference_time_context(symbol, timeframe)
         _apply_barrier_freshness_contract(
             result,
             history_context=freshness_context,
-            reference_context={},
-            last_price_source="candle_close",
+            reference_context=reference_context,
+            last_price_source=last_price_source,
+        )
+        result["conditioning_note"] = (
+            "Drift and volatility use closed bars through "
+            f"{result.get('data_as_of')}; barrier distance starts from "
+            f"{result.get('last_price_source')}."
         )
         if denoise:
             result["denoise_applied"] = denoise_applied
@@ -739,7 +773,10 @@ def forecast_barrier_closed_form(
                 if denoise_warning not in existing_warnings:
                     existing_warnings.append(denoise_warning)
                 result["warnings"] = existing_warnings
-        if freshness_context.get("last_observation_close_time"):
+        if (
+            not str(last_price_source or "").startswith("live_tick")
+            and freshness_context.get("last_observation_close_time")
+        ):
             result["reference_price_time"] = freshness_context.get(
                 "last_observation_close_time"
             )
