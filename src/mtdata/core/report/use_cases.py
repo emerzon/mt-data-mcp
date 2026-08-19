@@ -207,6 +207,34 @@ def _derive_report_data_as_of(sections: Any) -> str | None:
     return _format_report_timestamp(min(section_times))
 
 
+def _report_temporal_alignment(sections: Any) -> Dict[str, Any] | None:
+    if not isinstance(sections, dict):
+        return None
+    context = sections.get("context")
+    forecast = sections.get("forecast")
+    if not isinstance(context, dict) or not isinstance(forecast, dict):
+        return None
+    snapshot = context.get("last_snapshot")
+    context_time = snapshot.get("time") if isinstance(snapshot, dict) else None
+    forecast_time = forecast.get("last_observation_time")
+    parsed_context = _parse_report_timestamp(context_time)
+    parsed_forecast = _parse_report_timestamp(forecast_time)
+    if parsed_context is None or parsed_forecast is None:
+        return None
+    aligned = parsed_context == parsed_forecast
+    return {
+        "status": "aligned" if aligned else "mismatch",
+        "canonical_as_of": _format_report_timestamp(
+            min(parsed_context, parsed_forecast)
+        ),
+        "section_as_of": {
+            "context": _format_report_timestamp(parsed_context),
+            "forecast": _format_report_timestamp(parsed_forecast),
+        },
+        "basis": "context_last_snapshot_vs_forecast_last_observation",
+    }
+
+
 def _has_payload_error(payload: Any) -> bool:
     if isinstance(payload, dict):
         err = payload.get("error")
@@ -1708,6 +1736,15 @@ def run_report_generate(  # noqa: C901
                     if isinstance(rep.get("sections"), dict)
                     else None
                 )
+            temporal_alignment = _report_temporal_alignment(
+                source_sections or template_sections
+            )
+            temporal_mismatch = bool(
+                isinstance(temporal_alignment, dict)
+                and temporal_alignment.get("status") == "mismatch"
+            )
+            if temporal_alignment is not None:
+                rep["temporal_alignment"] = temporal_alignment
 
             rep.pop("summary_structured", None)
             summ: List[str] = []
@@ -2232,7 +2269,9 @@ def run_report_generate(  # noqa: C901
                 if isinstance(summary_structured.get("barriers"), dict):
                     if summary_structured["barriers"].get("ev_edge_conflict"):
                         narrative_parts.append("Barrier EV and edge disagree; treat as lower confidence.")
-                if narrative_parts:
+                if temporal_alignment is not None:
+                    summary_structured["temporal_alignment"] = temporal_alignment
+                if narrative_parts and not temporal_mismatch:
                     summary_structured["narrative"] = " ".join(narrative_parts)
             except Exception:
                 pass
@@ -2316,6 +2355,9 @@ def run_report_generate(  # noqa: C901
                         or rep["section_run_status"] == "complete"
                     )
                 )
+                if temporal_mismatch and not hard_failed:
+                    rep["section_run_status"] = "partial"
+                    rep["success"] = bool(request.allow_partial)
                 if selection_failed:
                     rep.update(
                         build_error_payload(

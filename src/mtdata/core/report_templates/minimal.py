@@ -10,6 +10,7 @@ from ..report.utils import (
     now_utc_iso,
     parse_table_tail,
     report_section_enabled,
+    resolve_report_context_end,
     resolve_report_context_indicators,
 )
 from .basic import _get_raw_result
@@ -44,6 +45,7 @@ def template_minimal(
     tf = str(p.get("timeframe", "H1"))
     start = p.get("start")
     end = p.get("end")
+    context_end = resolve_report_context_end(end, tf)
     forecast_method = _resolve_minimal_forecast_method(p)
     forecast_library = str(p.get("library") or "native").strip() or "native"
 
@@ -72,7 +74,7 @@ def template_minimal(
             # Request validation requires an end whenever start is supplied.
             # The context snapshot anchors at that shared report cutoff.
             start=None,
-            end=end,
+            end=context_end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
         )

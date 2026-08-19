@@ -2191,6 +2191,50 @@ class TestReportWarnings:
         assert res["error_code"] == "report_sections_failed"
         assert res["sections_status"]["sections"] == {"execution_gates": "error"}
 
+    def test_temporal_mismatch_is_partial_and_omits_combined_narrative(self):
+        fn = _get_report_generate()
+
+        def mock_template(_symbol, _horizon, _denoise, _params):
+            return {
+                "meta": {"template": "minimal"},
+                "sections": {
+                    "context": {
+                        "last_snapshot": {
+                            "time": "2026-06-30T23:00:00Z",
+                            "close": 1.1413,
+                        },
+                    },
+                    "forecast": {
+                        "method": "theta",
+                        "last_observation_time": "2026-06-30T22:00:00Z",
+                        "forecast": [
+                            {"time": "2026-06-30T23:00:00Z", "value": 1.1418},
+                        ],
+                    },
+                },
+            }
+
+        with patch(
+            "mtdata.core.report_templates.template_minimal",
+            mock_template,
+            create=True,
+        ):
+            res = fn("EURUSD", template="minimal", detail="full")
+
+        assert res["success"] is True
+        assert res["section_run_status"] == "partial"
+        assert res["as_of"] == "2026-06-30T22:00:00Z"
+        assert res["temporal_alignment"] == {
+            "status": "mismatch",
+            "canonical_as_of": "2026-06-30T22:00:00Z",
+            "section_as_of": {
+                "context": "2026-06-30T23:00:00Z",
+                "forecast": "2026-06-30T22:00:00Z",
+            },
+            "basis": "context_last_snapshot_vs_forecast_last_observation",
+        }
+        assert "narrative" not in res["summary_structured"]
+
     @pytest.mark.parametrize(
         "template_name",
         ["basic", "advanced", "scalping", "intraday", "swing", "position"],

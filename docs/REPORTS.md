@@ -88,6 +88,8 @@ Useful controls:
 - `--timeframe`, `--start`, and `--end` constrain the requested market window.
   `--end` may be used alone for an as-of snapshot; `--start` requires `--end`
   so snapshot and range-aware sections share one historical cutoff.
+  For intraday reports, context ends at the latest bar that was fully closed at
+  that instant, matching the forecast training cutoff.
 - When `--start` or `--end` bounds a report, sections that only support current-market
   analysis are not run. Their section payloads use `status: omitted` with reason
   `current_only_section_omitted`, and the report is marked partial rather than mixing
@@ -157,6 +159,9 @@ sections.
 Root `as_of` is the market-data cutoff derived from the selected sections;
 `generated_at` is the later assembly time. If no section exposes a trustworthy
 market timestamp, `as_of` is null and `data_as_of_status` is `unavailable`.
+When context and forecast observation times disagree, `temporal_alignment`
+reports both cutoffs, the report is partial, and the combined narrative is
+omitted rather than mixing realized and forecast information.
 Multi-timeframe context and pivot entries expose `source_bar_time`,
 `source_bar_timezone`, and `source_bar_state`; the root cutoff is the oldest
 selected source time so mixed timeframes are represented conservatively.

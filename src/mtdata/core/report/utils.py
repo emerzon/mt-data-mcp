@@ -2,14 +2,15 @@ import math
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from ...shared.constants import TIME_DISPLAY_FORMAT
+from ...shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ...shared.market_units import forex_pip_size
 from ...utils.barriers import get_tick_size as _get_tick_size
 from ...utils.mt5 import get_symbol_info_cached
 from ...utils.time import format_datetime_utc
+from ...utils.utils import _parse_end_datetime
 from ..tool_calling import call_tool_sync_structured
 from .shared import (
     _as_float,
@@ -78,6 +79,23 @@ def report_runtime_error(operation: str) -> Dict[str, Any]:
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
+
+
+def resolve_report_context_end(end: Any, timeframe: str) -> Any:
+    """Return the latest intraday bar-open cutoff knowable at report ``end``."""
+    if end in (None, ""):
+        return end
+    normalized_timeframe = str(timeframe or "").strip().upper()
+    if normalized_timeframe in {"D1", "W1", "MN1"}:
+        return end
+    seconds = TIMEFRAME_SECONDS.get(normalized_timeframe)
+    parsed = _parse_end_datetime(str(end))
+    if seconds is None or parsed is None:
+        return end
+    return format_datetime_utc(
+        parsed - timedelta(seconds=float(seconds)),
+        timespec="microseconds",
+    )
 
 
 def _normalize_source_bar_time(value: Any) -> Optional[str]:

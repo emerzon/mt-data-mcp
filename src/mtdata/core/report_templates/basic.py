@@ -24,6 +24,7 @@ from ..report.utils import (
     report_runtime_error,
     report_runtime_expired,
     report_section_enabled,
+    resolve_report_context_end,
     resolve_report_context_indicators,
     summarize_barrier_grid,
 )
@@ -105,6 +106,7 @@ def template_basic(  # noqa: C901
     tf = str(p.get('timeframe', 'H1'))
     start = p.get('start')
     end = p.get('end')
+    context_end = resolve_report_context_end(end, tf)
     bounded_window = _is_bounded_report_window(start, end)
     
     report: Dict[str, Any] = {
@@ -133,7 +135,7 @@ def template_basic(  # noqa: C901
             # Request validation requires an end whenever start is supplied.
             # The context snapshot anchors at that shared report cutoff.
             start=None,
-            end=end,
+            end=context_end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
         )
