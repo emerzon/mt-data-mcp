@@ -339,6 +339,13 @@ calendar ranges remain explicit. Event timestamps use the separate root
 `inferred`, or `unknown`); country-filtered responses warn when unknown rows
 were excluded and paginate the filtered collection.
 
+Earnings rows distinguish exact release times from provider session buckets.
+The provider's `08:30` and `16:30` New York markers are returned as a calendar
+date with `earnings_timing=before_market` or `after_market` and
+`event_time_precision=session_bucket`; they are not exact scheduled instants.
+The `is_earning_date_estimate` flag qualifies the date, independently of that
+time precision, and is retained in compact output.
+
 ### `finviz_earnings`
 
 Get a period-based earnings calendar. Current-week and current-month results

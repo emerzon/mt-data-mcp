@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from mtdata.core.finviz import (
     _normalize_finviz_market_payload,
     finviz_calendar,
@@ -389,11 +391,13 @@ class TestFinvizCalendarOutputContract:
 
         assert result["items"] == [
             {
-                "earnings_date": "2026-04-29T12:30:00Z",
+                "earnings_date": "2026-04-29",
                 "symbol": "ABBV",
-                "date": "2026-04-29T12:30:00Z",
-                "local_time": "2026-04-29T08:30:00-04:00",
+                "date": "2026-04-29",
                 "local_timezone": "America/New_York",
+                "earnings_timing": "before_market",
+                "event_time_precision": "session_bucket",
+                "is_earning_date_estimate": False,
                 "eps_estimate": 2.59,
                 "eps_actual": 2.65,
                 "eps_surprise": 2.23,
@@ -408,6 +412,38 @@ class TestFinvizCalendarOutputContract:
         assert result["units"]["sales_estimate"] == (
             "listing_currency_base_units"
         )
+
+    @pytest.mark.parametrize(
+        ("provider_time", "expected_timing"),
+        [
+            ("2026-04-29T08:30:00", "before_market"),
+            ("2026-04-29T16:30:00", "after_market"),
+        ],
+    )
+    def test_calendar_earnings_session_markers_are_not_exact_instants(
+        self, provider_time, expected_timing
+    ):
+        from mtdata.core.finviz import _normalize_finviz_earnings_calendar_time
+
+        result = _normalize_finviz_earnings_calendar_time(
+            {"earnings_date": provider_time, "symbol": "TEST"}
+        )
+
+        assert result["earnings_date"] == "2026-04-29"
+        assert result["date"] == "2026-04-29"
+        assert result["earnings_timing"] == expected_timing
+        assert result["event_time_precision"] == "session_bucket"
+        assert "local_time" not in result
+
+    def test_calendar_earnings_non_session_time_remains_exact(self):
+        from mtdata.core.finviz import _normalize_finviz_earnings_calendar_time
+
+        result = _normalize_finviz_earnings_calendar_time(
+            {"earnings_date": "2026-04-29T10:15:00", "symbol": "TEST"}
+        )
+
+        assert result["earnings_date"] == "2026-04-29T14:15:00Z"
+        assert result["event_time_precision"] == "exact"
 
     def test_calendar_reference_label_is_not_shifted_as_a_utc_instant(self):
         from mtdata.core.finviz import _normalize_finviz_calendar_payload

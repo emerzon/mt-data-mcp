@@ -2003,6 +2003,10 @@ _FINVIZ_EARNINGS_TIMING_SUFFIXES = {
     "/b": "before_market",
     "/a": "after_market",
 }
+_FINVIZ_EARNINGS_SESSION_TIMES = {
+    (8, 30, 0): "before_market",
+    (16, 30, 0): "after_market",
+}
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "symbol",
     "country",
@@ -2014,6 +2018,9 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "local_time",
     "local_timezone",
     "earnings_date",
+    "earnings_timing",
+    "event_time_precision",
+    "is_earning_date_estimate",
     "ex_dividend_date",
     "exdate",
     "ex_date",
@@ -2395,16 +2402,33 @@ def _normalize_finviz_earnings_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     raw_value = normalized.get("earnings_date")
     raw_text = str(raw_value or "").strip()
     if len(raw_text) <= 10:
+        if raw_text:
+            normalized["event_time_precision"] = "date_only"
         return normalized
     parsed = _parse_finviz_calendar_time(raw_value)
     if parsed is None:
         return normalized
     local_dt = parsed.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ)
+    session = _FINVIZ_EARNINGS_SESSION_TIMES.get(
+        (local_dt.hour, local_dt.minute, local_dt.second)
+    )
+    if session is not None:
+        # Finviz uses these two values as before-/after-market buckets. Publishing
+        # them as second-precision release instants would invent timing precision.
+        local_date = local_dt.date().isoformat()
+        normalized["earnings_date"] = local_date
+        normalized["date"] = local_date
+        normalized["earnings_timing"] = session
+        normalized["event_time_precision"] = "session_bucket"
+        normalized["local_timezone"] = _FINVIZ_CALENDAR_LOCAL_TIMEZONE
+        normalized.pop("local_time", None)
+        return normalized
     utc_text = format_datetime_utc(parsed)
     normalized["earnings_date"] = utc_text
     normalized["date"] = utc_text
     normalized["local_time"] = local_dt.replace(microsecond=0).isoformat()
     normalized["local_timezone"] = _FINVIZ_CALENDAR_LOCAL_TIMEZONE
+    normalized["event_time_precision"] = "exact"
     return normalized
 
 
