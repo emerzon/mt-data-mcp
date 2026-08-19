@@ -182,6 +182,11 @@ def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
 def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
     _set_simplify_param(params, required_params)
+    if "cursor" in params:
+        params["cursor"]["description"] = (
+            "Opaque continuation cursor from pagination.next_cursor; reuse it "
+            "with the same symbol, start, and end."
+        )
 
 
 def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:

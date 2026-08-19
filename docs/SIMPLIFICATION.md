@@ -42,6 +42,9 @@ When `simplify` is enabled, mtdata selects a subset of rows that approximates th
 report `per_column_target`, an internal sampling budget that is combined and
 refined to the overall target.
 
+For candles, `candle_counts.excluded.simplification` records intentionally
+omitted visualization rows separately from broker/window shortfalls.
+
 ---
 
 ## Key Parameters

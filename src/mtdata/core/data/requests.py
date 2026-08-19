@@ -487,6 +487,13 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
     )
     start: Optional[str] = None
     end: Optional[str] = None
+    cursor: Optional[str] = Field(
+        None,
+        description=(
+            "Opaque continuation cursor returned by a previous bounded tick query. "
+            "Reuse it with the same symbol, start, and end values."
+        ),
+    )
     timestamp_format: Literal["epoch", "iso"] = Field(
         "iso",
         description=(

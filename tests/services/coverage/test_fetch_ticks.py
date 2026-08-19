@@ -758,10 +758,10 @@ class TestFetchTicks(unittest.TestCase):
         mock_info,
         mock_range,
     ):
-        end = datetime.now().replace(microsecond=0)
-        start = end - timedelta(hours=1)
+        end = datetime.now(timezone.utc).replace(microsecond=0)
+        start = end.replace(tzinfo=None) - timedelta(hours=1)
         mock_parse.return_value = start
-        mock_range.return_value = _make_ticks(5, base_ts=end.timestamp())
+        mock_range.return_value = _make_ticks(5, base_ts=end.timestamp() - 4.0)
 
         result = fetch_ticks(
             'EURUSD',
@@ -778,6 +778,69 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(result['query_applied']['selection'], 'last_n')
         self.assertEqual(result['last_quote']['time'], result['data'][-1]['time'])
         self.assertEqual(result['last_quote']['quote_scope'], 'historical_sample')
+
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_bounded_backward_range_exact_filters_fractional_boundaries(
+        self, mock_ctz, mock_info, mock_range,
+    ):
+        boundary = datetime(2025, 1, 2, 12, 0, 0, 180000, tzinfo=timezone.utc)
+        epoch = boundary.timestamp()
+        mock_range.return_value = _make_ticks(
+            3, base_ts=epoch + 0.001, step=0.001,
+        )
+
+        result = fetch_ticks(
+            'EURUSD', limit=20, start=boundary.isoformat(),
+            end=boundary.isoformat(), format='rows', range_selection='last_n',
+        )
+
+        self.assertTrue(result.get('success'), result)
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['data'][0]['time'], '2025-01-02T12:00:00.180Z')
+        provider_start = mock_range.call_args.args[1]
+        provider_end = mock_range.call_args.args[2]
+        self.assertEqual(provider_start.microsecond, 0)
+        self.assertEqual(provider_end.microsecond, 0)
+        self.assertGreater(
+            provider_end.replace(tzinfo=timezone.utc),
+            boundary,
+        )
+
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_bounded_tick_page_probes_one_extra_event(
+        self, mock_ctz, mock_info, mock_range,
+    ):
+        start = datetime(2025, 1, 2, 12, tzinfo=timezone.utc)
+        ticks = _make_ticks(3, base_ts=start.timestamp(), step=0.0)
+        for tick in ticks:
+            tick['time_msc'] = int(start.timestamp() * 1000)
+        mock_range.return_value = ticks
+
+        first = fetch_ticks(
+            'EURUSD', limit=2, start=start.isoformat(),
+            end=(start + timedelta(seconds=1)).isoformat(), format='rows',
+            page_offset=0, probe_more=True,
+        )
+        second = fetch_ticks(
+            'EURUSD', limit=2, start=start.isoformat(),
+            end=(start + timedelta(seconds=1)).isoformat(), format='rows',
+            page_offset=2, probe_more=True,
+        )
+
+        self.assertEqual(first['count'], 2)
+        self.assertTrue(first['_tick_page']['has_more'])
+        self.assertEqual(second['count'], 1)
+        self.assertFalse(second['_tick_page']['has_more'])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())

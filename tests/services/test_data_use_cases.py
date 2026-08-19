@@ -2036,7 +2036,12 @@ def test_run_data_fetch_ticks_bounded_default_uses_latest_small_page():
             "success": True,
             "count": 20,
             "tick_count": 20,
-            "data": [],
+            "data": [{} for _ in range(20)],
+            "_tick_page": {
+                "offset": kwargs["page_offset"],
+                "source_returned": 20,
+                "has_more": True,
+            },
             "query_applied": {
                 "mode": "historical",
                 "selection": "last_n",
@@ -2065,6 +2070,8 @@ def test_run_data_fetch_ticks_bounded_default_uses_latest_small_page():
     assert result["pagination"]["has_more"] is True
     assert result["pagination"]["limit"] == 20
     assert result["pagination"]["selection"] == "last_n"
+    assert result["pagination"]["returned"] == 20
+    assert result["pagination"]["next_cursor"]
     assert result["truncated"] is True
 
 
@@ -2099,8 +2106,107 @@ def test_run_data_fetch_ticks_start_only_uses_small_default_page():
     assert result["requested_limit"] == 20
     assert result["query_applied"]["default_limit"] == 20
     assert result["limit_reached"] is True
+    assert observed["probe_more"] is False
+    assert "pagination" not in result
+
+
+def test_run_data_fetch_ticks_cursor_continues_same_millisecond_events():
+    calls = []
+
+    def _fetch(**kwargs):
+        calls.append(kwargs)
+        offset = kwargs["page_offset"]
+        returned = 2 if offset == 0 else 1
+        return {
+            "success": True,
+            "count": returned,
+            "tick_count": returned,
+            "data": [{"time": "same"}] * returned,
+            "_tick_page": {
+                "offset": offset,
+                "source_returned": returned,
+                "has_more": offset == 0,
+            },
+            "query_applied": {"selection": "first_n"},
+        }
+
+    request_values = {
+        "symbol": "EURUSD",
+        "start": "2025-01-01",
+        "end": "2025-01-02",
+        "limit": 2,
+    }
+    first = run_data_fetch_ticks(
+        DataFetchTicksRequest(**request_values),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=_fetch,
+    )
+    second = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            **request_values,
+            cursor=first["pagination"]["next_cursor"],
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=_fetch,
+    )
+
+    assert calls[0]["page_offset"] == 0
+    assert calls[1]["page_offset"] == 2
+    assert second["pagination"]["returned"] == 1
+    assert second["pagination"]["has_more"] is False
+    assert second["pagination"]["total"] == 3
+
+
+def test_run_data_fetch_ticks_exact_bounded_page_has_no_next_cursor():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD", start="2025-01-01", end="2025-01-02", limit=5,
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "count": 5,
+            "tick_count": 5,
+            "data": [{"time": str(index)} for index in range(5)],
+            "_tick_page": {
+                "offset": 0,
+                "source_returned": 5,
+                "has_more": False,
+            },
+        },
+    )
+
+    assert result["limit_reached"] is True
+    assert result["pagination"]["returned"] == 5
+    assert result["pagination"]["has_more"] is False
+    assert result["pagination"]["total"] == 5
+    assert "next_cursor" not in result["pagination"]
+    assert "truncated" not in result
+
+
+def test_run_data_fetch_ticks_simplified_pagination_counts_returned_rows():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD", start="2025-01-01", end="2025-01-02", limit=500,
+            simplify=True,
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "count": 50,
+            "tick_count": 500,
+            "data": [{"time": str(index)} for index in range(50)],
+            "_tick_page": {
+                "offset": 0,
+                "source_returned": 500,
+                "has_more": True,
+            },
+        },
+    )
+
+    assert result["pagination"]["returned"] == 50
+    assert result["pagination"]["source_events_returned"] == 500
     assert result["pagination"]["has_more"] is True
-    assert result["pagination"]["limit"] == 20
 
 
 def test_compact_tick_row_marks_locked_quote_spread_unavailable():
@@ -2596,6 +2702,7 @@ def test_data_fetch_ticks_request_uses_detail_control():
         "limit",
         "start",
         "end",
+        "cursor",
         "timestamp_format",
         "simplify",
         "detail",

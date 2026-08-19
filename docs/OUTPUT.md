@@ -134,6 +134,12 @@ For a fully bounded tick range, omitting `limit` returns the latest 20 matching
 ticks. Setting `limit` explicitly keeps start-anchored first-N paging. Historical
 tick responses label `last_quote.quote_scope` as `historical_sample` and include
 `last_quote.time`; it is the final quote in the returned sample, not a live quote.
+Bounded tick queries probe one event beyond the page. When `pagination.has_more`
+is true, pass `pagination.next_cursor` back as `--cursor` with the same symbol,
+start, and end values. The opaque cursor uses a raw-event offset, so ticks that
+share a millisecond are neither skipped nor duplicated. For simplified output,
+`pagination.returned` remains the number of rows actually present while
+`source_events_returned` records the pre-simplification page size.
 
 List-style tools return a normalized pagination block so you can page deterministically:
 

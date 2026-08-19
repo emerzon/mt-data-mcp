@@ -91,6 +91,15 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
         self.assertFalse(result['bar_spacing']['spacing_complete'])
         self.assertEqual(result['bar_spacing']['status'], 'simplified_irregular')
         self.assertTrue(result['source_bar_spacing']['spacing_matches_timeframe'])
+        self.assertEqual(result['candle_counts']['source_rows_returned'], 10)
+        self.assertEqual(result['candle_counts']['returned'], 3)
+        self.assertEqual(result['candle_counts']['excluded']['simplification'], 7)
+        self.assertEqual(
+            result['candle_counts']['excluded']['window_or_source_shortfall'],
+            0,
+        )
+        self.assertEqual(result['simplify']['original_rows'], 10)
+        self.assertEqual(result['simplify']['returned_rows'], 3)
 
     @patch(_MT5_CONFIG)
     @patch(_SIMPLIFY_EXT)

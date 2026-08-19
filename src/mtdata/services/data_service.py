@@ -1311,10 +1311,42 @@ def _fetch_recent_ticks_backwards(
             chunk_from = effective_floor
 
         overlaps_newer_range = saw_response
-        ticks_candidate = _fetch_ticks_range_with_retry(symbol, chunk_from, cursor_end)
+        exact_bounded_window = min_from_date is not None
+        # MT5 range retrieval is unreliable for fractional datetime bounds.
+        # For an explicitly bounded window, query the enclosing whole seconds,
+        # then enforce the advertised inclusive millisecond bounds.
+        provider_start = (
+            chunk_from.replace(microsecond=0)
+            if exact_bounded_window
+            else chunk_from
+        )
+        provider_end = (
+            cursor_end.replace(microsecond=0)
+            if exact_bounded_window
+            else cursor_end
+        )
+        if exact_bounded_window and cursor_end.microsecond:
+            provider_end += timedelta(seconds=1)
+        ticks_candidate = _fetch_ticks_range_with_retry(
+            symbol,
+            provider_start,
+            provider_end,
+        )
         if ticks_candidate is not None:
             saw_response = True
             candidate_rows = list(ticks_candidate)
+            if exact_bounded_window:
+                chunk_start_epoch = float(_utc_epoch_seconds(chunk_from))
+                chunk_end_epoch = float(_utc_epoch_seconds(cursor_end))
+                candidate_rows = [
+                    tick
+                    for tick in candidate_rows
+                    if (
+                        tick_epoch_value := _tick_epoch_seconds_from_row(tick)
+                    )
+                    is not None
+                    and chunk_start_epoch <= tick_epoch_value <= chunk_end_epoch
+                ]
             if overlaps_newer_range and candidate_rows:
                 boundary_epoch = float(_utc_epoch_seconds(cursor_end))
                 candidate_rows = [
@@ -2303,6 +2335,8 @@ def _public_simplify_meta(meta: Any) -> Optional[Dict[str, Any]]:
         "ratio",
         "non_ohlc_numeric_aggregation",
         "segment_mean_columns",
+        "original_rows",
+        "returned_rows",
     ):
         value = meta.get(key)
         if value is not None:
@@ -2817,8 +2851,10 @@ def fetch_candles(  # noqa: C901
                         pass
         
         candles_returned = int(len(df))
+        source_rows_returned = int(original_rows)
         candles_requested = int(candles)
         candles_excluded = max(0, candles_requested - candles_returned)
+        simplification_excluded = max(0, source_rows_returned - candles_returned)
         incomplete_candles_skipped = int(bool(initial_incomplete_trimmed)) + int(bool(_trimmed_incomplete))
         has_forming_candle = bool(initial_incomplete_trimmed or _trimmed_incomplete or tail_is_forming)
         forming_candle_included = bool(include_incomplete and tail_is_forming)
@@ -2869,7 +2905,11 @@ def fetch_candles(  # noqa: C901
                         or getattr(broker_tz, "key", None)
                         or str(broker_tz)
                     )
-        remaining_after_forming = max(0, candles_excluded - incomplete_candles_skipped)
+        source_rows_excluded = max(0, candles_requested - source_rows_returned)
+        remaining_after_forming = max(
+            0,
+            source_rows_excluded - incomplete_candles_skipped,
+        )
         indicator_excluded = min(int(indicator_rows_dropped), remaining_after_forming)
         remaining_after_indicator = max(0, remaining_after_forming - indicator_excluded)
         quality_excluded = min(int(quality_rows_removed), remaining_after_indicator)
@@ -2882,14 +2922,17 @@ def fetch_candles(  # noqa: C901
             + quality_excluded
             + window_shortfall
             + source_shortfall
+            + simplification_excluded
         )
         candle_counts = {
             "requested": candles_requested,
             "returned": candles_returned,
+            "source_rows_returned": source_rows_returned,
             "excluded": {
                 "forming_bar": incomplete_candles_skipped,
                 "indicator_warmup": indicator_excluded,
                 "quality_filtered": quality_excluded,
+                "simplification": simplification_excluded,
                 "window_or_source_shortfall": window_shortfall + source_shortfall,
                 "total": candle_excluded_total,
             },
@@ -3063,7 +3106,10 @@ def fetch_candles(  # noqa: C901
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
         if simplify_meta is not None:
             payload["simplified"] = True
-            payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
+            public_simplify = _public_simplify_meta(simplify_meta) or {"applied": True}
+            public_simplify["original_rows"] = int(original_rows)
+            public_simplify["returned_rows"] = int(len(df))
+            payload["simplify"] = public_simplify
             simplify_method = str(simplify_meta.get("method") or "").strip().lower()
             simplify_mode = str(simplify_meta.get("mode") or "").strip().lower()
             segment_mean_columns = list(simplify_meta.get("segment_mean_columns") or [])
@@ -3460,6 +3506,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "timezone": out.get("timezone"),
         "stats": {"spread": compact_spread},
     }
+    if isinstance(out.get("_tick_page"), dict):
+        compact["_tick_page"] = dict(out["_tick_page"])
     if out.get("price_precision") is not None:
         compact["price_precision"] = out.get("price_precision")
     if out.get("price_point") is not None:
@@ -3511,6 +3559,8 @@ def fetch_ticks(  # noqa: C901
     time_as_epoch: bool = False,
     format: Literal["summary", "stats", "rows", "full_rows"] = "summary",
     range_selection: Literal["first_n", "last_n"] = "first_n",
+    page_offset: int = 0,
+    probe_more: bool = False,
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
@@ -3529,6 +3579,8 @@ def fetch_ticks(  # noqa: C901
     try:
         symbol = resolve_broker_symbol_name(symbol)
         effective_limit = int(limit)
+        effective_offset = max(0, int(page_offset))
+        fetch_limit = effective_limit + effective_offset + int(bool(probe_more))
         normalized_range_selection = str(range_selection or "first_n").strip().lower()
         if normalized_range_selection not in {"first_n", "last_n"}:
             return {"error": "range_selection must be first_n or last_n."}
@@ -3590,7 +3642,7 @@ def fetch_ticks(  # noqa: C901
                         ticks = _fetch_recent_ticks_backwards(
                             symbol,
                             to_date=to_date,
-                            limit=effective_limit,
+                            limit=fetch_limit,
                             min_from_date=effective_from_date,
                         )
                     else:
@@ -3598,7 +3650,7 @@ def fetch_ticks(  # noqa: C901
                             symbol,
                             from_date=effective_from_date,
                             to_date=to_date,
-                            limit=effective_limit,
+                            limit=fetch_limit,
                         )
                 else:
                     max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
@@ -3614,7 +3666,7 @@ def fetch_ticks(  # noqa: C901
                         symbol,
                         from_date=effective_from_date,
                         to_date=history_to_date,
-                        limit=effective_limit,
+                        limit=fetch_limit,
                     )
             else:
                 # End-only requests are historical backward queries anchored
@@ -3636,13 +3688,29 @@ def fetch_ticks(  # noqa: C901
                 ticks = _fetch_recent_ticks_backwards(
                     symbol,
                     to_date=to_date,
-                    limit=effective_limit,
+                    limit=fetch_limit,
                 )
         # visibility handled by _symbol_ready_guard
         
         if ticks is None:
             return {"error": f"Failed to get ticks for {symbol}: {mt5.last_error()}"}
         
+        page_has_more = False
+        page_source_returned = len(ticks)
+        if probe_more:
+            fetched_ticks = list(ticks)
+            if normalized_range_selection == "last_n":
+                page_end = max(0, len(fetched_ticks) - effective_offset)
+                page_start = max(0, page_end - effective_limit)
+                page_has_more = page_start > 0
+                ticks = fetched_ticks[page_start:page_end]
+            else:
+                page_start = effective_offset
+                page_end = page_start + effective_limit
+                page_has_more = len(fetched_ticks) > page_end
+                ticks = fetched_ticks[page_start:page_end]
+            page_source_returned = len(ticks)
+
         # Generate tabular format with dynamic column filtering
         if len(ticks) == 0:
             empty_payload: Dict[str, Any] = {
@@ -3670,6 +3738,11 @@ def fetch_ticks(  # noqa: C901
                         if start
                         else "last_n"
                     ),
+                },
+                "_tick_page": {
+                    "offset": effective_offset,
+                    "source_returned": 0,
+                    "has_more": page_has_more,
                 },
             }
             if history_window_truncated:
@@ -4038,6 +4111,11 @@ def fetch_ticks(  # noqa: C901
             payload["warnings"] = warnings_list
 
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
+            payload["_tick_page"] = {
+                "offset": effective_offset,
+                "source_returned": int(page_source_returned),
+                "has_more": bool(page_has_more),
+            }
             payload["spread_statistics_basis"] = "coherent_bid_ask_updates"
             if quote_only_feed:
                 payload["feed_tier"] = "quote_only"

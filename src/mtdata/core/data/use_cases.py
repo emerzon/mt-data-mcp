@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -110,6 +112,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "data_quality",
     "last_unavailable",
     "warnings",
+    "_tick_page",
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
@@ -1591,6 +1594,51 @@ def _prune_zero_candle_exclusions(result: Dict[str, Any]) -> None:
     }
 
 
+def _encode_tick_cursor(
+    request: DataFetchTicksRequest,
+    *,
+    selection: str,
+    offset: int,
+) -> str:
+    cursor_payload = {
+        "v": 1,
+        "symbol": request.symbol,
+        "start": request.start,
+        "end": request.end,
+        "selection": selection,
+        "offset": int(offset),
+    }
+    raw = json.dumps(cursor_payload, separators=(",", ":"), sort_keys=True).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_tick_cursor(
+    cursor: str,
+    request: DataFetchTicksRequest,
+) -> tuple[str, int]:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + padding).decode())
+    except Exception as exc:
+        raise ValueError("cursor is not a valid tick continuation token") from exc
+    if not isinstance(decoded, dict) or decoded.get("v") != 1:
+        raise ValueError("cursor uses an unsupported tick continuation version")
+    for key, expected in (
+        ("symbol", request.symbol),
+        ("start", request.start),
+        ("end", request.end),
+    ):
+        if decoded.get(key) != expected:
+            raise ValueError(f"cursor does not match the request {key}")
+    selection = str(decoded.get("selection") or "")
+    if selection not in {"first_n", "last_n"}:
+        raise ValueError("cursor has an invalid tick selection direction")
+    offset = decoded.get("offset")
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise ValueError("cursor has an invalid tick page offset")
+    return selection, offset
+
+
 def _run_data_fetch_ticks_impl(
     *,
     request: DataFetchTicksRequest,
@@ -1610,6 +1658,30 @@ def _run_data_fetch_ticks_impl(
         if request.start and request.end and not limit_explicit
         else "first_n"
     )
+    page_offset = 0
+    if request.cursor:
+        if not request.start or not request.end:
+            return build_error_payload(
+                "cursor requires both start and end for a bounded tick query.",
+                code="data_fetch_ticks_invalid_cursor",
+                operation="data_fetch_ticks",
+                remediation="Reuse the cursor with the original start and end values.",
+            )
+        try:
+            range_selection, page_offset = _decode_tick_cursor(
+                request.cursor,
+                request,
+            )
+        except ValueError as exc:
+            return build_error_payload(
+                str(exc),
+                code="data_fetch_ticks_invalid_cursor",
+                operation="data_fetch_ticks",
+                remediation=(
+                    "Use next_cursor from the preceding page without changing "
+                    "symbol, start, or end."
+                ),
+            )
     result = fetch_ticks_impl(
         symbol=request.symbol,
         limit=applied_limit,
@@ -1619,6 +1691,8 @@ def _run_data_fetch_ticks_impl(
         time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
         range_selection=range_selection,
+        page_offset=page_offset,
+        probe_more=bool(request.start and request.end),
     )
     result = _normalize_tick_query_error(
         result,
@@ -1640,10 +1714,11 @@ def _run_data_fetch_ticks_impl(
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(
         result,
+        request=request,
         requested_limit=applied_limit,
-        start=request.start,
-        end=request.end,
         limit_explicit=limit_explicit,
+        selection=range_selection,
+        page_offset=page_offset,
     )
     return attach_mt5_source(result, gateway=gateway)
 
@@ -1771,25 +1846,32 @@ def _tick_request_is_future_only(request: DataFetchTicksRequest) -> bool:
 def _attach_tick_pagination(
     payload: Any,
     *,
+    request: DataFetchTicksRequest,
     requested_limit: int,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
     limit_explicit: bool = True,
+    selection: str,
+    page_offset: int,
 ) -> None:
-    """Echo the requested limit and disclose whether the source cap was reached."""
+    """Attach evidence-based pagination for bounded tick queries."""
     if not isinstance(payload, dict) or payload.get("error"):
         return
-    count = payload.get("tick_count", payload.get("count"))
-    if not isinstance(count, int):
-        return
+    page_info = payload.pop("_tick_page", None)
+    if not isinstance(page_info, dict):
+        page_info = {}
+    source_returned = page_info.get(
+        "source_returned",
+        payload.get("tick_count", payload.get("count")),
+    )
+    if not isinstance(source_returned, int):
+        source_returned = 0
     try:
         limit_value = int(requested_limit)
     except (TypeError, ValueError):
         return
     payload["requested_limit"] = limit_value
-    limit_reached = bool(count >= limit_value)
+    limit_reached = bool(source_returned >= limit_value)
     payload["limit_reached"] = limit_reached
-    if start or end:
+    if request.start or request.end:
         query_applied = payload.get("query_applied")
         if not isinstance(query_applied, dict):
             query_applied = {}
@@ -1799,18 +1881,40 @@ def _attach_tick_pagination(
         if not limit_explicit:
             query_applied["default_limit"] = limit_value
             payload["default_limit"] = limit_value
-        if limit_reached:
-            payload["truncated"] = True
-            data_window = payload.get("data_window")
-            if isinstance(data_window, dict):
-                data_window["truncated"] = True
-            payload["pagination"] = {
-                "returned": count,
-                "limit": limit_value,
-                "has_more": True,
-                "selection": query_applied.get("selection")
-                or ("first_n" if start else "last_n"),
-            }
+    if not (request.start and request.end):
+        return
+
+    data = payload.get("data")
+    returned = len(data) if isinstance(data, list) else payload.get("count", 0)
+    if not isinstance(returned, int):
+        returned = 0
+    has_more = page_info.get("has_more") is True
+    offset = page_info.get("offset", page_offset)
+    if not isinstance(offset, int) or offset < 0:
+        offset = page_offset
+    pagination: Dict[str, Any] = {
+        "total": None if has_more else offset + source_returned,
+        "returned": returned,
+        "offset": offset,
+        "limit": limit_value,
+        "has_more": has_more,
+        "more_available": None,
+        "selection": selection,
+    }
+    if source_returned != returned:
+        pagination["source_events_returned"] = source_returned
+    if has_more:
+        pagination["total_lower_bound"] = offset + source_returned + 1
+        pagination["next_cursor"] = _encode_tick_cursor(
+            request,
+            selection=selection,
+            offset=offset + source_returned,
+        )
+        payload["truncated"] = True
+        data_window = payload.get("data_window")
+        if isinstance(data_window, dict):
+            data_window["truncated"] = True
+    payload["pagination"] = pagination
 
 
 def _attach_tick_freshness_contract(payload: Any) -> None:
