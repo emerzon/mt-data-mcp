@@ -5,9 +5,10 @@ import math
 import time
 import warnings
 from collections import Counter
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
+from pydantic import Field
 
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
@@ -1131,7 +1132,7 @@ def regime_detect(  # noqa: C901
     denoise: Optional[DenoiseSpec] = None,
     threshold: Optional[float] = None,
     detail: DetailLiteral = "compact",
-    lookback: Optional[int] = None,
+    lookback: Annotated[Optional[int], Field(ge=1)] = None,
     include_series: bool = False,
     min_regime_bars: Optional[int] = None,
     max_regimes: int = 10,  # Maximum regimes to show in compact mode

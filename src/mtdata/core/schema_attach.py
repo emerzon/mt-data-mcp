@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import re
 from typing import Any, Callable, Dict, Iterable
 
 from ..forecast.barrier_constants import BARRIER_MONTE_CARLO_METHODS
@@ -30,6 +31,19 @@ from .cli.parsing.discovery import _COMMAND_PARAM_HELP_OVERRIDES
 
 logger = logging.getLogger(__name__)
 _PUBLIC_TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {}
+
+_PUBLIC_CONCISE_DESCRIPTION_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("market_relative_strength", "symbols"): (
+        "MT5 symbols to rank, comma- or space-separated (e.g. EURUSD,GBPUSD). "
+        "Provide at least two, use group for an MT5 group, or omit both for the "
+        "visible Market Watch universe."
+    ),
+    ("wait_event", "symbol"): (
+        "One symbol (e.g. EURUSD); cannot be combined with symbols. Requires "
+        "timeframe or watch_for; symbol plus max_wait_seconds alone is invalid "
+        "because duration mode ignores symbols."
+    ),
+}
 
 _BARRIER_PROB_METHODS = (
     *BARRIER_MONTE_CARLO_METHODS[:-1],
@@ -418,6 +432,11 @@ def _apply_command_parameter_help(schema: Dict[str, Any], command_name: str) -> 
         )
         if description:
             property_schema["description"] = description
+        concise_description = _PUBLIC_CONCISE_DESCRIPTION_OVERRIDES.get(
+            (str(command_name), str(name))
+        )
+        if concise_description:
+            property_schema["description"] = concise_description
 
 
 def _compact_schema_shape(schema: Dict[str, Any], *, command_name: str) -> Dict[str, Any]:
@@ -443,9 +462,29 @@ def _concise_schema_description(value: Any) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= 180:
         return text
-    first_sentence = text.split(". ", 1)[0].rstrip(".") + "."
-    if len(first_sentence) <= 180:
-        return first_sentence
+    protected = text
+    replacements = {
+        "e.g.": "e§g§",
+        "i.e.": "i§e§",
+        "E.g.": "E§g§",
+        "I.e.": "I§e§",
+    }
+    for abbreviation, placeholder in replacements.items():
+        protected = protected.replace(abbreviation, placeholder)
+    sentences = re.split(r"(?<=[.!?])\s+", protected)
+    restored = []
+    for sentence in sentences:
+        for abbreviation, placeholder in replacements.items():
+            sentence = sentence.replace(placeholder, abbreviation)
+        restored.append(sentence)
+    selected: list[str] = []
+    for sentence in restored:
+        candidate = " ".join([*selected, sentence])
+        if len(candidate) > 180:
+            break
+        selected.append(sentence)
+    if selected:
+        return " ".join(selected)
     shortened = text[:177].rsplit(" ", 1)[0].rstrip(" ,;:")
     return f"{shortened}..."
 

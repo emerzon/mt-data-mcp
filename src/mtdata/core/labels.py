@@ -1,8 +1,9 @@
 import logging
 import math
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 import numpy as np
+from pydantic import Field
 
 from ..forecast.common import fetch_history as _fetch_history
 from ..shared.schema import (
@@ -381,15 +382,15 @@ def labels_triple_barrier(  # noqa: C901
     symbol: str,
     barriers: BarrierPairSpec,
     timeframe: TimeframeLiteral = "H1",
-    limit: int = _DEFAULT_LABEL_LIMIT,
-    horizon: int = _DEFAULT_LABEL_HORIZON,
+    limit: Annotated[int, Field(ge=1)] = _DEFAULT_LABEL_LIMIT,
+    horizon: Annotated[int, Field(ge=1)] = _DEFAULT_LABEL_HORIZON,
     denoise: Optional[DenoiseSpec] = None,
     allow_noncausal_denoise: bool = False,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first",  # type: ignore
     detail: DetailLiteral = "compact",
-    lookback: int = _DEFAULT_LABEL_LOOKBACK,
+    lookback: Annotated[int, Field(ge=1)] = _DEFAULT_LABEL_LOOKBACK,
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
 

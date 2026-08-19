@@ -562,6 +562,48 @@ def test_tools_list_defaults_to_short_page_and_allows_full_explicit_limit():
     assert full_catalog["pagination"]["has_more"] is False
 
 
+def test_tools_catalog_full_descriptions_preserve_abbreviations_and_guidance():
+    bootstrap_tools()
+    catalog = registered_tool_catalog(detail="full")
+    tools_by_name = {row["name"]: row for row in catalog["tools"]}
+
+    expected_fragments = {
+        ("market_relative_strength", "symbols"): ("e.g. EURUSD,GBPUSD", "group"),
+        ("options_chain", "expiration"): ("e.g. 2026-07-17", "Omit"),
+        ("wait_event", "symbol"): ("e.g. EURUSD", "max_wait_seconds"),
+    }
+    for (tool_name, parameter), fragments in expected_fragments.items():
+        row = tools_by_name[tool_name]
+        schema_description = row["input_schema"]["properties"][parameter][
+            "description"
+        ]
+        catalog_description = row["parameters"][parameter]["description"]
+        assert schema_description == catalog_description
+        assert not schema_description.endswith("e.g.")
+        assert all(fragment in schema_description for fragment in fragments)
+
+
+def test_tools_catalog_publishes_enforced_numeric_lower_bounds():
+    bootstrap_tools()
+    catalog = registered_tool_catalog(detail="full")
+    tools_by_name = {row["name"]: row for row in catalog["tools"]}
+
+    expected = {
+        ("cointegration_test", "min_overlap"): 2,
+        ("indicators_list", "offset"): 0,
+        ("labels_triple_barrier", "horizon"): 1,
+        ("market_scan", "lookback"): 2,
+        ("outliers_detect", "lookback"): 20,
+        ("seasonality_detect", "lookback"): 31,
+        ("stationarity_test", "lookback"): 1,
+        ("trade_journal_analyze", "min_sample"): 1,
+    }
+    for (tool_name, parameter), minimum in expected.items():
+        row = tools_by_name[tool_name]
+        assert row["input_schema"]["properties"][parameter]["minimum"] == minimum
+        assert row["parameters"][parameter]["minimum"] == minimum
+
+
 def test_tools_list_standard_includes_catalog_metadata():
     bootstrap_tools()
     raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)

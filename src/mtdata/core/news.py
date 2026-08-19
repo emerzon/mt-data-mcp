@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
+
+from pydantic import Field
 
 from ..services.unified_news import fetch_unified_news
 from ..shared.schema import DetailLiteral
@@ -594,8 +596,8 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
 def news(
     symbol: Optional[str] = None,
     detail: DetailLiteral = "compact",
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[Optional[int], Field(ge=1)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
     limit_per_bucket: Optional[int] = None,
 ) -> Dict[str, Any]:
     """

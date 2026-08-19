@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
+
+from pydantic import Field
 
 from ..forecast.requests import MAX_FORECAST_HORIZON
 from ..shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_symbol
@@ -855,7 +857,7 @@ def market_snapshot(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     sections: Optional[str] = None,
-    horizon: int = 8,
+    horizon: Annotated[int, Field(ge=1)] = 8,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Return a unified pre-trade market snapshot with selectable analysis sections.

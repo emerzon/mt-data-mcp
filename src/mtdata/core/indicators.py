@@ -510,7 +510,7 @@ def indicators_list(  # noqa: C901
     category: Optional[CategoryLiteral] = None,
     trading_style: Optional[Literal["intraday", "swing", "position"]] = None,
     limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
-    offset: int = 0,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """List indicators as a tabular result with optional search, category, and detail filters.

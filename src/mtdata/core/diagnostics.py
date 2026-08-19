@@ -6,10 +6,11 @@ import logging
 import math
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
+from pydantic import Field
 from scipy.signal import find_peaks, periodogram
 
 from ..forecast.common import bars_per_year, observed_bars_per_session
@@ -229,7 +230,7 @@ def _clean_stationarity_warning(text: Any) -> str:
 def stationarity_test(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 500,
+    lookback: Annotated[int, Field(ge=1)] = 500,
     target: Literal["close", "log_price", "return", "log_return", "diff"] = "log_return",
     tests: str = "adf,kpss,pp",
     trend: Literal["c", "ct"] = "c",
@@ -383,7 +384,7 @@ def stationarity_test(
 def seasonality_detect(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 1000,
+    lookback: Annotated[int, Field(ge=31)] = 1000,
     target: Literal["close", "log_price", "return", "log_return", "diff"] = "log_return",
     min_period: int = 2,
     max_period: Optional[int] = None,
@@ -578,11 +579,11 @@ def _robust_scores(values: pd.Series, method: str) -> pd.Series:
 def outliers_detect(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 500,
+    lookback: Annotated[int, Field(ge=20)] = 500,
     score_fields: str = "return,volume,range",
     method: Literal["mad", "iqr", "zscore"] = "mad",
     threshold: float = 3.5,
-    limit: int = 10,
+    limit: Annotated[int, Field(ge=1)] = 10,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -721,7 +722,7 @@ def outliers_detect(
 def volatility_term_structure(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: int = 1000,
+    lookback: Annotated[int, Field(ge=1)] = 1000,
     horizons: str = "1,5,10,20,60",
     percentiles: str = "10,25,50,75,90",
     annualize: bool = True,

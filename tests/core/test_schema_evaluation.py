@@ -4,6 +4,7 @@ from mtdata.core.schema_evaluation import (
     SchemaEvaluationReport,
     SchemaFinding,
     _evaluate_tool,
+    evaluate_public_tool_schemas,
     format_schema_evaluation,
 )
 
@@ -87,3 +88,13 @@ def test_schema_evaluation_rejects_generated_placeholder_descriptions() -> None:
         and finding.parameter == "symbol"
         for finding in findings
     )
+
+
+def test_public_schema_evaluation_has_no_unbounded_numeric_parameters() -> None:
+    report = evaluate_public_tool_schemas()
+
+    assert not [
+        finding
+        for finding in report.findings
+        if finding.code == "unbounded_numeric_parameter"
+    ]

@@ -1012,7 +1012,7 @@ def _find_symbol_suggestions(
 def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
     limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
-    offset: int = 0,
+    offset: Annotated[int, Field(ge=0)] = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
     universe: Optional[Literal["visible", "all"]] = None,  # type: ignore
     group: Optional[str] = None,
@@ -1443,7 +1443,7 @@ def symbols_list(  # noqa: C901
 def _list_symbol_groups(
     search_term: Optional[str] = None,
     limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
-    offset: int = 0,
+    offset: Annotated[int, Field(ge=0)] = 0,
     mt5_gateway: Any = None,
     detail: DetailLiteral = "compact",  # type: ignore
     universe: str = "visible",
@@ -4345,11 +4345,11 @@ def market_scan(  # noqa: C901
     group: Optional[str] = None,
     preset: Optional[str] = None,
     limit: Annotated[int, Field(ge=1)] = 10,
-    offset: int = 0,
+    offset: Annotated[int, Field(ge=0)] = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     detail: DetailLiteral = "compact",
-    lookback: int = 100,
+    lookback: Annotated[int, Field(ge=2)] = 100,
     rsi_length: int = 14,
     sma_period: int = 20,
     min_price_change_pct: Optional[float] = None,

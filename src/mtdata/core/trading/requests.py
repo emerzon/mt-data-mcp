@@ -390,6 +390,7 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     breakdown_limit: int = Field(default=10, ge=1)
     min_sample: int = Field(
         default=30,
+        ge=1,
         description=(
             "Recommended minimum realized exit deals for reliable journal "
             "statistics (default 30). Smaller samples still return metrics but "

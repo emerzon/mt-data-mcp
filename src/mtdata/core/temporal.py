@@ -1,10 +1,11 @@
 import logging
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+from pydantic import Field
 
 from ..services.data_service import _parse_candle_calendar_bound
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
@@ -852,7 +853,7 @@ def _fetch_rates(
 def temporal_analyze(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: Optional[int] = None,
+    lookback: Annotated[Optional[int], Field(ge=1)] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     group_by: Literal["dow", "hour", "month", "session", "all"] = "dow",
@@ -862,8 +863,8 @@ def temporal_analyze(  # noqa: C901
     time_range: Optional[str] = None,
     return_mode: Literal["pct", "log"] = "pct",  # type: ignore
     min_bars: Optional[int] = None,
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[Optional[int], Field(ge=1)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, market session, or month.
