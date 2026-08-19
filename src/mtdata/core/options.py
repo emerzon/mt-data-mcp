@@ -263,9 +263,6 @@ def _options_provider_readiness() -> Dict[str, Any]:
             "MTDATA_OPTIONS_API_KEY."
         ) if effective_provider == "yahoo" else None
     chain_request_supported = effective_provider in {"yahoo", "tradier"}
-    usable_now = chain_request_supported
-    chain_provider_ready = usable_now
-    chain_data_ready = usable_now
     provider_mode = (
         "anonymous_fallback" if effective_provider == "yahoo" else "credentialed"
     )
@@ -273,7 +270,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "correct_options_provider"
         if not provider_configuration_valid
         else None
-        if usable_now
+        if chain_request_supported
         else "configure_options_provider"
     )
     remediation = None
@@ -282,7 +279,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
             "Set MTDATA_OPTIONS_PROVIDER to one of: auto, tradier, yahoo; then "
             "restart mtdata."
         )
-    elif not usable_now:
+    elif not chain_request_supported:
         remediation = (
             "Set MTDATA_OPTIONS_PROVIDER to yahoo or configure Tradier credentials."
         )
@@ -303,21 +300,17 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "api_key_configured": api_key_configured,
         "provider_configuration_valid": provider_configuration_valid,
         "configuration_error_code": configuration_error_code,
+        "provider_configured": configured_provider_ready,
         "configured_provider_ready": configured_provider_ready,
         "configured_provider_status": configured_provider_status,
         "local_tools_ready": True,
-        "chain_provider_ready": chain_provider_ready,
-        "chain_data_ready": chain_data_ready,
         "chain_request_supported": chain_request_supported,
-        "usable_now": usable_now,
-        "live_chain_requests_expected_to_work": chain_request_supported,
-        "live_chain_expectation_basis": (
-            "authenticated_provider"
-            if effective_provider == "tradier" and api_key_configured
-            else "best_effort_anonymous_provider"
-            if chain_request_supported
-            else "unsupported_provider"
-        ),
+        "chain_health_checked": False,
+        "chain_provider_reachable": None,
+        "chain_data_ready": None,
+        "usable_now": None,
+        "live_chain_requests_expected_to_work": None,
+        "chain_health_status": "unknown_not_checked",
         "degraded": bool(provider_mode == "anonymous_fallback"),
         "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
@@ -659,7 +652,7 @@ def options_provider_status(
         payload.pop("remediation", None)
     elif payload.get("recommendation"):
         payload["recommendation_hint"] = (
-            "Anonymous Yahoo is usable now but remains best-effort."
+            "Anonymous Yahoo supports requests but live data health was not checked."
         )
     return _run_options_operation(
         "options_provider_status",

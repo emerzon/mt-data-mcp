@@ -52,12 +52,14 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["configured_provider_ready"] is False
     assert out["configured_provider_status"] == "misconfigured_using_fallback"
     assert out["local_tools_ready"] is True
-    assert out["chain_provider_ready"] is True
-    assert out["chain_data_ready"] is True
+    assert out["provider_configured"] is False
     assert out["chain_request_supported"] is True
-    assert out["usable_now"] is True
-    assert out["live_chain_requests_expected_to_work"] is True
-    assert out["live_chain_expectation_basis"] == "best_effort_anonymous_provider"
+    assert out["chain_health_checked"] is False
+    assert out["chain_provider_reachable"] is None
+    assert out["chain_data_ready"] is None
+    assert out["usable_now"] is None
+    assert out["live_chain_requests_expected_to_work"] is None
+    assert out["chain_health_status"] == "unknown_not_checked"
     assert out["degraded"] is True
     assert out["provider_mode"] == "anonymous_fallback"
     assert out["action_required"] is None
@@ -76,10 +78,14 @@ def test_provider_status_marks_anonymous_yahoo_as_degraded_but_usable(monkeypatc
     out = _call("full")
 
     assert out["configured_provider_ready"] is True
-    assert out["chain_provider_ready"] is True
-    assert out["chain_data_ready"] is True
-    assert out["usable_now"] is True
-    assert out["live_chain_requests_expected_to_work"] is True
+    assert out["provider_configured"] is True
+    assert out["chain_request_supported"] is True
+    assert out["chain_health_checked"] is False
+    assert out["chain_provider_reachable"] is None
+    assert out["chain_data_ready"] is None
+    assert out["usable_now"] is None
+    assert out["live_chain_requests_expected_to_work"] is None
+    assert out["chain_health_status"] == "unknown_not_checked"
     assert out["action_required"] is None
     assert out["degraded"] is True
     assert out["provider_mode"] == "anonymous_fallback"

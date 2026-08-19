@@ -30,7 +30,11 @@ MTDATA_OPTIONS_API_KEY=your_tradier_token
 `TRADIER_TOKEN` and `TRADIER_API_KEY` are also accepted as token aliases; use
 `MTDATA_OPTIONS_BASE_URL` only when overriding Tradier's default API base URL.
 
-Run `options_provider_status` to see the configured vs. effective provider and whether mtdata is using authenticated or best-effort fallback access:
+Run `options_provider_status` to see the configured vs. effective provider and
+whether mtdata is using authenticated or best-effort fallback access. This is a
+configuration-only check: `chain_request_supported` reports static capability,
+while live reachability and data-readiness fields are `null` with
+`chain_health_status=unknown_not_checked` until an actual chain tool runs:
 
 ```bash
 mtdata-cli options_provider_status --json

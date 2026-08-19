@@ -540,7 +540,7 @@ See [FINVIZ.md](FINVIZ.md) for detailed examples.
 ### Options & QuantLib
 | Command | Description |
 |---------|-------------|
-| `options_provider_status` | Report configured options-chain provider readiness without querying market data |
+| `options_provider_status` | Report options-chain configuration and static request support without claiming live data readiness |
 | `options_expirations` | List available option expiration dates |
 | `options_chain` | Fetch options chain snapshot with filtering |
 | `options_barrier_price` | Price a barrier option using QuantLib |
