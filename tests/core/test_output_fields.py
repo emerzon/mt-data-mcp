@@ -80,6 +80,27 @@ def test_output_fields_keeps_requested_query_context_on_error() -> None:
     }
 
 
+def test_output_fields_preserves_complete_error_recovery_envelope() -> None:
+    payload = {
+        "success": False,
+        "error": "Unsupported date range",
+        "error_code": "unsupported_date_range",
+        "request_id": "abc123",
+        "operation": "data_fetch_candles",
+        "remediation": "Use a date on or after 1970-01-01.",
+        "related_tools": ["data_fetch_candles"],
+        "valid_values": {"end": ">= 1970-01-01"},
+        "example": "--end 2024-01-01",
+        "documentation": "docs/CLI.md",
+        "details": {"end": "1960-01-01"},
+        "data": [],
+    }
+
+    result = _select_output_fields(payload, "success,data")
+
+    assert result == payload
+
+
 def test_output_fields_does_not_inject_units_for_selected_values() -> None:
     payload = {
         "success": True,

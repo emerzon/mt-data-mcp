@@ -964,6 +964,18 @@ _FIELD_SELECTION_META_KEYS = frozenset(
     }
 )
 
+_ERROR_FIELD_SELECTION_META_KEYS = frozenset(
+    {
+        "operation",
+        "remediation",
+        "related_tools",
+        "valid_values",
+        "example",
+        "documentation",
+        "details",
+    }
+)
+
 
 def _normalize_output_fields(value: Any) -> tuple[str, ...]:
     if value in (None, False, ""):
@@ -1174,10 +1186,13 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
     requested = _normalize_output_fields(fields)
     if not requested or not isinstance(value, dict):
         return value
+    preserved_keys = _FIELD_SELECTION_META_KEYS
+    if value.get("success") is False or bool(value.get("error")):
+        preserved_keys = preserved_keys | _ERROR_FIELD_SELECTION_META_KEYS
     selected = {
         key: subvalue
         for key, subvalue in value.items()
-        if key in _FIELD_SELECTION_META_KEYS
+        if key in preserved_keys
     }
     unresolved: list[str] = []
     for requested_field in requested:
@@ -1216,7 +1231,7 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         selected["valid_output_fields"] = sorted(
             str(key)
             for key in value
-            if key not in _FIELD_SELECTION_META_KEYS
+            if key not in preserved_keys
         )
     return selected
 
