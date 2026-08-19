@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core.analytics_requests import BarrierSpec, StrategyValidateRequest
 from mtdata.core.data.requests import DataFetchCandlesRequest, WaitEventRequest
@@ -55,6 +56,7 @@ from mtdata.core.cli.api import (
     discover_tools,
     get_function_info,
 )
+from mtdata.core.cli.runtime.commands import friendly_validation_error
 
 # ========================================================================
 # get_function_info
@@ -557,6 +559,46 @@ class TestCreateCommandFunction:
         assert "ema_cross" in output
         assert "StrategyCandidate" not in output
         mock_fn.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("candidate", "expected"),
+        [
+            (
+                {"id": "missing", "type": "builtin_strategy"},
+                "builtin_strategy candidates require strategy",
+            ),
+            (
+                {
+                    "id": "reversed",
+                    "type": "forecast_threshold",
+                    "method": "naive",
+                    "long_above": 0.1,
+                    "short_below": 0.2,
+                },
+                "short_below must be <= long_above",
+            ),
+            (
+                {"id": "unknown", "type": "not_a_strategy"},
+                "builtin_strategy",
+            ),
+        ],
+    )
+    def test_strategy_validate_nested_candidate_errors_keep_field_context(
+        self,
+        candidate,
+        expected,
+    ):
+        with pytest.raises(ValidationError) as caught:
+            StrategyValidateRequest(symbol="EURUSD", candidates=[candidate])
+
+        message = friendly_validation_error(
+            caught.value,
+            cmd_name="strategy_validate",
+        )
+
+        assert "candidates.0" in message
+        assert expected in message
+        assert "must be a JSON list" not in message
 
     def test_wait_event_single_quote_event_arrays_are_coerced(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})

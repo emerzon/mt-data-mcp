@@ -190,7 +190,13 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
                 "shocks must be a JSON object mapping symbols to percentage shocks. "
                 "Examples: '{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
             )
-        if cmd_name == "strategy_validate" and loc.split(".", 1)[0] == "candidates":
+        if cmd_name == "strategy_validate" and (
+            loc == "candidates"
+            or (
+                loc.startswith("candidates.")
+                and "valid dictionary" in msg.lower()
+            )
+        ):
             return (
                 "candidates must be a JSON list of strategy objects. Example: "
                 "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
