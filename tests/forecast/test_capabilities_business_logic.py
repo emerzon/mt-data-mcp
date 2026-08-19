@@ -40,6 +40,8 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     assert stats_caps[0]["execution"]["library"] == "statsforecast"
     assert stats_caps[0]["selector"]["key"] == "model_name"
     assert stats_caps[0]["supports"]["ci"] is True
+    assert stats_caps[0]["supports"]["volatility"] is False
+    assert "forecast_volatility_estimate" in stats_caps[0]["notes"]
     assert "unavailable at runtime" in stats_caps[0]["notes"]
 
     sktime_caps = caps.get_library_capabilities(
@@ -51,6 +53,7 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     assert sktime_caps[0]["execution"]["method"] == "sktime"
     assert sktime_caps[0]["selector"]["value"] == "sktime.forecasting.theta.ThetaForecaster"
     assert sktime_caps[0]["supports"]["ci"] is True
+    assert sktime_caps[0]["supports"]["volatility"] is False
     assert "unavailable at runtime" in sktime_caps[0]["notes"]
 
 

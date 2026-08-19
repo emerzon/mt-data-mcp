@@ -279,14 +279,15 @@ def _statsforecast_capabilities() -> List[Dict[str, Any]]:
             category="statsforecast",
             description=_get_statsforecast_model_description(attr),
             available=True,
-            supports={"price": True, "return": True, "volatility": True, "ci": True},
+            supports={"price": True, "return": True, "volatility": False, "ci": True},
             selector_key="model_name",
             selector_value=attr,
             selector_mode="class_name",
             source="library_discovery",
             notes=(
                 "Confidence intervals are requested through the StatsForecast adapter; "
-                "individual models may report them unavailable at runtime."
+                "individual models may report them unavailable at runtime. "
+                "Use forecast_volatility_estimate for volatility forecasts."
             ),
         )
         capabilities.append(descriptor.to_record())
@@ -314,7 +315,8 @@ def _sktime_capabilities(
         available, requirements, missing = _sktime_dependency_status(dotted_path)
         notes = (
             "Prediction intervals are requested through the sktime adapter; "
-            "individual estimators may report them unavailable at runtime."
+            "individual estimators may report them unavailable at runtime. "
+            "Use forecast_volatility_estimate for volatility forecasts."
         )
         if missing:
             notes = "Unavailable because optional dependencies are missing: " + ", ".join(missing)
@@ -330,7 +332,7 @@ def _sktime_capabilities(
             description=f"sktime forecaster {class_name}.",
             available=available,
             requires=requirements,
-            supports={"price": True, "return": True, "volatility": True, "ci": True},
+            supports={"price": True, "return": True, "volatility": False, "ci": True},
             aliases=(class_name,),
             selector_key="estimator",
             selector_value=dotted_path,
