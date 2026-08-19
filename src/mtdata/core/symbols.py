@@ -2661,6 +2661,13 @@ def _market_scan_error(
     return out
 
 
+def _attach_market_scan_source(payload: Dict[str, Any], gateway: Any = None) -> Dict[str, Any]:
+    """Attach broker identity to MT5-backed scan outcomes, including failures."""
+    out = dict(payload)
+    out["source"] = build_mt5_source_provenance(gateway)
+    return out
+
+
 def _market_scan_freshness_summary(
     rows: List[Dict[str, Any]],
     *,
@@ -4665,10 +4672,13 @@ def market_scan(  # noqa: C901
 
             raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
-                return _market_scan_error(
-                    f"Failed to get symbols: {mt5_gateway.last_error()}",
-                    code="data_fetch_failed",
-                    request=request,
+                return _attach_market_scan_source(
+                    _market_scan_error(
+                        f"Failed to get symbols: {mt5_gateway.last_error()}",
+                        code="data_fetch_failed",
+                        request=request,
+                    ),
+                    mt5_gateway,
                 )
             all_symbols = list(raw_symbols)
             broker_symbol_count = len(all_symbols)
@@ -4686,10 +4696,13 @@ def market_scan(  # noqa: C901
                 error_code = "invalid_input"
                 if group and selection_meta.get("symbols_input") is None:
                     error_code = "symbol_group_error"
-                return _market_scan_error(
-                    selection_error,
-                    code=error_code,
-                    request=request,
+                return _attach_market_scan_source(
+                    _market_scan_error(
+                        selection_error,
+                        code=error_code,
+                        request=request,
+                    ),
+                    mt5_gateway,
                 )
 
             if selection_meta.get("symbols_input") is not None:
@@ -4704,18 +4717,21 @@ def market_scan(  # noqa: C901
             if selection_meta.get("missing_symbols") is not None:
                 request["missing_symbols"] = selection_meta.get("missing_symbols")
             if len(selected_symbols) > _MARKET_SCAN_MAX_CANDIDATES:
-                return _market_scan_error(
-                    (
-                        f"The filtered universe contains {len(selected_symbols)} candidates, "
-                        f"above the safe synchronous cap of {_MARKET_SCAN_MAX_CANDIDATES}. "
-                        "Narrow the exact scan with symbols or group."
+                return _attach_market_scan_source(
+                    _market_scan_error(
+                        (
+                            f"The filtered universe contains {len(selected_symbols)} candidates, "
+                            f"above the safe synchronous cap of {_MARKET_SCAN_MAX_CANDIDATES}. "
+                            "Narrow the exact scan with symbols or group."
+                        ),
+                        code="candidate_universe_too_large",
+                        request=request,
+                        stats={
+                            "candidate_count": len(selected_symbols),
+                            "candidate_cap": _MARKET_SCAN_MAX_CANDIDATES,
+                        },
                     ),
-                    code="candidate_universe_too_large",
-                    request=request,
-                    stats={
-                        "candidate_count": len(selected_symbols),
-                        "candidate_cap": _MARKET_SCAN_MAX_CANDIDATES,
-                    },
+                    mt5_gateway,
                 )
             started_at = time.perf_counter()
             matched_rows: List[Dict[str, Any]] = []
@@ -5103,23 +5119,30 @@ def market_scan(  # noqa: C901
                         f"{visible_symbol_count} visible symbol(s) out of "
                         f"{broker_symbol_count} broker symbol(s)."
                     )
-            return attach_collection_contract(
-                out,
-                collection_kind="table",
-                rows=output_rows,
-                include_contract_meta=detail_mode == "full",
+            return _attach_market_scan_source(
+                attach_collection_contract(
+                    out,
+                    collection_kind="table",
+                    rows=output_rows,
+                    include_contract_meta=detail_mode == "full",
+                ),
+                mt5_gateway,
             )
         except MT5ConnectionError as exc:
-            return _market_scan_error(
-                str(exc),
-                code="mt5_connection_error",
-                request=request,
+            return _attach_market_scan_source(
+                _market_scan_error(
+                    str(exc),
+                    code="mt5_connection_error",
+                    request=request,
+                )
             )
         except Exception as exc:
-            return _market_scan_error(
-                f"Error running market scan: {str(exc)}",
-                code="market_scan_failed",
-                request=request,
+            return _attach_market_scan_source(
+                _market_scan_error(
+                    f"Error running market scan: {str(exc)}",
+                    code="market_scan_failed",
+                    request=request,
+                )
             )
 
     return run_logged_operation(

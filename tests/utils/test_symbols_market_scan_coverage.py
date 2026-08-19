@@ -1766,6 +1766,8 @@ class TestMarketScan:
             result = fn(timeframe="H1", lookback=4, limit=5)
 
         assert result["success"] is True
+        assert result["source"]["provider"] == "mt5"
+        assert "context_available" in result["source"]
         assert "columns" not in result
         assert result["count"] == 1
         assert result["rank_by"] == "abs_price_change_pct"

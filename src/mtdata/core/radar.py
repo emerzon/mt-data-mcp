@@ -41,11 +41,18 @@ _ROW_KEYS = (
     "spread_pips",
     "spread_pct",
     "spread_quality",
-    "usable_for_live_trading",
+    "quote_as_of",
+    "quote_age_seconds",
+    "quote_stale",
+    "quote_freshness",
+    "quote_freshness_reason",
+    "quote_source_state",
+    "quote_usable_for_live_trading",
+    "quote_usable_for_live_trading_basis",
     "quote_not_live_ready",
-    "data_stale",
-    "data_age_seconds",
-    "freshness_state",
+    "bar_stale",
+    "bar_age_seconds",
+    "bar_freshness",
     "price_change_pct",
     "live_price_change_pct",
     "rsi",
@@ -136,11 +143,11 @@ def compact_radar_row(row: Any) -> Optional[Dict[str, Any]]:
             continue
         if row.get(key) not in (None, "", []):
             compact[key] = row[key]
-    usable = row.get("usable_for_live_trading")
+    usable = row.get("quote_usable_for_live_trading")
     blockers = row.get("execution_blockers")
     not_live = (
-        usable is False
-        or row.get("data_stale") is True
+        usable is not True
+        or row.get("quote_stale") is True
         or row.get("quote_not_live_ready") is True
         or (isinstance(blockers, list) and bool(blockers))
     )
@@ -280,7 +287,7 @@ def run_market_radar(
         "limit": limit,
         "rank_by": scan_rank,
         "quote_usable_only": False,
-        "detail": "compact",
+        "detail": request.detail,
     }
     scan = caller("scan", scan_kwargs)
     if _scan_rows(scan) or not seeded:
@@ -298,7 +305,7 @@ def run_market_radar(
                 "rank_by": "abs_price_change_pct",
                 "limit": limit,
                 "timeframe": request.timeframe,
-                "detail": "compact",
+                "detail": request.detail,
             },
         )
         seeded_symbols = _extract_ranked_symbols(top, limit=limit)

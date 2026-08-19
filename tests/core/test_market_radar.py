@@ -33,8 +33,10 @@ def _scan_rows(*symbols: str) -> Dict[str, Any]:
                 "symbol": symbol,
                 "bid": 1.1,
                 "ask": 1.2,
-                "usable_for_live_trading": symbol != "USDJPY",
-                "data_stale": symbol == "USDJPY",
+                "quote_as_of": "2026-08-19T13:48:00Z",
+                "quote_age_seconds": 21_560.0 if symbol == "USDJPY" else 1.0,
+                "quote_usable_for_live_trading": symbol != "USDJPY",
+                "quote_stale": symbol == "USDJPY",
                 "price_change_pct": 0.2 if symbol == "EURUSD" else -0.1,
             }
             for symbol in symbols
@@ -61,6 +63,36 @@ def test_market_radar_marks_unusable_quotes() -> None:
         call_section=lambda name, kwargs: _scan_rows("USDJPY"),
     )
     assert result["rows"][0]["quote_not_live_ready"] is True
+    assert result["rows"][0]["quote_as_of"] == "2026-08-19T13:48:00Z"
+    assert result["rows"][0]["quote_age_seconds"] == 21_560.0
+    assert result["rows"][0]["quote_stale"] is True
+
+
+def test_market_radar_fails_closed_when_quote_readiness_is_missing() -> None:
+    result = run_market_radar(
+        MarketRadarRequest(symbols="EURUSD"),
+        call_section=lambda name, kwargs: {
+            "success": True,
+            "data": [{"symbol": "EURUSD", "bid": 1.1, "ask": 1.2}],
+        },
+    )
+
+    assert result["rows"][0]["quote_not_live_ready"] is True
+
+
+def test_market_radar_full_detail_requests_full_scan_rows() -> None:
+    observed: Dict[str, Any] = {}
+
+    def caller(name: str, kwargs: Dict[str, Any]) -> Any:
+        observed.update(kwargs)
+        return _scan_rows("EURUSD")
+
+    run_market_radar(
+        MarketRadarRequest(symbols="EURUSD", detail="full"),
+        call_section=caller,
+    )
+
+    assert observed["detail"] == "full"
 
 
 def test_market_radar_reports_missing_names() -> None:
