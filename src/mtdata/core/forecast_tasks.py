@@ -187,7 +187,10 @@ class ForecastModelsCleanupRequest(BaseModel):
         10,
         ge=1,
         le=500,
-        description="Maximum matching model previews returned on this page.",
+        description=(
+            "Maximum matching models targeted by this cleanup page. Preview and "
+            "apply use the same deterministic model IDs."
+        ),
     )
     offset: int = Field(
         0,
@@ -1231,9 +1234,8 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
 def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, Any]:
     """Preview or delete stale stored forecast models.
 
-    Candidate output is deterministically paged with ``limit`` and ``offset``.
-    Pagination affects only the returned preview; a non-dry-run cleanup still
-    deletes the complete matching set.
+    Candidate output is deterministically paged with ``limit`` and ``offset``;
+    a non-dry-run cleanup deletes exactly the IDs returned by the same page.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(request.detail)
@@ -1276,7 +1278,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
         preview = matches[int(request.offset) : int(request.offset) + int(request.limit)]
         deleted = 0
         if not request.dry_run:
-            for row in matches:
+            for row in preview:
                 if store.delete(str(row.get("model_id") or "")):
                     deleted += 1
 

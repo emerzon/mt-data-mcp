@@ -400,6 +400,11 @@ mtdata-cli forecast_models_delete "nhits/EURUSD_H1/abc123"
 mtdata-cli forecast_models_cleanup --json          # preview stale/expired
 ```
 
+Cleanup is deterministic and batch-safe: `--limit` caps both the preview and
+the apply scope, while `--offset` selects the same model-ID page in either
+mode. Re-run the preview with identical filters before setting
+`--dry-run false`.
+
 The compact listing defaults to ten models and reports total pagination plus
 counts by method. Increase `--limit` explicitly when browsing a larger store.
 

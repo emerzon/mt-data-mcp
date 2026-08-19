@@ -665,7 +665,7 @@ class TestForecastModels:
             "m/S06/h",
         ]
 
-    def test_cleanup_pagination_does_not_narrow_deletion_scope(self):
+    def test_cleanup_apply_targets_same_page_as_preview(self):
         from src.mtdata.core.forecast_tasks import forecast_models_cleanup
 
         handles = [
@@ -686,13 +686,17 @@ class TestForecastModels:
                     older_than_days=0,
                     dry_run=False,
                     limit=2,
+                    offset=1,
                 )
             )
 
         assert result["matched"] == 5
-        assert result["deleted"] == 5
+        assert result["deleted"] == 2
         assert result["count"] == 2
-        assert mock_store.delete.call_count == 5
+        assert [call.args[0] for call in mock_store.delete.call_args_list] == [
+            "m/S1/h",
+            "m/S2/h",
+        ]
 
     def test_lists_models_distinguishes_empty_page_from_empty_store(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
