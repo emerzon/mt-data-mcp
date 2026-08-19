@@ -117,6 +117,10 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
   calibration target, not a finite-sample guarantee. Compare it with the
   top-level `empirical_coverage` and `coverage_status` fields before using the
   interval as evidence of historical calibration quality.
+- `ci_available=true` requires at least 30 calibration residuals for every
+  forecast step. Smaller samples return `ci_status=insufficient_calibration`,
+  `ci_available=false`, and diagnostic-only bounds with guidance to increase
+  `--steps`.
 
 Use `--detail full` when you need the raw `lower_price` / `upper_price` arrays
 or calibration diagnostics such as `conformal.per_step_q` and per-step coverage.

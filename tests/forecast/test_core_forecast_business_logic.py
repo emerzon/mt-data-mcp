@@ -2987,8 +2987,10 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert out["empirical_coverage"] == 1.0
     assert out["coverage_status"] == "at_or_above_nominal_target"
     assert "confidence_level" not in out
-    assert out["ci_status"] == "available"
-    assert out["ci_available"] is True
+    assert out["ci_status"] == "insufficient_calibration"
+    assert out["ci_available"] is False
+    assert out["interval_usage"] == "diagnostic_only"
+    assert out["required_calibration_points"] == 30
     assert out["detail"] == "compact"
     assert out["conformal"]["ci_alpha"] == 0.1
     assert out["conformal"]["empirical_coverage"] == 1.0
@@ -3153,7 +3155,8 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
     assert "confidence_level" not in result
     assert result["lower_price"] == [97.0]
     assert result["upper_price"] == [103.0]
-    assert result["ci_status"] == "available"
+    assert result["ci_status"] == "insufficient_calibration"
+    assert result["ci_available"] is False
 
 
 def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
@@ -3230,6 +3233,9 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
         ),
         "interval_method": "rolling_residual_quantiles",
         "min_calibration_points": 1,
+        "required_calibration_points": 30,
+        "calibration_sufficient": False,
+        "interval_usage": "diagnostic_only",
     }
     assert "per_step_q" not in result["conformal"]
     for key in (
@@ -3301,12 +3307,16 @@ def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance
         },
     )
 
-    assert result["ci_status"] == "available"
-    assert result["ci_available"] is True
+    assert result["ci_status"] == "insufficient_calibration"
+    assert result["ci_available"] is False
+    assert result["calibration_sufficient"] is False
+    assert result["required_calibration_points"] == 30
+    assert result["interval_usage"] == "diagnostic_only"
+    assert "Increase --steps" in result["calibration_remediation"]
     assert result["lower_price"] == [99.0]
     assert result["upper_price"] == [101.0]
     assert result["warnings"][0] == "native theta fallback used"
-    assert "below 30" in result["warnings"][1]
+    assert "at least 30" in result["warnings"][1]
 
 
 def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_payload():
@@ -3322,6 +3332,41 @@ def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_pa
             backtest_impl=lambda **kwargs: {"error": "backtest failed"},
             forecast_impl=lambda **kwargs: {"forecast_price": [100.0]},
         )
+
+
+@pytest.mark.parametrize("ci_alpha", [0.05, 0.10])
+@pytest.mark.parametrize(
+    ("sample_size", "expected_status", "expected_available"),
+    [
+        (29, "insufficient_calibration", False),
+        (30, "available", True),
+    ],
+)
+def test_conformal_interval_availability_uses_calibration_threshold(
+    ci_alpha, sample_size, expected_status, expected_available
+):
+    details = [
+        {"forecast": [float(index)], "actual": [float(index) + 1.0]}
+        for index in range(sample_size)
+    ]
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=sample_size,
+            spacing=1,
+            ci_alpha=ci_alpha,
+        ),
+        backtest_impl=lambda **kwargs: {
+            "results": {"theta": {"details": details}}
+        },
+        forecast_impl=lambda **kwargs: {"forecast_price": [100.0]},
+    )
+
+    assert result["ci_status"] == expected_status
+    assert result["ci_available"] is expected_available
+    assert result["conformal"]["min_calibration_points"] == sample_size
 
 
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):

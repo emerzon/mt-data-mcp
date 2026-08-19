@@ -1434,6 +1434,9 @@ def _conformal_summary(conformal: Any) -> Optional[Dict[str, Any]]:
             "coverage_evaluation",
             "coverage_note",
             "min_calibration_points",
+            "required_calibration_points",
+            "calibration_sufficient",
+            "interval_usage",
         )
         if conformal.get(key) not in (None, "", [], {})
     }
@@ -1504,6 +1507,10 @@ def _apply_conformal_intervals_detail(
         "ci_status",
         "ci_available",
         "ci_warning",
+        "required_calibration_points",
+        "calibration_sufficient",
+        "interval_usage",
+        "calibration_remediation",
         "last_price",
         "last_price_source",
         "digits",
@@ -2326,6 +2333,9 @@ def _normalize_forecaster_name(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
 
 
+_MIN_CONFORMAL_CALIBRATION_POINTS = 30
+
+
 def _finite_sample_conformal_quantile(values: List[float], alpha: float) -> float:
     if not values:
         return float("nan")
@@ -2979,6 +2989,10 @@ def run_forecast_conformal_intervals(
             "per_step_q": [float(v) for v in qerrs],
             "calibration_points_per_step": calibration_points,
             "min_calibration_points": int(min_calibration_points),
+            "required_calibration_points": _MIN_CONFORMAL_CALIBRATION_POINTS,
+            "calibration_sufficient": (
+                min_calibration_points >= _MIN_CONFORMAL_CALIBRATION_POINTS
+            ),
             "empirical_coverage_per_step": coverage_per_step,
             "empirical_coverage": empirical_coverage,
             "coverage_target": round(1.0 - float(request.ci_alpha), 6),
@@ -3004,8 +3018,25 @@ def run_forecast_conformal_intervals(
             )
         else:
             result["coverage_status"] = "at_or_above_nominal_target"
-        result["ci_status"] = "available"
-        result["ci_available"] = True
+        calibration_sufficient = (
+            min_calibration_points >= _MIN_CONFORMAL_CALIBRATION_POINTS
+            and empirical_coverage is not None
+        )
+        result["required_calibration_points"] = _MIN_CONFORMAL_CALIBRATION_POINTS
+        result["calibration_sufficient"] = calibration_sufficient
+        if calibration_sufficient:
+            result["ci_status"] = "available"
+            result["ci_available"] = True
+            result["interval_usage"] = "calibrated"
+        else:
+            result["ci_status"] = "insufficient_calibration"
+            result["ci_available"] = False
+            result["interval_usage"] = "diagnostic_only"
+            result["calibration_remediation"] = (
+                "Increase --steps until every forecast horizon has at least "
+                f"{_MIN_CONFORMAL_CALIBRATION_POINTS} calibration residuals."
+            )
+        result["conformal"]["interval_usage"] = result["interval_usage"]
         result = _attach_analysis_time_window(result, request)
         alpha_warning = _conformal_alpha_warning(request.ci_alpha)
         warnings_out = result.get("warnings")
@@ -3025,12 +3056,13 @@ def run_forecast_conformal_intervals(
             if alpha_warning not in warnings_list:
                 warnings_list.append(alpha_warning)
             result["warnings"] = warnings_list
-        if min_calibration_points < 30:
+        if min_calibration_points < _MIN_CONFORMAL_CALIBRATION_POINTS:
             sample_warning = (
                 "Residual-quantile calibration has as few as "
                 f"{min_calibration_points} residual(s) per forecast step; "
-                "tail quantiles and empirical coverage may be unstable below 30. "
-                "These bands are not true conformal prediction intervals."
+                f"at least {_MIN_CONFORMAL_CALIBRATION_POINTS} are required before "
+                "intervals are available for decision use. Returned bounds are "
+                "diagnostic only and are not true conformal prediction intervals."
             )
             warnings_list = result.get("warnings")
             if not isinstance(warnings_list, list):
