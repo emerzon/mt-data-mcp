@@ -813,6 +813,16 @@ class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastBarrierOptimizeRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
+        if self.grid_style == "preset" and not str(self.preset or "").strip():
+            raise ValueError(
+                "preset is required when grid_style='preset'; use one of: "
+                "intraday, position, scalp, swing"
+            )
+        if self.grid_style != "preset" and self.preset is not None:
+            raise ValueError(
+                "preset is only valid when grid_style='preset'; either remove "
+                "preset or set grid_style='preset'"
+            )
         return self
 
 

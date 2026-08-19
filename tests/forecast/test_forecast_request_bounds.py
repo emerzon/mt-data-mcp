@@ -72,6 +72,30 @@ def test_forecast_requests_reject_overlapping_rolling_windows(model) -> None:
     assert request.spacing == 1
 
 
+@pytest.mark.parametrize("grid_style", ["fixed", "volatility", "ratio"])
+def test_barrier_optimize_request_rejects_preset_with_other_grid_styles(
+    grid_style,
+) -> None:
+    with pytest.raises(ValidationError, match="preset is only valid"):
+        ForecastBarrierOptimizeRequest(
+            symbol="EURUSD",
+            grid_style=grid_style,
+            preset="scalp",
+        )
+
+
+def test_barrier_optimize_request_requires_named_preset() -> None:
+    with pytest.raises(ValidationError, match="preset is required"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", grid_style="preset")
+
+    request = ForecastBarrierOptimizeRequest(
+        symbol="EURUSD",
+        grid_style="preset",
+        preset="intraday",
+    )
+    assert request.preset == "intraday"
+
+
 @pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf")])
 def test_backtest_requests_reject_invalid_slippage(value) -> None:
     with pytest.raises(ValidationError, match="slippage_bps"):

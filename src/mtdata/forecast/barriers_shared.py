@@ -3,6 +3,7 @@ import json
 import math
 import warnings
 from datetime import datetime, timezone
+from statistics import NormalDist
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
 import numpy as np
@@ -27,6 +28,7 @@ from ..utils.freshness import (
 )
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.quote import (
+    compute_spread_metrics,
     enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
@@ -429,7 +431,10 @@ def _candidate_status_reason(row: Optional[Dict[str, Any]], cost_per_trade: floa
 
 
 def _build_selection_diagnostics(  # noqa: C901
-    row: Optional[Dict[str, Any]], cost_per_trade: float = 0.0
+    row: Optional[Dict[str, Any]],
+    cost_per_trade: float = 0.0,
+    *,
+    candidate_count: int = 1,
 ) -> Dict[str, Any]:
     if not isinstance(row, dict):
         return {}
@@ -445,6 +450,28 @@ def _build_selection_diagnostics(  # noqa: C901
         warnings_out.append(
             "Best candidate has negative EV; objective preference may not align with profitability."
         )
+
+    ev_se = _safe_float(row.get("ev_se"))
+    statistical_edge_unresolved = False
+    selection_adjusted_ci: Optional[Dict[str, float]] = None
+    comparisons = max(1, int(candidate_count))
+    if best_ev is not None and ev_se is not None and ev_se >= 0.0:
+        adjusted_alpha = 0.05 / comparisons
+        adjusted_z = NormalDist().inv_cdf(1.0 - adjusted_alpha / 2.0)
+        adjusted_low = float(best_ev - adjusted_z * ev_se)
+        adjusted_high = float(best_ev + adjusted_z * ev_se)
+        selection_adjusted_ci = {
+            "low": adjusted_low,
+            "high": adjusted_high,
+        }
+        row["ev_selection_adjusted_ci95"] = selection_adjusted_ci
+        row["ev_selection_comparisons"] = comparisons
+        statistical_edge_unresolved = adjusted_low <= 0.0
+        if statistical_edge_unresolved:
+            warnings_out.append(
+                "Selected EV is not statistically distinguishable from zero after "
+                f"adjusting for {comparisons} searched candidate(s)."
+            )
 
     best_kelly = _safe_float(row.get("kelly"))
     if best_kelly is not None and best_kelly < 0.0:
@@ -581,10 +608,17 @@ def _build_selection_diagnostics(  # noqa: C901
             pq = prob_win_val * (1.0 - prob_win_val)
             min_sims = int(math.ceil((2.0 * z) ** 2 * pq / (target_width ** 2)))
             out["min_sims_recommended"] = max(min_sims, 2000)
+    if selection_adjusted_ci is not None:
+        out["ev_selection_adjusted_ci95"] = selection_adjusted_ci
+        out["ev_selection_comparisons"] = comparisons
+        out["ev_selection_adjustment"] = "bonferroni_two_sided_95pct"
+    if statistical_edge_unresolved:
+        out["statistical_edge_unresolved"] = True
+        out["statistical_edge_basis"] = "selection_adjusted_ev_lower_bound_le_zero"
     return out
 
 
-def _build_actionability_payload(
+def _build_actionability_payload(  # noqa: C901
     *,
     status: str,
     status_reason: Optional[str] = None,
@@ -609,6 +643,10 @@ def _build_actionability_payload(
         flags.append("low_practical_win_probability")
     if bool(diag.get("low_confidence")):
         flags.append("low_confidence")
+    if bool(diag.get("statistical_edge_unresolved")):
+        flags.append("statistical_edge_unresolved")
+    if bool(diag.get("trading_costs_incomplete")):
+        flags.append("trading_costs_incomplete")
     if diag.get("selection_warnings"):
         flags.append("selection_warnings")
     if warning:
@@ -659,12 +697,30 @@ def _build_actionability_payload(
     elif {
         "selection_warnings",
         "low_confidence",
+        "statistical_edge_unresolved",
+        "trading_costs_incomplete",
         "warning",
         "ensemble_degraded",
     }.intersection(seen):
         actionability = "review"
         trade_gate_passed = False
-        if warning:
+        if "trading_costs_incomplete" in seen:
+            missing_costs = diag.get("missing_cost_assumptions")
+            missing_text = (
+                ", ".join(str(item) for item in missing_costs)
+                if isinstance(missing_costs, list) and missing_costs
+                else "one or more cost components"
+            )
+            actionability_reason = (
+                "Trading cost assumptions are incomplete "
+                f"({missing_text}); provide explicit zero or positive assumptions."
+            )
+        elif "statistical_edge_unresolved" in seen:
+            actionability_reason = (
+                "Selected EV is not statistically distinguishable from zero after "
+                "accounting for the searched candidate set."
+            )
+        elif warning:
             actionability_reason = str(warning).strip()
         elif diag.get("confidence_warning"):
             actionability_reason = str(diag["confidence_warning"]).strip()
@@ -971,10 +1027,13 @@ def _live_reference_time_context(
         age_rounder=lambda value: max(0, int(round(value))),
     )
     freshness.update(quote_source)
+    bid = tick_value(tick, "bid")
+    ask = tick_value(tick, "ask")
+    spread = compute_spread_metrics(bid, ask)
     enforce_quote_execution_readiness(
         freshness,
-        bid=tick_value(tick, "bid"),
-        ask=tick_value(tick, "ask"),
+        bid=bid,
+        ask=ask,
         quote_source_conflict=freshness.get("quote_source_conflict"),
     )
     age_seconds = freshness.get("data_age_seconds")
@@ -990,6 +1049,10 @@ def _live_reference_time_context(
         "reference_spread_quality": freshness.get("spread_quality"),
         "reference_quote_source": freshness.get("quote_source"),
         "reference_quote_source_state": freshness.get("quote_source_state"),
+        "reference_bid": _safe_float(bid),
+        "reference_ask": _safe_float(ask),
+        "reference_spread": _safe_float(spread.get("spread")),
+        "reference_spread_pct": _safe_float(spread.get("spread_pct")),
     }
     for source_key, output_key in (
         ("symbol_info_tick_time_epoch", "reference_symbol_info_tick_time_epoch"),

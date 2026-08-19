@@ -259,6 +259,30 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
         self.assertTrue(result["success"])
         grid = result.get("grid")
         self.assertTrue(grid)
+        self.assertEqual(result["search_config"]["preset"], "scalp")
+
+    def test_forecast_barrier_optimize_rejects_mismatched_param_preset_before_io(self):
+        self.mock_fetch_history_opt.reset_mock()
+
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            grid_style="fixed",
+            params={"preset": "scalp"},
+        )
+
+        self.assertIn("only valid", result["error"])
+        self.mock_fetch_history_opt.assert_not_called()
+
+    def test_forecast_barrier_optimize_requires_param_preset_before_io(self):
+        self.mock_fetch_history_opt.reset_mock()
+
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            grid_style="preset",
+        )
+
+        self.assertIn("preset is required", result["error"])
+        self.mock_fetch_history_opt.assert_not_called()
 
     def test_forecast_barrier_optimize_pips_mode(self):
         self._set_flat_history(1.0)

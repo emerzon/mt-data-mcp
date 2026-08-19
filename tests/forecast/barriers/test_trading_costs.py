@@ -17,7 +17,7 @@ from ._helpers import _BARRIER_OPT_ROOT, _BarrierTestBase
 class TestBarrierTradingCosts(_BarrierTestBase):
     """T1.1: Spread/commission/slippage modeling."""
 
-    def test_optimize_no_costs_has_no_trading_costs_key(self):
+    def test_optimize_omitted_costs_are_explicitly_incomplete(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD", timeframe="H1", horizon=10,
             method="mc_gbm", direction="long", mode="pct",
@@ -25,7 +25,68 @@ class TestBarrierTradingCosts(_BarrierTestBase):
             sl_min=0.5, sl_max=0.5, sl_steps=1,
         )
         self.assertTrue(result.get("success"))
-        self.assertNotIn("trading_costs", result)
+        self.assertEqual(
+            result["trading_costs"]["missing_assumptions"],
+            ["spread", "commission", "slippage"],
+        )
+        self.assertFalse(result["trading_costs"]["complete"])
+        self.assertFalse(result["trade_gate_passed"])
+        self.assertIn("trading_costs_incomplete", result["actionability_flags"])
+
+    def test_explicit_zero_costs_are_complete(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pct",
+            tp_min=0.5, tp_max=0.5, tp_steps=1,
+            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            params={
+                "spread_pct": 0.0,
+                "commission_pct": 0.0,
+                "slippage_pct": 0.0,
+            },
+        )
+
+        self.assertTrue(result["trading_costs"]["complete"])
+        self.assertEqual(result["trading_costs"]["missing_assumptions"], [])
+        self.assertNotIn("trading_costs_incomplete", result["actionability_flags"])
+
+    def test_live_quote_spread_is_applied_when_spread_is_omitted(self):
+        paths = np.concatenate(
+            (
+                np.full((501, 1), 1.006),
+                np.full((499, 1), 0.994),
+            ),
+            axis=0,
+        )
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+            return_value=(1.0, "live_tick_ask"),
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._live_reference_time_context",
+            return_value={
+                "reference_usable_for_live": True,
+                "reference_spread_pct": 0.01,
+            },
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc",
+            return_value={"price_paths": paths},
+        ):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD", timeframe="H1", horizon=1,
+                method="mc_gbm", direction="long", mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={"min_barrier_multiplier": 0.0},
+                viable_only=False,
+            )
+
+        costs = result["trading_costs"]
+        self.assertEqual(costs["spread_source"], "live_bid_ask")
+        self.assertAlmostEqual(costs["spread_pct"], 0.01)
+        self.assertAlmostEqual(costs["cost_per_trade"], 0.01)
+        self.assertEqual(costs["missing_assumptions"], ["commission", "slippage"])
+        self.assertLess(float(result["best"]["ev_net"]), 0.0)
+        self.assertFalse(result["trade_gate_passed"])
 
     def test_optimize_with_spread_pct_produces_trading_costs(self):
         result = forecast_barrier_optimize(

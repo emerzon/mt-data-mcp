@@ -607,6 +607,7 @@ Pre-configured ranges for trading styles
 **Use case**: Quick setup for standard trading styles
 
 Note:
+- `--preset` is required with `--grid-style preset` and is rejected with every other grid style. There is no implicit preset.
 - Presets are stored in percentage terms.
 - In `mode=ticks`, the optimizer converts those preset percentages to tick-size distances using the current reference price.
 - That means named presets in tick mode are not portable across different price levels.
@@ -776,6 +777,12 @@ Enable it with `statistical_robustness=true` in `params` or with the Python keyw
 - Drift-stress scenarios (enabled with statistical robustness by default)
 - Independent-seed post-selection evaluation and full-search selection stability
 - Optional held-out walk-forward validation with `enable_oos_validation=true`
+
+Every optimizer run also reports the selected candidate's EV standard error and
+95% interval. The execution gate applies a Bonferroni-adjusted EV lower bound
+over the full searched candidate set. A positive point estimate remains visible
+as mathematically viable, but it is labeled `review` and is not tradable when
+that adjusted interval crosses zero.
 
 **Important:** These checks do not make a trade valid by themselves. They are quality controls on the simulation and on the optimizer output.
 
@@ -1189,8 +1196,9 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 **Problem**: Paper trading results don't match reality
 
 **Solution**:
-- Reduce TP by the live half-spread and increase SL by the same amount, **or**
-- Pass optimize cost params (`spread_pips` / `spread_bps` / `slippage_*` / `commission_*`).
+- On a live request, the optimizer automatically applies a valid current bid/ask spread when no spread parameter is supplied.
+- Supply commission and slippage assumptions explicitly, including `0` when that is intentional. Historical requests also require an explicit spread assumption.
+- The `trading_costs.complete` and `missing_assumptions` fields describe the effective model. An incomplete model can support research output, but cannot pass the trade gate.
 - `tp_ticks` / `sl_ticks` are `trade_tick_size` distances only. They do **not** subtract spread.
 
 ```bash
@@ -1198,9 +1206,9 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
   --method hmm_mc --barrier '{"kind":"tp_sl","unit":"ticks","take_profit":20,"stop_loss":15}'
-# Cost-aware search (pip/bps inputs on forecast_barrier_optimize)
+# Complete explicit cost model (pip/bps inputs on forecast_barrier_optimize)
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe M5 --horizon 12 \
-  --params "spread_pips=1.2,slippage_pips=0.3"
+  --params "spread_pips=1.2,slippage_pips=0.3,commission_bps=0"
 ```
 
 ---

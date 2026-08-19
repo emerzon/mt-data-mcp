@@ -13,6 +13,7 @@ from mtdata.forecast.barriers_probabilities import (
     forecast_barrier_hit_probabilities,
 )
 from mtdata.forecast.barriers_shared import (
+    _build_actionability_payload,
     _build_selection_diagnostics,
     _sort_candidate_results,
 )
@@ -76,6 +77,42 @@ class TestBarrierStatisticalSignificance(unittest.TestCase):
         diag = _build_selection_diagnostics(row)
         self.assertNotIn("confidence_warning", diag)
         self.assertNotIn("low_confidence", diag)
+
+    def test_selection_adjusted_ev_crossing_zero_blocks_trade_gate(self):
+        row = {
+            "tp": 0.5,
+            "sl": 0.5,
+            "rr": 1.0,
+            "prob_win": 0.51,
+            "prob_loss": 0.49,
+            "prob_no_hit": 0.0,
+            "prob_win_ci95": {"low": 0.48, "high": 0.54},
+            "ev": 0.01,
+            "ev_se": 0.01,
+            "edge": 0.02,
+            "kelly": 0.02,
+        }
+
+        diagnostics = _build_selection_diagnostics(
+            row,
+            candidate_count=63,
+        )
+        actionability = _build_actionability_payload(
+            status="ok",
+            row=row,
+            diagnostics=diagnostics,
+        )
+
+        self.assertTrue(diagnostics["statistical_edge_unresolved"])
+        self.assertLessEqual(diagnostics["ev_selection_adjusted_ci95"]["low"], 0.0)
+        self.assertEqual(diagnostics["ev_selection_comparisons"], 63)
+        self.assertEqual(actionability["actionability"], "review")
+        self.assertEqual(actionability["recommendation"], "review")
+        self.assertFalse(actionability["trade_gate_passed"])
+        self.assertIn(
+            "statistical_edge_unresolved",
+            actionability["actionability_flags"],
+        )
 
 
 # ---------------------------------------------------------------------------

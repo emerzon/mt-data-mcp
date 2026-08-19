@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.forecast import barriers_shared
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
@@ -90,6 +91,11 @@ def test_barrier_reference_prefers_live_stream_over_future_cached_tick():
     assert result["reference_freshness_state"] == "live"
     assert result["reference_usable_for_live"] is True
     assert result["reference_spread_quality"] == "two_sided"
+    assert result["reference_bid"] == 1.15316
+    assert result["reference_ask"] == 1.15318
+    assert result["reference_spread_pct"] == pytest.approx(
+        (1.15318 - 1.15316) / ((1.15318 + 1.15316) / 2.0) * 100.0
+    )
 
 
 def test_live_reference_price_reads_mapping_stream_tick():

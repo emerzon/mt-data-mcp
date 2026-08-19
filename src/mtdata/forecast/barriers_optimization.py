@@ -530,6 +530,15 @@ def _evaluate_barrier_candidate(
     ev_gross = float(np.mean(payoffs.gross))
     selected_payoffs = payoffs.net if context.has_trading_costs else payoffs.gross
     ev_val = float(np.mean(selected_payoffs))
+    ev_se = (
+        float(np.std(selected_payoffs, ddof=1) / np.sqrt(sims_total))
+        if sims_total > 1
+        else 0.0
+    )
+    ev_ci95 = {
+        "low": float(ev_val - 1.96 * ev_se),
+        "high": float(ev_val + 1.96 * ev_se),
+    }
     ev_resolved_contribution = float(
         np.mean(np.where(payoffs.active, selected_payoffs, 0.0))
     )
@@ -541,6 +550,11 @@ def _evaluate_barrier_candidate(
             np.mean(np.where(ties, selected_payoffs, 0.0))
         )
     edge = effective_prob_win - effective_prob_loss
+    edge_variance = max(
+        0.0,
+        effective_prob_win + effective_prob_loss - edge**2,
+    )
+    edge_se = float(np.sqrt(edge_variance / sims_total))
     win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
     loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
     tie_lo, tie_hi = _binomial_wilson_95(prob_same_bar, int(sims_total))
@@ -642,7 +656,10 @@ def _evaluate_barrier_candidate(
         "prob_same_bar_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
         "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
         "prob_resolve": prob_resolve,
+        "n_sims": int(sims_total),
         "ev": ev_val,
+        "ev_se": ev_se,
+        "ev_ci95": ev_ci95,
         "ev_including_timeout": ev_val,
         "ev_resolved_contribution": ev_resolved_contribution,
         "timeout_mtm_contribution": ev_unresolved_net,
@@ -659,6 +676,11 @@ def _evaluate_barrier_candidate(
         "gap_aware_stops": bool(context.gap_aware_stops),
         "ev_cond": ev_cond,
         "edge": edge,
+        "edge_se": edge_se,
+        "edge_ci95": {
+            "low": float(edge - 1.96 * edge_se),
+            "high": float(edge + 1.96 * edge_se),
+        },
         "kelly": kelly_val,
         "kelly_cond": kelly_cond,
         "ev_per_bar": ev_per_bar,
@@ -916,8 +938,14 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "breakeven_win_rate",
     "breakeven_win_rate_net",
     "edge",
+    "edge_se",
+    "edge_ci95",
     "edge_vs_breakeven",
     "ev",
+    "ev_se",
+    "ev_ci95",
+    "ev_selection_adjusted_ci95",
+    "ev_selection_comparisons",
     "ev_including_timeout",
     "ev_resolved_contribution",
     "timeout_mtm_contribution",
@@ -1409,7 +1437,21 @@ def forecast_barrier_optimize(  # noqa: C901
             grid_style_val = 'fixed'
         preset_candidate = params_dict.get('grid_preset', params_dict.get('preset', preset))
         preset_val = str(preset_candidate).lower() if isinstance(preset_candidate, str) and preset_candidate else None
-        if grid_style_val == 'preset' and preset_val is not None and preset_val not in BARRIER_GRID_PRESETS:
+        if grid_style_val == 'preset' and preset_val is None:
+            return {
+                "error": (
+                    "Barrier grid preset is required when grid_style='preset'. "
+                    "Use one of: intraday, position, scalp, swing."
+                )
+            }
+        if grid_style_val != 'preset' and preset_val is not None:
+            return {
+                "error": (
+                    "Barrier grid preset is only valid when grid_style='preset'. "
+                    "Remove preset/grid_preset or select the preset grid style."
+                )
+            }
+        if grid_style_val == 'preset' and preset_val not in BARRIER_GRID_PRESETS:
             return {
                 "error": (
                     f"Invalid barrier grid preset: {preset_val}. Use one of: "
@@ -1731,6 +1773,16 @@ def forecast_barrier_optimize(  # noqa: C901
                 raise ValueError(f"{key} must be numeric, finite, and >= 0.")
             return value
 
+        spread_cost_keys = ('spread_pips', 'spread_bps', 'spread_pct')
+        commission_cost_keys = ('commission_bps', 'commission_pct')
+        slippage_cost_keys = ('slippage_pips', 'slippage_bps', 'slippage_pct')
+
+        def _cost_family_supplied(keys: Tuple[str, ...]) -> bool:
+            return any(key in params_dict and params_dict.get(key) is not None for key in keys)
+
+        spread_supplied = _cost_family_supplied(spread_cost_keys)
+        commission_supplied = _cost_family_supplied(commission_cost_keys)
+        slippage_supplied = _cost_family_supplied(slippage_cost_keys)
         spread_pips_val = _cost_param_float('spread_pips')
         spread_bps_val = _cost_param_float('spread_bps')
         spread_pct_val = _cost_param_float('spread_pct') + spread_bps_val / 100.0
@@ -1739,6 +1791,28 @@ def forecast_barrier_optimize(  # noqa: C901
         slippage_pips_val = _cost_param_float('slippage_pips')
         slippage_bps_val = _cost_param_float('slippage_bps')
         slippage_pct_val = _cost_param_float('slippage_pct') + slippage_bps_val / 100.0
+        spread_source = "explicit_params" if spread_supplied else "missing"
+        live_spread_pct = _safe_float(reference_context.get("reference_spread_pct"))
+        if (
+            not spread_supplied
+            and str(last_price_source or "").startswith("live_tick")
+            and reference_context.get("reference_usable_for_live") is True
+            and live_spread_pct is not None
+            and live_spread_pct > 0.0
+        ):
+            spread_pct_val = float(live_spread_pct)
+            spread_source = "live_bid_ask"
+        spread_available = spread_supplied or spread_source == "live_bid_ask"
+        missing_cost_assumptions = [
+            name
+            for name, supplied in (
+                ("spread", spread_available),
+                ("commission", commission_supplied),
+                ("slippage", slippage_supplied),
+            )
+            if not supplied
+        ]
+        cost_model_complete = not missing_cost_assumptions
         cost_pip_size = _cost_pip_size(symbol, tick_size, price_precision)
         if (
             spread_pips_val > 0.0 or slippage_pips_val > 0.0
@@ -1776,9 +1850,35 @@ def forecast_barrier_optimize(  # noqa: C901
         # Costs are applied symmetrically to net payoffs for both directions.
         ev_deduct_cost = max(0.0, cost_spread + cost_slippage + cost_commission)
 
-        # Keep old cost_per_trade for backwards compatibility in outputs
         cost_per_trade = max(0.0, cost_spread + cost_slippage + cost_commission)
-        has_trading_costs = cost_per_trade > 0.0
+        has_trading_costs = bool(
+            cost_per_trade > 0.0
+            or spread_supplied
+            or commission_supplied
+            or slippage_supplied
+        )
+        trading_costs_payload = {
+            "complete": cost_model_complete,
+            "missing_assumptions": missing_cost_assumptions,
+            "known_costs_applied": has_trading_costs,
+            "cost_per_trade": _safe_float(cost_per_trade),
+            "cost_unit": mode_val,
+            "spread_source": spread_source,
+            "spread_pips": _safe_float(spread_pips_val),
+            "spread_bps": _safe_float(spread_bps_val),
+            "spread_pct": _safe_float(spread_pct_val),
+            "commission_source": (
+                "explicit_params" if commission_supplied else "missing"
+            ),
+            "commission_bps": _safe_float(commission_bps_val),
+            "commission_pct": _safe_float(commission_pct_val),
+            "slippage_source": (
+                "explicit_params" if slippage_supplied else "missing"
+            ),
+            "slippage_pips": _safe_float(slippage_pips_val),
+            "slippage_bps": _safe_float(slippage_bps_val),
+            "slippage_pct": _safe_float(slippage_pct_val),
+        }
 
         # Minimum barrier constraints
         min_barrier_multiplier = float(params_dict.get('min_barrier_multiplier', 2.0) if params_dict.get('min_barrier_multiplier') is not None else 2.0)
@@ -1951,6 +2051,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 'prob_tp_strict_first', 'prob_sl_strict_first',
                 'prob_no_hit', 'prob_same_bar', 'prob_resolve', 'prob_unresolved',
                 'ev', 'ev_gross', 'ev_net', 'ev_unresolved', 'ev_cond', 'edge',
+                'ev_se', 'edge_se',
                 'kelly', 'kelly_cond',
                 'ev_per_bar', 'profit_factor', 'utility',
                 't_hit_tp_median', 't_hit_sl_median',
@@ -2053,6 +2154,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     "error": "Ensemble failed: member methods produced no common TP/SL candidates.",
                     "member_errors": member_errors,
                 }
+            ensemble_candidates_evaluated = len(ranked_candidates)
             _sort_candidate_results(ranked_candidates, objective_val)
             ensemble_views = _select_barrier_candidate_views(
                 ranked_candidates,
@@ -2277,6 +2379,13 @@ def forecast_barrier_optimize(  # noqa: C901
                 diagnostics = _build_selection_diagnostics(
                     selected_best,
                     cost_per_trade=cost_per_trade,
+                    candidate_count=ensemble_candidates_evaluated,
+                )
+                out.update(diagnostics)
+            if not cost_model_complete:
+                diagnostics["trading_costs_incomplete"] = True
+                diagnostics["missing_cost_assumptions"] = list(
+                    missing_cost_assumptions
                 )
                 out.update(diagnostics)
             if statistical_robustness_requested and isinstance(selected_best, dict):
@@ -2314,19 +2423,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 out["min_sims_recommended"] = int(min_sims_recommended)
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
-            if has_trading_costs:
-                out["trading_costs"] = {
-                    "cost_per_trade": _safe_float(cost_per_trade),
-                    "cost_unit": mode_val,
-                    "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
-                    "spread_bps": _safe_float(spread_bps_val) if spread_bps_val else None,
-                    "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
-                    "commission_bps": _safe_float(commission_bps_val) if commission_bps_val else None,
-                    "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
-                    "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
-                    "slippage_bps": _safe_float(slippage_bps_val) if slippage_bps_val else None,
-                    "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
-                }
+            out["trading_costs"] = dict(trading_costs_payload)
             if selected_best and not viable:
                 out["advice"] = [
                     "Increase horizon to allow more time for barrier resolution.",
@@ -2601,8 +2698,8 @@ def forecast_barrier_optimize(  # noqa: C901
                     _push(tp_val, sl_val, bucket)
 
         if grid_style_val == 'preset':
-            preset_key = preset_val or 'intraday'
-            cfg = BARRIER_GRID_PRESETS.get(preset_key, BARRIER_GRID_PRESETS['intraday'])
+            preset_key = str(preset_val)
+            cfg = BARRIER_GRID_PRESETS[preset_key]
             if mode_val == 'pct':
                 _add_fixed(base_candidates, cfg['tp_min'], cfg['tp_max'], int(cfg['tp_steps']), cfg['sl_min'], cfg['sl_max'], int(cfg['sl_steps']))
             else:
@@ -3862,7 +3959,20 @@ def forecast_barrier_optimize(  # noqa: C901
         
         diagnostics = {}
         if isinstance(best, dict):
-            diagnostics = _build_selection_diagnostics(best, cost_per_trade=cost_per_trade)
+            diagnostics = _build_selection_diagnostics(
+                best,
+                cost_per_trade=cost_per_trade,
+                candidate_count=max(
+                    len(results),
+                    int(optuna_trials_val) if optimizer_val == 'optuna' else 0,
+                ),
+            )
+            out.update(diagnostics)
+        if not cost_model_complete:
+            diagnostics["trading_costs_incomplete"] = True
+            diagnostics["missing_cost_assumptions"] = list(
+                missing_cost_assumptions
+            )
             out.update(diagnostics)
         if warning is not None:
             out["warning"] = warning
@@ -3912,19 +4022,7 @@ def forecast_barrier_optimize(  # noqa: C901
             warnings_out = list(out.get("warnings") or [])
             warnings_out.append(BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING)
             out["warnings"] = warnings_out
-        if has_trading_costs:
-            out["trading_costs"] = {
-                "cost_per_trade": _safe_float(cost_per_trade),
-                "cost_unit": mode_val,
-                "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
-                "spread_bps": _safe_float(spread_bps_val) if spread_bps_val else None,
-                "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
-                "commission_bps": _safe_float(commission_bps_val) if commission_bps_val else None,
-                "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
-                "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
-                "slippage_bps": _safe_float(slippage_bps_val) if slippage_bps_val else None,
-                "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
-            }
+        out["trading_costs"] = dict(trading_costs_payload)
         if method_name == "hmm_mc" and hmm_sim_meta_records:
             requested_states = max(
                 row["requested_n_states"] for row in hmm_sim_meta_records
