@@ -64,6 +64,11 @@ the explicit way to return every available metric family. Percentage metrics
 are JSON numbers on the documented `1.0 = 1%` scale and carry entries in
 `units`.
 
+Use `--fields` for an explicit comma-separated projection. If none of the names
+resolve, the command fails with `finviz_fundamentals_fields_invalid` and returns
+the available canonical names in `valid_values.fields`. A mixed request keeps
+the resolved metrics and sets `partial_failure=true` with `missing_fields`.
+
 ### `finviz_description`
 
 Get a company's business description.
@@ -217,6 +222,10 @@ mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order=-marketcap
 | `--view` | `overview` | `overview`, `valuation`, `financial`, `ownership`, `performance`, `technical` |
 
 **Common filter keys:** `Exchange`, `Index`, `Sector`, `Industry`, `Country`, `Market Cap.`, `P/E`, `Forward P/E`, `PEG`, `P/S`, `P/B`, `Dividend Yield`, `EPS growth this year`, `Return on Equity`, `Current Ratio`, `Analyst Recom.`, `RSI (14)`, `50-Day Simple Moving Average`, `Average Volume`, `Price`, `Beta`.
+
+All screener percentage fields are numeric percentage points (`1.0 = 1%`).
+This includes performance horizons, volatility, gap, and change from open;
+their entries in `units` use the same scale.
 
 **Filter formats:** JSON uses exact Finviz names, for example `{"Exchange":"NASDAQ"}`. Key-value pairs use compact keys and values such as `country=USA,marketcap=mega`; discrete comparison aliases such as `pe_under=15` and `beta_under=1` map to Finviz's available "Under/Over" filter options. Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`; invalid tokens are reported in the error details.
 

@@ -420,27 +420,34 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "performance_half_year",
         "performance_year",
         "performance_ytd",
+        "performance_3y",
+        "performance_5y",
+        "performance_10y",
         "high_52w_distance_pct",
         "low_52w_distance_pct",
         "sma20_distance_pct",
         "sma50_distance_pct",
         "sma200_distance_pct",
+        "volatility_w_pct",
+        "volatility_m_pct",
+        "change_from_open_pct",
+        "gap_pct",
+        "short_float",
+        "dividend_yield",
+        "payout",
+        "eps_this_year_growth_pct",
+        "eps_next_5_y",
     }
 )
 _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozenset(
     {
         "change_pct",
-        "short_float",
-        "performance_week",
-        "performance_month",
-        "performance_quarter",
-        "performance_half_year",
-        "performance_year",
-        "performance_ytd",
-        "rsi_14",
-        "sma20_distance_pct",
-        "sma50_distance_pct",
-        "sma200_distance_pct",
+        "price_change_pct",
+        "perf_day_pct",
+        "perf_week_pct",
+        "perf_month_pct",
+        "perf_quart_pct",
+        "perf_year_pct",
     }
 )
 _FINVIZ_DETAIL_ERROR = (
@@ -670,7 +677,7 @@ def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
     units = {
         key: "percent (1.0 = 1%)"
         for key in seen_fields
-        if key in _FINVIZ_SCREEN_PERCENT_FIELDS or str(key).endswith("_pct")
+        if key in _FINVIZ_SCREEN_PERCENT_FIELDS
     }
     if "short_ratio" in seen_fields:
         units["short_ratio"] = "days_to_cover"
@@ -1800,6 +1807,12 @@ _FINVIZ_OUTPUT_KEY_MAP = {
 }
 _FINVIZ_OUTPUT_KEY_ALIASES = {
     "oper_margin": "operating_margin",
+    "perf_quart": "performance_quarter",
+    "perf_quart_pct": "performance_quarter",
+    "perf_half": "performance_half_year",
+    "perf_half_pct": "performance_half_year",
+    "change_from_open": "change_from_open_pct",
+    "gap": "gap_pct",
     "date_from": "start",
     "date_to": "end",
 }
@@ -1828,6 +1841,8 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "market_cap",
         "price",
         "change_pct",
+        "change_from_open_pct",
+        "gap_pct",
         "change_price",
         "enterprise_value",
         "income",
@@ -3419,18 +3434,34 @@ def _resolve_finviz_fundamental_fields(
     selected: list[str] = []
     seen: set[str] = set()
     missing: list[str] = []
+    missing_seen: set[str] = set()
     for field in requested_fields:
         if field in fundamentals:
             resolved = field
         else:
             resolved = lookup.get(str(field).strip().lower())
         if resolved is None:
-            missing.append(field)
+            missing_key = str(field).strip().lower()
+            if missing_key not in missing_seen:
+                missing.append(field)
+                missing_seen.add(missing_key)
             continue
         if resolved not in seen:
             selected.append(resolved)
             seen.add(resolved)
     return selected, missing
+
+
+def _available_finviz_fundamental_fields(
+    fundamentals: Dict[str, Any],
+) -> list[str]:
+    return sorted(
+        {
+            public_key
+            for field in fundamentals
+            for public_key in _finviz_public_fundamental_keys(field)
+        }
+    )
 
 
 def _filter_finviz_fundamentals_payload(
@@ -3476,6 +3507,26 @@ def _filter_finviz_fundamentals_payload(
             fundamentals,
             requested_fields,
         )
+        if not requested_fields or not selected_fields:
+            valid_fields = _available_finviz_fundamental_fields(fundamentals)
+            error = _finviz_error_payload(
+                (
+                    "fields must contain at least one available Finviz fundamental "
+                    "field."
+                ),
+                code="finviz_fundamentals_fields_invalid",
+                operation="finviz_fundamentals",
+                details={
+                    "requested_fields": requested_fields,
+                    "missing_fields": missing_fields,
+                },
+            )
+            error["valid_values"] = {"fields": valid_fields}
+            error["remediation"] = (
+                "Choose a field from valid_values.fields, or omit fields and use "
+                "category='all' with detail='full' to inspect available metrics."
+            )
+            return error
         category_out = "custom"
     elif category_mode != "all":
         selected_fields = list(_FINVIZ_FUNDAMENTAL_CATEGORIES[category_mode])
@@ -3550,6 +3601,11 @@ def _filter_finviz_fundamentals_payload(
     if requested_fields is not None:
         if missing_fields:
             out["missing_fields"] = missing_fields
+            out["partial_failure"] = True
+            _append_finviz_warning(
+                out,
+                "Some requested fundamental fields were unavailable and were omitted.",
+            )
     return out
 
 

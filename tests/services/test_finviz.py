@@ -1740,6 +1740,10 @@ class TestFinvizTools:
             "sma20_distance_pct": 4.54,
         }
         assert custom["missing_fields"] == ["Missing"]
+        assert custom["partial_failure"] is True
+        assert custom["warnings"] == [
+            "Some requested fundamental fields were unavailable and were omitted."
+        ]
         assert custom_normalized["fundamentals"] == {
             "pe_ratio": 34.29,
             "market_cap": 3_979_470_000_000,
@@ -1757,6 +1761,63 @@ class TestFinvizTools:
         }
         assert financial["success"] is False
         assert financial["error_code"] == "finviz_fundamentals_invalid_category"
+
+        all_missing = raw("AAPL", fields="nonsense,also_fake,nonsense")
+        whitespace_only = raw("AAPL", fields=" , ")
+        duplicates = raw("AAPL", fields="P/E,pe_ratio,P/E")
+
+        assert all_missing["success"] is False
+        assert all_missing["error_code"] == "finviz_fundamentals_fields_invalid"
+        assert all_missing["details"]["missing_fields"] == [
+            "nonsense",
+            "also_fake",
+        ]
+        assert "pe_ratio" in all_missing["valid_values"]["fields"]
+        assert whitespace_only["success"] is False
+        assert whitespace_only["error_code"] == (
+            "finviz_fundamentals_fields_invalid"
+        )
+        assert duplicates["fundamentals"] == {"pe_ratio": 34.29}
+        assert "missing_fields" not in duplicates
+
+    def test_finviz_screen_normalizes_actual_percent_column_aliases(self):
+        from mtdata.core.finviz import (
+            _canonicalize_finviz_market_row,
+            _finviz_screen_units_for_rows,
+            _normalize_finviz_output_key,
+        )
+
+        row = _canonicalize_finviz_market_row(
+            {
+                _normalize_finviz_output_key(key): value
+                for key, value in {
+                    "Ticker": "AAPL",
+                    "Perf Quart": 0.0409,
+                    "Perf Half": 0.1749,
+                    "Volatility W": 0.015,
+                    "Volatility M": 0.0205,
+                    "Change from Open": "0.80%",
+                    "Gap": 0.0065,
+                }.items()
+            }
+        )
+
+        assert row["performance_quarter"] == 4.09
+        assert row["performance_half_year"] == 17.49
+        assert row["volatility_w_pct"] == 1.5
+        assert row["volatility_m_pct"] == 2.05
+        assert row["change_from_open_pct"] == 0.8
+        assert row["gap_pct"] == 0.65
+        units = _finviz_screen_units_for_rows([row])
+        for field in (
+            "performance_quarter",
+            "performance_half_year",
+            "volatility_w_pct",
+            "volatility_m_pct",
+            "change_from_open_pct",
+            "gap_pct",
+        ):
+            assert units[field] == "percent (1.0 = 1%)"
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_full_omits_redundant_field_echo(self, mock_get_fundamentals):
