@@ -500,10 +500,7 @@ def _fetch_m1_rows(
             rows.append(
                 {
                     "time": candle_time,
-                    "last": price,
                     "mid": price,
-                    "bid": price,
-                    "ask": price,
                     "tick_volume": per_price_weight,
                     "real_volume": real_volume / float(len(prices)) if real_volume > 0.0 else 0.0,
                 }
@@ -522,7 +519,7 @@ def _fetch_m1_rows(
             "approximation": "M1 bar volume split across low/close/high prices.",
         },
         "warnings": [
-            "Volume profile used M1-bar approximation instead of raw ticks; intrabar volume location is estimated.",
+            "Volume profile used an OHLC proxy from M1 bars instead of a quote-side price; intrabar volume location is estimated.",
             *(
                 [f"M1 input exceeded max_m1_bars={max_bars}; the latest {max_bars} bars were retained."]
                 if truncated
@@ -713,6 +710,8 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "requested_window",
         "bar_window",
         "price_source",
+        "price_source_requested",
+        "price_source_effective",
         "volume_kind",
         "bucket_size",
         "value_area_pct",
@@ -911,6 +910,24 @@ def compute_volume_profile_payload(
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
+    bucket_controls = [
+        name
+        for name, value in (
+            ("bucket_size", bucket_size),
+            ("bucket_points", bucket_points),
+            ("bucket_count", bucket_count),
+        )
+        if value is not None
+    ]
+    if len(bucket_controls) > 1:
+        return {
+            "error": (
+                "Choose exactly one volume-profile bucket control: bucket_size, "
+                "bucket_points, or bucket_count."
+            ),
+            "code": "volume_profile_conflicting_bucket_controls",
+            "conflicting_parameters": bucket_controls,
+        }
     if start is not None and (timeframe is not None or lookback is not None):
         return {
             "error": (
@@ -985,8 +1002,10 @@ def compute_volume_profile_payload(
     )
     if selected.get("error"):
         return selected
+    selected_source = str(selected.get("source") or "").strip().lower()
+    requested_price_source = str(price_source or "mid").strip().lower()
     config = VolumeProfileConfig(
-        price_source=price_source,
+        price_source="mid" if selected_source == "m1_bars" else price_source,
         volume_source=volume_source,
         bucket_size=bucket_size,
         bucket_points=bucket_points,
@@ -1043,6 +1062,11 @@ def compute_volume_profile_payload(
         return profile
     profile["symbol"] = symbol
     profile.update(_profile_source_quality(selected.get("source")))
+    profile["price_source_requested"] = requested_price_source
+    profile["price_source_effective"] = (
+        "ohlc_proxy" if selected_source == "m1_bars" else requested_price_source
+    )
+    profile["price_source"] = profile["price_source_effective"]
     selected_diagnostics = selected.get("diagnostics")
     selected_reason = None
     if isinstance(selected_diagnostics, dict):
@@ -1211,7 +1235,8 @@ def volume_profile_levels(  # noqa: PLR0913
     M1-bar approximation for larger windows. `lookback` is always a bar count and
     requires `timeframe`; use `max_ticks` to cap tick rows. When `timeframe` is
     provided without `lookback`, the window defaults to 200 bars. `price_source="mid"`
-    is the safe default for FX symbols where tick `last` is often unavailable.
+    is the safe default for FX tick data where `last` is often unavailable. M1
+    approximation always reports an `ohlc_proxy` effective price source.
     """
 
     def _run() -> Dict[str, Any]:

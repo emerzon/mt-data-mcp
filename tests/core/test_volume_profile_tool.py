@@ -128,6 +128,27 @@ def test_compute_volume_profile_payload_rejects_invalid_value_area_before_io(mon
         assert "percentage points" in result["error"]
 
 
+def test_compute_volume_profile_payload_rejects_conflicting_bucket_controls_before_io(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: (_ for _ in ()).throw(AssertionError("no gateway access")),
+    )
+
+    for controls in (
+        {"bucket_size": 0.001, "bucket_points": 10},
+        {"bucket_size": 0.001, "bucket_count": 10},
+        {"bucket_points": 10, "bucket_count": 10},
+        {"bucket_size": 0.001, "bucket_points": 10, "bucket_count": 10},
+    ):
+        result = vp.compute_volume_profile_payload(symbol="EURUSD", **controls)
+
+        assert result["code"] == "volume_profile_conflicting_bucket_controls"
+        assert set(result["conflicting_parameters"]) == set(controls)
+
+
 def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(
@@ -749,6 +770,9 @@ def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage
 
     assert result["success"] is True
     assert result["profile_source"] == "m1_bars"
+    assert result["price_source_requested"] == "mid"
+    assert result["price_source_effective"] == "ohlc_proxy"
+    assert result["price_source"] == "ohlc_proxy"
     assert result["diagnostics"]["auto_fallback_reason"] == "tick price coverage below threshold"
     assert result["diagnostics"]["tick_price_quality"] == {
         "price_source": "mid",
@@ -807,6 +831,48 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_lookback(
     }
     assert captured["start"] is None
     assert captured["end"] == "2026-01-02T00:00:00Z"
+
+
+def test_m1_profile_downgrades_quote_side_to_ohlc_proxy(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: {
+            "data": [
+                {
+                    "time": "2026-01-01 00:00:00",
+                    "high": 1.1010,
+                    "low": 1.0990,
+                    "close": 1.1005,
+                    "tick_volume": 90,
+                    "real_volume": 0,
+                }
+            ]
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="m1_bars",
+        price_source="ask",
+        bucket_size=0.0005,
+    )
+
+    assert result["success"] is True
+    assert result["price_source_requested"] == "ask"
+    assert result["price_source_effective"] == "ohlc_proxy"
+    assert result["price_source"] == "ohlc_proxy"
+    assert "OHLC proxy" in result["warnings"][0]
 
 
 def test_compute_volume_profile_payload_defaults_timeframe_lookback(monkeypatch):

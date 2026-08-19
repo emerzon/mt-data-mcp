@@ -48,6 +48,20 @@ class VolumeProfileConfig:
 
 def validate_volume_profile_config(cfg: VolumeProfileConfig) -> list[str]:
     errors: list[str] = []
+    bucket_controls = [
+        name
+        for name, value in (
+            ("bucket_size", cfg.bucket_size),
+            ("bucket_points", cfg.bucket_points),
+            ("bucket_count", cfg.bucket_count),
+        )
+        if value is not None
+    ]
+    if len(bucket_controls) > 1:
+        errors.append(
+            "bucket_size, bucket_points, and bucket_count are mutually exclusive; "
+            f"received {', '.join(bucket_controls)}"
+        )
     price_source = str(cfg.price_source or "").strip().lower()
     if price_source not in _PRICE_SOURCES:
         errors.append(

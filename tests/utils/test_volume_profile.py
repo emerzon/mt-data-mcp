@@ -148,6 +148,21 @@ def test_compute_volume_profile_rejects_invalid_bucket_size():
     assert "bucket_size" in result["error"]
 
 
+def test_compute_volume_profile_rejects_conflicting_bucket_controls():
+    result = compute_volume_profile(
+        [{"last": 1.0, "tick_volume": 1}],
+        VolumeProfileConfig(
+            price_source="last",
+            bucket_size=0.1,
+            bucket_points=10,
+            bucket_count=20,
+        ),
+    )
+
+    assert result["code"] == "volume_profile_invalid_config"
+    assert "mutually exclusive" in result["error"]
+
+
 def test_compute_volume_profile_respects_explicit_volume_source():
     rows = [
         {"last": 1.0, "real_volume": 0, "tick_volume": 5},
