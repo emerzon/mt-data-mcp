@@ -75,7 +75,7 @@ def test_news_tool_preserves_symbol_validation_error(monkeypatch) -> None:
     assert "limit_scope" not in result
 
 
-def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None:
+def test_news_tool_limits_globally(monkeypatch) -> None:
     raw = _unwrap(news)
 
     payload = {
@@ -88,10 +88,8 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     }
     monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
 
-    unlimited = raw()
     limited = raw(limit=3)
 
-    assert len(unlimited["general_news"]) == 2
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
     assert limited["row_keys"] == ["related_news", "upcoming_events"]
@@ -109,6 +107,48 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
         "more_available": 7,
     }
     assert not {"returned", "offset", "has_more", "truncated"} & limited.keys()
+
+
+def test_compact_broad_news_has_a_global_default_page(monkeypatch) -> None:
+    raw = _unwrap(news)
+    payload = {
+        "success": True,
+        "general_news": [{"title": f"g{i}"} for i in range(20)],
+        "upcoming_events": [{"title": f"u{i}"} for i in range(20)],
+        "recent_events": [{"title": f"e{i}"} for i in range(5)],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    compact = raw()
+    full = raw(detail="full")
+    explicit_global = raw(limit=15)
+    explicit_per_bucket = raw(limit_per_bucket=12)
+
+    compact_rows = sum(
+        len(compact.get(key, []))
+        for key in ("general_news", "upcoming_events", "recent_events")
+    )
+    assert compact_rows == 10
+    assert compact["compact_global_limit"] == 10
+    assert compact["limit_scope"] == "global"
+    assert compact["pagination"] == {
+        "total": 45,
+        "returned": 10,
+        "offset": 0,
+        "limit": 10,
+        "has_more": True,
+        "more_available": 35,
+    }
+    assert compact["upcoming_events"] == [{"title": "u0"}]
+    assert compact["bucket_truncation"]["general_news"] is True
+    assert compact["bucket_truncation"]["upcoming_events"] is True
+    assert compact["bucket_truncation"]["recent_events"] is True
+    assert sum(len(full[key]) for key in payload if key.endswith(("news", "events"))) == 45
+    assert explicit_global["pagination"]["returned"] == 15
+    assert sum(
+        len(explicit_per_bucket.get(key, []))
+        for key in ("general_news", "upcoming_events", "recent_events")
+    ) == 29
 
 
 def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:

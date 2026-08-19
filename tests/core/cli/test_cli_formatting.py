@@ -521,6 +521,34 @@ class TestFormatResultForCli:
         assert "general_news[1]{title,published_at,relative_time,source}:" in result
         assert '"Fed preview","2026-04-25T17:25:00+00:00",4 hours ago,Reuters' in result
 
+    def test_news_toon_format_keeps_scheduled_event_timestamp(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "upcoming_events": [
+                    {
+                        "title": "US CPI (USD)",
+                        "scheduled_at": "2026-08-19T12:30:00Z",
+                        "relative_time": "in 11 hours",
+                        "source": "Finviz Economic Calendar",
+                        "kind": "economic_event",
+                    }
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="news",
+        )
+
+        assert (
+            "upcoming_events[1]{title,scheduled_at,relative_time,source,kind}:"
+            in result
+        )
+        assert (
+            '"US CPI (USD)","2026-08-19T12:30:00Z",in 11 hours,'
+            "Finviz Economic Calendar,economic_event"
+        ) in result
+
     def test_toon_format_preserves_candle_diagnostics_in_shared_output(self):
         result = _format_result_for_cli(
             {

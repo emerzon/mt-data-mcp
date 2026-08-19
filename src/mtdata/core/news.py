@@ -58,6 +58,7 @@ _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
     }
 )
 _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT = 5
+_NEWS_COMPACT_BROAD_LIMIT = 10
 _NEWS_PROVIDER_DELIVERY = {
     "finviz": {
         "delivery": "aggregated_web_feed",
@@ -566,11 +567,13 @@ def news(
         article URLs, relative-time labels, and absolute timestamps, while
         `full` preserves the richer source, matching, and item metadata payloads.
     limit : int, optional
-        Global maximum across buckets. When available, one upcoming scheduled
-        event is reserved first; if none remain, one recent calendar release is
-        reserved so a small cap cannot hide every same-day print. Remaining
-        capacity follows the established symbol-related, general, impact,
-        recent-event, and market-context priority order.
+        Global maximum across buckets. Broad compact news defaults to 10 rows;
+        pass this value explicitly to request a different page size. When
+        available, one upcoming scheduled event is reserved first; if none
+        remain, one recent calendar release is reserved so a small cap cannot
+        hide every same-day print. Remaining capacity follows the established
+        symbol-related, general, impact, recent-event, and market-context
+        priority order.
     limit_per_bucket : int, optional
         Maximum number of items to return per news bucket. Compact symbol news
         defaults to five items per bucket; pass this value to override it.
@@ -632,6 +635,18 @@ def news(
         and limit_per_bucket_value is None
         and offset_value == 0
     )
+    default_compact_broad_limit = (
+        symbol in (None, "")
+        and detail_mode == "compact"
+        and limit_value is None
+        and limit_per_bucket_value is None
+        and offset_value == 0
+    )
+    effective_limit = (
+        _NEWS_COMPACT_BROAD_LIMIT
+        if default_compact_broad_limit
+        else limit_value
+    )
     effective_limit_per_bucket = (
         _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT
         if default_compact_symbol_bucket_limit
@@ -647,13 +662,15 @@ def news(
                 raw,
                 detail=detail_mode,
             ),
-            limit=limit_value,
+            limit=effective_limit,
             limit_per_bucket=effective_limit_per_bucket,
             offset=offset_value,
             symbol_mode=symbol not in (None, ""),
         )
         if default_compact_symbol_bucket_limit:
             out["compact_bucket_limit"] = _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT
+        if default_compact_broad_limit:
+            out["compact_global_limit"] = _NEWS_COMPACT_BROAD_LIMIT
         out = _attach_news_row_keys(out)
         out.setdefault("data_fetched_at", _news_data_fetched_at())
         if detail_mode == "full":
@@ -666,7 +683,7 @@ def news(
         operation="news",
         symbol=symbol,
         detail=detail_mode,
-        limit=limit_value,
+        limit=effective_limit,
         offset=offset_value,
         limit_per_bucket=effective_limit_per_bucket,
         func=_run,

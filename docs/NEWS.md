@@ -52,8 +52,16 @@ Headline rows use `published_at`. Economic-calendar rows use `scheduled_at`,
 including rows in both event buckets, so a future release time cannot be
 mistaken for an article publication time.
 
-Compact output keeps those lists short and readable. `--detail full` adds
-matching diagnostics and, when available, a `market_context` quote snapshot.
+Broad compact output returns a global page of at most 10 rows, reserves the
+next upcoming event (or a recent release when no future event remains), and
+includes `pagination` plus `bucket_truncation` metadata. Use `--limit` for a
+different global page size, `--limit-per-bucket` for independent bucket caps,
+or `--detail full` for the uncapped selected buckets and richer matching
+diagnostics. Compact symbol news keeps up to five rows per bucket by default.
+Calendar rows show both the absolute UTC `scheduled_at` timestamp and the
+convenience `relative_time` label in the default TOON view.
+
+Full detail also adds, when available, a `market_context` quote snapshot.
 Finviz snapshot performance is expressed in canonical `*_pct` metadata fields
 using percentage points (`1.0 = 1%`), and summaries render a `%` sign. The
 high-frequency provider fractions are never exposed as unqualified decimals.

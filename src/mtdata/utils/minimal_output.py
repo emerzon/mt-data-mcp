@@ -92,6 +92,9 @@ def _render_news_bucket_toon(  # noqa: C901
     include_published_at = any(
         not _is_empty_value(row.get("published_at")) for row in dict_rows
     )
+    include_scheduled_at = any(
+        not _is_empty_value(row.get("scheduled_at")) for row in dict_rows
+    )
     include_time_utc = any(not _is_empty_value(row.get("time_utc")) for row in dict_rows)
     include_relative_time = any(
         not _is_empty_value(row.get("relative_time")) for row in dict_rows
@@ -99,7 +102,13 @@ def _render_news_bucket_toon(  # noqa: C901
     include_kind = any(not _is_empty_value(row.get("kind")) for row in dict_rows)
     include_summary = any(not _is_empty_value(row.get("summary")) for row in dict_rows)
     headers = ["title"]
-    if include_published_at:
+    if include_scheduled_at:
+        headers.append("scheduled_at")
+        if include_relative_time:
+            headers.append("relative_time")
+        elif include_time_utc:
+            headers.append("time_utc")
+    elif include_published_at:
         headers.append("published_at")
         if include_relative_time:
             headers.append("relative_time")
@@ -142,7 +151,13 @@ def _render_news_bucket_toon(  # noqa: C901
 
         append_value(row.get("title"), quote=True)
 
-        if include_published_at:
+        if include_scheduled_at:
+            append_value(row.get("scheduled_at"))
+            if include_relative_time:
+                append_value(row.get("relative_time"))
+            elif include_time_utc:
+                append_value(row.get("time_utc"))
+        elif include_published_at:
             append_value(row.get("published_at"))
             if include_relative_time:
                 append_value(row.get("relative_time"))
