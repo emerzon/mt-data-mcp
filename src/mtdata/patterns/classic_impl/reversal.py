@@ -226,6 +226,18 @@ def detect_tops_bottoms(
                 )
                 if break_i is not None:
                     status = "completed"
+                elif kind == "top" and np.any(
+                    level_source[end_i + 1:] > (level + level_tol)
+                ):
+                    # Once price materially clears a topping structure, it is
+                    # no longer an actionable forming reversal.  Completed
+                    # patterns are retained above because their neckline break
+                    # happened first.
+                    continue
+                elif kind == "bottom" and np.any(
+                    level_source[end_i + 1:] < (level - level_tol)
+                ):
+                    continue
                 out.append(ClassicPatternResult(
                     name=name,
                     status=status,

@@ -1468,13 +1468,53 @@ def test_detect_tops_bottoms_uses_wick_geometry_with_high_low_pivots():
     assert triple_top.details["geometry_price_source"] == "high_low"
 
 
+@pytest.mark.parametrize(
+    ("kind", "close", "peaks", "troughs"),
+    [
+        (
+            "Triple Top",
+            [98.0, 100.0, 95.0, 100.1, 95.2, 99.9, 96.0, 101.0],
+            [1, 3, 5],
+            [2, 4, 6],
+        ),
+        (
+            "Triple Bottom",
+            [102.0, 100.0, 105.0, 99.9, 104.8, 100.1, 104.0, 99.0],
+            [2, 4, 6],
+            [1, 3, 5],
+        ),
+    ],
+)
+def test_detect_tops_bottoms_drops_invalidated_forming_structure(
+    kind, close, peaks, troughs
+):
+    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+
+    prices = np.asarray(close, dtype=float)
+    out = detect_tops_bottoms(
+        prices,
+        np.asarray(peaks, dtype=int),
+        np.asarray(troughs, dtype=int),
+        np.arange(prices.size, dtype=float),
+        ClassicDetectorConfig(
+            same_level_tol_pct=0.4,
+            breakout_lookahead=20,
+            completion_lookback_bars=20,
+        ),
+    )
+
+    assert not any(pattern.name == kind for pattern in out)
+
+
 def test_detect_tops_bottoms_scans_all_pivots_in_requested_window():
     from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
-    close = np.arange(30, dtype=float) + 80.0
+    close = np.full(30, 90.0, dtype=float)
     close[[1, 3]] = 100.0
     peaks = np.array([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23], dtype=int)
-    close[peaks[2:]] = np.arange(10, dtype=float) + 110.0
+    # Later pivots remain below the old top so the old formation is still
+    # structurally live while exercising the full-window scan.
+    close[peaks[2:]] = np.arange(10, dtype=float) + 90.0
     troughs = np.array([2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22], dtype=int)
 
     out = detect_tops_bottoms(
