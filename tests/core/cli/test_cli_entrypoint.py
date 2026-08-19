@@ -425,6 +425,29 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
     ]
 
 
+@pytest.mark.parametrize(
+    "batch",
+    [
+        "market_ticker TOOL_FAILURE\nmarket_ticker USAGE_FAILURE\n",
+        "market_ticker USAGE_FAILURE\nmarket_ticker TOOL_FAILURE\n",
+    ],
+)
+def test_noninteractive_shell_failure_precedence_is_order_independent(
+    monkeypatch, capsys, batch
+):
+    from mtdata.core.cli import api
+
+    def _main():
+        return 2 if "USAGE_FAILURE" in api.sys.argv else 1
+
+    monkeypatch.setattr(api.sys, "stdin", io.StringIO(batch))
+    monkeypatch.setattr(api, "main", _main)
+
+    assert api.run_shell(interactive=False) == 2
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert sorted(record["status"] for record in records) == [1, 2]
+
+
 def test_noninteractive_shell_unknown_command_is_short_and_actionable(
     monkeypatch, capsys
 ):

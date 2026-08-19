@@ -35,6 +35,8 @@ exits. For a warmer loop, run `mtdata-cli shell` and type commands without the
 
 The shell also accepts newline-delimited commands on stdin. Blank lines and
 `#` comments are ignored. The process exits nonzero if any command fails.
+For mixed failures, usage status `2` takes precedence over tool/provider status
+`1`, regardless of command order.
 Batch output is [NDJSON](GLOSSARY.md#ndjson): one JSON object per input line,
 with `line`, `command`, `success`, and `status`. Parsed child JSON sits under
 `result`; leftover text uses `output` / `stderr`. Shared options may follow

@@ -2787,7 +2787,9 @@ def run_shell(
                 )
                 _write_shell_batch_record(record)
                 if status != 0:
-                    overall_status = status
+                    # Usage/configuration errors take precedence over ordinary
+                    # tool failures, independent of line order.
+                    overall_status = max(overall_status, status)
                 continue
             sys.argv = [original_argv[0], *effective_command_argv]
             try:
