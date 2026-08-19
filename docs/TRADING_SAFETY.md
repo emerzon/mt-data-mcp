@@ -112,9 +112,21 @@ mtdata-cli trade_place EURUSD --volume 0.10 --order-type BUY \
 
 `order_type` accepts these **canonical strings** (case-insensitive; `-` or space becomes `_`):
 
-`BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`
+`BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `BUY_STOP_LIMIT`, `SELL_LIMIT`,
+`SELL_STOP`, `SELL_STOP_LIMIT`
 
-MT5 numeric constants (`0..5`) and `ORDER_TYPE_*` names are **rejected** as input — they only appear when *reading* existing orders/positions. Market orders use `BUY`/`SELL` (no `--price`); the four `*_LIMIT`/`*_STOP` types are pending orders and require `--price`.
+MT5 numeric constants and `ORDER_TYPE_*` names are **rejected** as input — they
+only appear when *reading* existing orders/positions. Market orders use
+`BUY`/`SELL` (no `--price`). Every pending order requires `--price`. For a
+stop-limit order, `--price` is the stop trigger and `--stop-limit-price` is the
+limit leg activated after the trigger. A buy stop-limit's limit price must be at
+or below its trigger; a sell stop-limit's limit price must be at or above it.
+
+```bash
+# Trigger above the ask, then activate a buy limit at or below that trigger
+mtdata-cli trade_place EURUSD --volume 0.10 --order-type BUY_STOP_LIMIT \
+  --price 1.1050 --stop-limit-price 1.1045 --dry-run true
+```
 
 ---
 
@@ -122,15 +134,16 @@ MT5 numeric constants (`0..5`) and `ORDER_TYPE_*` names are **rejected** as inpu
 
 Modifies an existing order/position by ticket.
 
-At least one of `price`, `stop_loss`, `take_profit`, `expiration`, or `comment`
-must be supplied. An explicit value that already matches the live object is a
-successful idempotent no-change request; omitting every modification field is
-an error.
+At least one of `price`, `stop_limit_price`, `stop_loss`, `take_profit`,
+`expiration`, or `comment` must be supplied. An explicit value that already
+matches the live object is a successful idempotent no-change request; omitting
+every modification field is an error.
 
 | Flag | Default | Notes |
 |------|---------|-------|
 | `ticket` | — | **Required** |
 | `--price` | — | New pending-order price |
+| `--stop-limit-price` | — | New limit leg for an existing stop-limit order |
 | `--stop-loss` | — | New stop-loss |
 | `--take-profit` | — | New take-profit |
 | `--expiration` | — | New future pending-order expiry, or literal `GTC` |

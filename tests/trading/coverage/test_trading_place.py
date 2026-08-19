@@ -1085,6 +1085,8 @@ class TestPlacePendingOrder:
         mock_mt5.ORDER_TYPE_SELL_LIMIT = 3
         mock_mt5.ORDER_TYPE_BUY_STOP = 4
         mock_mt5.ORDER_TYPE_SELL_STOP = 5
+        mock_mt5.ORDER_TYPE_BUY_STOP_LIMIT = 6
+        mock_mt5.ORDER_TYPE_SELL_STOP_LIMIT = 7
         mock_mt5.TRADE_ACTION_PENDING = 5
         mock_mt5.TRADE_RETCODE_DONE = 10009
         mock_mt5.ORDER_TIME_GTC = 0
@@ -1128,6 +1130,37 @@ class TestPlacePendingOrder:
         from mtdata.core.trading import _place_pending_order
         result = _place_pending_order("EURUSD", 0.01, "SELL_STOP", price=1.09)
         assert result.get("success") is True
+
+    @pytest.mark.parametrize(
+        ("order_type", "trigger", "limit_price", "expected_type"),
+        [
+            ("BUY_STOP_LIMIT", 1.1010, 1.10083, 6),
+            ("SELL_STOP_LIMIT", 1.0990, 1.09917, 7),
+        ],
+    )
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_stop_limit_submission_includes_normalized_second_price(
+        self, order_type, trigger, limit_price, expected_type
+    ):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+
+        result = _place_pending_order(
+            "EURUSD",
+            0.01,
+            order_type,
+            price=trigger,
+            stop_limit_price=limit_price,
+        )
+
+        assert result["success"] is True
+        request = mt5.order_send.call_args.args[0]
+        assert request["type"] == expected_type
+        assert request["price"] == pytest.approx(trigger)
+        assert request["stoplimit"] == pytest.approx(limit_price)
+        assert result["requested_stop_limit_price"] == pytest.approx(limit_price)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_buy_limit_price_above_ask_rejected(self):

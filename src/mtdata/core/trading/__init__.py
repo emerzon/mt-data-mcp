@@ -42,6 +42,8 @@ def trade_place(request: TradePlaceRequest) -> dict:
     Required inputs: symbol, volume, order_type.
     - BUY/SELL: market orders; omit `price`.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
+    - BUY_STOP_LIMIT/SELL_STOP_LIMIT: pending; `price` is the trigger and
+      `stop_limit_price` is the limit order price activated by that trigger.
     - dry_run: validate routing and preview the order without sending it to MT5.
       Use `detail="compact"|"standard"|"full"` to control preview depth.
     - require_sl_tp: for market orders, require both SL and TP inputs before order

@@ -187,8 +187,10 @@ class TestEdgeCases:
             "SELL",
             "BUY_LIMIT",
             "BUY_STOP",
+            "BUY_STOP_LIMIT",
             "SELL_LIMIT",
             "SELL_STOP",
+            "SELL_STOP_LIMIT",
         }
 
     def test_gtc_tokens_all_uppercase(self):

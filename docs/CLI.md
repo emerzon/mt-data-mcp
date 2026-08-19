@@ -739,7 +739,11 @@ account watchers, which may complete before the candle boundary.
 The examples below intentionally use `--dry-run true`. Remove it, or set `--dry-run false`, only when you are on the intended account and ready to send the order to MT5. See [TRADING_SAFETY.md](TRADING_SAFETY.md) for the dry-run-first workflow, account guardrails, and broker behavior.
 
 Accepted `order_type` values (case-insensitive; `-` or space is normalized to `_`):
-`BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`. MT5 numeric constants (`0..5`) and `ORDER_TYPE_*` names are **not** accepted as input — they only appear when *reading* existing orders/positions.
+`BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `BUY_STOP_LIMIT`, `SELL_LIMIT`,
+`SELL_STOP`, `SELL_STOP_LIMIT`. MT5 numeric constants and `ORDER_TYPE_*` names
+are **not** accepted as input — they only appear when *reading* existing
+orders/positions. For stop-limit orders, `--price` is the stop trigger and
+`--stop-limit-price` is the limit order price activated after that trigger.
 
 ```bash
 # Preview a pending order with canonical order_type
@@ -749,6 +753,10 @@ mtdata-cli trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750
 # Case and separators are normalized (buy-stop -> BUY_STOP)
 mtdata-cli trade_place BTCUSD --volume 0.03 --order-type buy-stop --price 70200 \
   --stop-loss 69000 --take-profit 73000 --dry-run true
+
+# Preview a stop-limit order with separate trigger and limit prices
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type BUY_STOP_LIMIT \
+  --price 70200 --stop-limit-price 70000 --dry-run true
 
 # Preview a market order with explicit protective levels
 mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
@@ -761,6 +769,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 |------|------------|-------------|
 | `--dry-run` | `trade_place`, `trade_modify`, `trade_close` | Preview the request without sending it to MT5. |
 | `--detail` | `trade_place` | Preview detail level; use `full` for execution diagnostics. |
+| `--stop-limit-price` | `trade_place`, `trade_modify` | Limit leg activated by a stop-limit trigger. |
 | `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close`, `trade_history`, `trade_journal_analyze` | MT5 magic-number filter or default strategy identifier. History and journal filtering happens before pagination and aggregation. |
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
 | `--expiration` | `trade_place`, `trade_modify` | Future expiration for pending orders (`dateparser` or positive UTC epoch seconds); use literal `GTC` for no expiration. Invalid or past values are rejected locally. |

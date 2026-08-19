@@ -852,6 +852,7 @@ def test_run_trade_get_pending_uses_snake_case_columns() -> None:
             "type",
             "volume",
             "price_open",
+            "price_stoplimit",
             "sl",
             "tp",
             "price_current",
@@ -860,7 +861,21 @@ def test_run_trade_get_pending_uses_snake_case_columns() -> None:
         ],
     )
     rows = [
-        Order(31, "EURUSD", 1700000200, 0, 2, 0.1, 1.1, 1.0, 1.2, 1.15, "pending", 9),
+        Order(
+            31,
+            "EURUSD",
+            1700000200,
+            0,
+            6,
+            0.1,
+            1.101,
+            1.1008,
+            1.09,
+            1.12,
+            1.1002,
+            "pending",
+            9,
+        ),
     ]
     gateway = SimpleNamespace(
         ensure_connection=lambda: None,
@@ -893,10 +908,11 @@ def test_run_trade_get_pending_uses_snake_case_columns() -> None:
     assert out[0]["ticket"] == 31
     assert out[0]["time"] == "t1700000200"
     assert out[0]["expiration"] == "GTC"
-    assert out[0]["order_type"] == "BUY_LIMIT"
+    assert out[0]["order_type"] == "BUY_STOP_LIMIT"
     assert out[0]["side"] == "BUY"
-    assert out[0]["trigger_price"] == 1.1
-    assert out[0]["price_current"] == 1.15
+    assert out[0]["trigger_price"] == 1.101
+    assert out[0]["stop_limit_price"] == 1.1008
+    assert out[0]["price_current"] == 1.1002
     assert out[0]["comment"] == "pending"
     assert out[0]["magic"] == 9
     assert "Ticket" not in out[0]

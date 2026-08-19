@@ -716,6 +716,36 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     mock_pending.assert_not_called()
 
 
+def test_trade_place_stop_limit_preview_exposes_both_prices() -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "bid": 69990.0,
+            "ask": 70000.0,
+            "entry_price": 70050.0,
+            "trigger_price": 70100.0,
+            "stop_limit_price": 70050.0,
+        },
+    ) as mock_preview:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY_STOP_LIMIT",
+            price=70100,
+            stop_limit_price=70050,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is True
+    assert out["trigger_price"] == 70100.0
+    assert out["stop_limit_price"] == 70050.0
+    assert out["requested_price"] == 70100
+    assert out["requested_stop_limit_price"] == 70050
+    assert mock_preview.call_args.kwargs["stop_limit_price"] == 70050
+    mock_pending.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "price",
     [0, -1, float("nan"), float("inf"), float("-inf")],
@@ -748,6 +778,22 @@ def test_trade_place_pending_preview_fails_closed_for_invalid_price(price) -> No
     assert "invalid_pending_price" in out["validation"]["blockers"]
     assert out["blockers"] == ["invalid_pending_price"]
     mock_pending.assert_not_called()
+
+
+@pytest.mark.parametrize("order_type", ["BUY_STOP_LIMIT", "SELL_STOP_LIMIT"])
+def test_trade_place_stop_limit_requires_second_price(order_type) -> None:
+    out = trade_place(
+        symbol="EURUSD",
+        volume=0.01,
+        order_type=order_type,
+        price=1.101 if order_type.startswith("BUY") else 1.099,
+        dry_run=True,
+        __cli_raw=True,
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_stop_limit_price"
+    assert "stop_limit_price is required" in out["error"]
 
 
 @pytest.mark.parametrize(

@@ -78,8 +78,10 @@ _SUPPORTED_ORDER_TYPES = (
     "SELL",
     "BUY_LIMIT",
     "BUY_STOP",
+    "BUY_STOP_LIMIT",
     "SELL_LIMIT",
     "SELL_STOP",
+    "SELL_STOP_LIMIT",
 )
 
 
@@ -174,6 +176,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "spread_pct",
     "estimated_fill_price",
     "entry_price",
+    "trigger_price",
+    "stop_limit_price",
     "margin_required",
     "margin_required_when_filled",
     "margin_free",
@@ -214,6 +218,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "magic",
     "comment",
     "requested_price",
+    "requested_stop_limit_price",
     "stop_loss",
     "take_profit",
     "expiration",
@@ -1747,6 +1752,7 @@ def run_trade_place(  # noqa: C901
                         order_type=order_type,
                         pending=pending,
                         price=request.price,
+                        stop_limit_price=request.stop_limit_price,
                         stop_loss=request.stop_loss,
                         take_profit=request.take_profit,
                     )
@@ -1945,6 +1951,8 @@ def run_trade_place(  # noqa: C901
             preview["warnings"] = [final_safety_warning, *existing_warnings]
             if pending:
                 preview["requested_price"] = request.price
+                if request.stop_limit_price is not None:
+                    preview["requested_stop_limit_price"] = request.stop_limit_price
             if request.magic is not None:
                 preview["magic"] = request.magic
             if request.comment:
@@ -2019,7 +2027,15 @@ def run_trade_place(  # noqa: C901
                 _invalid_order_type_payload(order_type_error),
                 order_type=order_type_norm,
             )
-        explicit_pending_types = {"BUY_LIMIT", "BUY_STOP", "SELL_LIMIT", "SELL_STOP"}
+        explicit_pending_types = {
+            "BUY_LIMIT",
+            "BUY_STOP",
+            "BUY_STOP_LIMIT",
+            "SELL_LIMIT",
+            "SELL_STOP",
+            "SELL_STOP_LIMIT",
+        }
+        stop_limit_types = {"BUY_STOP_LIMIT", "SELL_STOP_LIMIT"}
         market_side_types = {"BUY", "SELL"}
         supported_order_types = explicit_pending_types.union(market_side_types)
         if order_type_norm not in supported_order_types:
@@ -2027,13 +2043,15 @@ def run_trade_place(  # noqa: C901
                 _invalid_order_type_payload(
                     (
                         f"Unsupported order_type '{request.order_type}'. "
-                        "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+                        "Use BUY/SELL, BUY_LIMIT/BUY_STOP/BUY_STOP_LIMIT, or "
+                        "SELL_LIMIT/SELL_STOP/SELL_STOP_LIMIT."
                     )
                 ),
                 order_type=order_type_norm,
             )
 
         price_provided = request.price is not None
+        stop_limit_price_provided = request.stop_limit_price is not None
         try:
             normalized_expiration, expiration_provided = normalize_pending_expiration(
                 request.expiration
@@ -2095,6 +2113,32 @@ def run_trade_place(  # noqa: C901
             order_type_norm in explicit_pending_types
             or (expiration_provided and not ignore_market_gtc_expiration)
         )
+        if order_type_norm in stop_limit_types and not stop_limit_price_provided:
+            return _finish(
+                {
+                    "success": False,
+                    "error": "stop_limit_price is required for stop-limit orders.",
+                    "error_code": "invalid_stop_limit_price",
+                    "order_type": order_type_norm,
+                    "required": ["price", "stop_limit_price"],
+                },
+                order_type=order_type_norm,
+                pending=True,
+            )
+        if order_type_norm not in stop_limit_types and stop_limit_price_provided:
+            return _finish(
+                {
+                    "success": False,
+                    "error": (
+                        "stop_limit_price is valid only for BUY_STOP_LIMIT or "
+                        "SELL_STOP_LIMIT orders."
+                    ),
+                    "error_code": "incompatible_parameters",
+                    "order_type": order_type_norm,
+                },
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
         if (
             not is_pending
             and bool(request.require_sl_tp)
@@ -2122,7 +2166,13 @@ def run_trade_place(  # noqa: C901
             side=order_type_norm,
             stop_loss=request.stop_loss,
             take_profit=request.take_profit,
-            entry_price=request.price if is_pending else None,
+            entry_price=(
+                request.stop_limit_price
+                if order_type_norm in stop_limit_types
+                else request.price
+                if is_pending
+                else None
+            ),
         )
         if basic_protection_error is not None:
             if bool(request.dry_run):
@@ -2214,6 +2264,7 @@ def run_trade_place(  # noqa: C901
                     order_type=order_type_norm,
                     pending=is_pending,
                     price=request.price,
+                    stop_limit_price=request.stop_limit_price,
                     stop_loss=request.stop_loss,
                     take_profit=request.take_profit,
                 )
@@ -2523,6 +2574,7 @@ def run_trade_place(  # noqa: C901
                 volume=float(request.volume),
                 order_type=order_type_norm,
                 price=request.price,
+                stop_limit_price=request.stop_limit_price,
                 stop_loss=request.stop_loss,
                 take_profit=request.take_profit,
                 expiration=request.expiration,
@@ -2615,7 +2667,14 @@ def run_trade_modify(
         )
         return result
 
-    mutable_fields = {"price", "stop_loss", "take_profit", "expiration", "comment"}
+    mutable_fields = {
+        "price",
+        "stop_limit_price",
+        "stop_loss",
+        "take_profit",
+        "expiration",
+        "comment",
+    }
     if not (request.model_fields_set & mutable_fields):
         return _finish(
             {
@@ -2623,7 +2682,7 @@ def run_trade_modify(
                 "error_code": "no_modification_fields",
                 "error": (
                     "trade_modify requires at least one field to change: price, "
-                    "stop_loss, take_profit, expiration, or comment."
+                    "stop_limit_price, stop_loss, take_profit, expiration, or comment."
                 ),
                 "remediation": (
                     "Provide at least one modification field. Price and expiration "
@@ -2654,10 +2713,15 @@ def run_trade_modify(
                 )
             )
 
-        if price_val is not None or expiration_specified:
+        if (
+            price_val is not None
+            or request.stop_limit_price is not None
+            or expiration_specified
+        ):
             pending_kwargs = {
                 "ticket": request.ticket,
                 "price": price_val,
+                "stop_limit_price": request.stop_limit_price,
                 "stop_loss": request.stop_loss,
                 "take_profit": request.take_profit,
                 "expiration": request.expiration,
@@ -2701,6 +2765,7 @@ def run_trade_modify(
             pending_kwargs = {
                 "ticket": request.ticket,
                 "price": None,
+                "stop_limit_price": request.stop_limit_price,
                 "stop_loss": request.stop_loss,
                 "take_profit": request.take_profit,
                 "expiration": None,
@@ -7168,6 +7233,11 @@ def _build_trade_get_pending_output(
                 "volume_initial",
             ),
             "trigger_price": _pick_trade_series(pending_df, pd_module, "price_open"),
+            "stop_limit_price": _pick_trade_series(
+                pending_df,
+                pd_module,
+                "price_stoplimit",
+            ),
             "sl": _pick_trade_series(pending_df, pd_module, "sl"),
             "tp": _pick_trade_series(pending_df, pd_module, "tp"),
             "price_current": _pick_trade_series(pending_df, pd_module, "price_current"),

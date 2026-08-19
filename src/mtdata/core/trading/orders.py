@@ -1041,6 +1041,7 @@ def build_trade_place_dry_run_preview(
     order_type: str,
     pending: bool,
     price: Optional[Union[int, float]],
+    stop_limit_price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]],
     take_profit: Optional[Union[int, float]],
     gateway: Optional[MT5TradingGateway] = None,
@@ -1101,6 +1102,18 @@ def build_trade_place_dry_run_preview(
     normalized_price = price_inputs["price"]
     normalized_sl = price_inputs["stop_loss"]
     normalized_tp = price_inputs["take_profit"]
+    order_type_norm = str(order_type).upper().strip()
+    is_stop_limit = order_type_norm in {"BUY_STOP_LIMIT", "SELL_STOP_LIMIT"}
+    normalized_stop_limit = validation._normalize_price_for_symbol(
+        stop_limit_price,
+        point=float(price_context["price_increment"]),
+        digits=int(price_context["digits"]),
+    )
+    if is_stop_limit and normalized_stop_limit is None:
+        return {
+            "preview_error": "stop_limit_price is required for stop-limit orders.",
+            "preview_error_code": "invalid_stop_limit_price",
+        }
 
     quote_now = _stdlib_time.time()
     tick, quote_source = resolve_quote_tick(
@@ -1121,8 +1134,11 @@ def build_trade_place_dry_run_preview(
     point = validation._safe_float_attr(symbol_info, "point") or 0.0
     side = "BUY" if str(order_type).upper().startswith("BUY") else "SELL"
     order_type_value = _order_type_constant(mt5, order_type)
+    trigger_price = float(normalized_price) if pending else None
     entry_price = (
-        float(normalized_price)
+        float(normalized_stop_limit)
+        if pending and is_stop_limit and normalized_stop_limit is not None
+        else float(normalized_price)
         if pending
         else (ask if side == "BUY" else bid)
     )
@@ -1157,6 +1173,12 @@ def build_trade_place_dry_run_preview(
         out["account_blockers"] = list(account_state_block["blockers"])
     if pending:
         out["entry_price"] = _round_preview_price(entry_price, digits=digits)
+        out["trigger_price"] = _round_preview_price(trigger_price, digits=digits)
+        if normalized_stop_limit is not None:
+            out["stop_limit_price"] = _round_preview_price(
+                normalized_stop_limit,
+                digits=digits,
+            )
 
     if point > 0:
         if spread_metrics["spread_points"] is not None:
@@ -1205,10 +1227,15 @@ def build_trade_place_dry_run_preview(
                 symbol_info=symbol_info,
                 tick=tick,
                 order_type_value=order_type_value,
-                price=float(entry_price),
+                price=float(trigger_price),
                 stop_loss=None if normalized_sl is None else float(normalized_sl),
                 take_profit=None if normalized_tp is None else float(normalized_tp),
                 mt5=mt5,
+                stop_limit_price=(
+                    None
+                    if normalized_stop_limit is None
+                    else float(normalized_stop_limit)
+                ),
             )
     else:
         validation_error = validation._validate_live_protection_levels(
@@ -1704,6 +1731,7 @@ def _place_pending_order(  # noqa: C901
     volume: float,
     order_type: OrderTypeInput,
     price: Union[int, float],
+    stop_limit_price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
@@ -1751,8 +1779,14 @@ def _place_pending_order(  # noqa: C901
             explicit_map = {
                 "BUY_LIMIT": mt5.ORDER_TYPE_BUY_LIMIT,
                 "BUY_STOP": mt5.ORDER_TYPE_BUY_STOP,
+                "BUY_STOP_LIMIT": validation._safe_int_attr(
+                    mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6
+                ),
                 "SELL_LIMIT": mt5.ORDER_TYPE_SELL_LIMIT,
                 "SELL_STOP": mt5.ORDER_TYPE_SELL_STOP,
+                "SELL_STOP_LIMIT": validation._safe_int_attr(
+                    mt5, "ORDER_TYPE_SELL_STOP_LIMIT", 7
+                ),
             }
 
             price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
@@ -1781,6 +1815,17 @@ def _place_pending_order(  # noqa: C901
             norm_price = float(price_inputs["price"])
             norm_sl = price_inputs["stop_loss"]
             norm_tp = price_inputs["take_profit"]
+            is_stop_limit = t in {"BUY_STOP_LIMIT", "SELL_STOP_LIMIT"}
+            norm_stop_limit = validation._normalize_price_for_symbol(
+                stop_limit_price,
+                point=float(price_inputs["price_increment"]),
+                digits=int(price_inputs["digits"]),
+            )
+            if is_stop_limit and norm_stop_limit is None:
+                return {
+                    "error": "stop_limit_price is required for stop-limit orders.",
+                    "error_code": "invalid_stop_limit_price",
+                }
 
             normalized_expiration, expiration_specified = time._normalize_pending_expiration(expiration)
             live_tick = mt5.symbol_info_tick(symbol) or initial_tick
@@ -1823,7 +1868,7 @@ def _place_pending_order(  # noqa: C901
                 return {
                     "error": (
                         f"Unsupported order_type '{order_type}'. "
-                        "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+                        "Use a market, limit, stop, or stop-limit order type."
                     )
                 }
 
@@ -1835,6 +1880,9 @@ def _place_pending_order(  # noqa: C901
                 stop_loss=None if norm_sl is None else float(norm_sl),
                 take_profit=None if norm_tp is None else float(norm_tp),
                 mt5=mt5,
+                stop_limit_price=(
+                    None if norm_stop_limit is None else float(norm_stop_limit)
+                ),
             )
             if pending_level_error is not None:
                 return pending_level_error
@@ -1845,7 +1893,9 @@ def _place_pending_order(  # noqa: C901
                 stop_loss=None if norm_sl is None else float(norm_sl),
                 deviation=deviation_validated,
                 side="BUY" if "BUY" in str(t) else "SELL",
-                entry_price=float(norm_price),
+                entry_price=float(
+                    norm_stop_limit if norm_stop_limit is not None else norm_price
+                ),
                 symbol_info=symbol_info,
             )
             if guardrail_block is not None:
@@ -1869,6 +1919,8 @@ def _place_pending_order(  # noqa: C901
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_RETURN", 2),
             }
+            if is_stop_limit and norm_stop_limit is not None:
+                request["stoplimit"] = float(norm_stop_limit)
 
             if expiration_specified:
                 if normalized_expiration is None:
@@ -1895,6 +1947,9 @@ def _place_pending_order(  # noqa: C901
                 stop_loss=None if norm_sl is None else float(norm_sl),
                 take_profit=None if norm_tp is None else float(norm_tp),
                 mt5=mt5,
+                stop_limit_price=(
+                    None if norm_stop_limit is None else float(norm_stop_limit)
+                ),
             )
             if send_level_error is not None:
                 return send_level_error
@@ -1938,6 +1993,8 @@ def _place_pending_order(  # noqa: C901
                 "mt5_request_id": _order_result_value(result, "request_id"),
                 "type_filling_used": used_request.get("type_filling"),
             }
+            if norm_stop_limit is not None:
+                out["requested_stop_limit_price"] = float(norm_stop_limit)
             if expiration_specified:
                 out["requested_expiration"] = normalized_expiration
             warnings_out: List[str] = []

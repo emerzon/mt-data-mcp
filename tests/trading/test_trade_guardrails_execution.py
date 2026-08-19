@@ -254,6 +254,7 @@ def test_modify_buy_stop_limit_uses_buy_side_risk_logic(
     trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 5.0
     order = patch_gateway.orders_get()[0]
     order.type = patch_gateway.ORDER_TYPE_BUY_STOP_LIMIT
+    order.price_stoplimit = 1.0998
     order.sl = 1.0995
     patch_gateway.orders_get = lambda *args, **kwargs: [order]
 
@@ -272,6 +273,33 @@ def test_modify_buy_stop_limit_uses_buy_side_risk_logic(
 
     assert result["success"] is True
     assert mock_risk.call_args.kwargs["side"] == "BUY"
+
+
+def test_modify_stop_limit_preserves_second_price_when_omitted(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    order = patch_gateway.orders_get()[0]
+    order.type = patch_gateway.ORDER_TYPE_BUY_STOP_LIMIT
+    order.price_open = 1.1010
+    order.price_stoplimit = 1.1008
+    patch_gateway.orders_get = lambda *args, **kwargs: [order]
+    patch_gateway.order_send = MagicMock(
+        return_value=SimpleNamespace(
+            retcode=patch_gateway.TRADE_RETCODE_DONE,
+            deal=0,
+            order=100,
+            comment="ok",
+            request_id=1,
+        )
+    )
+
+    result = _modify_pending_order(ticket=100, take_profit=1.12)
+
+    request = patch_gateway.order_send.call_args.args[0]
+    assert request["price"] == pytest.approx(1.1010)
+    assert request["stoplimit"] == pytest.approx(1.1008)
+    assert result["applied_stop_limit_price"] == pytest.approx(1.1008)
 
 
 def test_modify_pending_order_ignores_guardrails_for_demo_account(

@@ -115,6 +115,7 @@ def _pending_modify_readback(
 
     return {
         "applied_price": _price("price_open"),
+        "applied_stop_limit_price": _price("price_stoplimit"),
         "applied_sl": _price("sl"),
         "applied_tp": _price("tp"),
         "applied_expiration": validation._safe_int_attr(
@@ -135,7 +136,12 @@ def _readback_adjustments(
     adjustments: Dict[str, Dict[str, Any]] = {}
     for key, requested_value in requested.items():
         applied_value = applied.get(key)
-        if key in {"applied_price", "applied_sl", "applied_tp"}:
+        if key in {
+            "applied_price",
+            "applied_stop_limit_price",
+            "applied_sl",
+            "applied_tp",
+        }:
             matches = _protection_levels_match(
                 requested_value,
                 applied_value,
@@ -778,6 +784,7 @@ def _modify_position(  # noqa: C901
 def _modify_pending_order(  # noqa: C901
     ticket: Union[int, str],
     price: Optional[Union[int, float]] = None,
+    stop_limit_price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
     expiration: Optional[ExpirationValue] = None,
@@ -821,6 +828,12 @@ def _modify_pending_order(  # noqa: C901
             )
             if freshness_error is not None:
                 return freshness_error
+            order_type_value = validation._safe_int_attr(order, "type", -1)
+            stop_limit_types = {
+                validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6),
+                validation._safe_int_attr(mt5, "ORDER_TYPE_SELL_STOP_LIMIT", 7),
+            }
+            is_stop_limit = order_type_value in stop_limit_types
             price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 price=price if price is not None else getattr(order, "price_open", None),
@@ -837,6 +850,29 @@ def _modify_pending_order(  # noqa: C901
             requested_tp = price_inputs["take_profit"]
             explicit_remove_sl = bool(price_inputs["explicit_remove_stop_loss"])
             explicit_remove_tp = bool(price_inputs["explicit_remove_take_profit"])
+            stop_limit_source = (
+                stop_limit_price
+                if stop_limit_price is not None
+                else getattr(order, "price_stoplimit", None)
+            )
+            normalized_stop_limit = validation._normalize_price_for_symbol(
+                stop_limit_source,
+                point=price_increment,
+                digits=digits,
+            )
+            if is_stop_limit and normalized_stop_limit is None:
+                return {
+                    "error": (
+                        f"Pending stop-limit order {ticket_id} has no valid "
+                        "price_stoplimit value to preserve."
+                    ),
+                    "error_code": "invalid_stop_limit_price",
+                }
+            if not is_stop_limit and stop_limit_price is not None:
+                return {
+                    "error": "stop_limit_price applies only to stop-limit pending orders.",
+                    "error_code": "incompatible_parameters",
+                }
 
             existing_sl = validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),
@@ -867,7 +903,6 @@ def _modify_pending_order(  # noqa: C901
                 )
             )
 
-            order_type_value = validation._safe_int_attr(order, "type", -1)
             pending_level_error = validation._validate_pending_order_levels(
                 symbol_info=symbol_info,
                 tick=tick,
@@ -876,6 +911,11 @@ def _modify_pending_order(  # noqa: C901
                 stop_loss=None if request_sl == 0.0 else float(request_sl),
                 take_profit=None if request_tp == 0.0 else float(request_tp),
                 mt5=mt5,
+                stop_limit_price=(
+                    None
+                    if normalized_stop_limit is None
+                    else float(normalized_stop_limit)
+                ),
             )
             if pending_level_error is not None:
                 return pending_level_error
@@ -902,7 +942,11 @@ def _modify_pending_order(  # noqa: C901
                     ),
                     "error_code": "invalid_pending_order_volume",
                 }
-            existing_entry_price = validation._safe_float_attr(order, "price_open")
+            existing_entry_price = (
+                validation._safe_float_attr(order, "price_stoplimit")
+                if is_stop_limit
+                else validation._safe_float_attr(order, "price_open")
+            )
             candidate_stop_loss = None if request_sl == 0.0 else float(request_sl)
             current_stop_loss = existing_sl
             side = _resolve_pending_order_side(order)
@@ -920,7 +964,11 @@ def _modify_pending_order(  # noqa: C901
                     volume=float(order_volume),
                     existing_entry_price=existing_entry_price,
                     existing_stop_loss=current_stop_loss,
-                    candidate_entry_price=float(normalized_price),
+                    candidate_entry_price=float(
+                        normalized_stop_limit
+                        if normalized_stop_limit is not None
+                        else normalized_price
+                    ),
                     candidate_stop_loss=candidate_stop_loss,
                 )
             ):
@@ -945,7 +993,11 @@ def _modify_pending_order(  # noqa: C901
                     stop_loss=candidate_stop_loss,
                     deviation=None,
                     side=side,
-                    entry_price=float(normalized_price),
+                    entry_price=float(
+                        normalized_stop_limit
+                        if normalized_stop_limit is not None
+                        else normalized_price
+                    ),
                     account_info=account_info,
                     existing_positions=positions,
                     existing_pending_orders=_pending_orders_excluding_current(
@@ -974,6 +1026,8 @@ def _modify_pending_order(  # noqa: C901
                 "tp": request_tp,
                 "comment": comments._normalize_trade_comment(comment, default="MCP modify pending order"),
             }
+            if is_stop_limit and normalized_stop_limit is not None:
+                request["stoplimit"] = float(normalized_stop_limit)
             request_magic = validation._safe_int_ticket(getattr(order, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
@@ -1014,6 +1068,7 @@ def _modify_pending_order(  # noqa: C901
                         "Validated pending-order routing and price levels; no modify request was sent to MT5."
                     ),
                     "applied_price": request.get("price"),
+                    "applied_stop_limit_price": request.get("stoplimit"),
                     "applied_sl": request.get("sl"),
                     "applied_tp": request.get("tp"),
                     "applied_expiration": request.get("expiration"),
@@ -1056,6 +1111,11 @@ def _modify_pending_order(  # noqa: C901
                 stop_loss=None if request_sl == 0.0 else float(request_sl),
                 take_profit=None if request_tp == 0.0 else float(request_tp),
                 mt5=mt5,
+                stop_limit_price=(
+                    None
+                    if normalized_stop_limit is None
+                    else float(normalized_stop_limit)
+                ),
             )
             if send_level_error is not None:
                 return send_level_error
@@ -1096,6 +1156,11 @@ def _modify_pending_order(  # noqa: C901
                 )
                 pending_requested = {
                     "applied_price": float(normalized_price),
+                    "applied_stop_limit_price": (
+                        float(normalized_stop_limit)
+                        if normalized_stop_limit is not None
+                        else None
+                    ),
                     "applied_sl": _normalize_protection_level(
                         request_sl,
                         tol=_protection_level_tolerance(point=price_increment),
@@ -1153,6 +1218,7 @@ def _modify_pending_order(  # noqa: C901
                     out.update(
                         {
                             "applied_price": None,
+                            "applied_stop_limit_price": None,
                             "applied_sl": None,
                             "applied_tp": None,
                             "applied_expiration": None,
@@ -1199,6 +1265,7 @@ def _modify_pending_order(  # noqa: C901
                 out.update(
                     {
                         "applied_price": None,
+                        "applied_stop_limit_price": None,
                         "applied_sl": None,
                         "applied_tp": None,
                         "applied_expiration": None,

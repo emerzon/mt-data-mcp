@@ -159,6 +159,73 @@ def test_protection_validators_accept_mapping_ticks():
     assert pending_result is None
 
 
+@pytest.mark.parametrize(
+    ("order_type", "trigger", "limit_price"),
+    [(6, 1.1010, 1.1008), (7, 1.0990, 1.0992)],
+)
+def test_stop_limit_levels_accept_directional_price_relationship(
+    order_type, trigger, limit_price
+):
+    result = _validate_pending_order_levels(
+        symbol_info=SimpleNamespace(
+            point=0.0001,
+            trade_stops_level=0,
+            trade_freeze_level=0,
+        ),
+        tick=SimpleNamespace(bid=1.1000, ask=1.1002),
+        order_type_value=order_type,
+        price=trigger,
+        stop_limit_price=limit_price,
+        stop_loss=1.09 if order_type == 6 else 1.11,
+        take_profit=1.12 if order_type == 6 else 1.08,
+        mt5=SimpleNamespace(
+            ORDER_TYPE_BUY_LIMIT=2,
+            ORDER_TYPE_SELL_LIMIT=3,
+            ORDER_TYPE_BUY_STOP=4,
+            ORDER_TYPE_SELL_STOP=5,
+            ORDER_TYPE_BUY_STOP_LIMIT=6,
+            ORDER_TYPE_SELL_STOP_LIMIT=7,
+        ),
+    )
+
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    ("order_type", "trigger", "limit_price", "message"),
+    [
+        (6, 1.1010, 1.1012, "at or below"),
+        (7, 1.0990, 1.0988, "at or above"),
+    ],
+)
+def test_stop_limit_levels_reject_reversed_price_relationship(
+    order_type, trigger, limit_price, message
+):
+    result = _validate_pending_order_levels(
+        symbol_info=SimpleNamespace(
+            point=0.0001,
+            trade_stops_level=0,
+            trade_freeze_level=0,
+        ),
+        tick=SimpleNamespace(bid=1.1000, ask=1.1002),
+        order_type_value=order_type,
+        price=trigger,
+        stop_limit_price=limit_price,
+        stop_loss=None,
+        take_profit=None,
+        mt5=SimpleNamespace(
+            ORDER_TYPE_BUY_LIMIT=2,
+            ORDER_TYPE_SELL_LIMIT=3,
+            ORDER_TYPE_BUY_STOP=4,
+            ORDER_TYPE_SELL_STOP=5,
+            ORDER_TYPE_BUY_STOP_LIMIT=6,
+            ORDER_TYPE_SELL_STOP_LIMIT=7,
+        ),
+    )
+
+    assert message in result["error"]
+
+
 def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         TradeCloseRequest(close_all=True, profit_only=True, loss_only=True)
@@ -440,6 +507,7 @@ def test_run_trade_place_dry_run_includes_quote_preview_when_available():
         order_type="BUY",
         pending=False,
         price=None,
+        stop_limit_price=None,
         stop_loss=1.08,
         take_profit=1.12,
     )
@@ -526,6 +594,7 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
             order_type="BUY",
             pending=False,
             price=None,
+            stop_limit_price=None,
             stop_loss=1.08,
             take_profit=1.12,
             gateway=gateway,
@@ -554,6 +623,63 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["units"]["sl_distance_points"] == "broker_point_count"
     assert result["units"]["sl_distance_pips"] == "pip_count"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
+
+
+@pytest.mark.parametrize(
+    ("order_type", "trigger", "limit_price", "side_action"),
+    [
+        ("BUY_STOP_LIMIT", 1.1010, 1.1008, 0),
+        ("SELL_STOP_LIMIT", 1.0990, 1.0992, 1),
+    ],
+)
+def test_stop_limit_dry_run_previews_trigger_and_limit_price(
+    order_type, trigger, limit_price, side_action
+):
+    margin = MagicMock(return_value=50.0)
+    gateway = MagicMock()
+    gateway.adapter = SimpleNamespace(order_calc_margin=margin)
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.ORDER_TYPE_SELL = 1
+    gateway.ORDER_TYPE_BUY_STOP_LIMIT = 6
+    gateway.ORDER_TYPE_SELL_STOP_LIMIT = 7
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.0001,
+        digits=4,
+        trade_stops_level=0,
+        trade_freeze_level=0,
+    )
+    quote_time = 4_102_444_800.0
+    gateway.symbol_info_tick.return_value = SimpleNamespace(
+        bid=1.1000,
+        ask=1.1002,
+        time=quote_time,
+    )
+    gateway.account_info.return_value = SimpleNamespace(margin_free=1_000.0)
+
+    with patch(
+        "mtdata.core.trading.orders._stdlib_time.time", return_value=quote_time
+    ):
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type=order_type,
+            pending=True,
+            price=trigger,
+            stop_limit_price=limit_price,
+            stop_loss=1.09 if side_action == 0 else 1.11,
+            take_profit=1.12 if side_action == 0 else 1.08,
+            gateway=gateway,
+        )
+
+    assert result["pending_levels_valid"] is True
+    assert result["trigger_price"] == pytest.approx(trigger)
+    assert result["stop_limit_price"] == pytest.approx(limit_price)
+    assert result["estimated_fill_price"] == pytest.approx(limit_price)
+    margin.assert_called_once_with(side_action, "EURUSD", 0.1, limit_price)
 
 
 @pytest.mark.parametrize(

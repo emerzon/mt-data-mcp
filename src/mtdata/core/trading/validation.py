@@ -23,8 +23,10 @@ OrderTypeLiteral = Literal[
     "SELL",
     "BUY_LIMIT",
     "BUY_STOP",
+    "BUY_STOP_LIMIT",
     "SELL_LIMIT",
     "SELL_STOP",
+    "SELL_STOP_LIMIT",
 ]
 
 MarketOrderTypeInput = MarketOrderTypeLiteral | str
@@ -35,8 +37,10 @@ _SUPPORTED_ORDER_TYPES = {
     "SELL",
     "BUY_LIMIT",
     "BUY_STOP",
+    "BUY_STOP_LIMIT",
     "SELL_LIMIT",
     "SELL_STOP",
+    "SELL_STOP_LIMIT",
 }
 
 
@@ -121,7 +125,8 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
         None,
         (
             f"Unsupported order_type '{order_type}'. "
-            "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
+            "Use BUY/SELL, BUY_LIMIT/BUY_STOP/BUY_STOP_LIMIT, or "
+            "SELL_LIMIT/SELL_STOP/SELL_STOP_LIMIT."
         ),
     )
 
@@ -690,6 +695,7 @@ def _validate_pending_order_levels(  # noqa: C901
     stop_loss: Optional[float],
     take_profit: Optional[float],
     mt5: Any,
+    stop_limit_price: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """Validate pending entry and protection levels against quotes and broker distances."""
     bid, ask = _tick_bid_ask(tick)
@@ -705,21 +711,49 @@ def _validate_pending_order_levels(  # noqa: C901
     sell_limit = _safe_int_attr(mt5, "ORDER_TYPE_SELL_LIMIT", 3)
     buy_stop = _safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP", 4)
     sell_stop = _safe_int_attr(mt5, "ORDER_TYPE_SELL_STOP", 5)
+    buy_stop_limit = _safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6)
+    sell_stop_limit = _safe_int_attr(mt5, "ORDER_TYPE_SELL_STOP_LIMIT", 7)
 
     order_labels = {
         buy_limit: "BUY_LIMIT",
         sell_limit: "SELL_LIMIT",
         buy_stop: "BUY_STOP",
         sell_stop: "SELL_STOP",
+        buy_stop_limit: "BUY_STOP_LIMIT",
+        sell_stop_limit: "SELL_STOP_LIMIT",
     }
     order_label = order_labels.get(int(order_type_value), str(order_type_value))
-    buy_types = {buy_limit, buy_stop}
-    sell_types = {sell_limit, sell_stop}
+    buy_types = {buy_limit, buy_stop, buy_stop_limit}
+    sell_types = {sell_limit, sell_stop, sell_stop_limit}
+    stop_limit_types = {buy_stop_limit, sell_stop_limit}
+
+    if order_type_value in stop_limit_types:
+        if stop_limit_price is None or not math.isfinite(float(stop_limit_price)):
+            return {
+                "error": f"stop_limit_price is required for {order_label}.",
+                "order_type": order_label,
+                "price": price,
+                "stop_limit_price": stop_limit_price,
+            }
+        if float(stop_limit_price) <= 0.0:
+            return {
+                "error": "stop_limit_price must be a positive finite price.",
+                "order_type": order_label,
+                "price": price,
+                "stop_limit_price": stop_limit_price,
+            }
+    protection_entry_price = (
+        float(stop_limit_price)
+        if order_type_value in stop_limit_types and stop_limit_price is not None
+        else float(price)
+    )
 
     def _metadata() -> Dict[str, Any]:
         return {
             "order_type": order_label,
             "price": price,
+            "stop_limit_price": stop_limit_price,
+            "protection_entry_price": protection_entry_price,
             "bid": bid,
             "ask": ask,
             "trade_stops_level": int(distance["trade_stops_level"]),
@@ -747,21 +781,21 @@ def _validate_pending_order_levels(  # noqa: C901
                 ),
                 **_metadata(),
             }
-    elif order_type_value == buy_stop:
+    elif order_type_value in {buy_stop, buy_stop_limit}:
         if price <= (ask + tol):
             if abs(price - ask) <= tol:
                 return {
                     "error": (
-                        "price is at market for BUY_STOP. "
-                        f"price={price}, ask={ask}. Use a market order or choose a price above ask."
+                        f"price is at market for {order_label}. "
+                        f"price={price}, ask={ask}. Choose a stop trigger above ask."
                     ),
                     **_metadata(),
                 }
-            return {"error": f"Price must be above ask for BUY_STOP. price={price}, ask={ask}", **_metadata()}
+            return {"error": f"Price must be above ask for {order_label}. price={price}, ask={ask}", **_metadata()}
         if min_distance_price > 0 and (price - ask) < (min_distance_price - tol):
             return {
                 "error": (
-                    "pending entry is too close to the live ask for BUY_STOP. "
+                    f"pending trigger is too close to the live ask for {order_label}. "
                     f"price={price}, ask={ask}, min_distance_points={min_distance_points}"
                 ),
                 **_metadata(),
@@ -785,21 +819,21 @@ def _validate_pending_order_levels(  # noqa: C901
                 ),
                 **_metadata(),
             }
-    elif order_type_value == sell_stop:
+    elif order_type_value in {sell_stop, sell_stop_limit}:
         if price >= (bid - tol):
             if abs(price - bid) <= tol:
                 return {
                     "error": (
-                        "price is at market for SELL_STOP. "
-                        f"price={price}, bid={bid}. Use a market order or choose a price below bid."
+                        f"price is at market for {order_label}. "
+                        f"price={price}, bid={bid}. Choose a stop trigger below bid."
                     ),
                     **_metadata(),
                 }
-            return {"error": f"Price must be below bid for SELL_STOP. price={price}, bid={bid}", **_metadata()}
+            return {"error": f"Price must be below bid for {order_label}. price={price}, bid={bid}", **_metadata()}
         if min_distance_price > 0 and (bid - price) < (min_distance_price - tol):
             return {
                 "error": (
-                    "pending entry is too close to the live bid for SELL_STOP. "
+                    f"pending trigger is too close to the live bid for {order_label}. "
                     f"price={price}, bid={bid}, min_distance_points={min_distance_points}"
                 ),
                 **_metadata(),
@@ -807,33 +841,50 @@ def _validate_pending_order_levels(  # noqa: C901
     else:
         return {"error": f"Unsupported pending order type {order_type_value}.", **_metadata()}
 
+    if order_type_value == buy_stop_limit and protection_entry_price > (price + tol):
+        return {
+            "error": (
+                "stop_limit_price must be at or below the stop trigger for "
+                f"BUY_STOP_LIMIT. stop_limit_price={protection_entry_price}, price={price}"
+            ),
+            **_metadata(),
+        }
+    if order_type_value == sell_stop_limit and protection_entry_price < (price - tol):
+        return {
+            "error": (
+                "stop_limit_price must be at or above the stop trigger for "
+                f"SELL_STOP_LIMIT. stop_limit_price={protection_entry_price}, price={price}"
+            ),
+            **_metadata(),
+        }
+
     if stop_loss is not None:
         sl = float(stop_loss)
         if order_type_value in buy_types:
-            if sl >= (price - tol):
+            if sl >= (protection_entry_price - tol):
                 return {
-                    "error": f"stop_loss must be below entry for BUY orders. sl={sl}, price={price}",
+                    "error": f"stop_loss must be below entry for BUY orders. sl={sl}, price={protection_entry_price}",
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (price - sl) < (min_distance_price - tol):
+            if min_distance_price > 0 and (protection_entry_price - sl) < (min_distance_price - tol):
                 return {
                     "error": (
                         "stop_loss is too close to entry for BUY pending orders. "
-                        f"sl={sl}, price={price}, min_distance_points={min_distance_points}"
+                        f"sl={sl}, price={protection_entry_price}, min_distance_points={min_distance_points}"
                     ),
                     **_metadata(),
                 }
         elif order_type_value in sell_types:
-            if sl <= (price + tol):
+            if sl <= (protection_entry_price + tol):
                 return {
-                    "error": f"stop_loss must be above entry for SELL orders. sl={sl}, price={price}",
+                    "error": f"stop_loss must be above entry for SELL orders. sl={sl}, price={protection_entry_price}",
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (sl - price) < (min_distance_price - tol):
+            if min_distance_price > 0 and (sl - protection_entry_price) < (min_distance_price - tol):
                 return {
                     "error": (
                         "stop_loss is too close to entry for SELL pending orders. "
-                        f"sl={sl}, price={price}, min_distance_points={min_distance_points}"
+                        f"sl={sl}, price={protection_entry_price}, min_distance_points={min_distance_points}"
                     ),
                     **_metadata(),
                 }
@@ -841,30 +892,30 @@ def _validate_pending_order_levels(  # noqa: C901
     if take_profit is not None:
         tp = float(take_profit)
         if order_type_value in buy_types:
-            if tp <= (price + tol):
+            if tp <= (protection_entry_price + tol):
                 return {
-                    "error": f"take_profit must be above entry for BUY orders. tp={tp}, price={price}",
+                    "error": f"take_profit must be above entry for BUY orders. tp={tp}, price={protection_entry_price}",
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (tp - price) < (min_distance_price - tol):
+            if min_distance_price > 0 and (tp - protection_entry_price) < (min_distance_price - tol):
                 return {
                     "error": (
                         "take_profit is too close to entry for BUY pending orders. "
-                        f"tp={tp}, price={price}, min_distance_points={min_distance_points}"
+                        f"tp={tp}, price={protection_entry_price}, min_distance_points={min_distance_points}"
                     ),
                     **_metadata(),
                 }
         elif order_type_value in sell_types:
-            if tp >= (price - tol):
+            if tp >= (protection_entry_price - tol):
                 return {
-                    "error": f"take_profit must be below entry for SELL orders. tp={tp}, price={price}",
+                    "error": f"take_profit must be below entry for SELL orders. tp={tp}, price={protection_entry_price}",
                     **_metadata(),
                 }
-            if min_distance_price > 0 and (price - tp) < (min_distance_price - tol):
+            if min_distance_price > 0 and (protection_entry_price - tp) < (min_distance_price - tol):
                 return {
                     "error": (
                         "take_profit is too close to entry for SELL pending orders. "
-                        f"tp={tp}, price={price}, min_distance_points={min_distance_points}"
+                        f"tp={tp}, price={protection_entry_price}, min_distance_points={min_distance_points}"
                     ),
                     **_metadata(),
                 }

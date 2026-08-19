@@ -609,7 +609,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Preview the modification without sending it to the broker."
     ),
     ("trade_modify", "price"): (
-        "New pending-order price. Omit when only stop_loss/take_profit change."
+        "New pending-order trigger or entry price. Omit when only "
+        "stop_loss/take_profit change."
+    ),
+    ("trade_modify", "stop_limit_price"): (
+        "New limit leg for a stop-limit pending order; omitted values preserve the "
+        "existing broker price."
     ),
     ("trade_get_pending", "order_type"): (
         "Pending-order filter: BUY_LIMIT, BUY_STOP, BUY_STOP_LIMIT, SELL_LIMIT, "
@@ -628,6 +633,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("trade_place", "detail"): (
         "Dry-run preview detail: compact for key checks, full for execution diagnostics."
+    ),
+    ("trade_place", "stop_limit_price"): (
+        "Limit price activated by a BUY_STOP_LIMIT or SELL_STOP_LIMIT trigger."
     ),
     ("trade_stress_test", "shocks"): (
         "JSON object mapping symbols to percentage shocks. Examples: "

@@ -112,10 +112,23 @@ class TradePlaceRequest(BaseModel):
     order_type: OrderTypeLiteral = Field(
         description=(
             "Order type: BUY/SELL for market orders, or "
-            "BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders."
+            "BUY_LIMIT/BUY_STOP/BUY_STOP_LIMIT/SELL_LIMIT/SELL_STOP/"
+            "SELL_STOP_LIMIT for pending orders."
         ),
     )
-    price: Optional[Union[int, float]] = None
+    price: Optional[Union[int, float]] = Field(
+        default=None,
+        description=(
+            "Pending entry or stop-trigger price. Required for every pending order."
+        ),
+    )
+    stop_limit_price: Optional[Union[int, float]] = Field(
+        default=None,
+        description=(
+            "Limit price activated after the trigger for BUY_STOP_LIMIT or "
+            "SELL_STOP_LIMIT. Required for stop-limit orders and invalid otherwise."
+        ),
+    )
     stop_loss: Optional[Union[int, float]] = None
     take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
@@ -191,6 +204,13 @@ class TradeModifyRequest(BaseModel):
         description="Response detail level for modify previews and result payloads.",
     )
     price: Optional[Union[int, float]] = None
+    stop_limit_price: Optional[Union[int, float]] = Field(
+        default=None,
+        description=(
+            "New limit leg for a stop-limit pending order. When omitted, an existing "
+            "stop-limit order preserves its broker price_stoplimit value."
+        ),
+    )
     stop_loss: Optional[Union[int, float]] = None
     take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None

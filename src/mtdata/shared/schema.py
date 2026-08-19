@@ -239,6 +239,7 @@ PARAM_HINTS = {
     "price": "Entry price (required for pending).",
     "stop_loss": "Stop-loss price.",
     "take_profit": "Take-profit price.",
+    "stop_limit_price": "Limit price activated after a stop-limit order's trigger price.",
     "require_sl_tp": "For market orders, require both stop_loss and take_profit and fail if protection cannot be attached. Defaults to true.",
     "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to true.",
     "ticket": "Ticket/order ID.",
