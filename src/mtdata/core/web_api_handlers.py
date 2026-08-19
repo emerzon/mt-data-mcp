@@ -14,7 +14,7 @@ from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.denoise import DenoiseCausalityError
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
-from .data.requests import DataFetchCandlesRequest
+from .data.requests import DATA_FETCH_CANDLES_DEFAULT_LIMIT, DataFetchCandlesRequest
 from .data.use_cases import run_data_fetch_candles
 from .error_envelope import build_error_payload, normalize_error_payload
 from .mt5_gateway import create_mt5_gateway
@@ -631,8 +631,12 @@ def get_history_response(  # noqa: C901
         "timestamp_format": timestamp_format,
         "detail": detail,
     }
-    if limit is not None:
-        request_values["limit"] = int(limit)
+    # The Web API deliberately keeps a small default page for every history
+    # query. Passing it explicitly prevents the core tool's omitted-limit
+    # bounded-range contract from expanding an HTTP request to its safety cap.
+    request_values["limit"] = (
+        DATA_FETCH_CANDLES_DEFAULT_LIMIT if limit is None else int(limit)
+    )
     try:
         request = DataFetchCandlesRequest(**request_values)
         result = run_data_fetch_candles(
