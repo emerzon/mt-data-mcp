@@ -20,6 +20,15 @@ If you only skim one trading doc, make it this one. The `trade_*` tools send **r
 4. **Exact tickets** for modify/close; treat `--close-all` as nuclear.
 5. **Protective levels** — market orders require SL **and** TP by default (`--require-sl-tp`).
 
+MT5 tickets and magic numbers are unsigned 64-bit identifiers. Ticket inputs
+accept `1..18446744073709551615`; magic accepts
+`0..18446744073709551615`, where zero is a real manual/untagged strategy scope,
+not an omitted filter. Decimal input is parsed without floating-point
+conversion. When an identifier exceeds JavaScript's exact integer range, JSON
+responses also include a sibling such as `ticket_exact` or `magic_exact` as a
+canonical decimal string and set
+`identifier_encoding=decimal_string_in_exact_fields`.
+
 ---
 
 ## Preview with `--dry-run`

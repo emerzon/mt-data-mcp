@@ -1218,7 +1218,7 @@ class TestAddDynamicArguments:
         func_info = get_function_info(tool)
         add_dynamic_arguments(parser, func_info, cmd_name="trade_modify")
 
-        assert parser.parse_args(["--ticket", "123"]).ticket == "123"
+        assert parser.parse_args(["--ticket", "123"]).ticket == 123
         with pytest.raises(SystemExit):
             parser.parse_args(["123"])
         assert "--ticket" in capsys.readouterr().err

@@ -344,7 +344,7 @@ def _build_position_modify_request(
             default="MCP modify position",
         ),
     }
-    request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
+    request_magic = validation._safe_int_magic(getattr(position, "magic", None))
     if request_magic is not None:
         request["magic"] = request_magic
     return request
@@ -1028,7 +1028,7 @@ def _modify_pending_order(  # noqa: C901
             }
             if is_stop_limit and normalized_stop_limit is not None:
                 request["stoplimit"] = float(normalized_stop_limit)
-            request_magic = validation._safe_int_ticket(getattr(order, "magic", None))
+            request_magic = validation._safe_int_magic(getattr(order, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
@@ -1420,7 +1420,7 @@ def _execute_single_close(  # noqa: C901
                 "type_time": mt5.ORDER_TIME_GTC,
                 "type_filling": int(fill_mode),
             }
-            request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
+            request_magic = validation._safe_int_magic(getattr(position, "magic", None))
             if request_magic is not None:
                 request["magic"] = request_magic
 
@@ -1747,17 +1747,17 @@ def _close_positions_dry_run_preview(
             total_profit += float(getattr(position, "profit", 0.0) or 0.0)
         except Exception:
             pass
-    filters = {
-        key: value
-        for key, value in {
-            "symbol": symbol,
-            "magic": magic,
-            "profit_only": bool(profit_only) or None,
-            "loss_only": bool(loss_only) or None,
-            "close_priority": close_priority,
-        }.items()
-        if value not in (None, "", False)
-    }
+    filters: Dict[str, Any] = {}
+    if symbol not in (None, ""):
+        filters["symbol"] = symbol
+    if magic is not None:
+        filters["magic"] = magic
+    if profit_only:
+        filters["profit_only"] = True
+    if loss_only:
+        filters["loss_only"] = True
+    if close_priority not in (None, ""):
+        filters["close_priority"] = close_priority
     return {
         "success": True,
         "dry_run": True,
@@ -1853,8 +1853,15 @@ def _close_positions(  # noqa: C901
             if profit_only and loss_only:
                 return {"error": "profit_only and loss_only cannot both be true."}
             magic_filter = (
-                validation._safe_int_ticket(magic) if magic is not None else None
+                validation._safe_int_magic(magic) if magic is not None else None
             )
+            if magic is not None and magic_filter is None:
+                return {
+                    "error": (
+                        "magic must be between 0 and "
+                        f"{validation.MT5_UINT64_MAX}, inclusive."
+                    )
+                }
 
             # 1. Fetch positions based on criteria
             requested_ticket = None
@@ -1896,7 +1903,7 @@ def _close_positions(  # noqa: C901
                     }
                 if (
                     magic_filter is not None
-                    and validation._safe_int_ticket(getattr(position, "magic", None))
+                    and validation._safe_int_magic(getattr(position, "magic", None))
                     != magic_filter
                 ):
                     return {
@@ -1930,7 +1937,7 @@ def _close_positions(  # noqa: C901
             for pos in positions:
                 if (
                     magic_filter is not None
-                    and validation._safe_int_ticket(getattr(pos, "magic", None))
+                    and validation._safe_int_magic(getattr(pos, "magic", None))
                     != magic_filter
                 ):
                     continue
@@ -2183,6 +2190,14 @@ def _resolve_close_dry_run_target(
     target_value = str(target or "positions").strip().lower()
     if target_value not in {"positions", "pending"}:
         return {"error": f"Unsupported ticket target {target!r}"}
+    magic_filter = validation._safe_int_magic(magic) if magic is not None else None
+    if magic is not None and magic_filter is None:
+        return {
+            "error": (
+                "magic must be between 0 and "
+                f"{validation.MT5_UINT64_MAX}, inclusive."
+            )
+        }
 
     position = None
     resolved_ticket = None
@@ -2195,10 +2210,9 @@ def _resolve_close_dry_run_target(
             require_exact_ticket_match=True,
         )
     if position is not None:
-        magic_filter = validation._safe_int_ticket(magic) if magic is not None else None
         if (
             magic_filter is not None
-            and validation._safe_int_ticket(getattr(position, "magic", None))
+            and validation._safe_int_magic(getattr(position, "magic", None))
             != magic_filter
         ):
             return {"error": f"Position {ticket} does not match magic={magic_filter}"}
@@ -2295,10 +2309,9 @@ def _resolve_close_dry_run_target(
         require_exact_ticket_match=True,
     )
     if pending_order is not None:
-        magic_filter = validation._safe_int_ticket(magic) if magic is not None else None
         if (
             magic_filter is not None
-            and validation._safe_int_ticket(getattr(pending_order, "magic", None))
+            and validation._safe_int_magic(getattr(pending_order, "magic", None))
             != magic_filter
         ):
             return {"error": f"Pending order {ticket} does not match magic={magic_filter}"}
@@ -2361,8 +2374,15 @@ def _cancel_pending(  # noqa: C901
     def _cancel_pending():  # noqa: C901
         try:
             magic_filter = (
-                validation._safe_int_ticket(magic) if magic is not None else None
+                validation._safe_int_magic(magic) if magic is not None else None
             )
+            if magic is not None and magic_filter is None:
+                return {
+                    "error": (
+                        "magic must be between 0 and "
+                        f"{validation.MT5_UINT64_MAX}, inclusive."
+                    )
+                }
             # 1. Fetch orders based on criteria
             if ticket is not None:
                 t_int = int(ticket)
@@ -2400,7 +2420,7 @@ def _cancel_pending(  # noqa: C901
                     }
                 if (
                     magic_filter is not None
-                    and validation._safe_int_ticket(getattr(order, "magic", None))
+                    and validation._safe_int_magic(getattr(order, "magic", None))
                     != magic_filter
                 ):
                     return {
@@ -2432,7 +2452,7 @@ def _cancel_pending(  # noqa: C901
                 orders = [
                     order
                     for order in orders
-                    if validation._safe_int_ticket(getattr(order, "magic", None))
+                    if validation._safe_int_magic(getattr(order, "magic", None))
                     == magic_filter
                 ]
                 if not orders:
@@ -2453,7 +2473,7 @@ def _cancel_pending(  # noqa: C901
                     "order": order.ticket,
                     "comment": comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
                 }
-                request_magic = validation._safe_int_ticket(getattr(order, "magic", None))
+                request_magic = validation._safe_int_magic(getattr(order, "magic", None))
                 if request_magic is not None:
                     request["magic"] = request_magic
 

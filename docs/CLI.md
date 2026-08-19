@@ -770,7 +770,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--dry-run` | `trade_place`, `trade_modify`, `trade_close` | Preview the request without sending it to MT5. |
 | `--detail` | `trade_place` | Preview detail level; use `full` for execution diagnostics. |
 | `--stop-limit-price` | `trade_place`, `trade_modify` | Limit leg activated by a stop-limit trigger. |
-| `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close`, `trade_history`, `trade_journal_analyze` | MT5 magic-number filter or default strategy identifier. History and journal filtering happens before pagination and aggregation. |
+| `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close`, `trade_history`, `trade_journal_analyze` | MT5 unsigned 64-bit magic number (`0..18446744073709551615`); zero is a valid exact filter. History and journal filtering happens before pagination and aggregation. |
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
 | `--expiration` | `trade_place`, `trade_modify` | Future expiration for pending orders (`dateparser` or positive UTC epoch seconds); use literal `GTC` for no expiration. Invalid or past values are rejected locally. |
 | `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |

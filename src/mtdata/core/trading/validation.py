@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import numbers
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Tuple, Union
 
 from ...shared.market_units import (
@@ -1211,13 +1212,52 @@ def _prevalidate_trade_place_market_input(
     return None
 
 
+MT5_UINT64_MAX = (1 << 64) - 1
+
+
+def _parse_mt5_uint64(
+    value: Any,
+    *,
+    name: str,
+    allow_zero: bool,
+) -> Optional[int]:
+    """Parse an MT5 ``ulong`` identifier without floating-point coercion."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool) or isinstance(value, (float, complex)):
+        raise ValueError(f"{name} must be a decimal integer, not a floating-point value.")
+    if isinstance(value, numbers.Integral):
+        parsed = int(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text.isascii() or not text.isdecimal():
+            raise ValueError(f"{name} must be a decimal integer.")
+        parsed = int(text, 10)
+    else:
+        raise ValueError(f"{name} must be a decimal integer.")
+    minimum = 0 if allow_zero else 1
+    if parsed < minimum or parsed > MT5_UINT64_MAX:
+        raise ValueError(
+            f"{name} must be between {minimum} and {MT5_UINT64_MAX}, inclusive."
+        )
+    return parsed
+
+
+def _parse_mt5_ticket(value: Any, *, name: str = "ticket") -> Optional[int]:
+    return _parse_mt5_uint64(value, name=name, allow_zero=False)
+
+
+def _parse_mt5_magic(value: Any, *, name: str = "magic") -> Optional[int]:
+    return _parse_mt5_uint64(value, name=name, allow_zero=True)
+
+
 def _normalize_ticket_filter(ticket: Any, *, name: str) -> Tuple[Optional[int], Optional[str]]:
     if ticket in (None, ""):
         return None, None
-    value = coerce_finite_float(ticket)
-    if value is None or not float(value).is_integer():
-        return None, f"{name} must be an integer ticket."
-    return int(value), None
+    try:
+        return _parse_mt5_ticket(ticket, name=name), None
+    except ValueError as exc:
+        return None, str(exc)
 
 
 def _normalize_minutes_back(minutes_back: Any) -> Tuple[Optional[int], Optional[str]]:
@@ -1243,32 +1283,19 @@ def _coerce_optional_bool(value: Any) -> Optional[bool]:
 
 
 def _safe_int_ticket(value: Any) -> Optional[int]:
-    """Best-effort conversion for MT5 ticket-like values."""
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        try:
-            fv = float(value)
-        except Exception:
-            return None
-        if not math.isfinite(fv) or not fv.is_integer():
-            return None
-        iv = int(fv)
-        return iv if iv > 0 else None
+    """Best-effort exact conversion for positive MT5 ticket values."""
     try:
-        scalar = coerce_scalar(str(value).strip())
-    except Exception:
-        scalar = value
-    if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
-        try:
-            fv = float(scalar)
-        except Exception:
-            return None
-        if not math.isfinite(fv) or not fv.is_integer():
-            return None
-        iv = int(fv)
-        return iv if iv > 0 else None
-    return None
+        return _parse_mt5_ticket(value)
+    except ValueError:
+        return None
+
+
+def _safe_int_magic(value: Any) -> Optional[int]:
+    """Best-effort exact conversion for MT5 magic values, including zero."""
+    try:
+        return _parse_mt5_magic(value)
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------

@@ -63,6 +63,56 @@ def attach_mt5_source(payload: Any, *, gateway: Any = None) -> Any:
 
 
 LoggedResultT = TypeVar("LoggedResultT")
+_JSON_SAFE_INTEGER_MAX = (1 << 53) - 1
+_TRADE_IDENTIFIER_KEYS = frozenset(
+    {"ticket", "order", "deal", "position", "magic", "mt5_request_id"}
+)
+
+
+def _attach_exact_trade_identifiers(payload: Any) -> Any:
+    """Add decimal-string siblings when a JSON number exceeds IEEE-754 safety."""
+    if isinstance(payload, list):
+        return [_attach_exact_trade_identifiers(item) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+    out = {
+        key: _attach_exact_trade_identifiers(value)
+        for key, value in payload.items()
+    }
+    found_unsafe = False
+    for key, value in list(out.items()):
+        key_text = str(key)
+        is_identifier = (
+            key_text in _TRADE_IDENTIFIER_KEYS
+            or key_text.endswith("_ticket")
+            or key_text.endswith("_tickets")
+            or key_text.endswith("_ticket_candidates")
+        )
+        if not is_identifier or key_text.endswith("_exact"):
+            continue
+        exact_value: Any = None
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and abs(value) > _JSON_SAFE_INTEGER_MAX
+        ):
+            exact_value = str(value)
+        elif isinstance(value, list) and any(
+            isinstance(item, int)
+            and not isinstance(item, bool)
+            and abs(item) > _JSON_SAFE_INTEGER_MAX
+            for item in value
+        ):
+            exact_value = [
+                str(item) if isinstance(item, int) and not isinstance(item, bool) else item
+                for item in value
+            ]
+        if exact_value is not None:
+            out[f"{key_text}_exact"] = exact_value
+            found_unsafe = True
+    if found_unsafe:
+        out.setdefault("identifier_encoding", "decimal_string_in_exact_fields")
+    return out
 
 
 def run_mt5_logged_operation(
@@ -84,6 +134,8 @@ def run_mt5_logged_operation(
         success_eval=success_eval,
         **fields,
     )
+    if str(operation).startswith("trade_"):
+        result = cast(LoggedResultT, _attach_exact_trade_identifiers(result))
     return cast(LoggedResultT, attach_mt5_source(result, gateway=gateway))
 
 

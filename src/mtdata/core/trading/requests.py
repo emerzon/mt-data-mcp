@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Annotated, Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from ...shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_symbol
 from ...utils.barriers import normalize_trade_direction_alias
@@ -13,7 +13,8 @@ from .validation import OrderTypeLiteral
 
 MAGIC_NUMBER_DESCRIPTION = (
     "MT5 magic number: integer strategy/order identifier used to group EA or "
-    "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
+    "strategy trades. Accepted range is 0..18446744073709551615; zero is valid. "
+    "Use as a filter for one strategy; omit for all magic numbers."
 )
 
 
@@ -64,16 +65,30 @@ def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
     return None
 
 
-def _normalize_positive_ticket(value: Union[int, str]) -> int:
-    if isinstance(value, bool):
-        raise ValueError("ticket must be a positive integer")
-    text = str(value).strip()
-    if not text.isdigit():
-        raise ValueError("ticket must be a positive integer")
-    ticket = int(text)
-    if ticket <= 0:
-        raise ValueError("ticket must be a positive integer")
+def _normalize_positive_ticket(value: Any) -> int:
+    ticket = validation._parse_mt5_ticket(value)
+    if ticket is None:
+        raise ValueError("ticket is required")
     return ticket
+
+
+def _normalize_magic(value: Any) -> int:
+    magic = validation._parse_mt5_magic(value)
+    if magic is None:
+        raise ValueError("magic is required")
+    return magic
+
+
+MT5Ticket = Annotated[
+    int,
+    BeforeValidator(_normalize_positive_ticket),
+    Field(ge=1, le=validation.MT5_UINT64_MAX),
+]
+MT5Magic = Annotated[
+    int,
+    BeforeValidator(_normalize_magic),
+    Field(ge=0, le=validation.MT5_UINT64_MAX),
+]
 
 
 class _SideNormalizedRequest(BaseModel):
@@ -133,7 +148,7 @@ class TradePlaceRequest(BaseModel):
     take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
-    magic: Optional[int] = Field(
+    magic: Optional[MT5Magic] = Field(
         default=None,
         description=(
             "MT5 magic number: integer strategy/order identifier used to group EA or "
@@ -193,12 +208,7 @@ class TradePlaceRequest(BaseModel):
 class TradeModifyRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
-    ticket: Union[int, str]
-
-    @field_validator("ticket", mode="before")
-    @classmethod
-    def _validate_ticket(cls, value: Union[int, str]) -> int:
-        return _normalize_positive_ticket(value)
+    ticket: MT5Ticket
     detail: DetailLiteral = Field(
         default="compact",
         description="Response detail level for modify previews and result payloads.",
@@ -237,7 +247,7 @@ class TradeModifyRequest(BaseModel):
 class TradeCloseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ticket: Optional[Union[int, str]] = None
+    ticket: Optional[MT5Ticket] = None
     target: Literal["positions", "pending", "all_exposure"] = Field(
         default="positions",
         description=(
@@ -258,7 +268,7 @@ class TradeCloseRequest(BaseModel):
         ),
     )
     symbol: Optional[str] = None
-    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
+    magic: Optional[MT5Magic] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     volume: Optional[float] = Field(
         default=None,
         gt=0.0,
@@ -344,7 +354,7 @@ class TradeHistoryRequest(_SideNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
-    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
+    magic: Optional[MT5Magic] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     side: Optional[str] = Field(
         default=None,
         description=(
@@ -353,9 +363,9 @@ class TradeHistoryRequest(_SideNormalizedRequest):
             "buy/sell only."
         ),
     )
-    position_ticket: Optional[Union[int, str]] = None
-    deal_ticket: Optional[Union[int, str]] = None
-    order_ticket: Optional[Union[int, str]] = None
+    position_ticket: Optional[MT5Ticket] = None
+    deal_ticket: Optional[MT5Ticket] = None
+    order_ticket: Optional[MT5Ticket] = None
     minutes_back: Optional[int] = Field(
         default=None,
         description=(
@@ -384,7 +394,7 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
-    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
+    magic: Optional[MT5Magic] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     side: Optional[str] = Field(
         default=None,
         description=(
@@ -392,8 +402,8 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
             "economic position direction of realized exits."
         ),
     )
-    position_ticket: Optional[Union[int, str]] = None
-    deal_ticket: Optional[Union[int, str]] = None
+    position_ticket: Optional[MT5Ticket] = None
+    deal_ticket: Optional[MT5Ticket] = None
     minutes_back: Optional[int] = Field(
         default=None,
         description=(
@@ -608,12 +618,12 @@ class TradeStressTestRequest(BaseModel):
 
 class TradeGetOpenRequest(_DirectionalSideNormalizedRequest):
     symbol: Optional[str] = None
-    ticket: Optional[Union[int, str]] = None
+    ticket: Optional[MT5Ticket] = None
     side: Optional[str] = Field(
         default=None,
         description="Optional direction filter. Accepts buy/sell or long/short.",
     )
-    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
+    magic: Optional[MT5Magic] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     pnl_filter: Literal["all", "profit", "loss"] = Field(
         default="all",
         description="Restrict open positions by current profit-and-loss sign.",
@@ -647,7 +657,7 @@ class TradeGetOpenRequest(_DirectionalSideNormalizedRequest):
 
 class TradeGetPendingRequest(_DirectionalSideNormalizedRequest):
     symbol: Optional[str] = None
-    ticket: Optional[Union[int, str]] = None
+    ticket: Optional[MT5Ticket] = None
     side: Optional[str] = Field(
         default=None,
         description="Optional order direction filter. Accepts buy/sell or long/short.",
@@ -659,7 +669,7 @@ class TradeGetPendingRequest(_DirectionalSideNormalizedRequest):
             "buy_stop, sell_stop, buy_stop_limit, or sell_stop_limit."
         ),
     )
-    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
+    magic: Optional[MT5Magic] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     limit: int = Field(default=50, ge=1)
     detail: DetailLiteral = Field(
         default="compact",

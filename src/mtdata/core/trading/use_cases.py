@@ -6893,10 +6893,10 @@ def _filter_trade_query_magic(df: Any, request: Any) -> Any:
     magic = getattr(request, "magic", None)
     if magic is None or "magic" not in df.columns:
         return df
-    magic_value = validation._safe_int_ticket(magic)
+    magic_value = validation._safe_int_magic(magic)
     if magic_value is None:
         return df.iloc[0:0].copy()
-    mask = df["magic"].map(validation._safe_int_ticket) == magic_value
+    mask = df["magic"].map(validation._safe_int_magic) == magic_value
     return df.loc[mask].copy()
 
 

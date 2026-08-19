@@ -4,7 +4,8 @@ import logging
 import os
 import re
 import sys
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -16,10 +17,18 @@ from mtdata.core.trading import trade_modify as _trade_modify_tool
 from mtdata.core.trading import trade_place as _trade_place_tool
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
+    TradeGetOpenRequest,
+    TradeGetPendingRequest,
+    TradeHistoryRequest,
     TradeModifyRequest,
     TradePlaceRequest,
 )
-from mtdata.core.trading.validation import _normalize_order_type_input
+from mtdata.core.trading.validation import (
+    MT5_UINT64_MAX,
+    _normalize_order_type_input,
+    _safe_int_magic,
+    _safe_int_ticket,
+)
 
 
 def trade_place(**kwargs):
@@ -83,6 +92,74 @@ def test_trade_close_rejects_numeric_positional_symbol() -> None:
 def test_trade_requests_reject_invalid_execution_numerics(request_factory) -> None:
     with pytest.raises(ValidationError):
         request_factory()
+
+
+def test_mt5_identifiers_preserve_full_uint64_precision() -> None:
+    above_json_safe = (1 << 53) + 1
+
+    assert _safe_int_ticket(str(above_json_safe)) == above_json_safe
+    assert _safe_int_ticket(str(MT5_UINT64_MAX)) == MT5_UINT64_MAX
+    assert _safe_int_ticket(float(above_json_safe)) is None
+    assert _safe_int_ticket(str(MT5_UINT64_MAX + 1)) is None
+    assert _safe_int_magic(0) == 0
+
+    assert TradeModifyRequest(ticket=str(above_json_safe)).ticket == above_json_safe
+    assert TradeCloseRequest(ticket=str(MT5_UINT64_MAX)).ticket == MT5_UINT64_MAX
+    assert TradeHistoryRequest(deal_ticket=str(above_json_safe)).deal_ticket == above_json_safe
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda value: TradePlaceRequest(
+            symbol="EURUSD", volume=0.01, order_type="BUY", magic=value
+        ),
+        lambda value: TradeCloseRequest(magic=value),
+        lambda value: TradeHistoryRequest(magic=value),
+        lambda value: TradeGetOpenRequest(magic=value),
+        lambda value: TradeGetPendingRequest(magic=value),
+    ],
+)
+def test_all_public_magic_fields_enforce_mt5_uint64(factory) -> None:
+    assert factory(0).magic == 0
+    assert factory(str(MT5_UINT64_MAX)).magic == MT5_UINT64_MAX
+    for invalid in (-1, str(MT5_UINT64_MAX + 1), 1.0):
+        with pytest.raises(ValidationError):
+            factory(invalid)
+
+
+def test_close_magic_zero_keeps_exact_bulk_scope() -> None:
+    from mtdata.core.trading.execution import _close_positions
+
+    gateway = MagicMock()
+    gateway.ensure_connection.return_value = None
+    gateway.POSITION_TYPE_BUY = 0
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=101,
+            symbol="EURUSD",
+            type=0,
+            volume=0.1,
+            profit=1.0,
+            magic=0,
+        ),
+        SimpleNamespace(
+            ticket=202,
+            symbol="EURUSD",
+            type=0,
+            volume=0.1,
+            profit=1.0,
+            magic=42,
+        ),
+    ]
+    gateway.symbol_info_tick.return_value = None
+
+    result = _close_positions(magic=0, dry_run=True, gateway=gateway)
+
+    assert result["matched_count"] == 1
+    assert result["matched_positions"][0]["ticket"] == 101
+    assert result["filters_applied"] == {"magic": 0}
 
 
 def test_normalize_order_type_rejects_mt5_integer() -> None:

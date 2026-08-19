@@ -1384,7 +1384,7 @@ def _select_position_candidate(
         candidates = [
             pos
             for pos in candidates
-            if validation._safe_int_ticket(getattr(pos, "magic", None)) == magic
+            if validation._safe_int_magic(getattr(pos, "magic", None)) == magic
         ]
     if volume is not None:
         volume_filtered: List[Any] = []

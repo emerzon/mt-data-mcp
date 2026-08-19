@@ -435,9 +435,9 @@ class MT5Config:
         self.broker_time_check_ttl_seconds = max(0, ttl_seconds)
         magic_raw = os.getenv("MTDATA_ORDER_MAGIC")
         magic_value = _env_int("MTDATA_ORDER_MAGIC", 234000)
-        if magic_value <= 0:
+        if magic_value < 0 or magic_value > (1 << 64) - 1:
             _LOGGER.warning(
-                "MTDATA_ORDER_MAGIC=%r is not a positive integer; using default 234000.",
+                "MTDATA_ORDER_MAGIC=%r is outside the MT5 ulong range; using default 234000.",
                 magic_raw,
             )
             magic_value = 234000

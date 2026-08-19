@@ -5,11 +5,25 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from mtdata.core.runtime_metadata import (
+    _attach_exact_trade_identifiers,
     attach_mt5_source,
     build_mt5_source_provenance,
     build_runtime_timezone_meta,
     run_mt5_logged_operation,
 )
+
+
+def test_unsafe_trade_identifiers_include_exact_decimal_strings() -> None:
+    ticket = (1 << 53) + 1
+
+    result = _attach_exact_trade_identifiers(
+        {"ticket": ticket, "nested": {"magic": (1 << 64) - 1}}
+    )
+
+    assert result["ticket"] == ticket
+    assert result["ticket_exact"] == str(ticket)
+    assert result["identifier_encoding"] == "decimal_string_in_exact_fields"
+    assert result["nested"]["magic_exact"] == str((1 << 64) - 1)
 
 
 def _make_config(

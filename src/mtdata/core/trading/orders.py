@@ -94,10 +94,13 @@ def _expand_position_ticket_candidates_from_deals(
 
 
 def _configured_order_magic() -> int:
-    configured = validation._safe_int_ticket(getattr(mt5_config, "order_magic", None))
-    if configured is not None:
-        return int(configured)
-    return _DEFAULT_ORDER_MAGIC
+    configured = validation._safe_int_magic(getattr(mt5_config, "order_magic", None))
+    if configured is None:
+        raise ValueError(
+            "Configured MTDATA_ORDER_MAGIC must be between 0 and "
+            f"{validation.MT5_UINT64_MAX}, inclusive."
+        )
+    return int(configured)
 
 
 def _compact_sl_tp_levels(
@@ -356,7 +359,7 @@ def _attach_post_fill_protection(  # noqa: C901
                         suffix=" - set TP/SL",
                     ),
                 }
-                modify_magic = validation._safe_int_ticket(getattr(position_obj, "magic", None))
+                modify_magic = validation._safe_int_magic(getattr(position_obj, "magic", None))
                 if modify_magic is not None:
                     modify_request["magic"] = modify_magic
                 modify_result = None
@@ -1615,7 +1618,7 @@ def _place_market_order(  # noqa: C901
                     symbol_info=symbol_info,
                     comment=comment,
                     request_comment="trade_place_market",
-                    magic=validation._safe_int_ticket(request.get("magic")),
+                    magic=validation._safe_int_magic(request.get("magic")),
                 )
                 position_ticket = protection_outcome.get("position_ticket")
                 position_ticket_resolution = protection_outcome.get(
@@ -1638,7 +1641,7 @@ def _place_market_order(  # noqa: C901
                         symbol=symbol,
                         side=side,
                         volume=volume_validated,
-                        magic=validation._safe_int_ticket(request.get("magic")),
+                        magic=validation._safe_int_magic(request.get("magic")),
                     )
                     position_ticket = resolved_ticket
                     position_ticket_resolution = {
