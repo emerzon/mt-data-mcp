@@ -684,7 +684,7 @@ def test_microstructure_reconciles_latest_locked_update_with_live_quote() -> Non
     assert any("canonical reconciled" in warning for warning in result["warnings"])
 
 
-def test_microstructure_keeps_locked_latest_when_no_executable_quote_exists() -> None:
+def test_microstructure_uses_recent_executable_quote_when_live_quote_is_locked() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = _ticks()
     latest = gateway.tick_rows[-1]
@@ -701,12 +701,15 @@ def test_microstructure_keeps_locked_latest_when_no_executable_quote_exists() ->
     )
 
     spread = result["summary"]["spread"]
-    assert spread["latest"] == pytest.approx(0.0)
-    assert spread["spread_valid"] is False
-    assert spread["spread_quality"] == "locked"
-    assert spread["regime"] == "locked_quote"
-    assert spread["latest_to_window_median_ratio"] is None
-    assert any("locked" in warning.lower() for warning in result["warnings"])
+    assert spread["latest"] == pytest.approx(1.0)
+    assert spread["spread_valid"] is True
+    assert spread["spread_quality"] == "two_sided"
+    assert spread["raw_update_quality"] == "locked"
+    assert spread["source"] == "mt5.copy_ticks_range"
+    assert spread["source_state"] == "reconciled_recent_two_sided_stream"
+    assert spread["regime"] == "near_window_median"
+    assert spread["latest_to_window_median_ratio"] == pytest.approx(1.0)
+    assert any("canonical reconciled" in warning for warning in result["warnings"])
 
 
 def test_execution_quality_matches_order_and_computes_markout() -> None:
