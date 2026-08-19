@@ -73,7 +73,7 @@ mtdata-cli report_generate EURUSD --template swing --timeframe H4 --horizon 12
 mtdata-cli report_generate EURUSD --template basic \
   --include-sections context,forecast,barriers --max-sections 3 --json
 
-# Return the useful subset planned for a 10-second budget and show progress
+# Run until the actual 10-second deadline and show progress
 mtdata-cli report_generate EURUSD --template basic \
   --max-runtime 10 --progress true --json
 
@@ -108,13 +108,17 @@ Useful controls:
 
   Unknown or unavailable names fail before any report sections run, even when
   `--allow-partial true`; `valid_sections` lists the selected template's names.
-  `--max-sections` caps the selected count.
+  `--max-sections` caps the selected count. The response preserves the original
+  names in `requested_sections`; `capped_requested_sections` and the
+  `max_sections_limited` reason distinguish capped work from work that was
+  never requested.
 - `--max-runtime` supplies a cooperative wall-clock budget. The runner first
-  schedules a section subset whose estimated cost fits, then stops starting
-  report sub-tools once the deadline passes. An already-running native or MT5
-  call cannot be safely preempted, so a single call can finish just beyond the
-  requested budget. `runtime_plan` records estimates, omissions, elapsed time,
-  and whether the budget was exhausted.
+  schedules the selected sections and then stops starting report sub-tools once
+  the actual deadline passes. Static section estimates are advisory and never
+  consume the wall-clock budget. An already-running native or MT5 call cannot
+  be safely preempted, so a single call can finish just beyond the requested
+  budget. `runtime_plan` separates deadline omissions from estimates and records
+  elapsed time and whether the real budget was exhausted.
 - `--progress true` writes sub-tool start/finish events to stderr while stdout
   remains the final structured report. Stdin shell batches preserve those lines
   in the command record's `stderr` field.
@@ -153,6 +157,14 @@ sections.
 Root `as_of` is the market-data cutoff derived from the selected sections;
 `generated_at` is the later assembly time. If no section exposes a trustworthy
 market timestamp, `as_of` is null and `data_as_of_status` is `unavailable`.
+Multi-timeframe context and pivot entries expose `source_bar_time`,
+`source_bar_timezone`, and `source_bar_state`; the root cutoff is the oldest
+selected source time so mixed timeframes are represented conservatively.
+
+Barrier sections preserve negative optimizer decisions. When neither direction
+has a mathematically viable candidate, each direction retains its status,
+recommendation, candidate counts, and execution blockers, and section health is
+`partial` rather than an unqualified `ok`.
 
 `section_run_status` reports whether scheduled sections completed (`complete`,
 `partial`, or `failed`). `content_detail` separately reports how much content

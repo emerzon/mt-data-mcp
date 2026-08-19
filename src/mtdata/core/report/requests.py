@@ -83,8 +83,8 @@ class ReportGenerateRequest(BaseModel):
         ge=1.0,
         le=3_600.0,
         description=(
-            "Cooperative wall-clock budget in seconds. The runner plans a section "
-            "subset to fit and stops scheduling sub-tools after the deadline; an "
+            "Cooperative wall-clock budget in seconds. Static section estimates are "
+            "advisory; the runner stops scheduling sub-tools after the actual deadline. An "
             "already-running native/MT5 call cannot be preempted safely."
         ),
     )

@@ -11,6 +11,7 @@ from ..report.trend import (
     _compute_compact_trend,
 )
 from ..report.utils import (
+    _normalize_source_bar_time,
     adapt_forecast_payload_for_report,
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
@@ -208,15 +209,26 @@ def template_basic(  # noqa: C901
         if 'error' in piv:
             report['sections']['pivot'] = {'error': piv['error']}
         else:
-            report['sections']['pivot'] = {
+            pivot_period = piv.get('period')
+            source_bar_time = _normalize_source_bar_time(
+                pivot_period.get('end')
+                if isinstance(pivot_period, dict)
+                else pivot_period
+            )
+            pivot_section = {
                 'levels': piv.get('levels'),
                 'methods': piv.get('methods'),
                 'source': piv.get('source'),
-                'period': piv.get('period'),
+                'period': pivot_period,
                 'timeframe': 'D1',
                 'calculation_basis': piv.get('calculation_basis'),
                 'timezone': piv.get('timezone'),
             }
+            if source_bar_time is not None:
+                pivot_section['source_bar_time'] = source_bar_time
+                pivot_section['source_bar_timezone'] = 'UTC'
+                pivot_section['source_bar_state'] = 'completed'
+            report['sections']['pivot'] = pivot_section
 
     if pivot_multi_enabled and bounded_window:
         report['sections']['pivot_multi'] = _current_only_section_omission(
@@ -818,6 +830,22 @@ def template_basic(  # noqa: C901
                     "EV and edge signs conflict in barrier recommendations; inspect win probability "
                     "and break-even thresholds before trading."
                 )
+        direction_results = [
+            sec_bar.get(direction)
+            for direction in ('long', 'short')
+            if isinstance(sec_bar.get(direction), dict)
+        ]
+        if direction_results and all(
+            str(result.get('status') or '').strip().lower() == 'non_viable'
+            or result.get('mathematically_viable') is False
+            for result in direction_results
+        ):
+            sec_bar['status'] = 'non_viable'
+            sec_bar['status_reason'] = (
+                'No barrier direction produced a mathematically viable setup.'
+            )
+            sec_bar['recommendation'] = 'avoid'
+            sec_bar['viable_directions'] = []
     sec_bar['mode'] = mode_val
     sec_bar['method'] = barrier_method
     sec_bar['search_profile'] = str(p.get('search_profile', 'fast'))

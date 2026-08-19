@@ -500,6 +500,34 @@ class TestSummarizeBarrierGrid:
         result = summarize_barrier_grid(None)
         assert result == {"note": "no grid summary"}
 
+    def test_non_viable_decision_survives_empty_candidate_grid(self):
+        grid = {
+            "results": [],
+            "results_total": 0,
+            "viable_results_total": 0,
+            "best": None,
+            "status": "non_viable",
+            "status_reason": "No candidate passed the viability filter.",
+            "recommendation": "avoid",
+            "mathematically_viable": False,
+            "usable_for_live_trading": False,
+            "execution_blockers": ["optimizer_non_viable"],
+        }
+
+        result = summarize_barrier_grid(grid)
+
+        assert result == {
+            "status": "non_viable",
+            "status_reason": "No candidate passed the viability filter.",
+            "recommendation": "avoid",
+            "mathematically_viable": False,
+            "usable_for_live_trading": False,
+            "results_total": 0,
+            "viable_results_total": 0,
+            "execution_blockers": ["optimizer_non_viable"],
+            "note": "no viable barrier candidates",
+        }
+
     def test_direction_preserved(self):
         grid = {
             "best": {"tp": 1, "sl": 0.5},
@@ -868,6 +896,11 @@ class TestAttachMultiTimeframes:
 
         assert report["sections"]["pivot_multi"]["H4"]["levels"]["PP"] == 1.1
         assert report["sections"]["pivot_multi"]["H4"]["timeframe"] == "H4"
+        assert report["sections"]["pivot_multi"]["H4"]["source_bar_time"] == (
+            "2026-08-12T00:00:00Z"
+        )
+        assert report["sections"]["pivot_multi"]["H4"]["source_bar_timezone"] == "UTC"
+        assert report["sections"]["pivot_multi"]["H4"]["source_bar_state"] == "completed"
 
     def test_contexts_multi_omits_trend_compact_payload(self, monkeypatch):
         snap = {
@@ -951,6 +984,7 @@ class TestContextForTf:
     def test_uses_unwrapped_tool_when_wrapper_is_async(self, monkeypatch):
         rows = [
             {
+                "time": "2026-08-18T23:45Z",
                 "close": 101.25,
                 "EMA_20": 100.5,
                 "EMA_50": 99.5,
@@ -981,6 +1015,14 @@ class TestContextForTf:
         assert result["EMA_50"] == 99.5
         assert result["RSI_14"] == 57.0
         assert result["MACD"] == 0.12
+        assert result["source_bar_time"] == "2026-08-18T23:45:00Z"
+        assert result["source_bar_timezone"] == "UTC"
+        assert result["source_bar_state"] == "completed"
+        assert result["freshness"] == {
+            "state": "not_evaluated",
+            "source_bar_time": "2026-08-18T23:45:00Z",
+            "timezone": "UTC",
+        }
         assert result["trend_compact"] == {"slope_atr_scores": [12], "volatility_bps": 45, "squeeze_percentile": 60}
 
     def test_preserves_freshness_on_error_payload(self, monkeypatch):

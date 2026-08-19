@@ -760,8 +760,17 @@ class TestTemplateBasic:
         report = template_basic("EURUSD", 12, None, {})
 
         assert report["sections"]["context"]["freshness"] == base_freshness
-        assert report["sections"]["contexts_multi"]["M15"]["freshness"] == mtf_freshness
-        assert report["sections"]["contexts_multi"]["H4"]["freshness"] == mtf_freshness
+        for timeframe in ("M15", "H4"):
+            snapshot = report["sections"]["contexts_multi"][timeframe]
+            assert snapshot["source_bar_time"] == "2024-01-12T00:00:00Z"
+            assert snapshot["source_bar_timezone"] == "UTC"
+            assert snapshot["source_bar_state"] == "completed"
+            assert snapshot["freshness"] == {
+                **mtf_freshness,
+                "state": "stale",
+                "source_bar_time": "2024-01-12T00:00:00Z",
+                "timezone": "UTC",
+            }
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
@@ -1029,6 +1038,40 @@ class TestTemplateBasic:
 
         barriers = report["sections"].get("barriers", {})
         assert "error" in barriers
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
+    def test_basic_barriers_preserves_all_non_viable_decision(
+        self, mock_sum_bar, mock_now, mock_raw,
+    ):
+        decision = {
+            "status": "non_viable",
+            "status_reason": "No candidate passed the viability filter.",
+            "recommendation": "avoid",
+            "mathematically_viable": False,
+            "results_total": 0,
+            "viable_results_total": 0,
+            "execution_blockers": ["optimizer_non_viable"],
+        }
+        mock_raw.return_value = dict(decision)
+        mock_sum_bar.side_effect = [dict(decision), dict(decision)]
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic(
+            "EURUSD",
+            12,
+            None,
+            {"_report_execution_sections": ["barriers"]},
+        )
+
+        barriers = report["sections"]["barriers"]
+        assert barriers["long"] == decision
+        assert barriers["short"] == decision
+        assert barriers["status"] == "non_viable"
+        assert barriers["recommendation"] == "avoid"
+        assert barriers["viable_directions"] == []
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

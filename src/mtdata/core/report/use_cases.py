@@ -75,6 +75,7 @@ _REPORT_TEMPLATE_SECTIONS = {
 }
 _REPORT_SECTION_DEPENDENCIES = {
     "execution_gates": ("market",),
+    "forecast_conformal": ("backtest",),
 }
 _REPORT_SECTION_RUNTIME_ESTIMATES = {
     "context": 4.0,
@@ -166,6 +167,7 @@ _REPORT_TIMESTAMP_KEYS = frozenset(
         "quote_time",
         "snapshot_epoch",
         "snapshot_time",
+        "source_bar_time",
     }
 )
 
@@ -222,6 +224,40 @@ def _has_payload_content(payload: Any) -> bool:
     if isinstance(payload, list):
         return any(_has_payload_content(item) for item in payload)
     return payload not in (None, "")
+
+
+def _payload_runtime_budget_exhausted(payload: Any) -> bool:
+    if isinstance(payload, dict):
+        if payload.get("runtime_budget_exhausted") is True:
+            return True
+        if str(payload.get("error_code") or "").strip().lower() == (
+            "report_runtime_budget_exhausted"
+        ):
+            return True
+        error = payload.get("error")
+        if isinstance(error, str) and "max_runtime budget was exhausted" in error:
+            return True
+        return any(_payload_runtime_budget_exhausted(value) for value in payload.values())
+    if isinstance(payload, list):
+        return any(_payload_runtime_budget_exhausted(item) for item in payload)
+    return False
+
+
+def _barrier_section_all_non_viable(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    directions = [
+        payload.get(name)
+        for name in ("long", "short")
+        if isinstance(payload.get(name), dict)
+    ]
+    if not directions:
+        return False
+    return all(
+        str(direction.get("status") or "").strip().lower() == "non_viable"
+        or direction.get("mathematically_viable") is False
+        for direction in directions
+    )
 
 
 def _has_finite_conformal_intervals(payload: Any) -> bool:
@@ -346,6 +382,15 @@ def _build_sections_status(
                 "reason": payload.get("reason") or "section omitted",
             }
             continue
+        if _payload_runtime_budget_exhausted(payload):
+            statuses[str(name)] = "omitted"
+            summary["omitted"] += 1
+            details[str(name)] = {
+                "status": "omitted",
+                "reason": "report runtime deadline was exhausted before this section completed",
+                "reason_code": "report_runtime_deadline_exhausted",
+            }
+            continue
         if declared_status == "error":
             statuses[str(name)] = "error"
             summary["error"] += 1
@@ -377,15 +422,28 @@ def _build_sections_status(
             }
             if missing_error not in errors:
                 errors.append(missing_error)
+        all_barriers_non_viable = (
+            str(name) == "barriers" and _barrier_section_all_non_viable(payload)
+        )
         if has_error and has_content:
             status = "partial"
         elif has_error:
             status = "error"
+        elif all_barriers_non_viable:
+            status = "partial"
         else:
             status = "ok"
         statuses[str(name)] = status
         summary[status] += 1
         if status != "ok":
+            if all_barriers_non_viable:
+                details[str(name)] = {
+                    "status": "partial",
+                    "reason": "no barrier direction produced a mathematically viable setup",
+                    "reason_code": "barrier_optimizer_non_viable",
+                    "recommendation": "avoid",
+                }
+                continue
             details[str(name)] = {
                 "status": status,
                 "reason": (
@@ -920,12 +978,12 @@ def _resolve_report_section_plan(
                 selected.append(actual)
     else:
         selected = list(available)
-    if max_sections is not None:
-        selected = selected[: max(0, int(max_sections))]
+    requested_sections = list(selected)
+    cap = max(0, int(max_sections)) if max_sections is not None else None
+    selected = requested_sections[:cap] if cap is not None else list(requested_sections)
+    capped = requested_sections[len(selected) :]
 
     execution: List[str] = []
-    runtime_omitted: List[str] = []
-    runtime_omitted_details: Dict[str, Dict[str, Any]] = {}
     estimated_runtime = 0.0
     required_dependencies: Dict[str, List[Dict[str, Any]]] = {}
     requested_execution: List[str] = []
@@ -940,6 +998,11 @@ def _resolve_report_section_plan(
             required.append("market")
         return required
 
+    for section in requested_sections:
+        for item in [*_required_sections(section), section]:
+            if item not in requested_execution:
+                requested_execution.append(item)
+
     for section in selected:
         all_required = _required_sections(section)
         if all_required:
@@ -952,9 +1015,6 @@ def _resolve_report_section_plan(
                 }
                 for dependency in all_required
             ]
-        for item in [*all_required, section]:
-            if item not in requested_execution:
-                requested_execution.append(item)
         required = [item for item in all_required if item not in execution]
         additions = [*required, section]
         additions = list(dict.fromkeys(additions))
@@ -963,40 +1023,37 @@ def _resolve_report_section_plan(
             for item in additions
             if item not in execution
         )
-        if (
-            max_runtime is not None
-            and estimated_runtime + additional_cost > float(max_runtime)
-        ):
-            runtime_omitted.append(section)
-            remaining = max(0.0, float(max_runtime) - estimated_runtime)
-            runtime_omitted_details[section] = {
-                "estimated_incremental_seconds": round(additional_cost, 3),
-                "budget_remaining_seconds": round(remaining, 3),
-                "shortfall_seconds": round(max(0.0, additional_cost - remaining), 3),
-                "required_dependencies": list(all_required),
-            }
-            continue
         for item in additions:
             if item not in execution:
                 execution.append(item)
         estimated_runtime += additional_cost
     return {
         "available": available,
+        "requested": requested_sections,
         "selected": selected,
+        "capped": capped,
         "execution": execution,
         "missing": missing,
-        "runtime_omitted": runtime_omitted,
-        "runtime_omitted_details": runtime_omitted_details,
+        "runtime_omitted": [],
+        "runtime_omitted_details": {},
         "required_dependencies": required_dependencies,
         "requested_execution": requested_execution,
         "estimated_runtime_seconds": round(estimated_runtime, 3),
         "selected_runtime_estimate_seconds": round(
             sum(
                 _REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0)
+                for item in execution
+            ),
+            3,
+        ),
+        "requested_runtime_estimate_seconds": round(
+            sum(
+                _REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0)
                 for item in requested_execution
             ),
             3,
         ),
+        "estimate_policy": "advisory_only",
     }
 
 
@@ -1063,6 +1120,8 @@ def _apply_report_section_controls(
     if summary_mode:
         selected_names: List[str] = []
         missing_requested: List[str] = []
+        requested_selected_names: List[str] = []
+        capped_requested: List[str] = []
     else:
         requested_names = _split_report_section_names(include_sections)
         if requested_names:
@@ -1079,8 +1138,10 @@ def _apply_report_section_controls(
             selected_names = list(selectable_names)
             missing_requested = []
 
+        requested_selected_names = list(selected_names)
         if max_sections is not None:
             selected_names = selected_names[: max(0, int(max_sections))]
+        capped_requested = requested_selected_names[len(selected_names) :]
 
     selected_present = [name for name in selected_names if name in sections]
     report["sections"] = {name: sections[name] for name in selected_present}
@@ -1088,6 +1149,7 @@ def _apply_report_section_controls(
     if omitted_names or missing_requested or summary_mode or max_sections is not None or include_sections:
         report["section_controls"] = {
             "summary_mode": bool(summary_mode),
+            "requested_sections": requested_selected_names,
             "included_sections": selected_present,
             "included_count": len(selected_present),
             "omitted_sections": omitted_names,
@@ -1095,6 +1157,11 @@ def _apply_report_section_controls(
         }
         if max_sections is not None:
             report["section_controls"]["max_sections"] = int(max_sections)
+        if capped_requested:
+            report["section_controls"]["capped_requested_sections"] = capped_requested
+            report["section_controls"]["exclusion_reasons"] = {
+                name: "max_sections_limited" for name in capped_requested
+            }
         if missing_requested:
             report["section_controls"]["missing_requested_sections"] = missing_requested
 
@@ -1153,27 +1220,43 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         confidence = "high" if ok >= 3 else "medium"
         if template == "minimal":
             execution_progress = report.get("execution_progress")
-            selected = (
+            requested = (
+                execution_progress.get("requested_sections")
+                if isinstance(execution_progress, dict)
+                else None
+            )
+            requested_names = [
+                str(name) for name in requested
+            ] if isinstance(requested, list) else list(
+                (sections_status.get("sections") or {}).keys()
+            )
+            scheduled = (
                 execution_progress.get("selected_sections")
                 if isinstance(execution_progress, dict)
                 else None
             )
-            selected_names = [
-                str(name) for name in selected
-            ] if isinstance(selected, list) else list(
-                (sections_status.get("sections") or {}).keys()
+            scheduled_names = (
+                [str(name) for name in scheduled]
+                if isinstance(scheduled, list)
+                else list(requested_names)
             )
             completed_names = [
                 name
                 for name in ("context", "forecast")
-                if name in selected_names
+                if name in scheduled_names
                 and name not in failed_sections
                 and name not in partial_sections
                 and name not in omitted_sections
             ]
             not_requested = [
-                name for name in ("context", "forecast") if name not in selected_names
+                name for name in ("context", "forecast") if name not in requested_names
             ]
+            capped = (
+                execution_progress.get("capped_requested_sections")
+                if isinstance(execution_progress, dict)
+                else None
+            )
+            capped_names = [str(name) for name in capped] if isinstance(capped, list) else []
             recommended_action = "run_basic_template_for_levels_and_risk"
             completed_text = " and ".join(completed_names) or "selected sections"
             summary_text = f"Minimal {completed_text} completed successfully"
@@ -1181,6 +1264,11 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
                 verb = "was" if len(not_requested) == 1 else "were"
                 summary_text += (
                     f"; {' and '.join(not_requested).capitalize()} {verb} not requested"
+                )
+            if capped_names:
+                verb = "was" if len(capped_names) == 1 else "were"
+                summary_text += (
+                    f"; {' and '.join(capped_names).capitalize()} {verb} excluded by max_sections"
                 )
             summary_text += "; use template=basic when levels and risk context are required."
         else:
@@ -1533,19 +1621,15 @@ def run_report_generate(  # noqa: C901
                 msg = rep.get("error")
                 return report_error_payload(msg)
             sections_payload = rep.get("sections")
-            if isinstance(sections_payload, dict):
-                for section_name in section_plan["runtime_omitted"]:
-                    sections_payload.setdefault(
-                        section_name,
-                        {
-                            "status": "omitted",
-                            "reason": (
-                                "Section was not scheduled because its estimated "
-                                "cost exceeded max_runtime."
-                            ),
-                            "reason_code": "report_runtime_budget_limited",
-                        },
-                    )
+            deadline_omitted_sections = (
+                [
+                    str(section_name)
+                    for section_name, payload in sections_payload.items()
+                    if _payload_runtime_budget_exhausted(payload)
+                ]
+                if isinstance(sections_payload, dict)
+                else []
+            )
             rep["runtime_plan"] = {
                 "max_runtime_seconds": request.max_runtime,
                 "estimated_runtime_seconds": section_plan[
@@ -1554,16 +1638,28 @@ def run_report_generate(  # noqa: C901
                 "selected_runtime_estimate_seconds": section_plan[
                     "selected_runtime_estimate_seconds"
                 ],
+                "requested_runtime_estimate_seconds": section_plan[
+                    "requested_runtime_estimate_seconds"
+                ],
+                "estimate_policy": section_plan["estimate_policy"],
+                "requested_sections": list(section_plan["requested"]),
+                "selected_sections": list(section_plan["selected"]),
+                "capped_requested_sections": list(section_plan["capped"]),
                 "scheduled_sections": list(section_plan["execution"]),
-                "runtime_omitted_sections": list(section_plan["runtime_omitted"]),
-                "runtime_omitted_details": dict(
-                    section_plan["runtime_omitted_details"]
-                ),
+                "runtime_omitted_sections": deadline_omitted_sections,
+                "runtime_omitted_details": {
+                    section_name: {
+                        "reason_code": "report_runtime_deadline_exhausted",
+                        "reason": "actual max_runtime deadline expired before the section completed",
+                    }
+                    for section_name in deadline_omitted_sections
+                },
+                "estimate_limited_sections": [],
                 "required_dependencies": dict(section_plan["required_dependencies"]),
                 "requested_execution_sections": list(
                     section_plan["requested_execution"]
                 ),
-                "deadline_policy": "cooperative_between_subtools",
+                "deadline_policy": "actual_deadline_cooperative_between_subtools",
             }
             if captured_warnings:
                 for warning_text in captured_warnings:
@@ -1575,8 +1671,13 @@ def run_report_generate(  # noqa: C901
                 rep.get("sections") if isinstance(rep.get("sections"), dict) else None
             )
             if isinstance(rep.get("sections"), dict):
+                selected_status_sections = {
+                    section_name: rep["sections"][section_name]
+                    for section_name in section_plan["selected"]
+                    if section_name in rep["sections"]
+                }
                 source_sections_status = _build_sections_status(
-                    rep["sections"],
+                    selected_status_sections,
                     expected_sections=section_plan["selected"],
                 )
             if not summary_mode:
@@ -1592,7 +1693,15 @@ def run_report_generate(  # noqa: C901
                     ),
                 )
             if summary_mode:
-                source_sections = template_sections
+                source_sections = (
+                    {
+                        section_name: template_sections[section_name]
+                        for section_name in section_plan["selected"]
+                        if section_name in template_sections
+                    }
+                    if isinstance(template_sections, dict)
+                    else None
+                )
             else:
                 source_sections = (
                     rep.get("sections")
@@ -1941,6 +2050,27 @@ def run_report_generate(  # noqa: C901
                             continue
                         best = sub.get("best") if isinstance(sub, dict) else None
                         if not best:
+                            decision_entry = {
+                                key: sub[key]
+                                for key in (
+                                    "status",
+                                    "status_reason",
+                                    "recommendation",
+                                    "recommendation_reason",
+                                    "mathematically_viable",
+                                    "viable",
+                                    "tradable",
+                                    "usable_for_live_trading",
+                                    "results_total",
+                                    "viable_results_total",
+                                    "execution_blockers",
+                                    "actionability",
+                                    "actionability_reason",
+                                )
+                                if key in sub
+                            }
+                            if decision_entry:
+                                barriers_summary[dname] = decision_entry
                             continue
                         details, barrier_entry = _build_barrier_best_summary(
                             best,
@@ -1972,6 +2102,11 @@ def run_report_generate(  # noqa: C901
                                 "metric_basis", _barrier_metric_basis(best)
                             )
                 if barriers_summary:
+                    if str(bar.get("status") or "").strip().lower() == "non_viable":
+                        barriers_summary["status"] = "non_viable"
+                        barriers_summary["recommendation"] = (
+                            bar.get("recommendation") or "avoid"
+                        )
                     summary_structured["barriers"] = barriers_summary
             except Exception:
                 pass
@@ -2236,7 +2371,9 @@ def run_report_generate(  # noqa: C901
                 if sections_with_issues:
                     rep["sections_with_issues"] = sections_with_issues
                 rep["execution_progress"] = {
+                    "requested_sections": list(section_plan["requested"]),
                     "selected_sections": list(section_plan["selected"]),
+                    "capped_requested_sections": list(section_plan["capped"]),
                     "scheduled_sections": list(section_plan["execution"]),
                     "completed_sections": [
                         name
@@ -2245,8 +2382,18 @@ def run_report_generate(  # noqa: C901
                     ],
                     "omitted_sections": omitted_section_names,
                     "missing_requested_sections": list(missing_requested),
-                    "complete": rep["section_run_status"] == "complete",
+                    "complete": bool(
+                        rep["section_run_status"] == "complete"
+                        and not section_plan["capped"]
+                    ),
+                    "scheduled_selection_complete": (
+                        rep["section_run_status"] == "complete"
+                    ),
                 }
+                if section_plan["capped"]:
+                    rep["execution_progress"]["exclusion_reasons"] = {
+                        name: "max_sections_limited" for name in section_plan["capped"]
+                    }
                 if partial_section_names or error_section_names:
                     error_summaries: List[str] = []
                     status_details = sections_status.get("details")

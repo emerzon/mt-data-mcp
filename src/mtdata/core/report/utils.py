@@ -9,6 +9,7 @@ from ...shared.constants import TIME_DISPLAY_FORMAT
 from ...shared.market_units import forex_pip_size
 from ...utils.barriers import get_tick_size as _get_tick_size
 from ...utils.mt5 import get_symbol_info_cached
+from ...utils.time import format_datetime_utc
 from ..tool_calling import call_tool_sync_structured
 from .shared import (
     _as_float,
@@ -77,6 +78,33 @@ def report_runtime_error(operation: str) -> Dict[str, Any]:
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
+
+
+def _normalize_source_bar_time(value: Any) -> Optional[str]:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return format_datetime_utc(value)
+    if isinstance(value, (int, float)):
+        try:
+            return format_datetime_utc(datetime.fromtimestamp(float(value), timezone.utc))
+        except (OSError, OverflowError, TypeError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(
+            text[:-1] + "+00:00" if text.endswith("Z") else text
+        )
+    except ValueError:
+        try:
+            return format_datetime_utc(
+                datetime.fromtimestamp(float(text), timezone.utc)
+            )
+        except (OSError, OverflowError, TypeError, ValueError):
+            return None
+    return format_datetime_utc(parsed)
 
 
 _CURRENT_ONLY_OMISSION_REASON = "current_only_section_omitted"
@@ -396,6 +424,34 @@ def normalize_report_methods(value: Any) -> List[str]:
     return normalized
 
 
+_BARRIER_DECISION_FIELDS = (
+    'status',
+    'status_reason',
+    'recommendation',
+    'recommendation_reason',
+    'mathematically_viable',
+    'viable',
+    'tradable',
+    'usable_for_live_trading',
+    'results_total',
+    'viable_results_total',
+    'execution_blockers',
+    'actionability',
+    'actionability_reason',
+    'remediation',
+)
+
+
+def _barrier_decision_summary(grid: Any) -> Dict[str, Any]:
+    if not isinstance(grid, dict):
+        return {}
+    return {
+        key: grid[key]
+        for key in _BARRIER_DECISION_FIELDS
+        if key in grid and grid[key] not in (None, [], {})
+    }
+
+
 def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, Any]:
     try:
         best = grid.get('best') if isinstance(grid, dict) else None
@@ -407,8 +463,10 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
             except Exception:
                 pass
             top = items[:top_k]
-        out: Dict[str, Any] = {}
+        out = _barrier_decision_summary(grid)
         direction = grid.get('direction') if isinstance(grid, dict) else None
+        if direction:
+            out['direction'] = direction
         if isinstance(best, dict):
             best_out = {
                 'tp': best.get('tp'),
@@ -441,8 +499,6 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
             except Exception:
                 pass
             out['best'] = best_out
-            if direction:
-                out['direction'] = direction
             if bool(best_out.get('ev_edge_conflict')):
                 out['ev_edge_conflict'] = True
                 out['ev_edge_conflict_reason'] = best_out.get(
@@ -505,6 +561,12 @@ def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, An
             if value in (None, [], {}):
                 continue
             out[key] = value
+        if out and not isinstance(best, dict) and 'top' not in out:
+            out['note'] = (
+                'no viable barrier candidates'
+                if str(out.get('status') or '').strip().lower() == 'non_viable'
+                else 'no grid summary'
+            )
         return out or {"note": "no grid summary"}
     except Exception:
         return {"note": "no grid summary"}
@@ -908,6 +970,11 @@ def context_for_tf(
             'RSI_14': _get_indicator_value(last, 'RSI_14'),
             'MACD': _get_indicator_value(last, 'MACD_12_26_9'),
         }
+        source_bar_time = _normalize_source_bar_time(last.get('time'))
+        if source_bar_time is not None:
+            out['source_bar_time'] = source_bar_time
+            out['source_bar_timezone'] = 'UTC'
+            out['source_bar_state'] = 'completed'
 
         # Compute trend compact data for MTF matrix
         try:
@@ -928,8 +995,23 @@ def context_for_tf(
             out['ema50'] = _get_indicator_value(last_row, 'EMA_50')
             out['ema200'] = _get_indicator_value(last_row, 'EMA_200')
             out['price'] = last_row.get('close')
-        if freshness:
-            out['freshness'] = freshness
+        if freshness or source_bar_time is not None:
+            freshness_out = dict(freshness or {})
+            freshness_state = res.get('freshness_state')
+            if freshness_state in (None, ''):
+                within_policy = freshness_out.get('last_bar_within_policy_window')
+                freshness_state = (
+                    'fresh'
+                    if within_policy is True
+                    else 'stale'
+                    if within_policy is False
+                    else 'not_evaluated'
+                )
+            freshness_out.setdefault('state', freshness_state)
+            if source_bar_time is not None:
+                freshness_out.setdefault('source_bar_time', source_bar_time)
+                freshness_out.setdefault('timezone', 'UTC')
+            out['freshness'] = freshness_out
 
         if _fetch_cache is not None:
             _fetch_cache[cache_key] = out
@@ -1089,14 +1171,23 @@ def attach_multi_timeframes(  # noqa: C901
                     )
                     emit_report_progress(operation, "finished")
                     if isinstance(res, dict) and not res.get('error'):
-                        pivs[str(tfp)] = {
+                        period = res.get('period')
+                        source_bar_time = _normalize_source_bar_time(
+                            period.get('end') if isinstance(period, dict) else period
+                        )
+                        pivot_out = {
                             'levels': res.get('levels'),
                             'methods': res.get('methods'),
-                            'period': res.get('period'),
+                            'period': period,
                             'timeframe': tfp,
                             'calculation_basis': res.get('calculation_basis'),
                             'timezone': res.get('timezone'),
                         }
+                        if source_bar_time is not None:
+                            pivot_out['source_bar_time'] = source_bar_time
+                            pivot_out['source_bar_timezone'] = 'UTC'
+                            pivot_out['source_bar_state'] = 'completed'
+                        pivs[str(tfp)] = pivot_out
                     else:
                         pivot_errors[str(tfp)] = {
                             'error': str(

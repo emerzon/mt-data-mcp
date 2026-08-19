@@ -382,6 +382,9 @@ class TestAttachMultiTimeframesCacheThreading:
                 "timeframe": "W1",
                 "calculation_basis": "completed_bar",
                 "timezone": "UTC",
+                "source_bar_time": "2025-01-01T00:00:00Z",
+                "source_bar_timezone": "UTC",
+                "source_bar_state": "completed",
             },
             "__base_timeframe__": "D1",
         }

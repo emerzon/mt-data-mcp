@@ -97,6 +97,30 @@ def test_sections_status_rejects_conformal_section_without_finite_bounds():
     errors = status["details"]["forecast_conformal"]["errors"]
     assert "no complete finite interval" in errors[0]["message"]
 
+
+def test_sections_status_marks_all_non_viable_barriers_partial():
+    from mtdata.core.report.use_cases import _build_sections_status
+
+    non_viable = {
+        "status": "non_viable",
+        "recommendation": "avoid",
+        "mathematically_viable": False,
+        "results_total": 0,
+        "viable_results_total": 0,
+        "execution_blockers": ["optimizer_non_viable"],
+    }
+
+    status = _build_sections_status(
+        {"barriers": {"long": dict(non_viable), "short": dict(non_viable)}}
+    )
+
+    assert status["sections"]["barriers"] == "partial"
+    assert status["summary"]["partial"] == 1
+    assert status["details"]["barriers"]["reason_code"] == (
+        "barrier_optimizer_non_viable"
+    )
+    assert status["details"]["barriers"]["recommendation"] == "avoid"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -236,6 +260,9 @@ def test_report_section_plan_limits_every_template_to_context(template: str) -> 
 
     assert plan["selected"] == ["context"]
     assert plan["execution"] == ["context"]
+    assert plan["requested"] == ["context", "forecast"]
+    assert plan["capped"] == ["forecast"]
+    assert plan["requested_execution"] == ["context", "forecast"]
 
 
 def test_report_section_plan_only_runs_dependencies_available_to_template() -> None:
@@ -256,7 +283,7 @@ def test_report_section_plan_only_runs_dependencies_available_to_template() -> N
     assert basic["required_dependencies"] == {}
 
 
-def test_report_section_plan_runtime_budget_includes_dependencies() -> None:
+def test_report_section_plan_runtime_estimates_are_advisory() -> None:
     from mtdata.core.report.use_cases import _resolve_report_section_plan
 
     insufficient = _resolve_report_section_plan(
@@ -271,25 +298,20 @@ def test_report_section_plan_runtime_budget_includes_dependencies() -> None:
     )
 
     assert insufficient["selected_runtime_estimate_seconds"] == 9.0
-    assert insufficient["execution"] == ["context"]
-    assert insufficient["runtime_omitted"] == ["forecast"]
-    assert insufficient["runtime_omitted_details"]["forecast"] == {
-        "estimated_incremental_seconds": 5.0,
-        "budget_remaining_seconds": 4.0,
-        "shortfall_seconds": 1.0,
-        "required_dependencies": [],
-    }
+    assert insufficient["execution"] == ["context", "forecast"]
+    assert insufficient["runtime_omitted"] == []
+    assert insufficient["estimate_policy"] == "advisory_only"
     assert sufficient["execution"] == ["context", "forecast"]
 
 
-def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
+def test_report_section_plan_schedules_all_work_before_actual_deadline() -> None:
     from mtdata.core.report.use_cases import _resolve_report_section_plan
 
     plan = _resolve_report_section_plan("basic", max_runtime=10.0)
 
-    assert plan["execution"] == ["context", "pivot"]
-    assert plan["estimated_runtime_seconds"] == 7.0
-    assert plan["runtime_omitted"] == [
+    assert plan["execution"] == [
+        "context",
+        "pivot",
         "contexts_multi",
         "pivot_multi",
         "volatility",
@@ -299,6 +321,28 @@ def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
         "patterns",
         "confluence",
     ]
+    assert plan["estimated_runtime_seconds"] == 78.0
+    assert plan["runtime_omitted"] == []
+
+
+def test_report_section_plan_adds_conformal_backtest_dependency() -> None:
+    from mtdata.core.report.use_cases import _resolve_report_section_plan
+
+    plan = _resolve_report_section_plan(
+        "advanced",
+        include_sections=["forecast_conformal"],
+        max_runtime=1.0,
+    )
+
+    assert plan["requested"] == ["forecast_conformal"]
+    assert plan["selected"] == ["forecast_conformal"]
+    assert plan["execution"] == ["backtest", "forecast_conformal"]
+    assert plan["required_dependencies"] == {
+        "forecast_conformal": [
+            {"section": "backtest", "estimated_runtime_seconds": 25.0}
+        ]
+    }
+    assert plan["selected_runtime_estimate_seconds"] == 50.0
 
 
 def test_report_generate_request_template_choices_are_validated():
@@ -476,7 +520,7 @@ def test_run_report_generate_scopes_volatility_rate_cache():
     assert volatility._RATES_CACHE.get() is None
 
 
-def test_run_report_generate_returns_budgeted_partial_sections():
+def test_run_report_generate_uses_actual_runtime_instead_of_estimate_cap():
     from mtdata.core.report.requests import ReportGenerateRequest
     from mtdata.core.report.use_cases import run_report_generate
 
@@ -484,12 +528,13 @@ def test_run_report_generate_returns_budgeted_partial_sections():
 
     def basic_template(_symbol, _horizon, _denoise, params):
         captured_execution.extend(params["_report_execution_sections"])
-        return {
-            "sections": {
-                "context": {"last_snapshot": {"close": 1.1}},
-                "pivot": {"levels": [{"level": "PP", "classic": 1.1}]},
-            },
+        sections = {
+            name: {"value": 1}
+            for name in params["_report_execution_sections"]
         }
+        sections["context"] = {"last_snapshot": {"close": 1.1}}
+        sections["forecast"] = {"forecast": [1.1, 1.2]}
+        return {"sections": sections}
 
     with patch(
         "mtdata.core.report_templates.template_basic",
@@ -509,20 +554,9 @@ def test_run_report_generate_returns_budgeted_partial_sections():
             append_diagnostic_warning=lambda report, message: None,
         )
 
-    assert captured_execution == ["context", "pivot"]
-    assert result["success"] is True
-    assert result["section_run_status"] == "partial"
-    assert result["sections_status"]["summary"] == {
-        "ok": 2,
-        "partial": 0,
-        "error": 0,
-        "omitted": 8,
-        "total": 10,
-    }
-    assert result["runtime_plan"]["max_runtime_seconds"] == 10.0
-    assert result["runtime_plan"]["estimated_runtime_seconds"] == 7.0
-    assert result["runtime_plan"]["runtime_budget_exhausted"] is True
-    assert result["execution_progress"]["omitted_sections"] == [
+    assert captured_execution == [
+        "context",
+        "pivot",
         "contexts_multi",
         "pivot_multi",
         "volatility",
@@ -532,6 +566,20 @@ def test_run_report_generate_returns_budgeted_partial_sections():
         "patterns",
         "confluence",
     ]
+    assert result["success"] is True
+    assert result["section_run_status"] == "complete"
+    assert result["sections_status"]["summary"] == {
+        "ok": 10,
+        "partial": 0,
+        "error": 0,
+        "omitted": 0,
+        "total": 10,
+    }
+    assert result["runtime_plan"]["max_runtime_seconds"] == 10.0
+    assert result["runtime_plan"]["estimated_runtime_seconds"] == 78.0
+    assert result["runtime_plan"]["estimate_policy"] == "advisory_only"
+    assert result["runtime_plan"]["runtime_budget_exhausted"] is False
+    assert result["execution_progress"]["omitted_sections"] == []
 
 
 def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
@@ -539,8 +587,13 @@ def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
     from mtdata.core.report.use_cases import run_report_generate
 
     def basic_template(_symbol, _horizon, _denoise, params):
-        assert params["_report_execution_sections"] == ["context"]
-        return {"sections": {"context": {"last_snapshot": {"close": 1.1}}}}
+        assert params["_report_execution_sections"] == ["context", "forecast"]
+        return {
+            "sections": {
+                "context": {"last_snapshot": {"close": 1.1}},
+                "forecast": {"forecast": [1.1, 1.2]},
+            }
+        }
 
     with patch(
         "mtdata.core.report_templates.template_basic",
@@ -563,9 +616,198 @@ def test_run_report_generate_exposes_dependency_inclusive_runtime_plan():
 
     plan = result["runtime_plan"]
     assert plan["selected_runtime_estimate_seconds"] == 9.0
-    assert plan["scheduled_sections"] == ["context"]
+    assert plan["scheduled_sections"] == ["context", "forecast"]
     assert plan["required_dependencies"] == {}
-    assert plan["runtime_omitted_details"]["forecast"]["shortfall_seconds"] == 1.0
+    assert plan["runtime_omitted_sections"] == []
+    assert plan["runtime_budget_exhausted"] is False
+
+
+def test_run_report_generate_preserves_capped_request_provenance():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    def minimal_template(_symbol, _horizon, _denoise, params):
+        assert params["_report_execution_sections"] == ["context"]
+        return {
+            "meta": {"template": "minimal"},
+            "sections": {"context": {"last_snapshot": {"close": 1.1}}},
+        }
+
+    with patch(
+        "mtdata.core.report_templates.template_minimal",
+        minimal_template,
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                include_sections=["context", "forecast"],
+                max_sections=1,
+                detail="compact",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert result["runtime_plan"]["requested_sections"] == ["context", "forecast"]
+    assert result["runtime_plan"]["selected_sections"] == ["context"]
+    assert result["runtime_plan"]["requested_execution_sections"] == [
+        "context",
+        "forecast",
+    ]
+    assert result["section_controls"]["capped_requested_sections"] == ["forecast"]
+    assert result["section_controls"]["exclusion_reasons"] == {
+        "forecast": "max_sections_limited"
+    }
+    assert result["execution_progress"]["complete"] is False
+    assert result["execution_progress"]["scheduled_selection_complete"] is True
+    assert "Forecast was excluded by max_sections" in result["assessment"]["summary"]
+    assert "Forecast was not requested" not in result["assessment"]["summary"]
+
+
+def test_conformal_only_report_executes_but_hides_backtest_dependency():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    def advanced_template(_symbol, _horizon, _denoise, params):
+        assert params["_report_execution_sections"] == [
+            "backtest",
+            "forecast_conformal",
+        ]
+        return {
+            "sections": {
+                "backtest": {"best_method": {"method": "theta"}},
+                "forecast_conformal": {
+                    "method": "theta",
+                    "intervals": [
+                        {
+                            "time": "2026-08-19T01:00:00Z",
+                            "forecast": 1.1,
+                            "lower_price": 1.0,
+                            "upper_price": 1.2,
+                        }
+                    ],
+                },
+            }
+        }
+
+    with patch(
+        "mtdata.core.report_templates.template_advanced",
+        advanced_template,
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                template="advanced",
+                include_sections=["forecast_conformal"],
+                detail="full",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert list(result["sections"]) == ["forecast_conformal"]
+    assert result["sections_status"]["sections"] == {"forecast_conformal": "ok"}
+    assert result["runtime_plan"]["required_dependencies"] == {
+        "forecast_conformal": [
+            {"section": "backtest", "estimated_runtime_seconds": 25.0}
+        ]
+    }
+
+
+def test_run_report_generate_marks_actual_deadline_omission():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    deadline_error = {
+        "error": "Report max_runtime budget was exhausted before context could start.",
+        "error_code": "report_runtime_budget_exhausted",
+        "runtime_budget_exhausted": True,
+    }
+
+    with patch(
+        "mtdata.core.report_templates.template_minimal",
+        return_value={"sections": {"context": deadline_error}},
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                include_sections=["context"],
+                max_runtime=1,
+                detail="full",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert result["sections_status"]["sections"]["context"] == "omitted"
+    assert result["sections_status"]["details"]["context"]["reason_code"] == (
+        "report_runtime_deadline_exhausted"
+    )
+    assert result["runtime_plan"]["runtime_omitted_sections"] == ["context"]
+    assert result["runtime_plan"]["estimate_limited_sections"] == []
+    assert result["runtime_plan"]["runtime_budget_exhausted"] is True
+
+
+def test_non_viable_barrier_decision_survives_compact_report():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    decision = {
+        "status": "non_viable",
+        "status_reason": "No candidate passed the viability filter.",
+        "recommendation": "avoid",
+        "mathematically_viable": False,
+        "usable_for_live_trading": False,
+        "results_total": 0,
+        "viable_results_total": 0,
+        "execution_blockers": ["optimizer_non_viable"],
+    }
+    with patch(
+        "mtdata.core.report_templates.template_basic",
+        return_value={
+            "sections": {
+                "barriers": {
+                    "status": "non_viable",
+                    "recommendation": "avoid",
+                    "long": dict(decision),
+                    "short": dict(decision),
+                }
+            }
+        },
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                template="basic",
+                include_sections=["barriers"],
+                detail="compact",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert result["section_run_status"] == "partial"
+    assert result["sections_status"]["issues"]["barriers"]["reason"] == (
+        "no barrier direction produced a mathematically viable setup"
+    )
+    barriers = result["summary_structured"]["barriers"]
+    assert barriers["status"] == "non_viable"
+    assert barriers["recommendation"] == "avoid"
+    assert barriers["long"]["execution_blockers"] == ["optimizer_non_viable"]
+    assert barriers["short"]["mathematically_viable"] is False
+    assert result["assessment"]["recommended_action"] == "review_partial_sections"
 
 
 def test_run_report_generate_promotes_common_symbol_failure_in_compact_output():
@@ -2301,6 +2543,23 @@ def test_context_snapshot_time_is_report_data_as_of():
             }
         }
     ) == "2026-08-10T23:00:00Z"
+
+
+def test_multitimeframe_source_times_drive_conservative_report_data_as_of():
+    from mtdata.core.report.use_cases import _derive_report_data_as_of
+
+    assert _derive_report_data_as_of(
+        {
+            "contexts_multi": {
+                "M15": {"source_bar_time": "2026-08-18T23:45:00Z"},
+                "H4": {"source_bar_time": "2026-08-18T17:00:00Z"},
+                "D1": {"source_bar_time": "2026-08-17T21:00:00Z"},
+            },
+            "pivot_multi": {
+                "H4": {"source_bar_time": "2026-08-18T21:00:00Z"},
+            },
+        }
+    ) == "2026-08-17T21:00:00Z"
 
 
 def test_report_assessment_elevates_closed_session_freshness():
