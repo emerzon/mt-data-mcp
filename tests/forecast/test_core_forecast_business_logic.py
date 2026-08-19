@@ -4831,7 +4831,8 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
         "2026-06-01T20:00:00Z"
     )
     assert compact_chain["options"][0]["quote_usable_for_live_analysis"] is True
-    assert "implied_volatility" not in compact_chain["options"][0]
+    assert compact_chain["options"][0]["implied_volatility"] == 0.2
+    assert compact_chain["options"][0]["in_the_money"] is True
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
 
     compact_price = raw_price(

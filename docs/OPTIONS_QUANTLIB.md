@@ -96,7 +96,10 @@ mtdata-cli options_chain AAPL --limit 20 --offset 20 --json
 
 Each option row reports the provider's `contract_size` classification,
 `contract_multiplier`, multiplier status, deliverable status, and
-`premium_quote_unit`. A provider-classified `REGULAR` US equity option has a
+`premium_quote_unit`. Compact rows also retain provider `implied_volatility`
+(a decimal fraction where `1.0 = 100%`) and `in_the_money` when available, so
+volatility and moneyness comparisons do not require full detail. A
+provider-classified `REGULAR` US equity option has a
 multiplier of 100 underlying units. Nonstandard, adjusted, or missing provider
 metadata leaves the multiplier unavailable instead of inheriting a chain-level
 default. Convert a quoted bid, ask, or last price to cash premium only when the

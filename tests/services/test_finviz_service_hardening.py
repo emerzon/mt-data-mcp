@@ -19,6 +19,50 @@ def test_compute_screener_fetch_limit_is_bounded(monkeypatch):
     assert svc._compute_screener_fetch_limit(limit=9999, page=1, max_rows=120) == 120
 
 
+def test_rate_limit_envelope_is_shared_by_finviz_endpoints(monkeypatch):
+    class RateLimitedFinancial:
+        def set_filter(self, filters_dict=None, **kwargs):
+            return None
+
+        def screener_view(self, **kwargs):
+            raise RuntimeError("429 Client Error: Too Many Requests")
+
+    financial_mod = types.ModuleType("finvizfinance.screener.financial")
+    financial_mod.Financial = RateLimitedFinancial
+    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
+    monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+    monkeypatch.setattr(
+        svc,
+        "_fetch_finviz_futures_performance_rows",
+        lambda: (_ for _ in ()).throw(RuntimeError("429 Client Error")),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_fetch_finviz_economic_calendar_items",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("too many requests")),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_fetch_finviz_calendar_client_page",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("rate limit")),
+    )
+
+    results = [
+        svc.get_futures_performance(),
+        svc.get_earnings_calendar(),
+        svc.get_economic_calendar(),
+        svc.get_earnings_calendar_api(),
+        svc.get_dividends_calendar_api(),
+    ]
+
+    for result in results:
+        assert result["error_code"] == "finviz_rate_limited"
+        assert result["retryable"] is True
+        assert result["retry_after_seconds"] == 60
+        assert result["provider"] == "finviz"
+        assert result["remediation"] == "Retry after the provider backoff interval."
+
+
 def test_finviz_http_get_applies_default_timeout(monkeypatch):
     calls = {}
 
@@ -287,7 +331,7 @@ def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypat
             return pd.DataFrame(
                 {
                     "Ticker": [f"E{i}" for i in range(120)],
-                    "Earnings": ["Mon"] * 120,
+                    "Earnings": ["Aug 14/a"] * 120,
                 }
             )
 
@@ -297,6 +341,7 @@ def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypat
     monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
     monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
+    monkeypatch.setattr(svc, "_finviz_market_date", lambda: date(2026, 8, 13))
 
     result = svc.get_earnings_calendar(period="This Week", limit=50, page=3)
 
@@ -333,6 +378,7 @@ def test_earnings_empty_filtered_prefix_does_not_claim_another_page(monkeypatch)
     monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
     monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
+    monkeypatch.setattr(svc, "_finviz_market_date", lambda: date(2026, 8, 13))
     monkeypatch.setattr(
         svc,
         "_finviz_market_date",

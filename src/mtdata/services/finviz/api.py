@@ -137,6 +137,37 @@ def _finviz_error_kind(message: str) -> tuple[str, bool]:
     return "finviz_unavailable", True
 
 
+def _finviz_error_payload(
+    exc: Exception,
+    *,
+    symbol: Optional[str] = None,
+    **context: Any,
+) -> Dict[str, Any]:
+    """Build the common machine-readable envelope for Finviz failures."""
+    message = _sanitize_error_message(exc, symbol=symbol)
+    error_code, retryable = _finviz_error_kind(message)
+    payload: Dict[str, Any] = {
+        "success": False,
+        "error": message,
+        "error_code": error_code,
+        "retryable": retryable,
+        "provider": "finviz",
+        "remediation": (
+            "Retry after the provider backoff interval."
+            if error_code == "finviz_rate_limited"
+            else "Retry after the upstream condition clears."
+            if retryable
+            else "Check the request parameters and provider compatibility."
+        ),
+    }
+    if error_code == "finviz_rate_limited":
+        payload["retry_after_seconds"] = 60
+    if symbol:
+        payload["symbol"] = normalize_finviz_equity_symbol(symbol)
+    payload.update({key: value for key, value in context.items() if value is not None})
+    return payload
+
+
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
     """Clamp pagination inputs to sane bounds."""
     from .pagination import sanitize_pagination
@@ -454,7 +485,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
                 if retryable
                 else "Check the equity ticker and provider compatibility before retrying."
             )
-        return {
+        payload = {
             "success": False,
             "error": message,
             "error_code": error_code,
@@ -465,6 +496,9 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
             "stage": "ticker_fundament",
             "symbol": normalize_finviz_equity_symbol(symbol),
         }
+        if error_code == "finviz_rate_limited":
+            payload["retry_after_seconds"] = 60
+        return payload
 
 
 def get_stock_description(symbol: str) -> Dict[str, Any]:
@@ -481,7 +515,7 @@ def get_stock_description(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching description for {symbol}")
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        return _finviz_error_payload(e, symbol=symbol, endpoint="description")
 
 
 def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -512,7 +546,7 @@ def get_stock_news(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any
         }
     except Exception as e:
         logger.warning("Error fetching news for %s: %s", symbol, str(e))
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        return _finviz_error_payload(e, symbol=symbol, endpoint="news")
 
 
 def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -543,7 +577,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
         }
     except Exception as e:
         logger.exception(f"Error fetching insider trades for {symbol}")
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        return _finviz_error_payload(e, symbol=symbol, endpoint="insider_trades")
 
 
 def get_stock_ratings(symbol: str) -> Dict[str, Any]:
@@ -567,7 +601,7 @@ def get_stock_ratings(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching ratings for {symbol}")
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        return _finviz_error_payload(e, symbol=symbol, endpoint="ratings")
 
 
 def get_stock_peers(symbol: str) -> Dict[str, Any]:
@@ -584,7 +618,7 @@ def get_stock_peers(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching peers for {symbol}")
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        return _finviz_error_payload(e, symbol=symbol, endpoint="peers")
 
 
 def screen_stocks(
@@ -687,13 +721,7 @@ def screen_stocks(
         }
     except Exception as e:
         logger.warning("Error running stock screener: %s", e)
-        message = _sanitize_error_message(e)
-        error_code, retryable = _finviz_error_kind(message)
-        return {
-            "error": message,
-            "error_code": error_code,
-            "retryable": retryable,
-        }
+        return _finviz_error_payload(e, endpoint="screener")
 
 
 def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) -> Dict[str, Any]:
@@ -746,7 +774,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         }
     except Exception as e:
         logger.exception("Error fetching general news")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="market_news")
 
 
 def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1) -> Dict[str, Any]:
@@ -827,14 +855,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         }
     except Exception as e:
         logger.exception("Error fetching insider activity")
-        message = _sanitize_error_message(e)
-        error_code, retryable = _finviz_error_kind(message)
-        return {
-            "error": message,
-            "error_code": error_code,
-            "retryable": retryable,
-            "option": option,
-        }
+        return _finviz_error_payload(e, endpoint="insider_activity", option=option)
 
 
 def _extract_insider_activity_symbols(
@@ -915,7 +936,7 @@ def get_forex_performance() -> Dict[str, Any]:
         return out
     except Exception as e:
         logger.exception("Error fetching forex performance")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="forex")
 
 
 def get_crypto_performance() -> Dict[str, Any]:
@@ -963,7 +984,7 @@ def get_crypto_performance() -> Dict[str, Any]:
         return out
     except Exception as e:
         logger.exception("Error fetching crypto performance")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="crypto")
 
 
 def get_futures_performance() -> Dict[str, Any]:
@@ -978,7 +999,7 @@ def get_futures_performance() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception("Error fetching futures performance")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="futures")
 
 
 def get_earnings_calendar(
@@ -1017,6 +1038,10 @@ def get_earnings_calendar(
         }
         reference_date = _finviz_market_date()
         reference_time = _finviz_market_time()
+        period_window = finviz_earnings_period_window(
+            period_key,
+            reference_date,
+        )
         reference_at = datetime.datetime.combine(
             reference_date,
             reference_time,
@@ -1031,48 +1056,55 @@ def get_earnings_calendar(
         source_count = 0
         source_complete = False
         elapsed_filter_applied = False
+        period_filter_applied = False
+        provider_returned_rows = False
+        period_rows_rejected = 0
         while True:
             df, fetch_limit = _run_screener_view(
                 screener,
                 order="Earnings Date",
-                limit=scan_limit if filter_elapsed else limit,
-                page=1 if filter_elapsed else page,
-                fetch_limit_override=scan_limit if filter_elapsed else None,
+                limit=scan_limit,
+                page=1,
+                fetch_limit_override=scan_limit,
             )
             if df is None or df.empty:
                 break
+            provider_returned_rows = True
             source_count = len(df.index)
             source_complete = source_count < fetch_limit
             elapsed_filter_applied = False
-            if filter_elapsed:
-                period_window = finviz_earnings_period_window(
-                    period_key,
-                    reference_date,
-                )
-                keep_positions = []
-                earnings_column = "Earnings" if "Earnings" in df.columns else None
-                if earnings_column is not None:
-                    elapsed_filter_applied = True
-                    for position, value in enumerate(df[earnings_column].tolist()):
-                        earnings_date = parse_finviz_earnings_date(
-                            value,
-                            reference_date=reference_date,
-                            period_window=period_window,
-                        )
-                        if earnings_date is None or not _earnings_event_has_elapsed(
-                            value,
-                            event_date=earnings_date,
-                            reference_date=reference_date,
-                            reference_time=reference_time,
-                        ):
-                            keep_positions.append(position)
-                    df = df.iloc[keep_positions].reset_index(drop=True)
+            period_filter_applied = False
+            period_rows_rejected = 0
+            keep_positions = []
+            earnings_column = "Earnings" if "Earnings" in df.columns else None
+            if earnings_column is not None:
+                period_filter_applied = True
+                elapsed_filter_applied = filter_elapsed
+                for position, value in enumerate(df[earnings_column].tolist()):
+                    earnings_date = parse_finviz_earnings_date(
+                        value,
+                        reference_date=reference_date,
+                        period_window=period_window,
+                    )
+                    if earnings_date is None:
+                        period_rows_rejected += 1
+                        continue
+                    if filter_elapsed and _earnings_event_has_elapsed(
+                        value,
+                        event_date=earnings_date,
+                        reference_date=reference_date,
+                        reference_time=reference_time,
+                    ):
+                        continue
+                    keep_positions.append(position)
+            else:
+                period_rows_rejected = source_count
+            df = df.iloc[keep_positions].reset_index(drop=True)
             if (
-                not filter_elapsed
-                or not elapsed_filter_applied
-                or len(df.index) > requested_end
+                len(df.index) > requested_end
                 or source_complete
                 or fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS
+                or earnings_column is None
             ):
                 break
             next_scan_limit = min(_FINVIZ_SCREENER_MAX_ROWS, fetch_limit * 2)
@@ -1080,7 +1112,7 @@ def get_earnings_calendar(
                 break
             scan_limit = next_scan_limit
 
-        if df is None or df.empty and not elapsed_filter_applied:
+        if not provider_returned_rows:
             return {"error": "No earnings calendar data available"}
 
         items_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
@@ -1088,7 +1120,7 @@ def get_earnings_calendar(
             limit=limit,
             page=page,
         )
-        if elapsed_filter_applied and not source_complete:
+        if not source_complete:
             requested_page_end = safe_limit * safe_page
             pagination_meta = {
                 "total": None,
@@ -1111,6 +1143,10 @@ def get_earnings_calendar(
             "success": True,
             "period": period,
             "include_elapsed": bool(include_elapsed),
+            "period_filter_applied": period_filter_applied,
+            "period_start": period_window[0].isoformat(),
+            "period_end": period_window[1].isoformat(),
+            "period_rows_rejected": int(period_rows_rejected),
             "elapsed_filter_applied": elapsed_filter_applied,
             "calendar_reference_date": reference_date.isoformat(),
             "calendar_reference_at": reference_at.isoformat(timespec="seconds"),
@@ -1121,21 +1157,31 @@ def get_earnings_calendar(
             **pagination_meta,
             "earnings": items_list,
         }
-        if elapsed_filter_applied and not source_complete:
+        warnings_out: List[str] = []
+        if period_rows_rejected:
+            warnings_out.append(
+                f"Rejected {period_rows_rejected} provider row(s) whose earnings "
+                f"date could not be reconciled with {period_window[0].isoformat()} "
+                f"through {period_window[1].isoformat()}."
+            )
+            out["partial"] = True
+        if not source_complete:
             out["source_incomplete"] = True
-            out["warnings"] = [
+            warnings_out.append(
                 f"The provider earnings scan stopped after {fetch_limit} source rows "
                 "before the period was exhausted; results are a bounded prefix. "
                 "Use finviz_calendar(calendar='earnings') for the detailed "
                 "date-range feed."
-            ]
+            )
             out["related_tools"] = ["finviz_calendar"]
+        if warnings_out:
+            out["warnings"] = warnings_out
         return out
     except ValueError as e:
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching earnings calendar")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="earnings_period")
 
 
 def get_economic_calendar(
@@ -1227,7 +1273,7 @@ def get_economic_calendar(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching economic calendar")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="calendar_economic")
 
 
 def get_earnings_calendar_api(
@@ -1268,7 +1314,7 @@ def get_earnings_calendar_api(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching earnings calendar (API)")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="calendar_earnings")
 
 
 def get_dividends_calendar_api(
@@ -1309,7 +1355,7 @@ def get_dividends_calendar_api(
         return {"error": str(e)}
     except Exception as e:
         logger.exception("Error fetching dividends calendar (API)")
-        return {"error": _sanitize_error_message(e)}
+        return _finviz_error_payload(e, endpoint="calendar_dividends")
 
 
 def _filter_calendar_events_by_date(

@@ -256,7 +256,12 @@ def compute_spread_metrics(
     return out
 
 
-def _latest_stream_tick(gateway: Any, symbol: str, *, now_epoch: float) -> Any:
+def _latest_stream_ticks(
+    gateway: Any,
+    symbol: str,
+    *,
+    now_epoch: float,
+) -> tuple[Any, Any]:
     end = datetime.fromtimestamp(now_epoch, tz=timezone.utc) + timedelta(seconds=5)
     start = end - timedelta(minutes=15, seconds=5)
     closure = standard_weekend_window(datetime.fromtimestamp(now_epoch, tz=timezone.utc))
@@ -272,15 +277,15 @@ def _latest_stream_tick(gateway: Any, symbol: str, *, now_epoch: float) -> Any:
             gateway.COPY_TICKS_ALL,
         )
     except Exception:
-        return None
+        return None, None
     if rows is None:
-        return None
+        return None, None
     try:
         candidates = [row for row in rows if tick_epoch(row) is not None]
     except (TypeError, ValueError):
-        return None
+        return None, None
     if not candidates:
-        return None
+        return None, None
     # CopyTicksRange returns ticks from oldest to newest.  Several updates can
     # share a millisecond, so preserve that ordering when timestamps tie: max()
     # alone would retain the first (stale) row with the newest timestamp.
@@ -288,7 +293,18 @@ def _latest_stream_tick(gateway: Any, symbol: str, *, now_epoch: float) -> Any:
         enumerate(candidates),
         key=lambda item: (float(tick_epoch(item[1]) or 0.0), item[0]),
     )
-    return latest_tick
+    two_sided_candidates = [
+        (index, candidate)
+        for index, candidate in enumerate(candidates)
+        if _quote_pair_quality(candidate) == "two_sided"
+    ]
+    latest_two_sided = None
+    if two_sided_candidates:
+        _, latest_two_sided = max(
+            two_sided_candidates,
+            key=lambda item: (float(tick_epoch(item[1]) or 0.0), item[0]),
+        )
+    return latest_tick, latest_two_sided
 
 
 def _quote_pair(tick: Any) -> tuple[Optional[float], Optional[float]]:
@@ -381,7 +397,29 @@ def resolve_quote_tick(
         except Exception:
             raw_tick = None
     raw_epoch = tick_epoch(raw_tick)
-    stream_tick = _latest_stream_tick(gateway, symbol, now_epoch=now_epoch)
+    latest_stream_tick, two_sided_stream_tick = _latest_stream_ticks(
+        gateway,
+        symbol,
+        now_epoch=now_epoch,
+    )
+    stream_tick = latest_stream_tick
+    used_recent_two_sided_stream = False
+    if (
+        latest_stream_tick is not None
+        and _quote_pair_quality(latest_stream_tick) != "two_sided"
+        and two_sided_stream_tick is not None
+    ):
+        two_sided_epoch = tick_epoch(two_sided_stream_tick)
+        two_sided_freshness = build_tick_freshness_context(
+            symbol,
+            tick_epoch=two_sided_epoch,
+            now_epoch=now_epoch,
+            item="tick",
+            stale_after_seconds=stale_after_seconds,
+        )
+        if two_sided_freshness.get("usable_for_live_trading") is True:
+            stream_tick = two_sided_stream_tick
+            used_recent_two_sided_stream = True
     stream_epoch = tick_epoch(stream_tick)
     metadata: Dict[str, Any] = {
         "quote_source": "mt5.symbol_info_tick",
@@ -396,6 +434,19 @@ def resolve_quote_tick(
         stale_after_seconds=stale_after_seconds,
     )
     raw_live_ready = raw_freshness.get("usable_for_live_trading") is True
+
+    if used_recent_two_sided_stream:
+        latest_stream_epoch = tick_epoch(latest_stream_tick)
+        metadata["raw_last_stream_event"] = {
+            "time_epoch": latest_stream_epoch,
+            "bid": _quote_pair(latest_stream_tick)[0],
+            "ask": _quote_pair(latest_stream_tick)[1],
+            "spread_quality": _quote_pair_quality(latest_stream_tick),
+            "one_sided_update": _is_one_sided_quote_update(
+                gateway,
+                latest_stream_tick,
+            ),
+        }
 
     if stream_tick is None or stream_epoch is None:
         metadata["quote_source_state"] = (
@@ -427,6 +478,8 @@ def resolve_quote_tick(
     quote_conflict = same_epoch and pairs_differ and not benign_reconciliation
     raw_rank = _quote_pair_quality_rank(raw_tick)
     stream_rank = _quote_pair_quality_rank(stream_tick)
+    raw_execution_ready = raw_live_ready and raw_rank == 3
+    stream_execution_ready = stream_live_ready and stream_rank == 3
     use_stream_for_conflict = quote_conflict and stream_rank >= raw_rank
     raw_ahead_of_observation = (
         raw_epoch is not None
@@ -456,8 +509,8 @@ def resolve_quote_tick(
             and not reject_lower_quality_stream
         )
         or (
-            not raw_live_ready
-            and stream_live_ready
+            not raw_execution_ready
+            and stream_execution_ready
             and not reject_lower_quality_stream
         )
     )
@@ -490,6 +543,8 @@ def resolve_quote_tick(
             "quote_source_state": (
                 "reconciled_equal_timestamp_conflict"
                 if quote_conflict
+                else "reconciled_recent_two_sided_stream"
+                if used_recent_two_sided_stream
                 else "refreshed_from_tick_stream"
             ),
             "symbol_info_tick_time_epoch": raw_epoch,

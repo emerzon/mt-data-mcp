@@ -58,6 +58,12 @@ includes `pagination` plus `bucket_truncation` metadata. Use `--limit` for a
 different global page size, `--limit-per-bucket` for independent bucket caps,
 or `--detail full` for the uncapped selected buckets and richer matching
 diagnostics. Compact symbol news keeps up to five rows per bucket by default.
+The related-news selector reserves up to five of the newest direct-symbol
+headlines before filling the remaining internal selection by relevance. Full
+detail exposes `related_selection`, including whether that selection was
+truncated. For the complete provider-ordered US-equity page, continue with
+`finviz_news SYMBOL`; public `news` limits paginate the selected multi-source
+feed rather than the raw provider candidate pool.
 Calendar rows show both the absolute UTC `scheduled_at` timestamp and the
 convenience `relative_time` label in the default TOON view.
 

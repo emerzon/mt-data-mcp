@@ -134,6 +134,7 @@ def parse_finviz_earnings_date(
         within = [candidate for candidate in candidates if start <= candidate <= end]
         if within:
             return min(within, key=lambda candidate: abs(candidate - reference))
+        return None
     if candidates:
         return min(candidates, key=lambda candidate: abs(candidate - reference))
     return None

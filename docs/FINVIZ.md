@@ -354,7 +354,12 @@ default first page starts with upcoming reports. Pass `--include-elapsed true`
 for the complete period-start archive. `previous-week` is always an archive.
 Filtered current periods expose `elapsed_cutoff_at` as an offset-qualified New
 York timestamp, alongside `calendar_timezone`, so it can be compared directly
-with UTC fetch timestamps.
+with UTC fetch timestamps. Every returned earnings date is constrained to the
+requested period. If a yearless provider token cannot be reconciled with that
+window, the row is rejected and the response reports
+`period_rows_rejected`, `partial`, and a warning instead of assigning a nearby
+year. Provider throttles use `error_code=finviz_rate_limited` with
+`retryable=true` and numeric `retry_after_seconds` across the Finviz tools.
 
 ```bash
 mtdata-cli finviz_earnings --period this-week --json

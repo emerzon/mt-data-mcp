@@ -1874,3 +1874,65 @@ def test_fetch_unified_news_returns_failure_when_all_sources_error(monkeypatch) 
     assert result["success"] is False
     assert result["error"] == "All news sources failed"
     assert result["source_details"]["broken"]["success"] is False
+
+
+def test_symbol_news_reserves_fresh_direct_headline_before_relevance_slice(
+    monkeypatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    fresh = svc.NewsItem(
+        title="AAPL files a same-day product update",
+        provider="test",
+        source="Test Wire",
+        kind="direct_symbol",
+        published_at=now,
+        relevance_score=0.21,
+        importance_score=2.0,
+        metadata={"direct_symbol": "AAPL"},
+    )
+    older = [
+        svc.NewsItem(
+            title=f"AAPL older thematic analysis {index}",
+            provider="test",
+            source="Test Wire",
+            published_at=now - timedelta(days=2, minutes=index),
+            relevance_score=5.0,
+            importance_score=4.0,
+        )
+        for index in range(24)
+    ]
+
+    class CandidateSource:
+        name = "test"
+
+        def is_available(self) -> bool:
+            return True
+
+        def fetch_general_candidates(self, limit: int):
+            return []
+
+        def fetch_related_candidates(self, context, limit: int):
+            return [*older, fresh]
+
+    monkeypatch.setattr(
+        svc,
+        "_score_then_dedupe_items",
+        lambda items, context=None: list(items),
+    )
+    monkeypatch.setattr(svc, "_apply_embedding_rerank", lambda items, context: False)
+    aggregator = svc.NewsAggregator()
+    aggregator._sources = {"test": CandidateSource()}
+
+    result = aggregator.fetch_news("AAPL")
+
+    assert any(item["title"] == fresh.title for item in result["related_news"])
+    assert result["related_selection"] == {
+        "method": "direct_symbol_recency_reserve_then_relevance",
+        "candidate_count": 25,
+        "selection_limit": 20,
+        "direct_symbol_candidate_count": 1,
+        "direct_symbol_recency_reserve": 5,
+        "direct_symbol_selected": 1,
+        "preselection_truncated": True,
+        "raw_continuation_tool": "finviz_news",
+    }

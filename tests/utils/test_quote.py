@@ -282,6 +282,49 @@ def test_resolve_quote_tick_keeps_two_sided_cache_over_unflagged_locked_tick() -
     assert metadata["quote_source_state"] == "reconciled_lower_quality_stream_update"
 
 
+def test_resolve_quote_tick_walks_back_from_newer_bid_only_lock() -> None:
+    now = 1_700_000_100.0
+    locked = {
+        "bid": 1.15310,
+        "ask": 1.15310,
+        "flags": 2,
+        "time_msc": (now - 0.2) * 1000,
+    }
+    coherent = {
+        "bid": 1.15304,
+        "ask": 1.15310,
+        "flags": 6,
+        "time_msc": (now - 0.5) * 1000,
+    }
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        TICK_FLAG_BID=2,
+        TICK_FLAG_ASK=4,
+        symbol_info=lambda _symbol: SimpleNamespace(point=0.00001),
+        copy_ticks_range=lambda *_args: [coherent, locked],
+    )
+
+    selected, metadata = resolve_quote_tick(
+        gateway,
+        "EURUSD",
+        SimpleNamespace(**locked),
+        now_epoch=now,
+    )
+
+    assert selected is coherent
+    assert compute_spread_metrics(selected["bid"], selected["ask"])[
+        "spread_quality"
+    ] == "two_sided"
+    assert metadata["quote_source_state"] == "reconciled_recent_two_sided_stream"
+    assert metadata["raw_last_stream_event"] == {
+        "time_epoch": now - 0.2,
+        "bid": 1.15310,
+        "ask": 1.15310,
+        "spread_quality": "locked",
+        "one_sided_update": True,
+    }
+
+
 def test_resolve_quote_tick_tolerates_small_future_skew_without_downgrade() -> None:
     now = 1_700_000_100.0
     cached = SimpleNamespace(

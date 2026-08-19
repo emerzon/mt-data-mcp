@@ -1018,6 +1018,8 @@ def _build_tool_contract_meta(
 
 def _finviz_earnings_error_code(message: str) -> str:
     text = str(message or "")
+    if "rate limit" in text.lower():
+        return "finviz_rate_limited"
     if "Invalid period" in text:
         return "finviz_earnings_invalid_period"
     if "No earnings calendar data available" in text:
@@ -4626,15 +4628,26 @@ def finviz_earnings(
                 ),
             }
         if result.get("error"):
-            return {
+            error_out = {
                 "success": False,
                 "error": str(result.get("error")),
-                "error_code": _finviz_earnings_error_code(str(result.get("error"))),
+                "error_code": str(result.get("error_code") or "").strip()
+                or _finviz_earnings_error_code(str(result.get("error"))),
                 "meta": _build_tool_contract_meta(
                     tool="finviz_earnings",
                     request=request,
                 ),
             }
+            for key in (
+                "retryable",
+                "retry_after_seconds",
+                "remediation",
+                "provider",
+                "endpoint",
+            ):
+                if result.get(key) not in (None, ""):
+                    error_out[key] = result[key]
+            return error_out
 
         items = result.get("earnings")
         if not isinstance(items, list):
@@ -4724,7 +4737,16 @@ def finviz_earnings(
                 request=request,
                 stats=stats,
             )
-        for key in ("source_incomplete", "warnings", "related_tools"):
+        for key in (
+            "source_incomplete",
+            "partial",
+            "period_filter_applied",
+            "period_start",
+            "period_end",
+            "period_rows_rejected",
+            "warnings",
+            "related_tools",
+        ):
             if result.get(key) not in (None, "", [], {}):
                 out[key] = result[key]
         page_value = int(result.get("page") or page or 1)

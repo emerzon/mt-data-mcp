@@ -297,6 +297,25 @@ class TestFinvizEarningsOutputContract:
         assert "request" not in result["meta"]
         assert "operation" not in result
 
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_rate_limit_preserves_provider_retry_contract(self, mock_get):
+        mock_get.return_value = {
+            "success": False,
+            "error": "Finviz rate limit encountered. Retry after 60 seconds.",
+            "error_code": "finviz_rate_limited",
+            "retryable": True,
+            "retry_after_seconds": 60,
+            "remediation": "Retry after the provider backoff interval.",
+            "provider": "finviz",
+        }
+
+        result = self._unwrapped()()
+
+        assert result["error_code"] == "finviz_rate_limited"
+        assert result["retryable"] is True
+        assert result["retry_after_seconds"] == 60
+        assert result["provider"] == "finviz"
+
 
 class TestFinvizCalendarOutputContract:
     @patch("mtdata.core.finviz.get_economic_calendar")

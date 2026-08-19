@@ -583,11 +583,22 @@ class TestFinvizService:
         response.raise_for_status.assert_called_once_with()
         response.close.assert_called_once_with()
 
+    @patch("mtdata.services.finviz.api._finviz_market_time")
+    @patch("mtdata.services.finviz.api._finviz_market_date")
     @patch("finvizfinance.screener.financial.Financial")
-    def test_get_earnings_calendar_success(self, mock_financial_class):
+    def test_get_earnings_calendar_success(
+        self,
+        mock_financial_class,
+        mock_market_date,
+        mock_market_time,
+    ):
         """Test earnings calendar fetch via Financial screener filter."""
+        from datetime import date, time
+
         from mtdata.services.finviz import get_earnings_calendar
 
+        mock_market_date.return_value = date(2026, 1, 8)
+        mock_market_time.return_value = time(12, 0)
         mock_screener = MagicMock()
         mock_df = pd.DataFrame(
             [
@@ -614,6 +625,43 @@ class TestFinvizService:
         assert result["period"] == "This Week"
         assert result["count"] == 2
         assert len(result["earnings"]) == 2
+
+    @patch("mtdata.services.finviz.api._finviz_market_time")
+    @patch("mtdata.services.finviz.api._finviz_market_date")
+    @patch("finvizfinance.screener.financial.Financial")
+    def test_get_earnings_calendar_rejects_out_of_period_rows_before_pagination(
+        self,
+        mock_financial_class,
+        mock_market_date,
+        mock_market_time,
+    ):
+        from datetime import date, time
+
+        from mtdata.services.finviz import get_earnings_calendar
+
+        mock_market_date.return_value = date(2026, 8, 19)
+        mock_market_time.return_value = time(12, 0)
+        mock_financial_class.return_value.screener_view.return_value = pd.DataFrame(
+            [
+                {"Ticker": "BAD1", "Earnings": "Feb 04/a"},
+                {"Ticker": "GOOD", "Earnings": "Aug 20/a"},
+                {"Ticker": "BAD2", "Earnings": "not-a-date"},
+            ]
+        )
+
+        result = get_earnings_calendar(
+            period="This Week",
+            limit=1,
+            page=1,
+            include_elapsed=True,
+        )
+
+        assert [row["Ticker"] for row in result["earnings"]] == ["GOOD"]
+        assert result["period_start"] == "2026-08-17"
+        assert result["period_end"] == "2026-08-23"
+        assert result["period_rows_rejected"] == 2
+        assert result["partial"] is True
+        assert "Rejected 2 provider row(s)" in result["warnings"][0]
 
     @patch("mtdata.services.finviz.api._finviz_market_time")
     @patch("mtdata.services.finviz.api._finviz_market_date")

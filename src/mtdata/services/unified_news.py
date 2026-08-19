@@ -47,6 +47,7 @@ _DEFAULT_IMPACT_BUCKET_SIZE = 3
 _DEFAULT_UPCOMING_BUCKET_SIZE = 20
 _DEFAULT_RECENT_EVENTS_SIZE = 5
 _CANDIDATE_MULTIPLIER = 5
+_DIRECT_SYMBOL_RECENCY_RESERVE = 5
 _MAX_SNAPSHOT_ROWS = 8
 _MIN_ECONOMIC_CANDIDATES = 24
 _MIN_SNAPSHOT_RELEVANCE = 1.0
@@ -2031,6 +2032,7 @@ class NewsAggregator:
         impact_news: List[NewsItem] = []
         upcoming_events: List[NewsItem] = []
         recent_events: List[NewsItem] = []
+        related_selection: Optional[Dict[str, Any]] = None
         if context is not None:
             market_context_pool = _score_then_dedupe_items(
                 market_context_candidates,
@@ -2107,7 +2109,41 @@ class NewsAggregator:
                     ),
                     reverse=True,
                 )
-            related_news = [item for item in filtered_related if item.dedupe_key() not in upcoming_keys][:bucket_size]
+            eligible_related = [
+                item
+                for item in filtered_related
+                if item.dedupe_key() not in upcoming_keys
+            ]
+            direct_recent = sorted(
+                (item for item in eligible_related if item.kind == "direct_symbol"),
+                key=lambda item: (
+                    item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    item.importance_score,
+                    item.relevance_score,
+                ),
+                reverse=True,
+            )[: min(bucket_size, _DIRECT_SYMBOL_RECENCY_RESERVE)]
+            direct_keys = {item.dedupe_key() for item in direct_recent}
+            relevance_fill = [
+                item for item in eligible_related if item.dedupe_key() not in direct_keys
+            ]
+            related_news = (direct_recent + relevance_fill)[:bucket_size]
+            related_selection = {
+                "method": "direct_symbol_recency_reserve_then_relevance",
+                "candidate_count": len(eligible_related),
+                "selection_limit": bucket_size,
+                "direct_symbol_candidate_count": sum(
+                    item.kind == "direct_symbol" for item in eligible_related
+                ),
+                "direct_symbol_recency_reserve": _DIRECT_SYMBOL_RECENCY_RESERVE,
+                "direct_symbol_selected": len(direct_recent),
+                "preselection_truncated": len(eligible_related) > len(related_news),
+            }
+            if (
+                related_selection["preselection_truncated"]
+                and context.asset_class == "equity"
+            ):
+                related_selection["raw_continuation_tool"] = "finviz_news"
 
             impact_pool = _score_then_dedupe_items(
                 list(related_candidates) + list(general_pool),
@@ -2214,6 +2250,7 @@ class NewsAggregator:
                 "model": "keyword_plus_cosine_similarity",
                 "notes": [
                     "Ranks direct symbol mentions, asset-class terms, macro exposures, and text cosine similarity.",
+                    "Reserves up to five newest direct-symbol headlines before relevance-ranked related items.",
                     "Related news excludes quote snapshots; delayed Finviz performance rows are separated into market_context.",
                     "Impact news highlights high-importance systemic headlines such as war, sanctions, tariffs, and energy shocks.",
                     "Upcoming events surface future economic-calendar items in a dedicated section so they do not get buried by headlines.",
@@ -2234,6 +2271,8 @@ class NewsAggregator:
             "upcoming_count": len(upcoming_events),
             "recent_count": len(recent_events),
         }
+        if related_selection is not None:
+            payload["related_selection"] = related_selection
         if context is not None and context.asset_class == "equity":
             provider_symbol = normalize_finviz_equity_symbol(context.symbol)
             if provider_symbol and provider_symbol != context.symbol:

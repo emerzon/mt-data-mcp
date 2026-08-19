@@ -36,6 +36,8 @@ _OPTIONS_CHAIN_COMPACT_FIELDS = (
     "premium_quote_unit",
     "volume",
     "open_interest",
+    "implied_volatility",
+    "in_the_money",
     "contract_as_of",
     "contract_data_age_seconds",
     "contract_data_stale",
