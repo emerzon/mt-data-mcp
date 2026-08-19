@@ -158,6 +158,11 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method pelt \
 
 Supported cost models are `l1`, `l2`, `rbf`, `normal`, and `ar`. Set a numeric `penalty` for explicit sensitivity or keep `penalty=auto` for a variance-scaled default.
 
+An explicit `--start` / `--end` range is analyzed in full by default. Add
+`--fetch-limit` or `--lookback` only when you deliberately want a recent tail
+of that range. Requests without dates keep the timeframe-based recent-history
+default.
+
 **When to use:**
 - Retrospective structural-break detection
 - Segmenting history before fitting forecasts

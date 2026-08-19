@@ -235,12 +235,17 @@ class MarketRelativeStrengthRequest(BaseModel):
             for item in str(self.symbols or "").split(",")
             if item.strip()
         }
+        if self.symbols is not None and not explicit_symbols:
+            raise ValueError(
+                "symbols was supplied but contains no symbols; omit it to rank "
+                "the selected/default universe"
+            )
+        if explicit_symbols and self.group:
+            raise ValueError(
+                "market_relative_strength cannot combine symbols with group; "
+                "choose one selector mode"
+            )
         if len(explicit_symbols) == 1:
-            if self.group:
-                raise ValueError(
-                    "market_relative_strength cannot combine one symbol with group; "
-                    "omit symbols to rank the selected group."
-                )
             raise ValueError(
                 "market_relative_strength requires at least two comma-separated symbols; "
                 "omit symbols and use group to rank an MT5 group."

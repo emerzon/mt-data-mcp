@@ -4431,6 +4431,18 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
+            if symbols is not None and not any(
+                item.strip()
+                for item in str(symbols).replace(";", ",").split(",")
+            ):
+                return _market_scan_error(
+                    (
+                        "symbols was supplied but contains no symbols; omit it "
+                        "to scan the visible universe."
+                    ),
+                    code="empty_symbol_selector",
+                    request=request,
+                )
             symbols_value = str(symbols or "").strip()
             symbols_filter = symbols_value or None
             if universe_value == "all" and not symbols_filter and not group:

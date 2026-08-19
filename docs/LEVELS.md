@@ -133,6 +133,9 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
   --source auto --bucket-points 10 --json
 ```
 
+Choose one window mode. A calendar `start` cannot be combined with
+`timeframe` or `lookback`; `end` may anchor either mode.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `start` / `end` | — | Calendar window for the profile. |

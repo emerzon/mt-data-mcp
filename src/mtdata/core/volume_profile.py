@@ -900,6 +900,15 @@ def compute_volume_profile_payload(
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
+    if start is not None and (timeframe is not None or lookback is not None):
+        return {
+            "error": (
+                "Choose one volume-profile window mode: start/end calendar "
+                "bounds, or timeframe/lookback bars. Do not combine start with "
+                "timeframe or lookback."
+            ),
+            "code": "volume_profile_conflicting_window_selectors",
+        }
     try:
         value_area_value = float(value_area_pct)
     except (TypeError, ValueError):

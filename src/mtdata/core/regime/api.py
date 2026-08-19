@@ -1138,13 +1138,13 @@ def regime_detect(  # noqa: C901
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over a bounded history window.
 
-    - fetch_limit: Optional bars to fetch/analyze. If omitted, the fetch window tracks
-      the effective lookback plus warmup bars.
+    - fetch_limit: Optional bars to fetch/analyze. For recent-history requests,
+      omission tracks the effective lookback plus warmup bars. An explicit
+      start/end range is analyzed in full unless fetch_limit or lookback is supplied.
       For rule_based, an explicit fetch_limit also becomes params.window_bars when
       that parameter and lookback are omitted; at least 20 bars are required.
-    - start/end: Optional UTC-compatible analysis window. If provided, `fetch_limit`
-      caps bars analysed after the window is fetched; omitted fetch_limit uses the
-      effective lookback cap.
+    - start/end: Optional UTC-compatible analysis window. If provided, an explicit
+      `fetch_limit` or `lookback` caps bars analyzed after the window is fetched.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
       Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' (Gaussian hidden Markov model), 'gmm' (i.i.d. Gaussian mixture),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
@@ -1385,6 +1385,7 @@ def regime_detect(  # noqa: C901
 
         rule_based_config: Optional[Dict[str, Any]] = None
         effective_fetch_limit = _history_fetch_limit(fetch_limit, lookback)
+        full_explicit_range = bool(start or end) and fetch_limit is None and requested_lookback < 0
         if method == "rule_based":
             efficiency_threshold, efficiency_error = _coerce_param(
                 p,
@@ -1456,7 +1457,7 @@ def regime_detect(  # noqa: C901
             history_kwargs.update({"start": start, "end": end})
         df = _fetch_history(symbol, timeframe, effective_fetch_limit, **history_kwargs)
         fetched_range_bars = len(df)
-        if (start or end) and len(df) > effective_fetch_limit:
+        if (start or end) and not full_explicit_range and len(df) > effective_fetch_limit:
             df = df.iloc[-effective_fetch_limit:].reset_index(drop=True)
         if start or end:
             analysis_window_meta.update(
@@ -1464,7 +1465,9 @@ def regime_detect(  # noqa: C901
                     "range_bars_fetched": int(fetched_range_bars),
                     "bars_analyzed": int(len(df)),
                     "truncated": bool(fetched_range_bars > len(df)),
-                    "fetch_limit_applied": int(effective_fetch_limit),
+                    "fetch_limit_applied": (
+                        None if full_explicit_range else int(effective_fetch_limit)
+                    ),
                 }
             )
             if len(df) and "time" in df:
@@ -1508,7 +1511,11 @@ def regime_detect(  # noqa: C901
             warmup_bars = max(0, int(len(df)) - bars_analyzed)
         else:
             analysis_limit = (
-                int(fetch_limit) if fetch_limit is not None else int(lookback)
+                int(x.size)
+                if full_explicit_range
+                else int(fetch_limit)
+                if fetch_limit is not None
+                else int(lookback)
             )
             observations_available = int(x.size)
             if observations_available > analysis_limit:

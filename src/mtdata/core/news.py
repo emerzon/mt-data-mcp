@@ -10,6 +10,7 @@ from ..services.unified_news import fetch_unified_news
 from ..shared.schema import DetailLiteral
 from ..utils.time import format_datetime_utc, format_relative_time
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import build_pagination_meta, normalize_output_verbosity_detail
 
@@ -591,6 +592,16 @@ def news(
         - `matching`: summary of the relevance model
     """
 
+    if symbol is not None and not any(
+        item.strip()
+        for item in str(symbol).replace(";", ",").split(",")
+    ):
+        return build_error_payload(
+            "symbol was supplied but is empty; omit it for market-wide news.",
+            code="empty_symbol_selector",
+            operation="news",
+            remediation="Provide one symbol or omit the symbol argument.",
+        )
     detail_mode = normalize_output_verbosity_detail(detail)
     limit_value: Optional[int] = None
     if limit is not None:

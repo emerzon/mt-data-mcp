@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from mtdata.core.radar import MarketRadarRequest, parse_radar_symbols, run_market_radar
 from mtdata.core.web_api import app
@@ -14,6 +16,13 @@ _client = TestClient(app)
 def test_parse_radar_symbols_caps_and_dedupes() -> None:
     symbols = parse_radar_symbols("eurusd, GBPUSD, EURUSD, , XAUUSD", limit=2)
     assert symbols == ["EURUSD", "GBPUSD"]
+
+
+def test_market_radar_rejects_explicit_empty_watchlist() -> None:
+    with pytest.raises(ValidationError, match="contains no symbols"):
+        MarketRadarRequest(symbols=" , ; ")
+
+    assert MarketRadarRequest().symbols is None
 
 
 def _scan_rows(*symbols: str) -> Dict[str, Any]:

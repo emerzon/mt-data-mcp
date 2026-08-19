@@ -113,3 +113,37 @@ def test_pelt_lookback_bounds_analyzed_window(monkeypatch):
         "bars_analyzed": 50,
         "analysis_limit": 50,
     }
+
+
+def test_pelt_explicit_range_without_cap_analyzes_full_window(monkeypatch):
+    returns = np.linspace(-0.002, 0.002, 239)
+    close = 100.0 * np.exp(np.r_[0.0, np.cumsum(returns)])
+    frame = pd.DataFrame(
+        {
+            "time": np.arange(
+                1_700_000_000,
+                1_700_000_000 + len(close) * 3600,
+                3600,
+            ),
+            "close": close,
+        }
+    )
+    monkeypatch.setattr(regime, "_regime_connection_error", lambda: None)
+    monkeypatch.setattr(regime, "_fetch_history", lambda *args, **kwargs: frame)
+
+    result = _raw_regime_detect()(
+        symbol="TEST",
+        timeframe="H1",
+        start="2025-01-01",
+        end="2025-02-01",
+        method="pelt",
+        target="return",
+        params={"penalty": "auto", "min_size": 5},
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert result["analysis_window"]["bars_analyzed"] == 239
+    assert result["analysis_window"]["analysis_limit"] == 239
+    assert result["analysis_window"]["truncated"] is False
+    assert result["analysis_window"]["fetch_limit_applied"] is None

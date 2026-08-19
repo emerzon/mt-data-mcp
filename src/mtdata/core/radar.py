@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.time import format_datetime_utc
@@ -93,6 +93,15 @@ class MarketRadarRequest(BaseModel):
         description=f"Maximum symbols to return (cap {RADAR_MAX_SYMBOLS}).",
     )
     detail: DetailLiteral = Field(default="compact")
+
+    @model_validator(mode="after")
+    def _reject_empty_explicit_watchlist(self) -> "MarketRadarRequest":
+        if self.symbols is not None and not parse_radar_symbols(self.symbols):
+            raise ValueError(
+                "symbols was supplied but contains no symbols; omit it to use "
+                "the default radar seed"
+            )
+        return self
 
 
 def parse_radar_symbols(value: Any, *, limit: int = RADAR_MAX_SYMBOLS) -> List[str]:
