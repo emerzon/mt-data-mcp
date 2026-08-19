@@ -1352,6 +1352,8 @@ def _option_premium_contract() -> Dict[str, Any]:
         "units": {
             "option_premium": "currency_per_underlying_unit",
             "contract_multiplier": "underlying_units_per_contract",
+            "percent_change": "percentage_points (1.0 = 1%)",
+            "implied_volatility": "decimal_fraction (1.0 = 100%)",
         },
         "contract_premium_formula": (
             "cash premium = quoted bid/ask/last * contract_multiplier"

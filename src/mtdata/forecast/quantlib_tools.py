@@ -168,6 +168,11 @@ def price_barrier_option_quantlib(
 
     if not (spot_val > 0 and strike_val > 0 and barrier_val > 0 and maturity_val > 0 and vol > 0):
         return {"error": "spot/strike/barrier/maturity_days/volatility must be positive"}
+    if not math.isfinite(rebate_val) or rebate_val < 0:
+        return {
+            "error": "rebate must be finite and nonnegative",
+            "error_code": "invalid_rebate",
+        }
 
     option_type_norm = str(option_type).strip().lower()
     barrier_type_norm = str(barrier_type).strip().lower()
@@ -808,6 +813,60 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
                 "underlying_as_of timestamp."
             ),
         }
+    valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
+    observation_day = _chain_observation_date(
+        spot_as_of,
+        timezone_name=valuation_timezone,
+    )
+    if observation_day is None:
+        return {
+            "error": (
+                "Options provider timestamp is required to anchor Heston "
+                "calibration to a single market snapshot."
+            ),
+            "error_code": "chain_observation_time_unavailable",
+            "spot_as_of": spot_as_of,
+            "valuation_timezone": valuation_timezone,
+            "remediation": (
+                "Retry with a provider response that includes a timezone-qualified "
+                "as_of timestamp."
+            ),
+        }
+    if valuation_date is None:
+        valuation_day = observation_day
+        valuation_date_source = "chain_observation_date"
+    else:
+        try:
+            valuation_day = _dt.datetime.strptime(
+                str(valuation_date).strip(), "%Y-%m-%d"
+            ).date()
+        except (TypeError, ValueError):
+            return {
+                "error": f"Invalid valuation_date: {valuation_date}. Use YYYY-MM-DD.",
+                "symbol": symbol,
+                "expiration": expiration,
+                "valuation_date": valuation_date,
+            }
+        if valuation_day != observation_day:
+            return {
+                "error": (
+                    "valuation_date must match the options chain observation date. "
+                    f"Received valuation_date={valuation_day.isoformat()} and "
+                    f"chain_observation_date={observation_day.isoformat()}."
+                ),
+                "error_code": "valuation_date_chain_mismatch",
+                "symbol": symbol,
+                "expiration": expiration,
+                "valuation_date": valuation_day.isoformat(),
+                "chain_observation_date": observation_day.isoformat(),
+                "spot_as_of": spot_as_of,
+                "valuation_timezone": valuation_timezone,
+                "remediation": (
+                    "Omit valuation_date to use the chain observation date, or request "
+                    "a chain snapshot from the intended valuation date."
+                ),
+            }
+        valuation_date_source = "explicit_chain_observation_date"
 
     rows: List[Dict[str, Any]] = []
     contract_quality_rejections: Dict[str, int] = {}
@@ -879,6 +938,10 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
             "calibration_data_status": "unusable_contracts",
             "usable_for_pricing": False,
             "spot_as_of": spot_as_of,
+            "symbol": symbol,
+            "expiration": expiration,
+            "valuation_date": valuation_day.isoformat(),
+            "chain_observation_date": observation_day.isoformat(),
             "contracts_available": len(contracts),
             "contracts_with_valid_implied_volatility": contracts_with_valid_iv,
             "contracts_usable": len(rows),
@@ -926,59 +989,6 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         expiry_date = _dt.datetime.strptime(expiry_text, "%Y-%m-%d").date()
     except Exception:
         return {"error": f"Invalid expiration format: {expiry_text}"}
-    valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
-    observation_day = _chain_observation_date(
-        spot_as_of,
-        timezone_name=valuation_timezone,
-    )
-    if observation_day is None:
-        return {
-            "error": (
-                "Options provider timestamp is required to anchor Heston "
-                "calibration to a single market snapshot."
-            ),
-            "error_code": "chain_observation_time_unavailable",
-            "spot_as_of": spot_as_of,
-            "valuation_timezone": valuation_timezone,
-            "remediation": (
-                "Retry with a provider response that includes a timezone-qualified "
-                "as_of timestamp."
-            ),
-        }
-    if valuation_date is None:
-        valuation_day = observation_day
-        valuation_date_source = "chain_observation_date"
-    else:
-        try:
-            valuation_day = _dt.datetime.strptime(
-                str(valuation_date).strip(),
-                "%Y-%m-%d",
-            ).date()
-        except (TypeError, ValueError):
-            return {
-                "error": (
-                    f"Invalid valuation_date: {valuation_date}. "
-                    "Use YYYY-MM-DD."
-                )
-            }
-        if valuation_day != observation_day:
-            return {
-                "error": (
-                    "valuation_date must match the options chain observation date. "
-                    f"Received valuation_date={valuation_day.isoformat()} and "
-                    f"chain_observation_date={observation_day.isoformat()}."
-                ),
-                "error_code": "valuation_date_chain_mismatch",
-                "valuation_date": valuation_day.isoformat(),
-                "chain_observation_date": observation_day.isoformat(),
-                "spot_as_of": spot_as_of,
-                "valuation_timezone": valuation_timezone,
-                "remediation": (
-                    "Omit valuation_date to use the chain observation date, or "
-                    "request a chain snapshot from the intended valuation date."
-                ),
-            }
-        valuation_date_source = "explicit_chain_observation_date"
     if valuation_day >= expiry_date:
         return {
             "error": (

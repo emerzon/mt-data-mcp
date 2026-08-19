@@ -19,7 +19,9 @@ from mtdata.services.finviz.symbols import normalize_finviz_equity_symbol
         ("AAPL-NYQ", "AAPL"),
         ("AAPL.NAS-24", "AAPL"),
         ("msft.o", "MSFT"),
-        ("BRK.B", "BRK.B"),
+        ("BRK.B", "BRK-B"),
+        ("BRK-B.NYSE", "BRK-B"),
+        ("BRK/B.NYSE-24", "BRK-B"),
         ("EURUSD", "EURUSD"),
         ("BTC/USD", "BTC/USD"),
     ),
@@ -699,7 +701,7 @@ class TestFinvizService:
                 "ticker": "USD",
                 "event": "Out of range",
                 "category": "Test",
-                "date": "2026-01-03T08:30:00",
+                "date": "2026-01-04T08:30:00",
                 "actual": "",
                 "forecast": "",
                 "previous": "",
@@ -710,7 +712,7 @@ class TestFinvizService:
                 "ticker": "UNITEDSTANONFAR",
                 "event": "Nonfarm Payrolls",
                 "category": "Employment",
-                "date": "2026-01-04T08:30:00",
+                "date": "2026-01-05T08:30:00",
                 "actual": "",
                 "forecast": "",
                 "previous": "",
@@ -721,7 +723,7 @@ class TestFinvizService:
                 "ticker": "USD",
                 "event": "ISM Services",
                 "category": "Business",
-                "date": "2026-01-04T10:00:00",
+                "date": "2026-01-05T10:00:00",
                 "actual": "",
                 "forecast": "",
                 "previous": "",
@@ -729,7 +731,7 @@ class TestFinvizService:
             },
         ]
 
-        result = get_economic_calendar(limit=10, page=1, date_from="2026-01-04", date_to="2026-01-04")
+        result = get_economic_calendar(limit=10, page=1, date_from="2026-01-05", date_to="2026-01-05")
 
         assert result["success"] is True
         assert result["source"] == "finviz_api"
@@ -748,8 +750,8 @@ class TestFinvizService:
             impact="high",
             limit=10,
             page=1,
-            date_from="2026-01-04",
-            date_to="2026-01-05",
+            date_from="2026-01-05",
+            date_to="2026-01-06",
         )
         assert result_high["success"] is True
         assert result_high["impact"] == "high"
@@ -776,9 +778,9 @@ class TestFinvizService:
 
         get_economic_calendar(date_from="2026-01-05", limit=10, page=1)
 
-        _, kwargs = mock_fetch_items.call_args
+        _, kwargs = mock_fetch_items.call_args_list[0]
         assert kwargs["date_from"] == "2026-01-05"
-        assert kwargs["date_to"] == "2026-01-12"
+        assert kwargs["date_to"] == "2026-01-11"
 
     @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_weekend_anchor_shifts_to_monday(self, mock_fetch_items):
@@ -805,8 +807,9 @@ class TestFinvizService:
         assert result["dateFrom"] == "2025-01-05"
         assert result["dateTo"] == "2025-01-12"
 
-        _, kwargs = mock_fetch_items.call_args
+        _, kwargs = mock_fetch_items.call_args_list[0]
         assert kwargs["date_from"] == "2025-01-06"
+        assert kwargs["date_to"] == "2025-01-11"
 
     @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_accepts_iso_datetime_date_from(self, mock_fetch_items):
@@ -821,9 +824,9 @@ class TestFinvizService:
         assert result["dateFrom"] == "2025-01-05"
         assert result["dateTo"] == "2025-01-12"
 
-        _, kwargs = mock_fetch_items.call_args
+        _, kwargs = mock_fetch_items.call_args_list[0]
         assert kwargs["date_from"] == "2025-01-06"
-        assert kwargs["date_to"] == "2025-01-12"
+        assert kwargs["date_to"] == "2025-01-11"
 
     @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_earnings_calendar_api_success(self, mock_fetch_paged):
@@ -1460,7 +1463,7 @@ class TestFinvizTools:
             tool_name="finviz_fundamentals",
         )
         assert error is None
-        assert symbol == "BRK.B"
+        assert symbol == "BRK-B"
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_strips_mt5_equity_suffix(self, mock_get_fundamentals):

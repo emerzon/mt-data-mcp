@@ -120,6 +120,8 @@ def _attach_options_symbol_mapping(
     out = dict(payload)
     requested = str(requested_symbol or "").strip().upper()
     provider = str(provider_symbol or "").strip().upper()
+    if requested:
+        out["symbol"] = requested
     if requested and provider and requested != provider:
         out["requested_symbol"] = requested
         out["provider_symbol"] = provider

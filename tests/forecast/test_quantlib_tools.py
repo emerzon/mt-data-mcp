@@ -292,6 +292,18 @@ def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     assert out["valuation_date_source"] == "default_calendar_local_date"
 
 
+def test_price_barrier_option_quantlib_rejects_negative_rebate():
+    out = qtools.price_barrier_option_quantlib(
+        spot=100.0,
+        strike=100.0,
+        barrier=120.0,
+        maturity_days=30,
+        rebate=-1.0,
+    )
+
+    assert out["error_code"] == "invalid_rebate"
+
+
 def test_default_valuation_date_uses_selected_calendar_timezone():
     valuation_day, timezone_name = qtools._default_valuation_date(
         "UnitedStates.NYSE",
@@ -806,6 +818,30 @@ def test_calibrate_heston_rejects_valuation_date_outside_chain_snapshot(monkeypa
     assert out["chain_observation_date"] == "2026-12-01"
     assert out["spot_as_of"] == "2026-12-01T23:30:00Z"
     assert "Omit valuation_date" in out["remediation"]
+
+
+def test_heston_valuation_mismatch_precedes_contract_quality_failure(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            **_current_chain_snapshot("2026-12-01T23:30:00Z"),
+            "options": [],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+        valuation_date="2026-11-30",
+    )
+
+    assert out["error_code"] == "valuation_date_chain_mismatch"
+    assert out["chain_observation_date"] == "2026-12-01"
 
 
 def test_calibrate_heston_requires_chain_observation_timestamp(monkeypatch):

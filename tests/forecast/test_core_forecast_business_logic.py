@@ -4245,7 +4245,7 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
 
     out = raw_exp(symbol="AAPL.NAS-24")
     assert out["kind"] == "exp"
-    assert out["symbol"] == "AAPL"
+    assert out["symbol"] == "AAPL.NAS-24"
     assert out["requested_symbol"] == "AAPL.NAS-24"
     assert out["provider_symbol"] == "AAPL"
 
@@ -4256,7 +4256,7 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["limit"] == 20
 
     out = raw_chain(symbol="AAPL.NAS", limit=20)
-    assert out["symbol"] == "AAPL"
+    assert out["symbol"] == "AAPL.NAS"
     assert out["requested_symbol"] == "AAPL.NAS"
     assert out["provider_symbol"] == "AAPL"
 
@@ -4330,7 +4330,7 @@ def test_options_tools_resolve_spx_for_default_yahoo_provider(monkeypatch):
         raw_chain(symbol="SPX"),
         raw_cal(symbol="SPX"),
     ):
-        assert result["symbol"] == "^SPX"
+        assert result["symbol"] == "SPX"
         assert result["requested_symbol"] == "SPX"
         assert result["provider_symbol"] == "^SPX"
 

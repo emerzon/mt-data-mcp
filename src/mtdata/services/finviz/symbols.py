@@ -28,6 +28,9 @@ def normalize_finviz_equity_symbol(symbol: str) -> str:
     share-class tickers such as ``BRK.B`` are not rewritten.
     """
     normalized = str(symbol or "").strip().upper()
+    provider_symbol = normalize_equity_provider_symbol(normalized)
+    if provider_symbol != normalized:
+        return provider_symbol
     if looks_like_non_equity_symbol(normalized):
         return normalized
-    return normalize_equity_provider_symbol(normalized)
+    return provider_symbol

@@ -592,6 +592,8 @@ def _normalize_event_for(value: Any) -> str:
     if not text:
         return ""
     compact = _compact_token(text)
+    if compact in {"FDTR", "FOMC", "FEDFUNDS", "USGG20Y"}:
+        return "USD"
     if compact in _CURRENCY_CODES:
         return compact
     for currency, hints in _EVENT_FOR_HINTS.items():
@@ -751,6 +753,10 @@ def _classify_instrument(symbol: str) -> InstrumentContext:  # noqa: C901
     quote_asset: Optional[str] = None
     asset_class = "equity"
     detected_asset_class: Optional[str] = None
+    explicit_equity = any(
+        term in path_text or term in desc_text
+        for term in ("stock", "equity", "shares", "share cfd")
+    )
 
     if "/" in symbol_root:
         parts = [part for part in symbol_root.split("/") if part]
@@ -765,7 +771,11 @@ def _classify_instrument(symbol: str) -> InstrumentContext:  # noqa: C901
         base_asset = metadata_base
     if metadata_quote and not quote_asset:
         quote_asset = metadata_quote
-    if detected_asset_class == "index":
+    if explicit_equity:
+        asset_class = "equity"
+        base_asset = None
+        quote_asset = None
+    elif detected_asset_class == "index":
         quote_asset = None
 
     if detected_asset_class == "index":

@@ -354,12 +354,14 @@ def test_earnings_empty_filtered_prefix_does_not_claim_another_page(monkeypatch)
 def test_earnings_elapsed_filter_scans_beyond_public_page_limit(monkeypatch):
     class FakeFinancial:
         last_kwargs = None
+        requested_limits = []
 
         def set_filter(self, filters_dict=None, **kwargs):
             return None
 
         def screener_view(self, **kwargs):
             FakeFinancial.last_kwargs = kwargs
+            FakeFinancial.requested_limits.append(kwargs["limit"])
             elapsed = [
                 {"Ticker": f"OLD{i}", "Earnings": "Aug 10/b"}
                 for i in range(600)
@@ -380,10 +382,40 @@ def test_earnings_elapsed_filter_scans_beyond_public_page_limit(monkeypatch):
 
     result = svc.get_earnings_calendar(period="This Week", limit=2, page=1)
 
-    assert FakeFinancial.last_kwargs["limit"] == 1200
+    assert FakeFinancial.requested_limits == [50, 100, 200, 400, 800]
     assert [row["Ticker"] for row in result["earnings"]] == ["NEW0", "NEW1"]
     assert result["has_more"] is True
     assert "source_incomplete" not in result
+
+
+def test_earnings_small_page_stops_after_small_complete_prefix(monkeypatch):
+    class FakeFinancial:
+        requested_limits = []
+
+        def set_filter(self, filters_dict=None, **kwargs):
+            return None
+
+        def screener_view(self, **kwargs):
+            FakeFinancial.requested_limits.append(kwargs["limit"])
+            return pd.DataFrame(
+                {
+                    "Ticker": ["NEW0", "NEW1", "NEW2"],
+                    "Earnings": ["Aug 14/a"] * 3,
+                }
+            )
+
+    financial_mod = types.ModuleType("finvizfinance.screener.financial")
+    financial_mod.Financial = FakeFinancial
+    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
+    monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+    monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 5000)
+    monkeypatch.setattr(svc, "_finviz_market_date", lambda: date(2026, 8, 13))
+
+    result = svc.get_earnings_calendar(period="This Week", limit=2, page=1)
+
+    assert FakeFinancial.requested_limits == [50]
+    assert [row["Ticker"] for row in result["earnings"]] == ["NEW0", "NEW1"]
+    assert result["has_more"] is True
 
 
 # ---------------------------------------------------------------------------

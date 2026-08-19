@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from datetime import time as datetime_time
 from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Union
+from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from pydantic import Field
@@ -1547,6 +1548,13 @@ def _normalize_finviz_news_item(
         if target_key == "published_at":
             raw_published_at = value
             value = _normalize_finviz_published_at(value, now=now)
+        if target_key == "url" and isinstance(value, str):
+            resolved = urljoin("https://finviz.com/", value)
+            parsed_url = urlparse(resolved)
+            if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                out["url_status"] = "invalid"
+                continue
+            value = resolved
         out[target_key] = value
     reference = now or datetime.now(timezone.utc)
     if reference.tzinfo is None:
@@ -4486,6 +4494,8 @@ def finviz_calendar(
             }
         if cal != "economic" and upcoming is not None:
             return {"error": "upcoming is only supported for economic calendar."}
+        if cal != "economic" and impact is not None:
+            return {"error": "impact is only supported for economic calendar."}
 
         if cal == "economic":
             return _normalize_finviz_calendar_payload(

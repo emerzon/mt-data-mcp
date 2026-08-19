@@ -419,7 +419,7 @@ def _apply_news_global_page(
     return out
 
 
-def _apply_news_limit(
+def _apply_news_limit(  # noqa: C901
     result: Dict[str, Any],
     *,
     limit: Optional[int],
@@ -430,8 +430,19 @@ def _apply_news_limit(
     if limit is None and limit_per_bucket is None and not offset:
         return result
     if limit is not None or offset:
-        return _apply_news_global_page(result, limit=limit, offset=offset)
-
+        globally_paged = result
+        if limit_per_bucket is not None:
+            globally_paged = dict(result)
+            per_bucket = max(0, int(limit_per_bucket))
+            for key in _NEWS_BUCKET_KEYS:
+                rows = globally_paged.get(key)
+                if isinstance(rows, list):
+                    globally_paged[key] = rows[:per_bucket]
+        out = _apply_news_global_page(globally_paged, limit=limit, offset=offset)
+        if limit_per_bucket is not None:
+            out["limit_per_bucket"] = int(limit_per_bucket)
+            out["limit_scope"] = "global_and_per_bucket"
+        return out
     out = dict(result)
     total_candidates = 0
     returned = 0

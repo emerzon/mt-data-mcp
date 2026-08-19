@@ -111,16 +111,15 @@ def normalize_equity_provider_symbol(symbol: Any) -> str:
     normalized = str(symbol or "").strip().upper()
     if not normalized:
         return normalized
-    match = re.fullmatch(
-        r"([A-Z0-9]{1,6})[._-]([A-Z0-9]+)(?:[._-].*)?",
-        normalized,
-    )
-    if match is None:
-        return normalized
-    base, suffix = match.groups()
-    if suffix not in EQUITY_BROKER_SUFFIXES:
-        return normalized
-    return base
+    without_session = re.sub(r"(?:[._-]24)$", "", normalized)
+    root = without_session
+    match = re.fullmatch(r"(.+)[._-]([A-Z0-9]+)", without_session)
+    if match is not None and match.group(2) in EQUITY_BROKER_SUFFIXES:
+        root = match.group(1)
+    # Yahoo and Finviz use a hyphen for US share classes (BRK-B, BF-B).
+    if re.fullmatch(r"[A-Z0-9]{1,6}[./][A-Z]", root):
+        root = root[:-2] + "-" + root[-1]
+    return root
 
 
 def is_probably_crypto_symbol(symbol: Any) -> bool:
