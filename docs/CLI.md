@@ -108,8 +108,18 @@ complete catalog in one response.
 Compact catalog output points to the versioned full parameter schema. In
 `--detail full`, each tool includes its canonical `input_schema` plus per-field
 `parameters` metadata with requiredness, defaults, descriptions, constraints,
-and positional/option CLI forms. Nested request objects remain linked through
-the schema's `$defs` references.
+and positional/option CLI forms. The tool-level `cli` inventory comes from the
+same completed argparse command parser used at runtime, so it also records
+parser-only controls such as `--set` and `--print-config`, companion mapping
+options such as `--denoise-params`, aliases such as `--days`, hidden
+compatibility tokens, and value transformations. Nested request objects remain
+linked through the schema's `$defs` references.
+
+Optional positional values also expose their canonical named form in command
+help—for example, both `market_status EURUSD` and
+`market_status --symbol EURUSD` are discoverable. A help-keyword miss prints
+only close suggestions and discovery commands; use bare `--help` for the full
+catalog.
 
 One-shot `tools_list`, `forecast_list_methods`, and
 `forecast_list_library_models` results are cached on disk after a successful

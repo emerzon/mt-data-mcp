@@ -470,6 +470,40 @@ class TestAddForecastGenerateArgs:
         assert request.denoise == {"method": "ema"}
 
 
+@pytest.mark.parametrize(
+    ("cmd_name", "param_name", "annotation", "expected_flag"),
+    [
+        ("market_status", "symbol", Optional[str], "--symbol"),
+        ("correlation_matrix", "symbols", Optional[str], "--symbols"),
+        (
+            "forecast_list_library_models",
+            "library",
+            Optional[Literal["native", "all"]],
+            "--library",
+        ),
+    ],
+)
+def test_optional_positional_named_forms_are_visible(
+    cmd_name, param_name, annotation, expected_flag,
+):
+    parser = argparse.ArgumentParser()
+    func_info = {
+        "params": [
+            {
+                "name": param_name,
+                "type": annotation,
+                "required": False,
+                "default": None,
+            }
+        ]
+    }
+
+    add_dynamic_arguments(parser, func_info, cmd_name=cmd_name)
+
+    help_text = _strip_ansi(parser.format_help())
+    assert expected_flag in help_text
+
+
 # ========================================================================
 # add_dynamic_arguments
 # ========================================================================

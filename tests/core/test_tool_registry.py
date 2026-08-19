@@ -7,7 +7,7 @@ from io import StringIO
 from types import SimpleNamespace
 
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
-from mtdata.core._mcp_tools import registered_tool_catalog
+from mtdata.core._mcp_tools import get_tool_registry, registered_tool_catalog
 from mtdata.core.cli.api import _invoke_cli_tool_function
 from mtdata.core.error_envelope import build_error_payload
 from mtdata.core.request_context import current_request_id
@@ -309,11 +309,17 @@ def test_tools_list_full_exposes_nested_invocation_schema_and_cli_forms():
     assert proposed["$ref"] == "#/$defs/ProposedTrade"
     assert proposed["required"] is False
     assert proposed["default"] is None
-    assert proposed["cli"] == {
-        "available": True,
-        "forms": [{"kind": "option", "token": "--proposed-trade"}],
-        "value_format": "json_object",
-    }
+    assert proposed["cli"]["available"] is True
+    assert proposed["cli"]["value_format"] == "json_object"
+    assert proposed["cli"]["forms"] == [
+        {"kind": "option", "token": "--proposed-trade"},
+        {"kind": "option", "token": "--proposed-trade-params", "role": "alias"},
+        {
+            "kind": "option",
+            "token": "--proposed_trade_params",
+            "role": "compatibility_alias",
+        },
+    ]
     proposed_schema = row["input_schema"]["$defs"]["ProposedTrade"]
     assert proposed_schema["required"] == ["symbol", "side", "volume"]
     assert proposed_schema["properties"]["side"]["enum"] == ["buy", "sell"]
@@ -332,6 +338,77 @@ def test_tools_list_full_exposes_nested_invocation_schema_and_cli_forms():
     assert request.proposed_trade is not None
     assert request.proposed_trade.side == "buy"
     assert request.proposed_trade.volume == 0.01
+
+
+def test_tools_list_full_includes_parser_only_controls_and_aliases():
+    bootstrap_tools()
+    full = registered_tool_catalog(detail="full")
+    rows = {row["name"]: row for row in full["tools"]}
+
+    forecast = rows["forecast_generate"]
+    assert {"--set", "--print-config"} <= set(forecast["cli"]["public_tokens"])
+    assert {"set_overrides", "print_config"} <= set(
+        forecast["cli"]["parser_only_controls"]
+    )
+
+    candles = rows["data_fetch_candles"]
+    candle_tokens = set(candles["cli"]["public_tokens"])
+    assert {"--denoise-params", "--simplify-params", "--set"} <= candle_tokens
+    assert {form["token"] for form in candles["parameters"]["denoise"]["cli"]["forms"]} >= {
+        "--denoise",
+        "--denoise-params",
+    }
+
+    history = rows["trade_history"]
+    minutes_forms = history["parameters"]["minutes_back"]["cli"]["forms"]
+    days = next(form for form in minutes_forms if form["token"] == "--days")
+    assert days == {
+        "kind": "option",
+        "token": "--days",
+        "role": "alias",
+        "value_transform": "days_to_minutes",
+    }
+    days_binding = next(
+        binding
+        for binding in history["cli"]["bindings"]
+        if binding["destination"] == "_trade_days"
+    )
+    assert days_binding["value_transform"] == {
+        "operation": "multiply",
+        "factor": 1440,
+        "target": "minutes_back",
+    }
+
+
+def test_tools_list_cli_inventory_matches_built_command_parsers():
+    import argparse
+
+    from mtdata.core.cli.api import _add_tool_command_arguments, get_function_info
+
+    bootstrap_tools()
+    full = registered_tool_catalog(detail="full")
+    rows = {row["name"]: row for row in full["tools"]}
+    registry = get_tool_registry()
+
+    for name in (
+        "forecast_generate",
+        "data_fetch_candles",
+        "trade_history",
+        "market_status",
+        "forecast_list_library_models",
+    ):
+        parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+        _add_tool_command_arguments(
+            parser,
+            cmd_name=name,
+            func_info=get_function_info(registry[name]),
+        )
+        parser_tokens = {
+            token
+            for action in parser._actions
+            for token in action.option_strings
+        }
+        assert set(rows[name]["cli"]["accepted_tokens"]) == parser_tokens
 
 
 def test_tools_catalog_full_exposes_trading_defaults_and_venue_namespace():

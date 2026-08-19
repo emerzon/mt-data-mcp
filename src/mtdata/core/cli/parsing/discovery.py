@@ -28,12 +28,6 @@ _OPTIONAL_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("wait_event", "symbol"),
 }
 
-_HIDDEN_OPTIONAL_POSITIONAL_FLAGS: set[tuple[str, str]] = {
-    ("correlation_matrix", "symbols"),
-    ("cointegration_test", "symbols"),
-    ("causal_discover_signals", "symbols"),
-}
-
 # Choice discovery comes from the same Literal/Pydantic annotations used to
 # build public MCP schemas. Keep this map only for exceptional transport-only
 # compatibility cases.
@@ -1425,11 +1419,6 @@ def add_dynamic_arguments(  # noqa: C901
                 and str(param["name"]) == "symbols"
             ):
                 option_kwargs["nargs"] = "+"
-            if (
-                str(param["name"]) != "symbols"
-                or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_POSITIONAL_FLAGS
-            ):
-                option_kwargs["help"] = argparse.SUPPRESS
             positional_key = (str(cmd_name or ""), str(param["name"]))
             if option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_PARAMS:
                 parser.add_argument(*option_flags, **option_kwargs)

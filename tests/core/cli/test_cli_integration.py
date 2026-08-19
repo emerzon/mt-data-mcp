@@ -2716,6 +2716,9 @@ class TestHelpSuggestions:
         out = capsys.readouterr().out
         assert "No commands match 'indicatr_list'." in out
         assert "Did you mean: indicators_list" in out
+        assert "Available commands:" not in out
+        assert "market_ticker" not in out
+        assert "tools_list --search indicatr_list --json" in out
 
 
 # ========================================================================

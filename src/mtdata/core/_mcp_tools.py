@@ -332,9 +332,135 @@ def _tool_catalog_cli_binding(
     return binding
 
 
+def _tool_catalog_cli_contract(
+    tool_name: str,
+    func: Any,
+    input_schema: Dict[str, Any],
+) -> Dict[str, Any]:
+    import argparse
+
+    from .cli.api import _add_tool_command_arguments, get_function_info
+
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    func_info = get_function_info(func)
+    _add_tool_command_arguments(
+        parser,
+        cmd_name=tool_name,
+        func_info=func_info,
+    )
+    parameter_names = {
+        str(name)
+        for name in (input_schema.get("properties") or {})
+    }
+    bindings: List[Dict[str, Any]] = []
+    accepted_tokens: List[str] = []
+    public_tokens: List[str] = []
+    parser_only_controls: List[str] = []
+
+    for action in parser._actions:
+        destination = str(action.dest)
+        mapped_parameter: Optional[str]
+        if destination.startswith("_cli_option_"):
+            mapped_parameter = destination.removeprefix("_cli_option_")
+        elif destination == "_trade_days":
+            mapped_parameter = "minutes_back"
+        elif destination == "target_spec" and "target" in parameter_names:
+            mapped_parameter = "target"
+        elif destination in parameter_names:
+            mapped_parameter = destination
+        elif destination.endswith("_params") and destination[:-7] in parameter_names:
+            mapped_parameter = destination[:-7]
+        else:
+            mapped_parameter = None
+
+        is_public = action.help != argparse.SUPPRESS
+        option_strings = [str(token) for token in action.option_strings]
+        forms: List[Dict[str, Any]] = []
+        if option_strings:
+            expected = (
+                f"--{mapped_parameter.replace('_', '-')}"
+                if mapped_parameter
+                else option_strings[0]
+            )
+            for token in option_strings:
+                if token.startswith("--no-") or token.startswith("--no_"):
+                    role = "negated_option"
+                elif destination == "_trade_days":
+                    role = "alias"
+                elif token == expected:
+                    role = "canonical"
+                elif "_" in token.removeprefix("--"):
+                    role = "compatibility_alias"
+                else:
+                    role = "alias"
+                form = {
+                    "kind": "option",
+                    "token": token,
+                    "role": role,
+                    "visibility": "public" if is_public else "hidden",
+                }
+                if destination == "_trade_days":
+                    form["value_transform"] = "days_to_minutes"
+                forms.append(form)
+                if token not in accepted_tokens:
+                    accepted_tokens.append(token)
+                if is_public and token not in public_tokens:
+                    public_tokens.append(token)
+        else:
+            metavar = action.metavar or destination.upper()
+            forms.append(
+                {
+                    "kind": "positional",
+                    "token": str(metavar),
+                    "role": "canonical",
+                    "visibility": "public" if is_public else "hidden",
+                }
+            )
+
+        if action.nargs == 0:
+            value_format = "boolean"
+        elif action.nargs in {"*", "+"} or action.__class__.__name__ == "_AppendAction":
+            value_format = "repeatable_values"
+        else:
+            value_format = "scalar"
+        binding: Dict[str, Any] = {
+            "destination": destination,
+            "maps_to_parameter": mapped_parameter,
+            "parser_only": mapped_parameter is None,
+            "forms": forms,
+            "value_format": value_format,
+            "required": bool(action.required),
+        }
+        if action.nargs is not None:
+            binding["nargs"] = action.nargs
+        if action.choices is not None:
+            binding["choices"] = [str(choice) for choice in action.choices]
+        if is_public and isinstance(action.help, str) and action.help.strip():
+            binding["description"] = action.help.strip()
+        if destination == "_trade_days":
+            binding["value_transform"] = {
+                "operation": "multiply",
+                "factor": 1440,
+                "target": "minutes_back",
+            }
+        bindings.append(binding)
+        if mapped_parameter is None and is_public and destination not in parser_only_controls:
+            parser_only_controls.append(destination)
+
+    return {
+        "source": "argparse_command_parser",
+        "accepted_tokens": accepted_tokens,
+        "public_tokens": public_tokens,
+        "parser_only_controls": parser_only_controls,
+        "bindings": bindings,
+    }
+
+
 def _tool_catalog_full_parameters(
     tool_name: str,
     input_schema: Dict[str, Any],
+    *,
+    cli_contract: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     properties = input_schema.get("properties")
     if not isinstance(properties, dict):
@@ -370,6 +496,39 @@ def _tool_catalog_full_parameters(
             definitions=definitions,
         )
         parameters[str(name)] = property_schema
+    bindings = cli_contract.get("bindings") if isinstance(cli_contract, dict) else None
+    if isinstance(bindings, list):
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                continue
+            mapped_parameter = binding.get("maps_to_parameter")
+            if mapped_parameter not in parameters:
+                continue
+            cli = parameters[str(mapped_parameter)].get("cli")
+            if not isinstance(cli, dict):
+                continue
+            forms = cli.get("forms")
+            if not isinstance(forms, list):
+                forms = []
+                cli["forms"] = forms
+            existing_tokens = {
+                str(form.get("token"))
+                for form in forms
+                if isinstance(form, dict)
+            }
+            for form in binding.get("forms") or []:
+                if not isinstance(form, dict) or form.get("visibility") != "public":
+                    continue
+                token = str(form.get("token"))
+                if token in existing_tokens:
+                    continue
+                cli_form = {
+                    key: form[key]
+                    for key in ("kind", "token", "role", "value_transform")
+                    if key in form
+                }
+                forms.append(cli_form)
+                existing_tokens.add(token)
     return parameters
 
 
@@ -417,11 +576,18 @@ def _market_depth_fetch_catalog_row(*, detail_mode: str) -> Dict[str, Any]:
             "market_depth_fetch",
             market_depth_fetch,
         )
+        cli_contract = _tool_catalog_cli_contract(
+            "market_depth_fetch",
+            market_depth_fetch,
+            input_schema,
+        )
         row["schema_version"] = _TOOL_CATALOG_SCHEMA_VERSION
         row["input_schema"] = input_schema
+        row["cli"] = cli_contract
         row["parameters"] = _tool_catalog_full_parameters(
             "market_depth_fetch",
             input_schema,
+            cli_contract=cli_contract,
         )
         row["module"] = "mtdata.core.market_depth"
     return row
@@ -458,11 +624,14 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
             row["parameters"] = _tool_catalog_parameters(func)
         if detail_mode == "full":
             input_schema = _tool_catalog_input_schema(name, func)
+            cli_contract = _tool_catalog_cli_contract(name, func, input_schema)
             row["schema_version"] = _TOOL_CATALOG_SCHEMA_VERSION
             row["input_schema"] = input_schema
+            row["cli"] = cli_contract
             row["parameters"] = _tool_catalog_full_parameters(
                 name,
                 input_schema,
+                cli_contract=cli_contract,
             )
             row["module"] = str(getattr(func, "__module__", "") or "")
         tools.append(row)

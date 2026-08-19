@@ -1706,6 +1706,46 @@ _GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS: set[str] = {
 }
 
 
+def _add_tool_command_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    cmd_name: str,
+    func_info: Dict[str, Any],
+    param_docs: Optional[Dict[str, str]] = None,
+) -> None:
+    """Add the exact command-specific and universal CLI argument contract."""
+    if cmd_name == "forecast_generate":
+        add_global_args_to_parser(
+            parser,
+            exclude_params=["symbol", "timeframe"],
+            suppress_defaults=True,
+        )
+        _add_forecast_generate_args(parser)
+        return
+
+    existing_param_names = [str(param["name"]) for param in func_info["params"]]
+    exclude_globals = list(existing_param_names)
+    if "timeframe" not in existing_param_names:
+        exclude_globals.append("timeframe")
+    if cmd_name == "report_generate":
+        exclude_globals.append("timeframe")
+    if cmd_name.startswith("finviz_"):
+        exclude_globals.append("timeframe")
+    if cmd_name in _TIMEFRAMELESS_GLOBAL_COMMANDS:
+        exclude_globals.append("timeframe")
+    add_global_args_to_parser(
+        parser,
+        exclude_params=exclude_globals,
+        suppress_defaults=True,
+    )
+    add_dynamic_arguments(
+        parser,
+        func_info,
+        param_docs,
+        cmd_name=cmd_name,
+    )
+
+
 def _format_cli_literal(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -1966,10 +2006,11 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         suggestions = _suggest_commands(functions, query)
         if suggestions:
             print(f"Did you mean: {', '.join(suggestions)}")
-        print("Available commands:")
-        for name in sorted(functions.keys()):
-            print(f"  {name}")
-        print(f"\nTip: run `{CLI_PROGRAM} --help` to view the full list.")
+        print(f"Run `{CLI_PROGRAM} --help` to view the full command list.")
+        print(
+            f"Run `{CLI_PROGRAM} tools_list --search {query} --json` "
+            "for machine-readable discovery."
+        )
         return
     print(f"Extended help for query: {query}")
     print("")
@@ -2175,25 +2216,11 @@ def main():  # noqa: C901
                 f"{summary}\n\n{LIVE_TRADE_MUTATION_WARNING}"
             )
 
-        # Add global parameters to each subparser, excluding any that conflict with function params
-        existing_param_names = [p["name"] for p in func_info["params"]]
-        exclude_globals = list(existing_param_names)
-        if "timeframe" not in existing_param_names:
-            exclude_globals.append("timeframe")
-        if cmd_name == "report_generate":
-            exclude_globals.append("timeframe")
-        # Finviz tools don't use MT5 timeframe
-        if cmd_name.startswith("finviz_"):
-            exclude_globals.append("timeframe")
-        if cmd_name in _TIMEFRAMELESS_GLOBAL_COMMANDS:
-            exclude_globals.append("timeframe")
-        add_global_args_to_parser(
-            cmd_parser, exclude_params=exclude_globals, suppress_defaults=True
-        )
-
-        # Add dynamic arguments
-        add_dynamic_arguments(
-            cmd_parser, func_info, meta.get("param_docs"), cmd_name=cmd_name
+        _add_tool_command_arguments(
+            cmd_parser,
+            cmd_name=cmd_name,
+            func_info=func_info,
+            param_docs=meta.get("param_docs"),
         )
 
         # Set the command function
@@ -2220,12 +2247,12 @@ def main():  # noqa: C901
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
-        # Add global parameters to each subparser, excluding any that conflict
-        exclude_globals = ["symbol", "timeframe"]
-        add_global_args_to_parser(
-            cmd_parser, exclude_params=exclude_globals, suppress_defaults=True
+        _add_tool_command_arguments(
+            cmd_parser,
+            cmd_name=cmd_name,
+            func_info=func_info,
+            param_docs=meta.get("param_docs"),
         )
-        _add_forecast_generate_args(cmd_parser)
 
         def _forecast_generate_cmd(args):
             if not hasattr(args, "symbol") or not str(args.symbol or "").strip():
