@@ -2722,7 +2722,9 @@ def run_shell(
                 timeframe_commands=timeframe_commands,
             )
             effective_command_argv = [*command_inherited, *command_argv]
-            if command_argv and command_argv[0].lower() == "shell":
+            raw_command = _resolve_raw_cli_command(effective_command_argv)
+            normalized_command = raw_command.replace("-", "_")
+            if normalized_command == "shell":
                 message = "A shell session is already active."
                 if interactive:
                     print(message, file=sys.stderr)
@@ -2738,8 +2740,6 @@ def run_shell(
                         }
                     )
                 continue
-            raw_command = _resolve_raw_cli_command(effective_command_argv)
-            normalized_command = raw_command.replace("-", "_")
             shell_commands = {
                 *(command_names if command_names is not None else known_command_names()),
                 "shell",

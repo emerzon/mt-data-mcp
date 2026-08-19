@@ -438,6 +438,40 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
 
 
 @pytest.mark.parametrize(
+    "nested_command",
+    ["shell", "--json shell", "--timeframe H4 shell", "--precision 4 shell"],
+)
+def test_noninteractive_shell_rejects_nested_shell_after_global_options(
+    monkeypatch,
+    capsys,
+    nested_command,
+):
+    from mtdata.core.cli import api
+
+    observed = []
+
+    def _main():
+        observed.append(list(api.sys.argv[1:]))
+        return 0
+
+    monkeypatch.setattr(
+        api.sys,
+        "stdin",
+        io.StringIO(f"{nested_command}\nmarket_ticker EURUSD\n"),
+    )
+    monkeypatch.setattr(api, "main", _main)
+
+    assert api.run_shell(interactive=False) == 2
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(records) == 2
+    assert records[0]["status"] == 2
+    assert records[0]["error"] == "A shell session is already active."
+    assert records[1]["line"] == 2
+    assert records[1]["success"] is True
+    assert observed == [["market_ticker", "EURUSD"]]
+
+
+@pytest.mark.parametrize(
     "batch",
     [
         "market_ticker TOOL_FAILURE\nmarket_ticker USAGE_FAILURE\n",
