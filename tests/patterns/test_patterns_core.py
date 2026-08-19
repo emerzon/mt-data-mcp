@@ -713,6 +713,44 @@ def test_build_pattern_response_compact_detail_returns_summary():
     assert "patterns" not in compact
 
 
+def test_compact_patterns_payload_keeps_schema_when_empty():
+    compact = patterns_support_mod._compact_patterns_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "lookback": 1,
+            "requested_lookback": 1,
+            "lookback_satisfied": True,
+            "mode": "candlestick",
+            "count": 0,
+            "data": [],
+            "effective_window": {
+                "start": "2026-08-18T23:00:00Z",
+                "end": "2026-08-18T23:00:00Z",
+            },
+            "note": "No candlestick patterns detected in the requested window.",
+        },
+        preview_limit=3,
+    )
+
+    assert compact["success"] is True
+    assert compact["n_patterns"] == 0
+    assert compact["patterns_shown"] == 0
+    assert compact["top_patterns"] == []
+    assert compact["requested_lookback"] == 1
+    assert compact["lookback_satisfied"] is True
+    assert compact["effective_window"] == {
+        "start": "2026-08-18T23:00:00Z",
+        "end": "2026-08-18T23:00:00Z",
+    }
+    assert compact["note"] == (
+        "No candlestick patterns detected in the requested window."
+    )
+    assert "count" not in compact
+    assert "data" not in compact
+
+
 def test_build_pattern_response_compact_explains_neutral_high_score_patterns():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     patterns = [

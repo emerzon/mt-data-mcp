@@ -557,11 +557,6 @@ def _compact_patterns_payload(  # noqa: C901
         rows = [row for row in payload.get("patterns", []) if isinstance(row, dict)]
     elif isinstance(payload.get("data"), list):
         rows = [row for row in payload.get("data", []) if isinstance(row, dict)]
-    if not rows:
-        out = dict(payload)
-        if "adaptation" in out:
-            out["adaptation"] = _compact_elliott_adaptation(out.get("adaptation"))
-        return out
 
     indexed_rows: List[Tuple[int, Dict[str, Any]]] = []
     for idx, row in enumerate(rows):
@@ -739,6 +734,8 @@ def _compact_patterns_payload(  # noqa: C901
         "symbol": payload.get("symbol"),
         "timeframe": payload.get("timeframe"),
         "lookback": payload.get("lookback"),
+        "requested_lookback": payload.get("requested_lookback"),
+        "lookback_satisfied": payload.get("lookback_satisfied"),
         "mode": payload.get("mode"),
         "n_patterns": total_i,
         "applied_last_n_bars": payload.get("applied_last_n_bars"),
@@ -820,8 +817,7 @@ def _compact_patterns_payload(  # noqa: C901
                 if key not in top_patterns[0]
             },
         }
-    if top_patterns:
-        compact["top_patterns"] = top_patterns
+    compact["top_patterns"] = top_patterns
 
     for key in (
         "engine",
@@ -838,6 +834,7 @@ def _compact_patterns_payload(  # noqa: C901
     for key in (
         "warnings",
         "note",
+        "diagnostic",
         "completed_patterns_hidden",
         "broken_levels_hidden",
         "completed_patterns_preview",
