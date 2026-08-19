@@ -16,6 +16,7 @@ from ..shared.symbols import (
     normalize_equity_provider_symbol,
 )
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
 
@@ -856,6 +857,20 @@ def options_barrier_price(
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
 
     def _run() -> Dict[str, Any]:
+        if int(maturity_days) <= 0:
+            return build_error_payload(
+                "maturity_days must be a positive integer.",
+                code="invalid_parameter",
+                operation="options_barrier_price",
+                details={
+                    "parameter": "maturity_days",
+                    "received": int(maturity_days),
+                    "required_minimum": 1,
+                },
+                remediation="Set maturity_days to at least 1.",
+                valid_values={"maturity_days": "integer >= 1"},
+                example="--maturity-days 30",
+            )
         payload = _impl(
             spot=float(spot),
             strike=float(strike),

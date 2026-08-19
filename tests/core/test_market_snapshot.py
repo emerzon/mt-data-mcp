@@ -39,6 +39,24 @@ def test_market_snapshot_rejects_invalid_forecast_horizon_before_preflight():
     preflight.assert_not_called()
 
 
+def test_market_snapshot_rejects_unknown_section_with_valid_values():
+    result = snapshot_mod.market_snapshot.__wrapped__(
+        symbol="EURUSD",
+        sections="nope",
+    )
+
+    assert result["error_code"] == "invalid_parameter"
+    assert result["details"] == {"parameter": "sections", "received": "nope"}
+    assert result["valid_values"]["sections"] == [
+        "forecast",
+        "levels",
+        "patterns",
+        "quote",
+        "regime",
+        "status",
+    ]
+
+
 def test_market_snapshot_rejects_horizon_above_forecast_max_before_preflight():
     with (
         patch.object(snapshot_mod, "_preflight_snapshot_symbol") as preflight,

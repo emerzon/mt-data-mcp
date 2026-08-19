@@ -4277,6 +4277,16 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["spot"] == 100.0
     assert out["valuation_date"] == "2026-07-03"
 
+    rejected = raw_price(
+        spot=100.0,
+        strike=105.0,
+        barrier=120.0,
+        maturity_days=0,
+    )
+    assert rejected["error_code"] == "invalid_parameter"
+    assert rejected["details"]["required_minimum"] == 1
+    assert rejected["valid_values"] == {"maturity_days": "integer >= 1"}
+
     out = raw_cal(
         symbol="AAPL",
         expiration="2026-06-19",

@@ -892,7 +892,18 @@ def market_snapshot(
     """
 
     def _run() -> Dict[str, Any]:
-        selected = _parse_snapshot_sections(sections)
+        try:
+            selected = _parse_snapshot_sections(sections)
+        except ValueError as exc:
+            return build_error_payload(
+                str(exc),
+                code="invalid_parameter",
+                operation="market_snapshot",
+                details={"parameter": "sections", "received": sections},
+                remediation="Choose one or more supported snapshot sections.",
+                valid_values={"sections": sorted(_VALID_SECTIONS)},
+                example="--sections quote,status,levels",
+            )
         detail_mode = str(detail or "compact").strip().lower()
         if "forecast" in selected and not 1 <= int(horizon) <= MAX_FORECAST_HORIZON:
             return build_error_payload(

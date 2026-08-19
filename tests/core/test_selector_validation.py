@@ -48,3 +48,14 @@ def test_level_distance_cap_accepts_explicit_none(tool) -> None:
     assert adapter.validate_python(0.0) == 0.0
     with pytest.raises(ValidationError):
         adapter.validate_python(-0.1)
+
+
+def test_support_resistance_small_lookback_is_actionable_insufficient_data() -> None:
+    result = _unwrap(support_resistance_levels)(
+        symbol="EURUSD",
+        lookback=1,
+    )
+
+    assert result["error_code"] == "insufficient_data"
+    assert result["details"]["required_minimum"] == 3
+    assert result["remediation"] == "Increase lookback to at least 3 bars."

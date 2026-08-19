@@ -436,7 +436,25 @@ def run_patterns_detect(  # noqa: C901
     if request.whitelist and mode_value != "candlestick":
         return {"error": "whitelist applies only to mode='candlestick'."}
     if request.engine is not None and mode_value != "classic":
-        return {"error": "engine applies only to mode='classic'."}
+        return {
+            "success": False,
+            "error": "engine applies only to mode='classic'.",
+            "error_code": "incompatible_parameters",
+            "details": {
+                "parameter": "engine",
+                "received": request.engine,
+                "mode": mode_value,
+            },
+            "valid_values": {
+                "engine": list(deps.available_classic_engines()),
+                "mode_with_engine": ["classic"],
+            },
+            "remediation": (
+                "Remove engine for this mode, or set mode='classic' and choose "
+                "a supported classic engine."
+            ),
+            "example": "--mode classic --engine native",
+        }
     if (
         bool(request.ensemble) or request.ensemble_weights is not None
     ) and mode_value != "classic":

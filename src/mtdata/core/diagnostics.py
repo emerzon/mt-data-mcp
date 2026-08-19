@@ -27,6 +27,7 @@ from ..utils.mt5 import (
 from ..utils.time import format_datetime_utc
 from ..utils.utils import _parse_end_datetime
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
 from .runtime_metadata import run_mt5_logged_operation
@@ -269,7 +270,15 @@ def stationarity_test(
                 )
             }
         if not 0.0 < float(significance) < 1.0:
-            return {"error": "significance must be between 0 and 1."}
+            return build_error_payload(
+                "significance must be strictly between 0 and 1.",
+                code="invalid_parameter",
+                operation="stationarity_test",
+                details={"parameter": "significance", "received": significance},
+                remediation="Set significance to a decimal such as 0.05.",
+                valid_values={"significance": "0 < value < 1"},
+                example="--significance 0.05",
+            )
         requested = [part.strip().lower() for part in str(tests or "").split(",") if part.strip()]
         requested = list(dict.fromkeys(requested))
         invalid = [name for name in requested if name not in {"adf", "kpss", "pp"}]
@@ -771,13 +780,26 @@ def volatility_term_structure(
         maximum_horizon = max(horizon_values)
         minimum_lookback = max(30, maximum_horizon + 1)
         if int(lookback) < minimum_lookback:
-            return {
-                "error": (
+            return build_error_payload(
+                (
                     f"lookback must be at least {minimum_lookback} for the requested "
                     f"horizons; the largest horizon ({maximum_horizon}) must be "
                     "smaller than lookback."
-                )
-            }
+                ),
+                code="incompatible_parameters",
+                operation="volatility_term_structure",
+                details={
+                    "parameter": "lookback",
+                    "received": int(lookback),
+                    "required_minimum": minimum_lookback,
+                    "largest_horizon": maximum_horizon,
+                },
+                remediation=(
+                    f"Increase lookback to at least {minimum_lookback}, or reduce "
+                    "the largest requested horizon."
+                ),
+                example=f"--lookback {minimum_lookback} --horizons {horizons}",
+            )
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
         frame, fetch_error = _fetch_diagnostic_bars(

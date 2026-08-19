@@ -64,6 +64,7 @@ from ..utils.utils import (
     validate_historical_range,
 )
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import attach_completed_bar_input_policy
 from .runtime_metadata import display_timezone_label, run_mt5_logged_operation
@@ -1116,6 +1117,19 @@ def support_resistance_levels(
 
     def _run() -> Dict[str, Any]:
         try:
+            if int(lookback) < 3:
+                return build_error_payload(
+                    "Need at least 3 bars to compute support/resistance levels.",
+                    code="insufficient_data",
+                    operation="support_resistance_levels",
+                    details={
+                        "parameter": "lookback",
+                        "received": int(lookback),
+                        "required_minimum": 3,
+                    },
+                    remediation="Increase lookback to at least 3 bars.",
+                    example="--lookback 200",
+                )
             range_error = validate_historical_range(start, end)
             if range_error is not None:
                 return range_error

@@ -56,4 +56,8 @@ def test_patterns_detect_rejects_engine_for_non_classic_mode() -> None:
         engine="stock_pattern",
     )
 
-    assert out == {"error": "engine applies only to mode='classic'."}
+    assert out["error"] == "engine applies only to mode='classic'."
+    assert out["error_code"] == "incompatible_parameters"
+    assert out["details"]["mode"] == "candlestick"
+    assert out["valid_values"]["mode_with_engine"] == ["classic"]
+    assert out["example"] == "--mode classic --engine native"
