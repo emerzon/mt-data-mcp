@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from pydantic import Field
 
+from ..services.data_service import _parse_candle_calendar_bound
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
@@ -403,17 +404,41 @@ def _expand_symbols_for_group_path(
 def _resolve_history_window(
     start: Optional[str],
     end: Optional[str],
+    *,
+    timeframe: Optional[str] = None,
 ) -> Tuple[Optional[datetime], Optional[datetime], Optional[str]]:
     range_error = validate_historical_range(start, end)
     if range_error is not None:
         code = str(range_error.get("error_code") or "invalid_date_range")
         return None, None, f"{code}: {range_error['error']}"
-    start_dt = _parse_start_datetime(start) if start else None
+    start_dt = (
+        _parse_candle_calendar_bound(
+            start,
+            timeframe=timeframe,
+            end_bound=False,
+        )
+        or _parse_start_datetime(start)
+        if start
+        else None
+    )
     if start and start_dt is None:
         return None, None, "Invalid start time."
-    end_dt = _parse_end_datetime(end) if end else None
+    end_dt = (
+        _parse_candle_calendar_bound(
+            end,
+            timeframe=timeframe,
+            end_bound=True,
+        )
+        or _parse_end_datetime(end)
+        if end
+        else None
+    )
     if end and end_dt is None:
         return None, None, "Invalid end time."
+    if start_dt is not None and start_dt.tzinfo is not None:
+        start_dt = start_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    if end_dt is not None and end_dt.tzinfo is not None:
+        end_dt = end_dt.astimezone(timezone.utc).replace(tzinfo=None)
     if start_dt is not None and end_dt is None:
         end_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
@@ -552,7 +577,11 @@ def _fetch_series(
     err = _ensure_symbol_ready(symbol)
     if err:
         return pd.Series(dtype=float), err
-    start_dt, end_dt, window_error = _resolve_history_window(start, end)
+    start_dt, end_dt, window_error = _resolve_history_window(
+        start,
+        end,
+        timeframe=timeframe_key,
+    )
     if window_error:
         return pd.Series(dtype=float), window_error
 
@@ -1869,7 +1898,7 @@ def causal_discover_signals(  # noqa: C901
     window_bars: Annotated[int, Field(ge=2)] = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    max_lag: int = 5,
+    max_lag: Annotated[int, Field(ge=1)] = 5,
     significance: float = 0.05,
     include_incomplete: bool = False,
     transform: str = "log_return",
@@ -3030,7 +3059,7 @@ def cross_correlation(  # noqa: C901
     method: Literal["pearson", "spearman"] = "pearson",
     transform: Literal["log_return", "pct", "diff", "level", "log_level"] = "log_return",
     min_overlap: Annotated[int, Field(ge=2)] = 50,
-    bootstrap_samples: Annotated[int, Field(ge=0)] = 300,
+    bootstrap_samples: Annotated[int, Field(ge=20, le=2000)] = 300,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -3288,7 +3317,7 @@ def cointegration_test(  # noqa: C901
     timeframe: TimeframeLiteral = "H1",
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
-    window_bars: int = 500,
+    window_bars: Annotated[int, Field(ge=20)] = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
     transform: str = "log_level",

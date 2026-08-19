@@ -412,5 +412,5 @@ def test_fetch_history_handles_invalid_as_of_and_empty_rates(monkeypatch):
 
     monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1))
     monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: [])
-    with pytest.raises(RuntimeError, match="Failed to get rates"):
+    with pytest.raises(ValueError, match="No data is available"):
         fc.fetch_history("EURUSD", "H1", need=2)

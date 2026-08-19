@@ -107,7 +107,18 @@ def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
         if m == "bad":
             return {"results": {m: {"success": False}}}
         if m == "nested_metric":
-            return {"results": {m: {"success": True, "metrics": {"sharpe_ratio": 2.5}}}}
+            return {
+                "results": {
+                    m: {
+                        "success": True,
+                        "metrics": {
+                            "sharpe_ratio": 2.5,
+                            "trades_observed": 30,
+                            "metrics_reliability": "standard",
+                        },
+                    }
+                }
+            }
         if m == "missing_metric":
             return {"results": {m: {"success": True, "avg_mae": 2.5}}}
         return {"results": {m: {"success": True, "avg_rmse": 1.2}}}

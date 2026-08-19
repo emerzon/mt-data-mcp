@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
@@ -163,4 +164,11 @@ class ReportGenerateRequest(BaseModel):
             )
         if start_dt is not None and end_dt is not None and start_dt > end_dt:
             raise ValueError("start must be before or equal to end")
+        comparable_start = start_dt
+        if comparable_start is not None and comparable_start.tzinfo is None:
+            comparable_start = comparable_start.replace(tzinfo=timezone.utc)
+        if comparable_start is not None and comparable_start > datetime.now(timezone.utc):
+            raise ValueError(
+                "start is in the future; no historical report data is available"
+            )
         return self

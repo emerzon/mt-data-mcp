@@ -1,10 +1,27 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
 from mtdata.core import causal
+
+
+def test_history_window_resolves_daily_labels_in_broker_timezone():
+    with patch(
+        "mtdata.services.data_service.mt5_config.get_server_tz",
+        return_value=ZoneInfo("America/Chicago"),
+    ):
+        start, end, error = causal._resolve_history_window(
+            "2026-01-05",
+            "2026-01-05",
+            timeframe="D1",
+        )
+
+    assert error is None
+    assert start == datetime(2026, 1, 5, 6)
+    assert end == datetime(2026, 1, 6, 5, 59, 59, 999999)
 
 
 @pytest.mark.parametrize(

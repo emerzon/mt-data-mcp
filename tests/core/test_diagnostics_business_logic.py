@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 
@@ -67,6 +69,37 @@ def test_fetch_diagnostic_bars_excludes_forming_tail_by_default(monkeypatch):
     assert completed.attrs["forming_candle_status"] == "excluded"
     assert included.iloc[-1]["close"] == 120.0
     assert included.attrs["forming_candle_status"] == "included"
+
+
+def test_fetch_diagnostic_bars_applies_date_only_as_of_cutoff(monkeypatch):
+    requested_anchors = []
+    frame = pd.DataFrame(
+        {
+            "time": [
+                datetime(2024, 1, 2, 20, tzinfo=timezone.utc).timestamp(),
+                datetime(2024, 1, 3, 0, tzinfo=timezone.utc).timestamp(),
+            ],
+            "close": [100.0, 101.0],
+        }
+    )
+    monkeypatch.setattr(diagnostics, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(
+        diagnostics,
+        "_mt5_copy_rates_from",
+        lambda _symbol, _timeframe, anchor, _count: requested_anchors.append(anchor)
+        or frame.to_dict("records"),
+    )
+
+    completed, error = diagnostics._fetch_diagnostic_bars(
+        "TEST",
+        "H1",
+        20,
+        as_of="2024-01-02",
+    )
+
+    assert error is None
+    assert requested_anchors[0].tzinfo is timezone.utc
+    assert completed["close"].tolist() == [100.0]
 
 
 def test_stationarity_test_combines_adf_and_kpss(monkeypatch):

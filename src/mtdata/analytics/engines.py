@@ -1694,7 +1694,8 @@ def _rates(
         df[column] = _finite(df[column])
     now = datetime.now(timezone.utc).timestamp()
     seconds = TIMEFRAME_SECONDS[timeframe]
-    df = df[df["time"] + seconds <= now]
+    information_cutoff = min(now, to_dt.timestamp()) if start and end else now
+    df = df[df["time"] + seconds <= information_cutoff]
     if not (start and end):
         df = df.tail(int(count))
     return df.reset_index(drop=True)
@@ -2586,7 +2587,11 @@ def decompose_portfolio_risk(  # noqa: C901
             "reason": (
                 "quote_source_conflict"
                 if isinstance(item.get("quote_source_conflict"), dict)
-                else item.get("freshness_reason") or "mark_not_live_ready"
+                else item.get("spread_quality")
+                if item.get("spread_valid") is False
+                else item.get("usable_for_live_trading_basis")
+                or item.get("freshness_reason")
+                or "mark_not_live_ready"
             ),
             "freshness_state": item.get("freshness_state"),
             "data_age_seconds": item.get("data_age_seconds"),

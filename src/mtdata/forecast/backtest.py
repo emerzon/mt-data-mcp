@@ -1362,11 +1362,21 @@ def strategy_backtest(  # noqa: C901
                 **history_kwargs,
             )
             if start:
+                if evaluation_df.empty or "time" not in evaluation_df.columns:
+                    return {
+                        "success": False,
+                        "error": "No completed bars are available inside the requested evaluation range.",
+                        "error_code": "empty_evaluation_window",
+                    }
+                first_evaluation_epoch = float(evaluation_df["time"].min())
+                warmup_cutoff = pd.Timestamp(
+                    first_evaluation_epoch, unit="s", tz="UTC"
+                ).isoformat()
                 warmup_df = _fetch_history(
                     symbol,
                     timeframe,
                     int(warmup_bars),
-                    as_of=start,
+                    as_of=warmup_cutoff,
                 )
                 if len(warmup_df) < int(warmup_bars):
                     return {
@@ -1379,13 +1389,6 @@ def strategy_backtest(  # noqa: C901
                         "warmup_bars_required": int(warmup_bars),
                         "warmup_bars_available": int(len(warmup_df)),
                     }
-                if evaluation_df.empty or "time" not in evaluation_df.columns:
-                    return {
-                        "success": False,
-                        "error": "No completed bars are available inside the requested evaluation range.",
-                        "error_code": "empty_evaluation_window",
-                    }
-                first_evaluation_epoch = float(evaluation_df["time"].min())
                 warmup_df = warmup_df[
                     warmup_df["time"].astype(float) < first_evaluation_epoch
                 ]
@@ -2515,6 +2518,9 @@ def forecast_backtest(  # noqa: C901
                         if 'open' in df.columns
                         else "next_bar_close_fallback_missing_open"
                     )
+                    signal_reference_price = (
+                        float(closes[idx]) if idx < len(closes) else float("nan")
+                    )
                     (
                         (da, directional_calls_made, directional_opportunities),
                         (
@@ -2525,21 +2531,21 @@ def forecast_backtest(  # noqa: C901
                     ) = _forecast_direction_metrics(
                         fcv[:m],
                         act[:m],
-                        entry_price=entry_price,
+                        entry_price=signal_reference_price,
                         target_mode=target_mode,
                     )
                     if target_mode == 'return':
                         expected_move = float(np.nansum(fcv[:m]))
                     else:
-                        expected_move = float((float(fcv[m - 1]) - entry_price)) if math.isfinite(entry_price) else float('nan')
+                        expected_move = float((float(fcv[m - 1]) - signal_reference_price)) if math.isfinite(signal_reference_price) else float('nan')
                     expected_return = float('nan')
                     if target_mode == 'return':
                         try:
                             expected_return = float(math.exp(expected_move) - 1.0)
                         except Exception:
                             expected_return = float('nan')
-                    elif math.isfinite(entry_price) and entry_price != 0.0:
-                        expected_return = expected_move / entry_price
+                    elif math.isfinite(signal_reference_price) and signal_reference_price != 0.0:
+                        expected_return = expected_move / signal_reference_price
                     evaluation_context = _build_forecast_evaluation_context(
                         execution_contract=execution_contract if execution_contract is not None else ForecastExecutionContract(
                             data_preparation=data_contract,
@@ -2548,7 +2554,7 @@ def forecast_backtest(  # noqa: C901
                         ),
                         anchor_time=anchor_time,
                         anchor_index=int(idx),
-                        entry_price=entry_price,
+                        entry_price=signal_reference_price,
                         forecast_values=[float(v) for v in fcv[:m].tolist()],
                         realized_values=[float(v) for v in act[:m].tolist()],
                         realized_timestamps=ts[:m],
@@ -2640,6 +2646,7 @@ def forecast_backtest(  # noqa: C901
                         "path_directional_calls_made": path_directional_calls_made,
                         "path_directional_opportunities": path_directional_opportunities,
                         "entry_price": entry_price,
+                        "signal_reference_price": signal_reference_price,
                         "entry_time": _format_time_minimal(float(times[entry_idx])),
                         "entry_price_source": entry_price_source,
                         "exit_price": exit_price,

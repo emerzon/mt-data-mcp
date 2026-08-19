@@ -19,7 +19,11 @@ from .optimize import (
 from .optimize import (
     extract_method_params_from_genotype as _extract_params,
 )
-from .tuning_contract import MIN_ANNUALIZED_TUNING_TRADES, resolve_tuning_mode
+from .tuning_contract import (
+    MIN_ANNUALIZED_TUNING_TRADES,
+    TRADING_TUNING_METRICS,
+    resolve_tuning_mode,
+)
 
 _NOISY_FORECAST_TUNE_LOGGERS = (
     "timesfm",
@@ -429,6 +433,17 @@ def _eval_candidate(
     if not isinstance(r, dict) or not r.get('success'):
         return math.inf, res
     metrics = _extract_method_backtest_metrics(res, sel_method)
+    if str(metric) in TRADING_TUNING_METRICS and not _has_trading_fitness_metrics(metrics):
+        result = {"_sel_method": sel_method, **(res or {})}
+        sample = _trading_sample_metadata(metrics)
+        result["tuning_error"] = (
+            f"Trading metric '{metric}' requires at least "
+            f"{sample['minimum_trades_for_comparable_fitness']} observed trades; "
+            f"got {sample['trades_observed']}."
+        )
+        result["error_code"] = "insufficient_tuning_sample"
+        result["trading_sample"] = sample
+        return math.inf, result
     score = _finite_metric(metrics, str(metric))
     if score is None:
         result = {'_sel_method': sel_method, **(res or {})}

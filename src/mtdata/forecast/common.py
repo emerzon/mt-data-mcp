@@ -1190,8 +1190,13 @@ def fetch_history(
                 mt5.symbol_select(symbol, False)
             except Exception:
                 pass
-    if rates is None or len(rates) < 1:
+    if rates is None:
         raise RuntimeError(f"Failed to get rates for {symbol}: {mt5.last_error()}")
+    if len(rates) < 1:
+        raise ValueError(
+            f"No data is available for {symbol} {timeframe} in the requested range. "
+            "Widen or correct the historical range."
+        )
     df = pd.DataFrame(rates)
     # MT5 rate epochs are already UTC.
 
@@ -1207,7 +1212,23 @@ def fetch_history(
         )
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
-            if as_of or drop_last_live:
+            bound_value = as_of or end
+            date_only_calendar_bound = bool(
+                timeframe in {"D1", "W1", "MN1"}
+                and isinstance(bound_value, str)
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", bound_value.strip())
+            )
+            if date_only_calendar_bound:
+                wall_clock_cutoff = datetime.now(timezone.utc).timestamp()
+                completed = (
+                    (df["time"] <= cutoff)
+                    & df["time"].map(
+                        lambda value: bar_close_epoch(value, timeframe)
+                        <= wall_clock_cutoff
+                    )
+                )
+                df = df[completed]
+            elif as_of or drop_last_live:
                 # Analysis defaults to closed bars. An as-of anchor is always
                 # information-available-at-instant; bounded ranges apply the
                 # same rule unless the caller explicitly requests live bars.

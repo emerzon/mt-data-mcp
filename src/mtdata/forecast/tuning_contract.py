@@ -37,6 +37,19 @@ TUNING_METRIC_DIRECTIONS: dict[str, Literal["min", "max"]] = {
 ANNUALIZED_TUNING_METRICS = frozenset(
     {"sharpe_ratio", "calmar_ratio", "annual_return"}
 )
+TRADING_TUNING_METRICS = frozenset(
+    {
+        "win_rate",
+        "max_drawdown",
+        "sharpe_ratio",
+        "calmar_ratio",
+        "annual_return",
+        "avg_return_per_trade",
+        "avg_win_loss_ratio",
+        "kelly_fraction",
+        "half_kelly_fraction",
+    }
+)
 MIN_ANNUALIZED_TUNING_TRADES = 30
 
 

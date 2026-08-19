@@ -1525,11 +1525,11 @@ def test_strategy_validation_explicit_range_is_not_tailed_to_lookback() -> None:
 
     selection = result["data_quality"]["history_selection"]
     assert result["success"] is True
-    assert result["data_quality"]["bars"] == len(rows)
+    assert result["data_quality"]["bars"] == len(rows) - 1
     assert selection["mode"] == "explicit_range"
     assert selection["lookback_bars_requested"] == 200
     assert selection["lookback_applied"] is False
-    assert selection["bars_used"] == len(rows)
+    assert selection["bars_used"] == len(rows) - 1
     assert selection["requested_start"] == start
     assert selection["requested_end"] == end
 
@@ -2141,10 +2141,9 @@ def test_portfolio_mark_conflict_uses_canonical_execution_gate() -> None:
         [{"ticket": 1, "symbol": "EURUSD"}],
     )
 
-    assert context["usable_for_live_trading"] is False
-    assert context["unusable_marks"] == [
-        {"symbol": "EURUSD", "reason": "quote_source_conflict"}
-    ]
+    assert context["usable_for_live_trading"] is True
+    assert context["mark_freshness"][0]["quote_source_conflict"]
+    assert context["unusable_marks"] == []
 
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:

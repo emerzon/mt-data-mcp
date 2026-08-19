@@ -1586,6 +1586,36 @@ def patterns_detect(
         result = run_patterns_detect(request, _patterns_detect_deps())
         if isinstance(result, dict) and "error" not in result:
             result.setdefault("timezone", "UTC")
+            if request.denoise is not None:
+                effective_denoise = (
+                    request.denoise.model_dump(exclude_none=True)
+                    if hasattr(request.denoise, "model_dump")
+                    else dict(request.denoise)
+                )
+                causality = str(effective_denoise.get("causality") or "causal")
+                result["effective_denoise"] = effective_denoise
+                result["preprocessing_causality"] = causality
+                result["denoise_lookahead_bias"] = causality == "zero_phase"
+                if causality == "zero_phase":
+                    result.setdefault("warnings", []).append(
+                        "Zero-phase denoising uses future bars within the requested window; "
+                        "historical pattern values are retrospective and may repaint."
+                    )
+
+                    def _qualify_causality(value: Any) -> None:
+                        if isinstance(value, dict):
+                            basis = value.get("status_basis")
+                            if isinstance(basis, str) and basis.startswith("causal"):
+                                value["status_basis"] = (
+                                    "retrospective_zero_phase_preprocessing"
+                                )
+                            for child in value.values():
+                                _qualify_causality(child)
+                        elif isinstance(value, list):
+                            for child in value:
+                                _qualify_causality(child)
+
+                    _qualify_causality(result)
             _attach_pattern_usage_notice(result)
             result = attach_completed_bar_input_policy(result)
         return result

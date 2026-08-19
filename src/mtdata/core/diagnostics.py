@@ -25,6 +25,7 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.time import format_datetime_utc
+from ..utils.utils import _parse_end_datetime
 from ._mcp_instance import mcp
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_verbosity_detail
@@ -39,6 +40,7 @@ def _fetch_diagnostic_bars(
     lookback: int,
     *,
     include_incomplete: bool = False,
+    as_of: Optional[str] = None,
 ) -> tuple[pd.DataFrame, str | None]:
     tf = TIMEFRAME_MAP.get(str(timeframe or "").strip().upper())
     if tf is None:
@@ -46,10 +48,19 @@ def _fetch_diagnostic_bars(
     symbol_error = _ensure_symbol_ready(symbol)
     if symbol_error:
         return pd.DataFrame(), symbol_error
+    anchor = _parse_end_datetime(as_of) if as_of else datetime.now(timezone.utc)
+    if anchor is None:
+        return pd.DataFrame(), "as_of must be a valid date or ISO 8601 timestamp."
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    else:
+        anchor = anchor.astimezone(timezone.utc)
+    if anchor > datetime.now(timezone.utc):
+        return pd.DataFrame(), "as_of cannot be in the future."
     rates = _mt5_copy_rates_from(
         symbol,
         tf,
-        datetime.now(timezone.utc),
+        anchor,
         max(2, int(lookback)) + (0 if include_incomplete else 1),
     )
     if rates is None or len(rates) == 0:
@@ -62,6 +73,11 @@ def _fetch_diagnostic_bars(
     if frame.empty or not required.issubset(frame.columns):
         return pd.DataFrame(), "Fetched bars do not contain time and close fields."
     frame = frame.sort_values("time").drop_duplicates("time", keep="last")
+    frame = frame[
+        pd.to_numeric(frame["time"], errors="coerce")
+        + TIMEFRAME_SECONDS[str(timeframe).upper()]
+        <= anchor.timestamp()
+    ]
     forming = _is_last_bar_forming(frame, timeframe)
     forming_status = "none_detected"
     if forming:
@@ -230,12 +246,13 @@ def _clean_stationarity_warning(text: Any) -> str:
 def stationarity_test(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
-    lookback: Annotated[int, Field(ge=1)] = 500,
+    lookback: Annotated[int, Field(ge=21)] = 500,
     target: Literal["close", "log_price", "return", "log_return", "diff"] = "log_return",
     tests: str = "adf,kpss,pp",
     trend: Literal["c", "ct"] = "c",
     significance: float = 0.05,
     include_incomplete: bool = False,
+    as_of: Optional[str] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Test an MT5 time series for stationarity using ADF, KPSS, and optional PP."""
@@ -266,6 +283,7 @@ def stationarity_test(
             timeframe,
             int(lookback),
             include_incomplete=include_incomplete,
+            as_of=as_of,
         )
         if fetch_error:
             return {"error": fetch_error}
@@ -391,6 +409,7 @@ def seasonality_detect(
     min_cycles: int = 3,
     top_n: int = 5,
     include_incomplete: bool = False,
+    as_of: Optional[str] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect dominant seasonal periods using autocorrelation and spectral power."""
@@ -412,6 +431,7 @@ def seasonality_detect(
             timeframe,
             int(lookback),
             include_incomplete=include_incomplete,
+            as_of=as_of,
         )
         if fetch_error:
             return {"error": fetch_error}
@@ -585,6 +605,7 @@ def outliers_detect(
     threshold: float = 3.5,
     limit: Annotated[int, Field(ge=1)] = 10,
     include_incomplete: bool = False,
+    as_of: Optional[str] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect anomalous MT5 bars using robust return, volume, and range scores."""
@@ -612,6 +633,7 @@ def outliers_detect(
             timeframe,
             int(lookback),
             include_incomplete=include_incomplete,
+            as_of=as_of,
         )
         if fetch_error:
             return {"error": fetch_error}
@@ -727,6 +749,7 @@ def volatility_term_structure(
     percentiles: str = "10,25,50,75,90",
     annualize: bool = True,
     include_incomplete: bool = False,
+    as_of: Optional[str] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute current realized volatility and historical cones at multiple horizons."""
@@ -762,6 +785,7 @@ def volatility_term_structure(
             timeframe,
             int(lookback),
             include_incomplete=include_incomplete,
+            as_of=as_of,
         )
         if fetch_error:
             return {"error": fetch_error}

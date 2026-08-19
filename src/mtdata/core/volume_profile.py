@@ -465,6 +465,10 @@ def _fetch_m1_rows(
     if payload.get("error"):
         return payload
     candles = _table_rows(payload)
+    max_bars = max(1, int(max_m1_bars))
+    truncated = len(candles) > max_bars
+    if truncated:
+        candles = candles[-max_bars:]
     rows = []
     for candle in candles:
         if not isinstance(candle, dict):
@@ -513,10 +517,17 @@ def _fetch_m1_rows(
             "m1_bars": int(len(candles)),
             "profile_rows": int(len(rows)),
             "requested_max_m1_bars": int(max_m1_bars),
+            "truncated": truncated,
+            "selection": "latest_n" if truncated else "all",
             "approximation": "M1 bar volume split across low/close/high prices.",
         },
         "warnings": [
-            "Volume profile used M1-bar approximation instead of raw ticks; intrabar volume location is estimated."
+            "Volume profile used M1-bar approximation instead of raw ticks; intrabar volume location is estimated.",
+            *(
+                [f"M1 input exceeded max_m1_bars={max_bars}; the latest {max_bars} bars were retained."]
+                if truncated
+                else []
+            ),
         ],
     }
 
@@ -892,7 +903,7 @@ def compute_volume_profile_payload(
     bucket_size: Optional[float] = None,
     bucket_points: Optional[float] = None,
     bucket_count: Optional[int] = None,
-    max_buckets: int = 120,
+    max_buckets: Annotated[int, Field(ge=1)] = 120,
     value_area_pct: float = 70.0,
     reference_price: Optional[float] = None,
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,
@@ -1185,7 +1196,7 @@ def volume_profile_levels(  # noqa: PLR0913
     bucket_size: Optional[float] = None,
     bucket_points: Optional[float] = None,
     bucket_count: Optional[int] = None,
-    max_buckets: int = 120,
+    max_buckets: Annotated[int, Field(ge=1)] = 120,
     value_area_pct: Annotated[float, Field(gt=0.0, le=100.0)] = 70.0,
     reference_price: Optional[float] = None,
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,

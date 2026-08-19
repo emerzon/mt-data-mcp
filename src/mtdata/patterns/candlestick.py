@@ -1022,12 +1022,21 @@ def _enrich_candlestick_payload(
     rows = payload.get("data")
     if not isinstance(rows, list) or not isinstance(df, pd.DataFrame) or len(df) <= 0:
         return
-    regime_context = _infer_market_regime(df, config)
     volume, volume_source = _resolve_volume_series(df)
+    regime_cache: Dict[int, Optional[Dict[str, Any]]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
         _attach_candlestick_volume_confirmation(row, volume, volume_source, config)
+        try:
+            end_index = min(max(0, int(row.get("end_index"))), len(df) - 1)
+        except (TypeError, ValueError):
+            end_index = len(df) - 1
+        if end_index not in regime_cache:
+            regime_cache[end_index] = _infer_market_regime(
+                df.iloc[: end_index + 1], config
+            )
+        regime_context = regime_cache[end_index]
         _attach_candlestick_regime_context(row, regime_context, config)
 
 

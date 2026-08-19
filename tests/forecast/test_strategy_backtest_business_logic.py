@@ -332,7 +332,10 @@ def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
     )
     assert calls[0][1]["start"] == "2023-01-01"
     assert calls[0][1]["end"] == "2023-12-31"
-    assert calls[1] == (5, {"as_of": "2023-01-01"})
+    assert calls[1][0] == 5
+    assert calls[1][1]["as_of"] == pd.Timestamp(
+        float(history["time"].iloc[5]), unit="s", tz="UTC"
+    ).isoformat()
     assert all(
         trade["entry_time"] >= out["summary"]["evaluation_start"]
         for trade in out.get("trades", [])
