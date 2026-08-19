@@ -1228,18 +1228,34 @@ class TestCorrelationMatrix:
         }
         mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (series_map[symbol], None)
 
-        result = self._unwrapped()(
+        first_page = self._unwrapped()(
             "A,B,C",
-            limit=2,
+            limit=1,
+            offset=0,
             window_bars=60,
             min_overlap=30,
+            detail="full",
+        )
+        second_page = self._unwrapped()(
+            "A,B,C",
+            limit=1,
+            offset=1,
+            window_bars=60,
+            min_overlap=30,
+            detail="full",
         )
 
-        assert result["success"] is True
-        assert result["count"] == 2
-        assert len(result["items"]) == 2
-        assert result["truncated"] is True
-        assert result["meta"]["stats"]["pairs_computed"] == 3
+        assert first_page["success"] is True
+        assert first_page["count"] == 1
+        assert len(first_page["items"]) == 1
+        assert first_page["truncated"] is True
+        assert first_page["meta"]["stats"]["pairs_computed"] == 3
+        assert first_page["items"] != second_page["items"]
+        assert first_page["matrix"] == second_page["matrix"]
+        assert all(
+            first_page["matrix"][left][right] is not None
+            for left, right in (("A", "B"), ("A", "C"), ("B", "C"))
+        )
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")

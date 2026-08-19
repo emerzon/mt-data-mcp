@@ -68,7 +68,8 @@ sample count, and pairwise period window; `context` records the timeframe,
 `window_bars`, transform, and `min_overlap` used. A requested `limit` records
 the output page size, not the analysis sample size. Use `detail=full` when you also
 need derived convenience views such as `matrix`; compact detail keeps only the
-ranked pair rows plus summary highlights.
+ranked pair rows plus summary highlights. Pagination applies only to `items`;
+the full-detail `matrix` always represents every pair computed by the analysis.
 
 ### `cointegration_test`
 

@@ -2991,7 +2991,10 @@ def correlation_matrix(  # noqa: C901
         if output_truncated:
             out["truncated"] = True
         if detail_mode == "full":
-            out["matrix"] = _build_correlation_matrix(symbols_used, output_rows_raw)
+            # The ranked rows are paginated, but the matrix represents the complete
+            # analysis. Building it from the page would make analytical values
+            # disappear when callers change only limit or offset.
+            out["matrix"] = _build_correlation_matrix(symbols_used, rows)
         if warnings_out:
             out["warnings"] = warnings_out
         return out
