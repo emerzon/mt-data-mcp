@@ -1225,6 +1225,40 @@ class TestSymbolsTopMarkets:
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_top_markets_exact_hidden_group_is_not_replaced_by_visible_group(
+        self, mock_symbols_get, mock_tick, _mock_group
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol("0066.HK", path="Stock CFD's\\HK", visible=False),
+            _make_symbol("AAPL.NAS", path="Stock CFD's\\Nasdaq", visible=True),
+        ]
+
+        result = _get_symbols_top_markets()(
+            rank_by="spread_pct",
+            group="Stock CFD's\\HK",
+            universe="visible",
+            limit=5,
+        )
+
+        assert result["success"] is True
+        assert result["data"] == []
+        assert result["filters"]["group"] == "Stock CFD's\\HK"
+        assert result["status"] == "no_group_members_in_universe"
+        assert "--universe all" in result["remediation"]
+        mock_tick.assert_not_called()
+
+    def test_market_group_matcher_rejects_generic_stock_token(self):
+        from mtdata.core.symbols import _market_scan_group_matches_query
+
+        assert not _market_scan_group_matches_query(
+            "Stock CFD's\\Nasdaq", "Stock CFD's\\HK"
+        )
+        assert not _market_scan_group_matches_query("Stock CFD's\\Nasdaq", "stock")
+        assert _market_scan_group_matches_query("Forex\\Majors", "forex_major")
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_spread_ranks_lowest_first_visible_default(self, mock_symbols_get, mock_tick, mock_group):
         mock_symbols_get.return_value = [
             _make_symbol("EURUSD", description="Euro"),

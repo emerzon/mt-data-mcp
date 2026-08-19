@@ -3116,16 +3116,32 @@ def _market_scan_group_query_variants(value: Any) -> set[str]:
 
 
 def _market_scan_group_matches_query(group_path: str, requested: str) -> bool:
-    group_variants = _market_scan_group_query_variants(group_path)
-    requested_variants = _market_scan_group_query_variants(requested)
-    if group_variants.intersection(requested_variants):
+    group_normalized = _normalize_group_path_query(group_path).casefold()
+    requested_normalized = _normalize_group_path_query(requested).casefold()
+    group_compact = re.sub(r"[^a-z0-9]+", "", group_normalized)
+    requested_compact = re.sub(r"[^a-z0-9]+", "", requested_normalized)
+    if requested_normalized == group_normalized or requested_compact == group_compact:
         return True
-    return any(
-        requested_variant in group_variant
-        for requested_variant in requested_variants
-        for group_variant in group_variants
-        if len(requested_variant) >= 3
-    )
+
+    def _tokens(value: str) -> set[str]:
+        result: set[str] = set()
+        for token in re.split(r"[^a-z0-9]+", value):
+            if not token:
+                continue
+            if token.endswith("ies") and len(token) > 3:
+                token = token[:-3] + "y"
+            elif token.endswith("s") and len(token) > 1:
+                token = token[:-1]
+            result.add(token)
+        return result
+
+    group_tokens = _tokens(group_normalized)
+    requested_tokens = _tokens(requested_normalized)
+    generic_tokens = {"stock", "cfd", "market", "instrument", "symbol"}
+    informative_tokens = requested_tokens - generic_tokens
+    if not informative_tokens:
+        return False
+    return informative_tokens.issubset(group_tokens)
 
 
 def _resolve_market_scan_group_path(
@@ -3737,16 +3753,21 @@ def symbols_top_markets(  # noqa: C901
                 return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             all_symbols = list(raw_symbols)
 
-            selected_symbols = [
+            tradable_symbols = [
                 symbol
                 for symbol in all_symbols
                 if _market_scan_is_tradable(symbol)
-                and (universe_value == "all" or bool(getattr(symbol, "visible", False)))
+            ]
+            selected_symbols = [
+                symbol
+                for symbol in tradable_symbols
+                if universe_value == "all" or bool(getattr(symbol, "visible", False))
             ]
             filters: Dict[str, Any] = {}
+            group_has_no_universe_members = False
             if group_filter:
                 resolved_groups, group_error = _resolve_market_scan_group_path(
-                    selected_symbols,
+                    tradable_symbols,
                     group_filter,
                 )
                 if group_error or not resolved_groups:
@@ -3763,6 +3784,7 @@ def symbols_top_markets(  # noqa: C901
                     ).lower()
                     in resolved_group_set
                 ]
+                group_has_no_universe_members = not selected_symbols
                 filters["group"] = (
                     resolved_groups[0]
                     if len(resolved_groups) == 1
@@ -4016,6 +4038,12 @@ def symbols_top_markets(  # noqa: C901
             scan_meta = {"success": True, "source": source}
             if filters:
                 scan_meta["filters"] = filters
+            if group_has_no_universe_members:
+                scan_meta["status"] = "no_group_members_in_universe"
+                scan_meta["remediation"] = (
+                    "The exact broker group has no members in the selected universe; "
+                    "retry with --universe all to include hidden symbols."
+                )
             if partition_requested:
                 scan_meta["ranking_scope"] = "candidate_partition"
                 scan_meta["candidate_page"] = build_pagination_meta(
