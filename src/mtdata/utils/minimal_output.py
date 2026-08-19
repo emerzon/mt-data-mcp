@@ -1809,6 +1809,12 @@ def _normalize_regime_all_payload(  # noqa: C901
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
+    ensemble_health = payload.get("ensemble_health")
+    if isinstance(ensemble_health, dict) and ensemble_health:
+        out["ensemble_health"] = ensemble_health
+    warnings_in = payload.get("warnings")
+    if isinstance(warnings_in, list) and warnings_in:
+        out["warnings"] = warnings_in
 
     if detail_value == "summary":
         summary_in = payload.get("summary")
@@ -1865,12 +1871,23 @@ def _normalize_regime_all_payload(  # noqa: C901
         out["comparison"] = comparison_out
 
     runtime_in = payload.get("runtime")
-    if isinstance(runtime_in, dict) and runtime_in.get("partial_results") is True:
-        runtime_out: Dict[str, Any] = {"partial_results": True}
+    if isinstance(runtime_in, dict):
+        runtime_out: Dict[str, Any] = {
+            "partial_results": bool(runtime_in.get("partial_results")),
+        }
         failed_methods = runtime_in.get("failed_methods")
         if isinstance(failed_methods, list) and failed_methods:
             runtime_out["failed_methods"] = failed_methods
-        out["runtime"] = runtime_out
+        for key in (
+            "ensemble_aggregated",
+            "ensemble_degraded",
+            "ensemble_aggregation_source",
+            "ensemble_voters",
+        ):
+            if not _is_empty_value(runtime_in.get(key)):
+                runtime_out[key] = runtime_in[key]
+        if len(runtime_out) > 1 or runtime_out["partial_results"]:
+            out["runtime"] = runtime_out
 
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
         if detail_value == "summary":

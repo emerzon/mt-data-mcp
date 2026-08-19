@@ -1114,6 +1114,369 @@ def _get_timeframe_defaults(timeframe: str) -> Dict[str, int]:
     return _TIMEFRAME_DEFAULTS.get(tf, {"lookback": 300, "min_regime_bars": 5})
 
 
+def _ensemble_state_count_configuration(
+    params: Dict[str, Any],
+    values: np.ndarray,
+) -> tuple[int, str, bool, Dict[str, Any], List[str], Optional[str]]:
+    n_states_input = params.get("n_states")
+    if n_states_input is not None:
+        try:
+            n_states = int(n_states_input)
+        except Exception:
+            return 0, "n_states", False, {}, [], "n_states must be an integer >= 2 for ensemble."
+        if n_states < 2:
+            return 0, "n_states", False, {}, [], "n_states must be >= 2 for ensemble."
+        return n_states, "n_states", False, {}, [], None
+
+    returns_kurt = _finite_raw_kurtosis(values)
+    if returns_kurt > 6.0:
+        n_states = 6
+    elif returns_kurt > 4.5:
+        n_states = 5
+    elif returns_kurt > 3.5:
+        n_states = 4
+    else:
+        n_states = 3
+    heuristic = {
+        "method": "return_kurtosis_thresholds",
+        "returns_kurtosis": round(returns_kurt, 2),
+    }
+    warning = (
+        "Ensemble n_states was selected by a return-kurtosis heuristic, "
+        "not statistical model selection. Set params.n_states explicitly "
+        "and validate it through backtesting when state count matters."
+    )
+    return (
+        n_states,
+        "return_kurtosis_heuristic",
+        True,
+        heuristic,
+        [warning],
+        None,
+    )
+
+
+def _aggregate_precomputed_ensemble(  # noqa: C901
+    *,
+    symbol: str,
+    timeframe: str,
+    target: str,
+    x: np.ndarray,
+    t_fmt: List[Any],
+    sub_results: List[Dict[str, Any]],
+    sub_errors: List[str],
+    requested_methods: List[str],
+    voting: str,
+    n_states_ens: int,
+    n_states_source: str,
+    ens_auto_n_states: bool,
+    ens_auto_metrics: Dict[str, Any],
+    state_count_warnings: List[str],
+    min_regime_bars_val: int,
+    output: str,
+    lookback: int,
+    include_series: bool,
+    max_regimes: int,
+    aggregation_source: str,
+) -> Dict[str, Any]:
+    """Aggregate already-fitted regime state series without refitting voters."""
+    method = "ensemble"
+    # Extract return-canonicalized state arrays from sub-results.
+    state_arrays: List[np.ndarray] = []
+    prob_arrays: List[np.ndarray] = []  # (n_bars, n_states) per method
+    prob_valid_masks: List[np.ndarray] = []
+    method_names: List[str] = []
+    sub_method_state_counts: Dict[str, int] = {}
+    sub_method_state_maps: Dict[str, Dict[str, int]] = {}
+    ref_len = len(t_fmt)
+    finite_target = x[np.isfinite(x)]
+    target_quantiles = (
+        np.arange(n_states_ens, dtype=float) + 0.5
+    ) / float(n_states_ens)
+    target_centroids = np.quantile(finite_target, target_quantiles)
+
+    for sr_info in sub_results:
+        sm_name = sr_info["method"]
+        sr = sr_info["result"]
+        series = sr.get("series", {})
+
+        raw_state = series.get("state", sr.get("state", []))
+        raw_probs = series.get(
+            "state_probabilities", sr.get("state_probabilities", [])
+        )
+        if raw_state is None or len(raw_state) != ref_len:
+            sub_errors.append(
+                f"{sm_name}: state series did not match the ensemble window"
+            )
+            continue
+
+        st = np.asarray(raw_state, dtype=int)
+        if raw_probs is not None and len(raw_probs) == ref_len:
+            pr = np.asarray(raw_probs, dtype=float)
+            if pr.ndim != 2 or pr.shape[1] < 1:
+                sub_errors.append(
+                    f"{sm_name}: state probabilities were not a usable matrix"
+                )
+                continue
+        else:
+            reported_params = sr.get("regime_params", {})
+            reported_count = 0
+            if isinstance(reported_params, dict):
+                for key in ("mean_return", "mu", "volatility", "sigma"):
+                    values = reported_params.get(key)
+                    if isinstance(values, (list, tuple, np.ndarray)):
+                        reported_count = max(reported_count, len(values))
+            occupied_count = int(np.max(st)) + 1 if np.any(st >= 0) else 0
+            source_count = max(reported_count, occupied_count)
+            if source_count < 1:
+                sub_errors.append(
+                    f"{sm_name}: no usable states or probabilities"
+                )
+                continue
+            pr = np.zeros((ref_len, source_count))
+            for i, s in enumerate(st):
+                if 0 <= int(s) < source_count:
+                    pr[i, s] = 1.0
+
+        source_count = int(pr.shape[1])
+        sub_method_state_counts[sm_name] = source_count
+        try:
+            st, pr, valid_mask, state_map = (
+                _align_states_to_return_centroids(
+                    st,
+                    pr,
+                    x,
+                    target_centroids,
+                )
+            )
+        except ValueError as exc:
+            sub_errors.append(f"{sm_name}: {exc}")
+            continue
+        if not np.any(valid_mask):
+            sub_errors.append(f"{sm_name}: no valid aligned state rows")
+            continue
+        state_arrays.append(st)
+        prob_arrays.append(pr)
+        prob_valid_masks.append(valid_mask)
+        method_names.append(sm_name)
+        sub_method_state_maps[sm_name] = {
+            str(source): int(target)
+            for source, target in state_map.items()
+        }
+
+    if not prob_arrays:
+        return {"error": "No sub-methods produced usable state data."}
+
+    # Aggregate
+    if voting == "hard":
+        # Majority vote over methods that have a valid state for the bar.
+        ensemble_state = np.full(ref_len, -1, dtype=int)
+        ensemble_probs = np.zeros((ref_len, n_states_ens))
+        for t_idx in range(ref_len):
+            votes = [
+                int(state_arr[t_idx])
+                for state_arr, valid_mask in zip(
+                    state_arrays, prob_valid_masks
+                )
+                if bool(valid_mask[t_idx])
+                and 0 <= int(state_arr[t_idx]) < n_states_ens
+            ]
+            if not votes:
+                continue
+            counts = Counter(votes)
+            majority, _count = counts.most_common(1)[0]
+            ensemble_state[t_idx] = int(majority)
+            for state_id, count in counts.items():
+                ensemble_probs[t_idx, int(state_id)] = float(count) / float(
+                    len(votes)
+                )
+    else:
+        # Soft voting: average probabilities across valid methods per bar.
+        ensemble_probs = np.zeros((ref_len, n_states_ens))
+        valid_counts = np.zeros(ref_len, dtype=float)
+        for pr, valid_mask in zip(prob_arrays, prob_valid_masks):
+            rows = valid_mask & (np.sum(pr, axis=1) > 0)
+            if not np.any(rows):
+                continue
+            ensemble_probs[rows] += pr[rows]
+            valid_counts[rows] += 1.0
+        valid_rows = valid_counts > 0
+        if np.any(valid_rows):
+            ensemble_probs[valid_rows] = (
+                ensemble_probs[valid_rows] / valid_counts[valid_rows, None]
+            )
+        ensemble_state = np.full(ref_len, -1, dtype=int)
+        ensemble_state[valid_rows] = np.argmax(
+            ensemble_probs[valid_rows],
+            axis=1,
+        ).astype(int)
+
+    # Smooth and canonicalize
+    valid_ensemble_mask = (ensemble_state >= 0) & (
+        np.sum(ensemble_probs, axis=1) > 0
+    )
+    if not np.any(valid_ensemble_mask):
+        return {"error": "No valid ensemble state rows after voting."}
+
+    valid_state, smoothing_meta = _confirm_state_changes_causally(
+        ensemble_state[valid_ensemble_mask], min_regime_bars_val
+    )
+    valid_probs = ensemble_probs[valid_ensemble_mask]
+    valid_state, valid_probs, canon_meta = _canonicalize_regime_labels(
+        valid_state,
+        valid_probs,
+        x[valid_ensemble_mask],
+    )
+    ensemble_state = np.full(ref_len, -1, dtype=int)
+    ensemble_probs = np.zeros((ref_len, n_states_ens))
+    ensemble_state[valid_ensemble_mask] = valid_state
+    ensemble_probs[valid_ensemble_mask] = valid_probs
+    smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
+
+    # Agreement score: fraction of methods that agree per bar
+    agreement = np.zeros(ref_len)
+    for t_idx in range(ref_len):
+        votes = [
+            int(state_arr[t_idx])
+            for state_arr, valid_mask in zip(state_arrays, prob_valid_masks)
+            if bool(valid_mask[t_idx])
+            and 0 <= int(state_arr[t_idx]) < n_states_ens
+        ]
+        if votes:
+            most_common = max(set(votes), key=votes.count)
+            agreement[t_idx] = votes.count(most_common) / len(votes)
+
+    # Compute regime parameters (mean, vol) for each ensemble state
+    mean_agreement = round(
+        float(np.mean(agreement[valid_ensemble_mask])),
+        4,
+    )
+    ensemble_regime_params = {
+        "mean_return": [],
+        "volatility": [],
+    }
+    for s in range(n_states_ens):
+        mask = ensemble_state == s
+        if mask.any():
+            ensemble_regime_params["mean_return"].append(
+                float(np.mean(x[mask]))
+            )
+            ensemble_regime_params["volatility"].append(float(np.std(x[mask])))
+        else:
+            ensemble_regime_params["mean_return"].append(0.0)
+            ensemble_regime_params["volatility"].append(0.0)
+
+    voter_errors: Dict[str, str] = {}
+    for error_text in sub_errors:
+        voter_name, separator, reason = str(error_text).partition(":")
+        voter_key = voter_name.strip()
+        if separator and voter_key:
+            voter_errors[voter_key] = reason.strip()
+    excluded_methods = [
+        voter for voter in requested_methods if voter not in method_names
+    ]
+    ensemble_health = {
+        "requested_voters": list(requested_methods),
+        "used_voters": list(method_names),
+        "excluded_voters": excluded_methods,
+        "voter_errors": voter_errors,
+        "degraded": bool(excluded_methods or sub_errors),
+        "aggregation_source": aggregation_source,
+    }
+
+    payload = {
+        "success": True,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "method": method,
+        "target": target,
+        "times": t_fmt,
+        "state": [int(s) for s in ensemble_state.tolist()],
+        "state_probabilities": [
+            [float(v) for v in row] for row in ensemble_probs.tolist()
+        ],
+        "regime_params": ensemble_regime_params,
+        "ensemble_health": ensemble_health,
+        "ensemble_info": {
+            "sub_methods": method_names,
+            "requested_methods": list(requested_methods),
+            "excluded_methods": excluded_methods,
+            "aggregation_source": aggregation_source,
+            "voting": voting,
+            "mean_agreement": mean_agreement,
+            "alignment_mode": "return_quantile_centroids",
+            "shared_state_centroids": [
+                float(value) for value in target_centroids.tolist()
+            ],
+            "sub_method_state_counts": sub_method_state_counts,
+            "sub_method_state_maps": sub_method_state_maps,
+        },
+        "params_used": {
+            "methods": method_names,
+            "voting": voting,
+            "n_states": n_states_ens,
+            "state_count_param": n_states_source,
+            "n_states_auto": bool(ens_auto_n_states),
+            "n_methods_succeeded": len(method_names),
+            "min_regime_bars": int(min_regime_bars_val),
+            "smoothing_applied": smoothing_meta.get("smoothing_applied", False),
+        },
+    }
+    if ens_auto_metrics:
+        payload["params_used"]["state_count_heuristic"] = ens_auto_metrics
+        payload["auto_detection"] = ens_auto_metrics
+    if sub_errors:
+        payload["warnings"] = [f"Sub-method errors: {'; '.join(sub_errors)}"]
+    _append_warnings(payload, state_count_warnings)
+    _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
+    payload["reliability"] = _common_reliability(
+        {
+            "confidence": mean_agreement,
+            "methods_considered": method_names,
+        },
+        source="ensemble_return_centroid_agreement",
+    )
+
+    if output in ("summary", "compact"):
+        n_summary = _summary_window_size(lookback, len(ensemble_state))
+        st_tail = (
+            ensemble_state[-n_summary:] if n_summary > 0 else ensemble_state
+        )
+        st_tail_valid = st_tail[st_tail >= 0]
+        unique, counts = np.unique(st_tail_valid, return_counts=True)
+        shares = {
+            int(k): float(c) / float(len(st_tail_valid) or 1)
+            for k, c in zip(unique, counts)
+        }
+        summary = {
+            "lookback": int(n_summary),
+            "last_state": int(ensemble_state[-1])
+            if len(ensemble_state)
+            else None,
+            "state_shares": shares,
+            "mean_agreement": mean_agreement,
+        }
+        payload = _apply_state_output_mode(
+            payload,
+            output=output,
+            lookback=lookback,
+            summary=summary,
+        )
+        if output == "summary":
+            payload["ensemble_health"] = ensemble_health
+            return payload
+
+    result = _consolidate_payload(
+        payload,
+        method,
+        output,
+        include_series=include_series,
+        max_regimes=max_regimes,
+    )
+    result["ensemble_health"] = ensemble_health
+    return result
+
+
 @mcp.tool()
 def regime_detect(  # noqa: C901
     symbol: str,
@@ -3619,49 +3982,16 @@ def regime_detect(  # noqa: C901
                     }
                 )
 
-            # Use the documented kurtosis heuristic when n_states is omitted.
-            # This controls output granularity; it is not statistical model selection.
-            n_states_input = p.get("n_states")
-            state_count_warnings: List[str] = []
-            n_states_source = "n_states"
-            if n_states_input is None:
-                # Analyze return distribution characteristics
-                returns_kurt = _finite_raw_kurtosis(x)
-
-                # High kurtosis (>5) suggests fat tails needing more granular regimes
-                if returns_kurt > 6.0:
-                    n_states_auto = 6  # Very granular: strong_bearish to strong_bullish
-                elif returns_kurt > 4.5:
-                    n_states_auto = 5  # Rich detail with neutral center
-                elif returns_kurt > 3.5:
-                    n_states_auto = 4  # Standard: bearish_low/high + bullish_low/high
-                else:
-                    n_states_auto = 3  # Simple: bearish/neutral/bullish
-
-                n_states_ens = n_states_auto
-                ens_auto_n_states = True
-                n_states_source = "return_kurtosis_heuristic"
-                ens_auto_metrics = {
-                    "method": "return_kurtosis_thresholds",
-                    "returns_kurtosis": round(returns_kurt, 2),
-                }
-                state_count_warnings.append(
-                    "Ensemble n_states was selected by a return-kurtosis heuristic, "
-                    "not statistical model selection. Set params.n_states explicitly "
-                    "and validate it through backtesting when state count matters."
-                )
-            else:
-                try:
-                    n_states_ens = int(n_states_input)
-                except Exception:
-                    return _finish(
-                        {"error": "n_states must be an integer >= 2 for ensemble."}
-                    )
-                ens_auto_n_states = False
-                ens_auto_metrics = {}
-
-            if n_states_ens < 2:
-                return _finish({"error": "n_states must be >= 2 for ensemble."})
+            (
+                n_states_ens,
+                n_states_source,
+                ens_auto_n_states,
+                ens_auto_metrics,
+                state_count_warnings,
+                state_count_error,
+            ) = _ensemble_state_count_configuration(p, x)
+            if state_count_error:
+                return _finish({"error": state_count_error})
 
             # Run each sub-method with include_series so we get raw state data
             sub_results: List[Dict[str, Any]] = []
@@ -3703,275 +4033,28 @@ def regime_detect(  # noqa: C901
                     }
                 )
 
-            # Extract return-canonicalized state arrays from sub-results.
-            state_arrays: List[np.ndarray] = []
-            prob_arrays: List[np.ndarray] = []  # (n_bars, n_states) per method
-            prob_valid_masks: List[np.ndarray] = []
-            method_names: List[str] = []
-            sub_method_state_counts: Dict[str, int] = {}
-            sub_method_state_maps: Dict[str, Dict[str, int]] = {}
-            ref_len = len(t_fmt)
-            finite_target = x[np.isfinite(x)]
-            target_quantiles = (
-                np.arange(n_states_ens, dtype=float) + 0.5
-            ) / float(n_states_ens)
-            target_centroids = np.quantile(finite_target, target_quantiles)
-
-            for sr_info in sub_results:
-                sm_name = sr_info["method"]
-                sr = sr_info["result"]
-                series = sr.get("series", {})
-
-                raw_state = series.get("state", sr.get("state", []))
-                raw_probs = series.get(
-                    "state_probabilities", sr.get("state_probabilities", [])
-                )
-                if raw_state is None or len(raw_state) != ref_len:
-                    sub_errors.append(
-                        f"{sm_name}: state series did not match the ensemble window"
-                    )
-                    continue
-
-                st = np.asarray(raw_state, dtype=int)
-                if raw_probs is not None and len(raw_probs) == ref_len:
-                    pr = np.asarray(raw_probs, dtype=float)
-                    if pr.ndim != 2 or pr.shape[1] < 1:
-                        sub_errors.append(
-                            f"{sm_name}: state probabilities were not a usable matrix"
-                        )
-                        continue
-                else:
-                    reported_params = sr.get("regime_params", {})
-                    reported_count = 0
-                    if isinstance(reported_params, dict):
-                        for key in ("mean_return", "mu", "volatility", "sigma"):
-                            values = reported_params.get(key)
-                            if isinstance(values, (list, tuple, np.ndarray)):
-                                reported_count = max(reported_count, len(values))
-                    occupied_count = int(np.max(st)) + 1 if np.any(st >= 0) else 0
-                    source_count = max(reported_count, occupied_count)
-                    if source_count < 1:
-                        sub_errors.append(
-                            f"{sm_name}: no usable states or probabilities"
-                        )
-                        continue
-                    pr = np.zeros((ref_len, source_count))
-                    for i, s in enumerate(st):
-                        if 0 <= int(s) < source_count:
-                            pr[i, s] = 1.0
-
-                source_count = int(pr.shape[1])
-                sub_method_state_counts[sm_name] = source_count
-                try:
-                    st, pr, valid_mask, state_map = (
-                        _align_states_to_return_centroids(
-                            st,
-                            pr,
-                            x,
-                            target_centroids,
-                        )
-                    )
-                except ValueError as exc:
-                    sub_errors.append(f"{sm_name}: {exc}")
-                    continue
-                if not np.any(valid_mask):
-                    sub_errors.append(f"{sm_name}: no valid aligned state rows")
-                    continue
-                state_arrays.append(st)
-                prob_arrays.append(pr)
-                prob_valid_masks.append(valid_mask)
-                method_names.append(sm_name)
-                sub_method_state_maps[sm_name] = {
-                    str(source): int(target)
-                    for source, target in state_map.items()
-                }
-
-            if not prob_arrays:
-                return _finish({"error": "No sub-methods produced usable state data."})
-
-            # Aggregate
-            if voting == "hard":
-                # Majority vote over methods that have a valid state for the bar.
-                ensemble_state = np.full(ref_len, -1, dtype=int)
-                ensemble_probs = np.zeros((ref_len, n_states_ens))
-                for t_idx in range(ref_len):
-                    votes = [
-                        int(state_arr[t_idx])
-                        for state_arr, valid_mask in zip(
-                            state_arrays, prob_valid_masks
-                        )
-                        if bool(valid_mask[t_idx])
-                        and 0 <= int(state_arr[t_idx]) < n_states_ens
-                    ]
-                    if not votes:
-                        continue
-                    counts = Counter(votes)
-                    majority, _count = counts.most_common(1)[0]
-                    ensemble_state[t_idx] = int(majority)
-                    for state_id, count in counts.items():
-                        ensemble_probs[t_idx, int(state_id)] = float(count) / float(
-                            len(votes)
-                        )
-            else:
-                # Soft voting: average probabilities across valid methods per bar.
-                ensemble_probs = np.zeros((ref_len, n_states_ens))
-                valid_counts = np.zeros(ref_len, dtype=float)
-                for pr, valid_mask in zip(prob_arrays, prob_valid_masks):
-                    rows = valid_mask & (np.sum(pr, axis=1) > 0)
-                    if not np.any(rows):
-                        continue
-                    ensemble_probs[rows] += pr[rows]
-                    valid_counts[rows] += 1.0
-                valid_rows = valid_counts > 0
-                if np.any(valid_rows):
-                    ensemble_probs[valid_rows] = (
-                        ensemble_probs[valid_rows] / valid_counts[valid_rows, None]
-                    )
-                ensemble_state = np.full(ref_len, -1, dtype=int)
-                ensemble_state[valid_rows] = np.argmax(
-                    ensemble_probs[valid_rows],
-                    axis=1,
-                ).astype(int)
-
-            # Smooth and canonicalize
-            valid_ensemble_mask = (ensemble_state >= 0) & (
-                np.sum(ensemble_probs, axis=1) > 0
-            )
-            if not np.any(valid_ensemble_mask):
-                return _finish({"error": "No valid ensemble state rows after voting."})
-
-            valid_state, smoothing_meta = _confirm_state_changes_causally(
-                ensemble_state[valid_ensemble_mask], min_regime_bars_val
-            )
-            valid_probs = ensemble_probs[valid_ensemble_mask]
-            valid_state, valid_probs, canon_meta = _canonicalize_regime_labels(
-                valid_state,
-                valid_probs,
-                x[valid_ensemble_mask],
-            )
-            ensemble_state = np.full(ref_len, -1, dtype=int)
-            ensemble_probs = np.zeros((ref_len, n_states_ens))
-            ensemble_state[valid_ensemble_mask] = valid_state
-            ensemble_probs[valid_ensemble_mask] = valid_probs
-            smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
-
-            # Agreement score: fraction of methods that agree per bar
-            agreement = np.zeros(ref_len)
-            for t_idx in range(ref_len):
-                votes = [
-                    int(state_arr[t_idx])
-                    for state_arr, valid_mask in zip(state_arrays, prob_valid_masks)
-                    if bool(valid_mask[t_idx])
-                    and 0 <= int(state_arr[t_idx]) < n_states_ens
-                ]
-                if votes:
-                    most_common = max(set(votes), key=votes.count)
-                    agreement[t_idx] = votes.count(most_common) / len(votes)
-
-            # Compute regime parameters (mean, vol) for each ensemble state
-            mean_agreement = round(
-                float(np.mean(agreement[valid_ensemble_mask])),
-                4,
-            )
-            ensemble_regime_params = {
-                "mean_return": [],
-                "volatility": [],
-            }
-            for s in range(n_states_ens):
-                mask = ensemble_state == s
-                if mask.any():
-                    ensemble_regime_params["mean_return"].append(
-                        float(np.mean(x[mask]))
-                    )
-                    ensemble_regime_params["volatility"].append(float(np.std(x[mask])))
-                else:
-                    ensemble_regime_params["mean_return"].append(0.0)
-                    ensemble_regime_params["volatility"].append(0.0)
-
-            payload = {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "method": method,
-                "target": target,
-                "times": t_fmt,
-                "state": [int(s) for s in ensemble_state.tolist()],
-                "state_probabilities": [
-                    [float(v) for v in row] for row in ensemble_probs.tolist()
-                ],
-                "regime_params": ensemble_regime_params,
-                "ensemble_info": {
-                    "sub_methods": method_names,
-                    "voting": voting,
-                    "mean_agreement": mean_agreement,
-                    "alignment_mode": "return_quantile_centroids",
-                    "shared_state_centroids": [
-                        float(value) for value in target_centroids.tolist()
-                    ],
-                    "sub_method_state_counts": sub_method_state_counts,
-                    "sub_method_state_maps": sub_method_state_maps,
-                },
-                "params_used": {
-                    "methods": method_names,
-                    "voting": voting,
-                    "n_states": n_states_ens,
-                    "state_count_param": n_states_source,
-                    "n_states_auto": bool(ens_auto_n_states),
-                    "n_methods_succeeded": len(method_names),
-                    "min_regime_bars": int(min_regime_bars_val),
-                    "smoothing_applied": smoothing_meta.get("smoothing_applied", False),
-                },
-            }
-            if ens_auto_metrics:
-                payload["params_used"]["state_count_heuristic"] = ens_auto_metrics
-                payload["auto_detection"] = ens_auto_metrics
-            if sub_errors:
-                payload["warnings"] = [f"Sub-method errors: {'; '.join(sub_errors)}"]
-            _append_warnings(payload, state_count_warnings)
-            _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
-            payload["reliability"] = _common_reliability(
-                {
-                    "confidence": mean_agreement,
-                    "methods_considered": method_names,
-                },
-                source="ensemble_return_centroid_agreement",
-            )
-
-            if output in ("summary", "compact"):
-                n_summary = _summary_window_size(lookback, len(ensemble_state))
-                st_tail = (
-                    ensemble_state[-n_summary:] if n_summary > 0 else ensemble_state
-                )
-                st_tail_valid = st_tail[st_tail >= 0]
-                unique, counts = np.unique(st_tail_valid, return_counts=True)
-                shares = {
-                    int(k): float(c) / float(len(st_tail_valid) or 1)
-                    for k, c in zip(unique, counts)
-                }
-                summary = {
-                    "lookback": int(n_summary),
-                    "last_state": int(ensemble_state[-1])
-                    if len(ensemble_state)
-                    else None,
-                    "state_shares": shares,
-                    "mean_agreement": mean_agreement,
-                }
-                payload = _apply_state_output_mode(
-                    payload,
+            return _finish(
+                _aggregate_precomputed_ensemble(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    target=target,
+                    x=x,
+                    t_fmt=t_fmt,
+                    sub_results=sub_results,
+                    sub_errors=sub_errors,
+                    requested_methods=sub_methods,
+                    voting=voting,
+                    n_states_ens=n_states_ens,
+                    n_states_source=n_states_source,
+                    ens_auto_n_states=ens_auto_n_states,
+                    ens_auto_metrics=ens_auto_metrics,
+                    state_count_warnings=state_count_warnings,
+                    min_regime_bars_val=min_regime_bars_val,
                     output=output,
                     lookback=lookback,
-                    summary=summary,
-                )
-                if output == "summary":
-                    return _finish(payload)
-
-            return _finish(
-                _consolidate_payload(
-                    payload,
-                    method,
-                    output,
                     include_series=include_series,
                     max_regimes=max_regimes,
+                    aggregation_source="fitted_submethods",
                 )
             )
 
@@ -3995,6 +4078,7 @@ def regime_detect(  # noqa: C901
             all_errors: List[str] = []
             method_durations_ms: Dict[str, float] = {}
             method_errors: Dict[str, str] = {}
+            ensemble_sub_results: List[Dict[str, Any]] = []
 
             for m in all_methods:
                 method_started_at = time.perf_counter()
@@ -4005,6 +4089,7 @@ def regime_detect(  # noqa: C901
                     if m in ("hmm", "ms_ar", "clustering"):
                         sub_params.setdefault("n_states", 2)
                     # GARCH: if n_states not explicitly set, leave it out for auto-detection
+                    ensemble_eligible = m in _ENSEMBLE_STATE_METHODS
                     sr = call_tool_sync_structured(
                         regime_detect,
                         symbol=symbol,
@@ -4015,13 +4100,23 @@ def regime_detect(  # noqa: C901
                         params=sub_params,
                         denoise=denoise,
                         threshold=threshold,
-                        detail=sub_detail,  # type: ignore[arg-type]
+                        detail=(
+                            "full" if ensemble_eligible else sub_detail
+                        ),  # type: ignore[arg-type]
                         lookback=lookback,
-                        include_series=include_series_for_subcalls,
+                        include_series=(
+                            True
+                            if ensemble_eligible
+                            else include_series_for_subcalls
+                        ),
                         min_regime_bars=min_regime_bars,
                         raw_tool_output=True,
                     )
                     if isinstance(sr, dict) and not sr.get("error"):
+                        if ensemble_eligible:
+                            ensemble_sub_results.append(
+                                {"method": m, "result": sr}
+                            )
                         # Strip redundant fields that are already at top level
                         # (symbol, timeframe, method, target, success)
                         cleaned_result = {
@@ -4036,6 +4131,8 @@ def regime_detect(  # noqa: C901
                                 "success",
                             )
                         }
+                        if not include_series_for_subcalls:
+                            cleaned_result.pop("series", None)
                         results_by_method[m] = cleaned_result
                     else:
                         error_text = (
@@ -4075,34 +4172,63 @@ def regime_detect(  # noqa: C901
                     }
                 )
 
-            # Also run ensemble to provide consensus view
+            # Aggregate the first-pass state series into the consensus view.
+            ensemble_health: Dict[str, Any] = {}
             try:
                 ensemble_started_at = time.perf_counter()
-                ens_params = dict(p)
-                ens_params["methods"] = [
+                requested_voters = [
                     method_name
-                    for method_name in results_by_method
+                    for method_name in all_methods
                     if method_name in _ENSEMBLE_STATE_METHODS
                 ]
-                ensemble_result = call_tool_sync_structured(
-                    regime_detect,
+                voting = str(p.get("voting", "soft") or "").strip().lower()
+                if voting not in {"soft", "hard"}:
+                    raise ValueError(
+                        "Ensemble voting must be one of: soft, hard."
+                    )
+                (
+                    n_states_ens,
+                    n_states_source,
+                    ens_auto_n_states,
+                    ens_auto_metrics,
+                    state_count_warnings,
+                    state_count_error,
+                ) = _ensemble_state_count_configuration(p, x)
+                if state_count_error:
+                    raise ValueError(state_count_error)
+                ensemble_errors = [
+                    f"{method_name}: {method_errors[method_name]}"
+                    for method_name in requested_voters
+                    if method_name in method_errors
+                ]
+                ensemble_result = _aggregate_precomputed_ensemble(
                     symbol=symbol,
                     timeframe=timeframe,
-                    fetch_limit=fetch_limit,
-                    method="ensemble",
                     target=target,
-                    params=ens_params,
-                    denoise=denoise,
-                    threshold=threshold,
-                    detail=sub_detail,  # type: ignore[arg-type]
+                    x=x,
+                    t_fmt=t_fmt,
+                    sub_results=ensemble_sub_results,
+                    sub_errors=ensemble_errors,
+                    requested_methods=requested_voters,
+                    voting=voting,
+                    n_states_ens=n_states_ens,
+                    n_states_source=n_states_source,
+                    ens_auto_n_states=ens_auto_n_states,
+                    ens_auto_metrics=ens_auto_metrics,
+                    state_count_warnings=state_count_warnings,
+                    min_regime_bars_val=min_regime_bars_val,
+                    output=sub_detail,
                     lookback=lookback,
                     include_series=include_series_for_subcalls,
-                    min_regime_bars=min_regime_bars,
-                    raw_tool_output=True,
+                    max_regimes=max_regimes,
+                    aggregation_source="reused_all_first_pass",
                 )
                 if isinstance(ensemble_result, dict) and not ensemble_result.get(
                     "error"
                 ):
+                    ensemble_health = dict(
+                        ensemble_result.get("ensemble_health") or {}
+                    )
                     # Strip redundant fields
                     results_by_method["ensemble"] = {
                         k: v
@@ -4126,7 +4252,6 @@ def regime_detect(  # noqa: C901
                         3,
                     )
             except Exception as exc:
-                # Ensemble is optional, don't fail if it errors
                 method_errors["ensemble"] = str(exc)
                 method_durations_ms["ensemble"] = round(
                     (time.perf_counter() - ensemble_started_at) * 1000.0,
@@ -4147,6 +4272,7 @@ def regime_detect(  # noqa: C901
             comparison = _build_all_method_comparison(results_by_method)
             comparison["methods_failed"] = failed_components
             ensemble_aggregated = "ensemble" in results_by_method
+            ensemble_degraded = bool(ensemble_health.get("degraded"))
 
             summary_payload: Optional[Dict[str, Any]] = None
             if detail_value in {"summary", "compact"}:
@@ -4157,6 +4283,13 @@ def regime_detect(  # noqa: C901
                 }
                 if ensemble_aggregated:
                     summary_payload["ensemble_aggregated"] = True
+                    summary_payload["ensemble_degraded"] = ensemble_degraded
+                    summary_payload["ensemble_voters_used"] = len(
+                        ensemble_health.get("used_voters") or []
+                    )
+                    summary_payload["ensemble_voters_requested"] = len(
+                        ensemble_health.get("requested_voters") or []
+                    )
                 agreement_summary = comparison.get("agreement")
                 if isinstance(agreement_summary, dict):
                     summary_payload["agreement"] = agreement_summary
@@ -4171,10 +4304,15 @@ def regime_detect(  # noqa: C901
             runtime_payload: Dict[str, Any] = {
                 "completed_methods": list(succeeded_components),
                 "failed_methods": list(failed_components),
-                "partial_results": bool(failed_components),
+                "partial_results": bool(failed_components or ensemble_degraded),
             }
             if ensemble_aggregated:
                 runtime_payload["ensemble_aggregated"] = True
+                runtime_payload["ensemble_voters"] = ensemble_health
+                runtime_payload["ensemble_degraded"] = ensemble_degraded
+                runtime_payload["ensemble_aggregation_source"] = (
+                    "reused_all_first_pass"
+                )
             if method_errors:
                 runtime_payload["method_errors"] = method_errors
             if detail_value == "full":
@@ -4196,6 +4334,8 @@ def regime_detect(  # noqa: C901
                 "comparison": comparison,
                 "runtime": runtime_payload,
             }
+            if ensemble_aggregated:
+                payload["ensemble_health"] = ensemble_health
             if detail_value == "full":
                 payload["params_used"] = {
                     "methods_attempted": attempted_components,
@@ -4208,12 +4348,25 @@ def regime_detect(  # noqa: C901
                 payload["summary"] = summary_payload
             if detail_value == "full":
                 payload["results"] = results_by_method
+            warnings_out: List[str] = []
             if failed_components:
                 error_summary = "; ".join(
                     f"{method_name}: {method_errors[method_name]}"
                     for method_name in failed_components
                 )
-                payload["warnings"] = [f"Method errors: {error_summary}"]
+                warnings_out.append(f"Method errors: {error_summary}")
+            if ensemble_degraded:
+                excluded = ", ".join(
+                    str(name)
+                    for name in ensemble_health.get("excluded_voters") or []
+                )
+                warnings_out.append(
+                    "Ensemble consensus is degraded; excluded voters: "
+                    + (excluded or "unknown")
+                    + "."
+                )
+            if warnings_out:
+                payload["warnings"] = warnings_out
 
             return _finish(payload)
 

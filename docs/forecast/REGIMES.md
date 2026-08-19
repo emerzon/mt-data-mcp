@@ -360,6 +360,14 @@ consensus heuristic, not proof that methods discovered an identical latent
 partition; use volatility-focused methods separately as transition or volatility
 gates.
 
+`method=all` fits each detector once. Its ensemble is aggregated from the
+already-returned full state series for `hmm`, `gmm`, `ms_ar`, `clustering`, and
+`wavelet`; it does not refit those voters. `ensemble_health` and
+`runtime.ensemble_voters` list requested, used, and excluded voters. If a
+successful first-pass detector cannot contribute a compatible state series,
+the response sets `ensemble_degraded=true` and `partial_results=true` even
+though the other per-method results remain usable.
+
 #### Clustering reliability
 
 The `clustering` method learns regimes in its scaled feature space (after PCA
