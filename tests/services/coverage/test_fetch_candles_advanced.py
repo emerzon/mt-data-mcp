@@ -64,7 +64,10 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_simplify_reduced_rows(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_simp, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        rates = _make_rates(20)
+        rates = _make_rates(
+            20,
+            base_ts=pd.Timestamp.now(tz="UTC").floor("min").timestamp(),
+        )
         mock_from.return_value = rates
 
         def reduce_rows(df, hdrs, spec):
@@ -80,7 +83,7 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
             limit=10,
             simplify={'mode': 'select', 'points': 3},
         )
-        self.assertTrue(result.get('success'))
+        self.assertTrue(result.get('success'), result)
         self.assertTrue(result.get('simplified'))
         self.assertEqual(result['series_type'], 'downsampled_visualization')
         self.assertFalse(result['equal_interval'])
