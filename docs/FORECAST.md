@@ -216,8 +216,15 @@ mtdata supports multiple forecasting libraries. Use `--library` to select:
 ```bash
 mtdata-cli forecast_list_library_models native
 mtdata-cli forecast_list_library_models statsforecast
+mtdata-cli forecast_list_library_models sktime
 mtdata-cli forecast_list_library_models pretrained
 ```
+
+The sktime catalog writes a versioned class-name index. Later one-shot
+forecasts using an exact catalog name (for example `NaiveForecaster`) reuse
+that index instead of importing every module under `sktime.forecasting`.
+Registered aliases such as `skt_naive` and exact dotted estimator paths also
+resolve directly.
 
 ---
 

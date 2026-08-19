@@ -3,14 +3,19 @@ from __future__ import annotations
 import difflib
 import importlib
 import inspect
+import json
 import logging
 import math
 import os
 import pkgutil
+import sys
+import tempfile
 import time
 import warnings
 from datetime import datetime, timezone
 from functools import lru_cache
+from importlib import metadata
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ..core.error_envelope import build_error_payload
@@ -69,6 +74,7 @@ _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
 _FORECAST_DIRECTION_MIN_THRESHOLD_PCT = 0.05
+_SKTIME_INDEX_SCHEMA_VERSION = 1
 
 
 def _format_forecast_time_utc(value: Any) -> Any:
@@ -2249,6 +2255,124 @@ def _attach_backtest_collection_contract(result: Dict[str, Any]) -> Dict[str, An
     return out
 
 
+def _sktime_forecaster_index_path() -> Optional[Path]:
+    """Return the version-scoped persistent class index path."""
+    try:
+        sktime_version = metadata.version("sktime")
+    except metadata.PackageNotFoundError:
+        return None
+    safe_version = "".join(
+        character if character.isalnum() or character in ".-_" else "_"
+        for character in str(sktime_version)
+    )
+    if os.name == "nt":
+        base = Path(os.getenv("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    else:
+        base = Path(os.getenv("XDG_CACHE_HOME") or (Path.home() / ".cache"))
+    return (
+        base
+        / "mtdata"
+        / "forecast-indices-v1"
+        / f"sktime-{safe_version}-py{sys.version_info.major}{sys.version_info.minor}.json"
+    )
+
+
+def _valid_sktime_forecaster_mapping(value: Any) -> Dict[str, Tuple[str, str]]:
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, Tuple[str, str]] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        class_name, dotted_path = item
+        if (
+            isinstance(class_name, str)
+            and class_name
+            and isinstance(dotted_path, str)
+            and dotted_path.startswith("sktime.forecasting.")
+        ):
+            out[key.lower()] = (class_name, dotted_path)
+    return out
+
+
+def _load_sktime_forecaster_index() -> Dict[str, Tuple[str, str]]:
+    path = _sktime_forecaster_index_path()
+    if path is None:
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return {}
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != _SKTIME_INDEX_SCHEMA_VERSION
+    ):
+        return {}
+    return _valid_sktime_forecaster_mapping(payload.get("forecasters"))
+
+
+def _store_sktime_forecaster_index(mapping: Dict[str, Tuple[str, str]]) -> None:
+    path = _sktime_forecaster_index_path()
+    if path is None or not mapping:
+        return
+    temporary_path: Optional[Path] = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.stem}-",
+            suffix=".tmp",
+            dir=str(path.parent),
+            text=True,
+        )
+        temporary_path = Path(temporary_name)
+        with os.fdopen(handle, "w", encoding="utf-8", newline="") as stream:
+            json.dump(
+                {
+                    "schema_version": _SKTIME_INDEX_SCHEMA_VERSION,
+                    "forecasters": mapping,
+                },
+                stream,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+    except (OSError, TypeError, ValueError):
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _registered_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
+    """Build cheap exact-name routes from registered sktime aliases."""
+    mapping: Dict[str, Tuple[str, str]] = {}
+    for method_name in ForecastRegistry.get_all_method_names():
+        try:
+            method_class = ForecastRegistry.get_class(method_name)
+        except ValueError:
+            continue
+        dotted_path = str(
+            getattr(method_class, "CAPABILITY_SELECTOR_VALUE", "") or ""
+        )
+        if not dotted_path.startswith("sktime.forecasting."):
+            continue
+        class_name = dotted_path.rsplit(".", 1)[-1]
+        value = (class_name, dotted_path)
+        for alias in (
+            class_name,
+            method_name,
+            *tuple(getattr(method_class, "CAPABILITY_ALIASES", ()) or ()),
+        ):
+            alias_text = str(alias or "").strip()
+            if alias_text:
+                mapping.setdefault(alias_text.lower(), value)
+    return mapping
+
+
 @lru_cache(maxsize=1)
 def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
     """Return mapping of forecaster class name (lower) -> (class_name, dotted path)."""
@@ -2329,6 +2453,7 @@ def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
             key = name.lower()
             if key not in mapping:
                 mapping[key] = (name, f"{obj.__module__}.{name}")
+    _store_sktime_forecaster_index(mapping)
     return mapping
 
 
@@ -2377,6 +2502,25 @@ def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     method_s = str(method or "").strip()
     if not method_s:
         return None
+
+    module_name, separator, class_name = method_s.rpartition(".")
+    if (
+        separator
+        and module_name.startswith("sktime.forecasting")
+        and class_name
+    ):
+        return class_name, method_s
+
+    method_key = method_s.lower()
+    exact_mapping = _registered_sktime_forecasters()
+    exact = exact_mapping.get(method_key)
+    if exact:
+        return exact
+
+    persistent_mapping = _load_sktime_forecaster_index()
+    exact = persistent_mapping.get(method_key)
+    if exact:
+        return exact
 
     mapping = _discover_sktime_forecasters()
     if not mapping:

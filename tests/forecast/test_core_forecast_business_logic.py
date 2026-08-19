@@ -79,6 +79,16 @@ def test_forecast_future_as_of_error_has_date_specific_guidance() -> None:
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     monkeypatch.setattr(
         forecast_use_cases,
+        "_registered_sktime_forecasters",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_load_sktime_forecaster_index",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
         "_discover_sktime_forecasters",
         lambda: {
             "thetaforecaster": ("ThetaForecaster", "sktime.forecasting.theta.ThetaForecaster"),
@@ -98,8 +108,88 @@ def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     assert cf._resolve_sktime_forecaster("") is None
 
 
+def test_resolve_registered_sktime_class_skips_recursive_discovery(monkeypatch):
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_registered_sktime_forecasters",
+        lambda: {
+            "naiveforecaster": (
+                "NaiveForecaster",
+                "sktime.forecasting.naive.NaiveForecaster",
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_load_sktime_forecaster_index",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_discover_sktime_forecasters",
+        lambda: pytest.fail("recursive discovery must not run for an exact class"),
+    )
+
+    assert cf._resolve_sktime_forecaster("NaiveForecaster") == (
+        "NaiveForecaster",
+        "sktime.forecasting.naive.NaiveForecaster",
+    )
+
+
+def test_resolve_sktime_class_reuses_persistent_index(monkeypatch):
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_registered_sktime_forecasters",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_load_sktime_forecaster_index",
+        lambda: {
+            "ararforecaster": (
+                "ARARForecaster",
+                "sktime.forecasting.trend.ARARForecaster",
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_discover_sktime_forecasters",
+        lambda: pytest.fail("persistent exact lookup must not rediscover sktime"),
+    )
+
+    assert cf._resolve_sktime_forecaster("ARARForecaster") == (
+        "ARARForecaster",
+        "sktime.forecasting.trend.ARARForecaster",
+    )
+
+
+def test_sktime_forecaster_index_round_trip(tmp_path, monkeypatch):
+    index_path = tmp_path / "sktime-index.json"
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_sktime_forecaster_index_path",
+        lambda: index_path,
+    )
+    mapping = {
+        "naiveforecaster": (
+            "NaiveForecaster",
+            "sktime.forecasting.naive.NaiveForecaster",
+        ),
+    }
+
+    forecast_use_cases._store_sktime_forecaster_index(mapping)
+
+    assert forecast_use_cases._load_sktime_forecaster_index() == mapping
+
+
 def test_discover_sktime_forecasters_filters_test_and_non_forecaster_modules(monkeypatch):
     cf._clear_discover_sktime_forecasters_cache()
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "_store_sktime_forecaster_index",
+        lambda _mapping: None,
+    )
 
     class BaseForecaster:
         pass
