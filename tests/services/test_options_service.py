@@ -98,6 +98,25 @@ def test_options_quote_metadata_rejects_large_future_clock_skew(monkeypatch):
     assert metadata["timestamp_skew_seconds"] == 31.0
 
 
+def test_option_contract_metadata_marks_current_two_sided_quote_usable(
+    monkeypatch,
+):
+    monkeypatch.setattr(osvc._time, "time", lambda: 1_700_000_120.0)
+
+    metadata = osvc._option_contract_market_metadata(
+        last_trade_epoch=1_700_000_000,
+        bid=2.0,
+        ask=2.2,
+    )
+
+    assert metadata["contract_as_of"] == "2023-11-14T22:13:20Z"
+    assert metadata["contract_data_age_seconds"] == 120.0
+    assert metadata["contract_data_stale"] is False
+    assert metadata["quote_quality"] == "two_sided"
+    assert metadata["quote_usable_for_live_analysis"] is True
+    assert metadata["quote_usability_reason"] == "two_sided_current_quote"
+
+
 def test_get_options_expirations_parses_payload(monkeypatch):
     expiry_a = osvc._ymd_to_epoch("2026-04-17")
     expiry_b = osvc._ymd_to_epoch("2026-05-15")
@@ -282,6 +301,73 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["contract_premium_formula"] == (
         "cash premium = quoted bid/ask/last * contract_multiplier"
     )
+
+
+def test_options_chain_separates_fresh_underlying_from_stale_zero_sided_contracts(
+    monkeypatch,
+):
+    expiry = osvc._ymd_to_epoch("2026-04-17")
+    now_epoch = 1_700_000_900
+    stale_contract_epoch = 1_699_910_000
+    monkeypatch.setattr(osvc._time, "time", lambda: float(now_epoch))
+
+    def fake_fetch(_symbol, expiry_epoch=None):
+        if expiry_epoch is None:
+            return {"expirationDates": [expiry]}
+        return {
+            "expirationDates": [expiry],
+            "quote": {
+                "regularMarketPrice": 100.0,
+                "regularMarketTime": now_epoch - 20,
+                "currency": "USD",
+            },
+            "options": [
+                {
+                    "calls": [
+                        {
+                            "contractSymbol": "AAPL260417C00100000",
+                            "strike": 100.0,
+                            "lastPrice": 2.0,
+                            "bid": 0.0,
+                            "ask": 0.0,
+                            "volume": 10,
+                            "openInterest": 20,
+                            "impliedVolatility": 0.25,
+                            "lastTradeDate": stale_contract_epoch,
+                            "contractSize": "REGULAR",
+                        }
+                    ],
+                    "puts": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(osvc, "_fetch_yahoo_options_payload", fake_fetch)
+
+    out = osvc.get_options_chain(
+        "AAPL",
+        expiration="2026-04-17",
+        option_type="call",
+    )
+
+    assert "as_of" not in out
+    assert "data_stale" not in out
+    assert out["underlying_as_of"] == "2023-11-14T22:28:00Z"
+    assert out["underlying_data_stale"] is False
+    assert out["underlying_freshness"] == "provider_timestamped"
+    contract = out["options"][0]
+    assert contract["contract_as_of"] == "2023-11-13T21:13:20Z"
+    assert contract["contract_data_age_seconds"] == 90900.0
+    assert contract["contract_data_stale"] is True
+    assert contract["contract_freshness"] == "stale"
+    assert contract["quote_quality"] == "zero_sided"
+    assert contract["quote_usable_for_live_analysis"] is False
+    assert out["option_chain_data_stale"] is True
+    assert out["option_chain_freshness"] == "stale"
+    assert out["option_chain_quality"] == "unusable"
+    assert out["option_chain_live_usable"] is False
+    assert out["option_contract_quote_usable_count"] == 0
+    assert out["warnings"]
 
 
 def test_option_contract_terms_fail_closed_for_adjusted_and_missing_metadata():

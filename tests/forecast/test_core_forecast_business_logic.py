@@ -4669,6 +4669,17 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "symbol": kwargs["symbol"],
             "expiration": "2026-06-19",
             "underlying_price": 100.0,
+            "underlying_as_of": "2026-06-01T20:00:00Z",
+            "underlying_data_stale": False,
+            "underlying_freshness": "provider_timestamped",
+            "option_chain_freshness": "current",
+            "option_chain_quality": "live_usable",
+            "option_chain_live_usable": True,
+            "option_contract_count": 1,
+            "option_contract_timestamped_count": 1,
+            "option_contract_current_count": 1,
+            "option_contract_stale_count": 0,
+            "option_contract_quote_usable_count": 1,
             "currency": "USD",
             "option_type": kwargs["option_type"],
             "count": 1,
@@ -4714,6 +4725,13 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
                     "implied_volatility": 0.2,
                     "in_the_money": True,
                     "last_trade_epoch": 1700000000,
+                    "contract_as_of": "2026-06-01T20:00:00Z",
+                    "contract_data_age_seconds": 30.0,
+                    "contract_data_stale": False,
+                    "contract_freshness": "provider_timestamped",
+                    "quote_quality": "two_sided",
+                    "quote_usable_for_live_analysis": True,
+                    "quote_usability_reason": "two_sided_current_quote",
                     "volume": 10,
                     "open_interest": 20,
                     "contract_size": "REGULAR",
@@ -4806,6 +4824,13 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert compact_chain["options"][0]["premium_quote_unit"] == (
         "currency_per_underlying_unit"
     )
+    assert compact_chain["underlying_as_of"] == "2026-06-01T20:00:00Z"
+    assert compact_chain["option_chain_quality"] == "live_usable"
+    assert compact_chain["option_contract_quote_usable_count"] == 1
+    assert compact_chain["options"][0]["contract_as_of"] == (
+        "2026-06-01T20:00:00Z"
+    )
+    assert compact_chain["options"][0]["quote_usable_for_live_analysis"] is True
     assert "implied_volatility" not in compact_chain["options"][0]
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
 

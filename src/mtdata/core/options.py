@@ -36,6 +36,14 @@ _OPTIONS_CHAIN_COMPACT_FIELDS = (
     "premium_quote_unit",
     "volume",
     "open_interest",
+    "contract_as_of",
+    "contract_data_age_seconds",
+    "contract_data_stale",
+    "contract_freshness",
+    "contract_freshness_reason",
+    "quote_quality",
+    "quote_usable_for_live_analysis",
+    "quote_usability_reason",
 )
 _OPTIONS_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^][A-Z0-9.^=_/-]{0,63}$")
 _OPTIONS_EXPIRATION_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -453,14 +461,26 @@ def _apply_options_detail(
                 "configured_provider",
                 "provider_effective",
                 "cached",
-                "data_age_seconds",
-                "data_stale",
-                "stale_after_seconds",
-                "as_of",
-                "freshness",
-                "freshness_reason",
+                "underlying_data_age_seconds",
+                "underlying_data_stale",
+                "underlying_stale_after_seconds",
+                "underlying_as_of",
+                "underlying_freshness",
+                "underlying_freshness_reason",
                 "underlying_price_source",
                 "underlying_price_session",
+                "option_contract_stale_after_seconds",
+                "option_contract_count",
+                "option_contract_timestamped_count",
+                "option_contract_current_count",
+                "option_contract_stale_count",
+                "option_contract_quote_usable_count",
+                "option_contract_earliest_as_of",
+                "option_contract_latest_as_of",
+                "option_chain_data_stale",
+                "option_chain_freshness",
+                "option_chain_quality",
+                "option_chain_live_usable",
                 "symbol",
                 "requested_symbol",
                 "provider_symbol",
@@ -550,6 +570,13 @@ def _apply_options_detail(
                 "spot_freshness_reason",
                 "spot_source",
                 "spot_session",
+                "option_chain_freshness",
+                "option_chain_quality",
+                "selected_contracts_current_count",
+                "selected_contracts_quote_usable_count",
+                "selected_contract_max_spot_skew_seconds",
+                "contract_spot_skew_limit_seconds",
+                "contract_quality_rejections",
                 "calibration_data_status",
                 "warnings",
                 "calibration_error_rmse",
@@ -709,7 +736,9 @@ def options_chain(
     Compact output defaults to the 20 contracts nearest the underlying price,
     balanced across calls and puts. Full detail defaults to 200 contracts.
     Pass ``limit`` explicitly to override either default and ``offset`` to
-    request the next deterministic page.
+    request the next deterministic page. Underlying freshness, per-contract
+    timestamp/quote usability, and aggregate chain quality are reported
+    separately; a fresh underlying does not qualify stale option contracts.
     """
     from ..services.options_service import get_options_chain as _impl
 
@@ -901,8 +930,10 @@ def options_heston_calibrate(
     tokens: https://documentation.tradier.com/. Use `calendar` and
     `maturity_basis` to override the default `UnitedStates.NYSE` /
     `calendar_days` maturity assumptions. The selected expiry must be at least
-    seven calendar days after the chain observation date. Fits that hit
-    parameter, IV-error, or input-freshness quality gates return
+    seven calendar days after the chain observation date. Calibration requires
+    at least five current, two-sided contracts observed within 15 minutes of
+    the underlying timestamp. The fit is not attempted when that input gate
+    fails. Fits that hit parameter or IV-error quality gates return
     `success=false`, `usable_for_pricing=false`, and
     `calibration_status=rejected`, while preserving fitted parameters for
     diagnostics.

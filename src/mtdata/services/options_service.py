@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import email.utils as _email_utils
 import logging
+import math
 import re
 import threading as _threading
 import time as _time
@@ -33,6 +34,7 @@ _YAHOO_BACKOFF_SECONDS = 0.5
 _YAHOO_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _OPTIONS_QUOTE_STALE_AFTER_SECONDS = 900.0
 _OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS = 30.0
+_OPTION_CONTRACT_STALE_AFTER_SECONDS = 900.0
 _US_EQUITY_OPTIONS_TZ = ZoneInfo("America/New_York")
 _US_EQUITY_OPTIONS_CLOSE = _dt.time(16, 0)
 _TRADIER_DOCS_URL = "https://documentation.tradier.com/"
@@ -145,6 +147,217 @@ def _options_quote_metadata(
     elif raw_age > _OPTIONS_QUOTE_STALE_AFTER_SECONDS:
         metadata["freshness_reason"] = "provider_quote_age_exceeds_live_threshold"
     return metadata
+
+
+def _options_chain_underlying_metadata(
+    provider: str,
+    quote: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Name underlying-quote freshness explicitly in an options-chain result."""
+    metadata = _options_quote_metadata(provider, quote)
+    out: Dict[str, Any] = {
+        key: metadata[key]
+        for key in (
+            "provider",
+            "cached",
+            "underlying_price_source",
+            "underlying_price_session",
+        )
+        if key in metadata
+    }
+    key_map = {
+        "as_of": "underlying_as_of",
+        "data_age_seconds": "underlying_data_age_seconds",
+        "data_stale": "underlying_data_stale",
+        "stale_after_seconds": "underlying_stale_after_seconds",
+        "freshness": "underlying_freshness",
+        "freshness_reason": "underlying_freshness_reason",
+        "timestamp_ahead_of_wall_clock": (
+            "underlying_timestamp_ahead_of_wall_clock"
+        ),
+        "timestamp_skew_seconds": "underlying_timestamp_skew_seconds",
+        "timestamp_skew_tolerance_seconds": (
+            "underlying_timestamp_skew_tolerance_seconds"
+        ),
+    }
+    for source_key, target_key in key_map.items():
+        if source_key in metadata:
+            out[target_key] = metadata[source_key]
+    return out
+
+
+def _finite_option_quote(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if math.isfinite(numeric) else None
+
+
+def _option_contract_market_metadata(
+    *,
+    last_trade_epoch: Any,
+    bid: Any,
+    ask: Any,
+    now_epoch: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Qualify one contract's provider timestamp and executable quote sides."""
+    timestamp_epoch = _parse_tradier_epoch(last_trade_epoch)
+    bid_value = _finite_option_quote(bid)
+    ask_value = _finite_option_quote(ask)
+    if bid_value is None or ask_value is None:
+        quote_quality = "unavailable"
+    elif bid_value <= 0.0 and ask_value <= 0.0:
+        quote_quality = "zero_sided"
+    elif bid_value <= 0.0 or ask_value <= 0.0:
+        quote_quality = "one_sided"
+    elif ask_value < bid_value:
+        quote_quality = "crossed"
+    else:
+        quote_quality = "two_sided"
+
+    metadata: Dict[str, Any] = {
+        "contract_timestamp_source": "provider_last_trade",
+        "contract_stale_after_seconds": _OPTION_CONTRACT_STALE_AFTER_SECONDS,
+        "quote_quality": quote_quality,
+    }
+    if timestamp_epoch is None or timestamp_epoch <= 0:
+        metadata.update(
+            {
+                "contract_as_of": None,
+                "contract_data_age_seconds": None,
+                "contract_data_stale": None,
+                "contract_freshness": "unknown",
+                "contract_freshness_reason": (
+                    "provider_contract_timestamp_unavailable"
+                ),
+            }
+        )
+    else:
+        observed_epoch = float(_time.time()) if now_epoch is None else float(now_epoch)
+        raw_age = observed_epoch - float(timestamp_epoch)
+        future_skew_seconds = max(0.0, -raw_age)
+        future_skew_outside_tolerance = (
+            future_skew_seconds > _OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS
+        )
+        contract_stale = (
+            future_skew_outside_tolerance
+            or raw_age > _OPTION_CONTRACT_STALE_AFTER_SECONDS
+        )
+        metadata.update(
+            {
+                "contract_as_of": _dt.datetime.fromtimestamp(
+                    float(timestamp_epoch),
+                    tz=_dt.timezone.utc,
+                )
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "contract_data_age_seconds": round(max(0.0, raw_age), 3),
+                "contract_data_stale": bool(contract_stale),
+                "contract_freshness": (
+                    "clock_skew"
+                    if raw_age < -1.0
+                    else "stale"
+                    if contract_stale
+                    else "provider_timestamped"
+                ),
+            }
+        )
+        if raw_age < -1.0:
+            metadata["contract_timestamp_skew_seconds"] = round(
+                future_skew_seconds,
+                3,
+            )
+            metadata["contract_freshness_reason"] = (
+                "provider_contract_timestamp_in_future"
+                if future_skew_outside_tolerance
+                else "clock_skew_within_tolerance"
+            )
+        elif contract_stale:
+            metadata["contract_freshness_reason"] = (
+                "provider_contract_age_exceeds_live_threshold"
+            )
+
+    timestamp_usable = metadata.get("contract_data_stale") is False
+    quote_usable = quote_quality == "two_sided" and timestamp_usable
+    metadata["quote_usable_for_live_analysis"] = quote_usable
+    if quote_quality != "two_sided":
+        metadata["quote_usability_reason"] = f"quote_{quote_quality}"
+    elif metadata.get("contract_data_stale") is True:
+        metadata["quote_usability_reason"] = "contract_timestamp_stale"
+    elif metadata.get("contract_data_stale") is None:
+        metadata["quote_usability_reason"] = "contract_timestamp_unavailable"
+    else:
+        metadata["quote_usability_reason"] = "two_sided_current_quote"
+    return metadata
+
+
+def _option_chain_quality_metadata(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Summarize freshness and quote usability for returned contracts."""
+    count = len(rows)
+    timestamped_count = sum(
+        1 for row in rows if row.get("contract_as_of") not in (None, "")
+    )
+    current_count = sum(
+        1 for row in rows if row.get("contract_data_stale") is False
+    )
+    stale_count = sum(
+        1 for row in rows if row.get("contract_data_stale") is True
+    )
+    usable_count = sum(
+        1 for row in rows if row.get("quote_usable_for_live_analysis") is True
+    )
+    observed_times = sorted(
+        str(row["contract_as_of"])
+        for row in rows
+        if row.get("contract_as_of") not in (None, "")
+    )
+    if not rows:
+        freshness = "unknown"
+    elif stale_count:
+        freshness = "stale" if stale_count == count else "mixed"
+    elif timestamped_count < count:
+        freshness = "unknown" if timestamped_count == 0 else "mixed"
+    else:
+        freshness = "current"
+    quality = (
+        "live_usable"
+        if count > 0 and usable_count == count
+        else "partially_usable"
+        if usable_count > 0
+        else "unusable"
+    )
+    out: Dict[str, Any] = {
+        "option_contract_stale_after_seconds": (
+            _OPTION_CONTRACT_STALE_AFTER_SECONDS
+        ),
+        "option_contract_count": count,
+        "option_contract_timestamped_count": timestamped_count,
+        "option_contract_current_count": current_count,
+        "option_contract_stale_count": stale_count,
+        "option_contract_quote_usable_count": usable_count,
+        "option_chain_data_stale": (
+            True
+            if stale_count
+            else False
+            if count > 0 and timestamped_count == count
+            else None
+        ),
+        "option_chain_freshness": freshness,
+        "option_chain_quality": quality,
+        "option_chain_live_usable": quality == "live_usable",
+    }
+    if observed_times:
+        out["option_contract_earliest_as_of"] = observed_times[0]
+        out["option_contract_latest_as_of"] = observed_times[-1]
+    if quality != "live_usable":
+        out["warnings"] = [
+            (
+                "Returned option contracts are not all current, timestamped, and "
+                "two-sided; do not treat this chain as a live executable surface."
+            )
+        ]
+    return out
 
 
 def _parse_retry_after_seconds(value: Any) -> Optional[float]:
@@ -499,7 +712,16 @@ def _annotate_fallback_payload(
     out = dict(payload)
     out["configured_provider"] = configured_provider
     out["provider_effective"] = effective_provider
-    out["warnings"] = [_fallback_warning(failures, effective_provider=effective_provider)]
+    fallback_warning = _fallback_warning(
+        failures,
+        effective_provider=effective_provider,
+    )
+    existing_warnings = [
+        str(warning)
+        for warning in list(out.get("warnings") or [])
+        if str(warning).strip()
+    ]
+    out["warnings"] = [fallback_warning, *existing_warnings]
     out["provider_attempts"] = [
         _provider_attempt_metadata(provider, success=False, error=error)
         for provider, error in failures
@@ -989,6 +1211,7 @@ def _normalize_tradier_options(
         underlying = float(underlying_price)
     except Exception:
         underlying = float("nan")
+    observed_epoch = float(_time.time())
     for row in rows:
         side = _tradier_option_side(row)
         if side not in {"call", "put"}:
@@ -1013,13 +1236,18 @@ def _normalize_tradier_options(
             elif side == "put":
                 in_the_money = float(strike) > underlying
         currency = row.get("currency") or "USD"
+        bid = _to_numeric(row.get("bid"), float, float("nan"), field_name="bid")
+        ask = _to_numeric(row.get("ask"), float, float("nan"), field_name="ask")
+        last_trade_epoch = _parse_tradier_epoch(
+            row.get("trade_date") or row.get("last_trade_date")
+        )
         entry: Dict[str, Any] = {
             "side": side,
             "contract": row.get("symbol") or row.get("contractSymbol"),
             "strike": float(strike),
             "last": _to_numeric(row.get("last"), float, float("nan"), field_name="last"),
-            "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
-            "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
+            "bid": bid,
+            "ask": ask,
             "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
             "percent_change": _to_numeric(
                 row.get("change_percentage"),
@@ -1036,8 +1264,14 @@ def _normalize_tradier_options(
                 field_name="implied_volatility",
             ),
             "in_the_money": bool(in_the_money),
-            "last_trade_epoch": _parse_tradier_epoch(row.get("trade_date") or row.get("last_trade_date")),
+            "last_trade_epoch": last_trade_epoch,
             "currency": currency,
+            **_option_contract_market_metadata(
+                last_trade_epoch=last_trade_epoch,
+                bid=bid,
+                ask=ask,
+                now_epoch=observed_epoch,
+            ),
             **_option_contract_terms(
                 row.get("contract_size") or row.get("contractSize"),
             ),
@@ -1217,7 +1451,7 @@ def _get_tradier_options_chain(
     )
     return {
         "success": True,
-        **_options_quote_metadata("tradier", quote),
+        **_options_chain_underlying_metadata("tradier", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry,
         "expiration_status": expiration_status,
@@ -1240,6 +1474,7 @@ def _get_tradier_options_chain(
             limit=limit,
             offset=offset,
         ),
+        **_option_chain_quality_metadata(normalized),
         "options": normalized,
     }
 
@@ -1317,6 +1552,7 @@ def _get_yahoo_options_chain(
     puts_raw = chain.get("puts", []) if isinstance(chain, dict) else []
     calls_raw = calls_raw if isinstance(calls_raw, list) else []
     puts_raw = puts_raw if isinstance(puts_raw, list) else []
+    observed_epoch = float(_time.time())
 
     def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
@@ -1330,13 +1566,21 @@ def _get_yahoo_options_chain(
             strike = _to_numeric(row.get("strike"), float, float("nan"), field_name="strike")
             if not (strike == strike and strike > 0):
                 continue
+            bid = _to_numeric(row.get("bid"), float, float("nan"), field_name="bid")
+            ask = _to_numeric(row.get("ask"), float, float("nan"), field_name="ask")
+            last_trade_epoch = _to_numeric(
+                row.get("lastTradeDate"),
+                int,
+                0,
+                field_name="lastTradeDate",
+            )
             entry: Dict[str, Any] = {
                 "side": side,
                 "contract": row.get("contractSymbol"),
                 "strike": float(strike),
                 "last": _to_numeric(row.get("lastPrice"), float, float("nan"), field_name="lastPrice"),
-                "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
-                "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
+                "bid": bid,
+                "ask": ask,
                 "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
                 "percent_change": _to_numeric(
                     row.get("percentChange"),
@@ -1353,8 +1597,14 @@ def _get_yahoo_options_chain(
                     field_name="impliedVolatility",
                 ),
                 "in_the_money": bool(row.get("inTheMoney", False)),
-                "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0, field_name="lastTradeDate"),
+                "last_trade_epoch": last_trade_epoch,
                 "currency": row.get("currency"),
+                **_option_contract_market_metadata(
+                    last_trade_epoch=last_trade_epoch,
+                    bid=bid,
+                    ask=ask,
+                    now_epoch=observed_epoch,
+                ),
                 **_option_contract_terms(row.get("contractSize")),
             }
             out.append(entry)
@@ -1380,7 +1630,7 @@ def _get_yahoo_options_chain(
 
     return {
         "success": True,
-        **_options_quote_metadata("yahoo", quote),
+        **_options_chain_underlying_metadata("yahoo", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry_ymd,
         "expiration_status": expiration_status,
@@ -1403,6 +1653,7 @@ def _get_yahoo_options_chain(
             limit=limit,
             offset=offset,
         ),
+        **_option_chain_quality_metadata(combined),
         "options": combined,
     }
 

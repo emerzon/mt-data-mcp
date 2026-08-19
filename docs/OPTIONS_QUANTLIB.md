@@ -106,13 +106,25 @@ row multiplier is known:
 cash premium = quoted premium × contract_multiplier
 ```
 
-Both options-data commands expose the provider quote time, its age, and
-`data_stale`. A quote older than 15 minutes is marked stale; an unavailable
-provider timestamp leaves `data_stale` unknown (`null`). Yahoo's underlying
-price is a regular-session price, as shown by `underlying_price_session`. A
-provider timestamp up to 30 seconds ahead of the local clock is reported as
-`clock_skew_within_tolerance` with `timestamp_skew_seconds` and is not marked
-stale solely for that skew. Larger future skew is treated as stale.
+Expiration results expose the provider's underlying quote time through
+`as_of`, age, and `data_stale`. Chain results name that scope explicitly with
+`underlying_as_of`, `underlying_data_age_seconds`, and
+`underlying_data_stale`; those fields do not qualify the option contracts.
+
+Every option row separately reports `contract_as_of`, contract age and stale
+status, `quote_quality`, and `quote_usable_for_live_analysis`. The aggregate
+`option_chain_freshness`, `option_chain_quality`, and count fields summarize
+the returned page. A contract is live-usable only when its provider last-trade
+timestamp is available and no more than 15 minutes old and its bid/ask are
+positive and non-crossed. This timestamp is a provider last-trade observation,
+not an exchange guarantee that both displayed quote sides updated at that
+instant. Missing timestamps, zero/one-sided markets, crossed markets, and stale
+timestamps fail closed. Yahoo's underlying price remains a regular-session
+price, as shown by `underlying_price_session`.
+
+Provider timestamps up to 30 seconds ahead of the local clock are reported as
+`clock_skew_within_tolerance` and are not marked stale solely for that skew.
+Larger future skew is treated as stale.
 
 ---
 
@@ -204,18 +216,20 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name used for maturity assumptions |
 | `--maturity-basis` | `calendar_days` | Basis for the reported `days_to_expiry` diagnostic. The Heston helper maturity is always anchored to the contract's calendar expiry date. |
 
-Calibration requires a timezone-qualified provider `as_of` timestamp so the
-spot, implied volatilities, and valuation date describe one market snapshot.
-Compact and full results include the spot timestamp, source, session, age,
-freshness reason, and stale flag. Stale calibration inputs set
-`calibration_data_status: stale`, set `usable_for_pricing: false`, add
-`stale_market_data` to `pricing_usability_failures`, and emit a warning. The
-numerical fit and its parameters remain available for research diagnostics,
-but the result returns `success: false`,
-`error_code: heston_calibration_rejected`, and a nonzero CLI exit status. The
-same failure contract applies to parameter and IV-error quality gates. Calibrate
-a current, accepted snapshot before using the parameters to price an option. Omit
-`--valuation-date` to derive it from the chain snapshot.
+Calibration requires a timezone-qualified `underlying_as_of` timestamp and at
+least five contracts that are current, timestamped, two-sided, and within 15
+minutes of the spot observation. Contracts that fail timestamp, freshness,
+quote, or spot-skew checks are excluded before fitting. If fewer than five
+remain, calibration is not attempted and returns
+`heston_contract_inputs_rejected` with rejection counts.
+
+`calibration_data_status: current` and `usable_for_pricing: true` therefore
+qualify both the underlying and every selected contract. A stale underlying
+sets `calibration_data_status: stale`, adds `stale_underlying_data` to
+`pricing_usability_failures`, and returns `heston_calibration_rejected`. The
+same failure contract applies to parameter and IV-error quality gates.
+Calibrate a current, accepted snapshot before using the parameters to price an
+option. Omit `--valuation-date` to derive it from the underlying observation.
 When `--expiration` is omitted, calibration skips same-day and short-dated
 contracts that do not meet its seven-calendar-day minimum.
 

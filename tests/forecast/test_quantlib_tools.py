@@ -232,6 +232,42 @@ def _make_fake_quantlib():  # noqa: C901
     return fake
 
 
+def _current_chain_snapshot(
+    observed_at: str = "2026-12-01T20:00:00Z",
+) -> dict:
+    return {
+        "underlying_as_of": observed_at,
+        "underlying_data_age_seconds": 15.0,
+        "underlying_data_stale": False,
+        "underlying_freshness": "provider_timestamped",
+        "option_chain_freshness": "current",
+        "option_chain_quality": "live_usable",
+    }
+
+
+def _qualified_contract(
+    strike: float,
+    *,
+    implied_volatility: float = 0.25,
+    side: str = "call",
+    observed_at: str = "2026-12-01T20:00:00Z",
+) -> dict:
+    return {
+        "contract": f"{side}-{strike:g}",
+        "strike": strike,
+        "implied_volatility": implied_volatility,
+        "side": side,
+        "bid": 1.0,
+        "ask": 1.1,
+        "contract_as_of": observed_at,
+        "contract_data_age_seconds": 15.0,
+        "contract_data_stale": False,
+        "contract_freshness": "provider_timestamped",
+        "quote_quality": "two_sided",
+        "quote_usable_for_live_analysis": True,
+    }
+
+
 def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
     out = qtools.price_barrier_option_quantlib(
@@ -360,19 +396,16 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
-            "data_age_seconds": 15.0,
-            "data_stale": False,
-            "freshness": "provider_timestamped",
+            **_current_chain_snapshot(),
             "underlying_price_source": "tradier_last",
             "underlying_price_session": "provider_reported_last",
             "options": [
-                {"strike": 90.0, "implied_volatility": 0.35, "side": "call"},
-                {"strike": 95.0, "implied_volatility": 0.30, "side": "call"},
-                {"strike": 100.0, "implied_volatility": 0.28, "side": "call"},
-                {"strike": 105.0, "implied_volatility": 0.29, "side": "call"},
-                {"strike": 110.0, "implied_volatility": 0.33, "side": "call"},
-                {"strike": 115.0, "implied_volatility": 0.37, "side": "call"},
+                _qualified_contract(90.0, implied_volatility=0.35),
+                _qualified_contract(95.0, implied_volatility=0.30),
+                _qualified_contract(100.0, implied_volatility=0.28),
+                _qualified_contract(105.0, implied_volatility=0.29),
+                _qualified_contract(110.0, implied_volatility=0.33),
+                _qualified_contract(115.0, implied_volatility=0.37),
             ],
         },
     )
@@ -398,6 +431,13 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["warnings"] == []
     assert out["days_to_expiry"] == 18
     assert out["contracts_used"] == 5
+    assert out["selected_contracts_current_count"] == 5
+    assert out["selected_contracts_quote_usable_count"] == 5
+    assert out["selected_contract_max_spot_skew_seconds"] == 0.0
+    assert out["contract_spot_skew_limit_seconds"] == 900.0
+    assert out["sample_contracts"][0]["contract_as_of"] == (
+        "2026-12-01T20:00:00Z"
+    )
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
     assert out["calibration_error_rmse"] is not None
     assert out["calibration_error_rmse_unit"] == "absolute_implied_volatility"
@@ -417,13 +457,13 @@ def test_calibrate_heston_marks_stale_snapshot_unusable_for_pricing(monkeypatch)
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
-            "data_age_seconds": 3600.0,
-            "data_stale": True,
-            "freshness": "stale",
-            "freshness_reason": "provider_snapshot_too_old",
+            **_current_chain_snapshot(),
+            "underlying_data_age_seconds": 3600.0,
+            "underlying_data_stale": True,
+            "underlying_freshness": "stale",
+            "underlying_freshness_reason": "provider_snapshot_too_old",
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(strike)
                 for strike in (90, 95, 100, 105, 110)
             ],
         },
@@ -440,8 +480,114 @@ def test_calibrate_heston_marks_stale_snapshot_unusable_for_pricing(monkeypatch)
     assert out["calibration_status"] == "rejected"
     assert out["calibration_quality_failures"] == []
     assert out["usable_for_pricing"] is False
-    assert out["pricing_usability_failures"] == ["stale_market_data"]
+    assert out["pricing_usability_failures"] == ["stale_underlying_data"]
     assert "not usable for pricing" in out["warnings"][0]
+
+
+def test_calibrate_heston_rejects_stale_zero_sided_contract_surface(
+    monkeypatch,
+):
+    fake = _make_fake_quantlib()
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+    stale_contracts = []
+    for strike in (90, 95, 100, 105, 110):
+        contract = _qualified_contract(
+            strike,
+            observed_at="2026-11-30T20:00:00Z",
+        )
+        contract.update(
+            {
+                "bid": 0.0,
+                "ask": 0.0,
+                "contract_data_age_seconds": 86400.0,
+                "contract_data_stale": True,
+                "contract_freshness": "stale",
+                "quote_quality": "zero_sided",
+                "quote_usable_for_live_analysis": False,
+            }
+        )
+        stale_contracts.append(contract)
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            **_current_chain_snapshot(),
+            "option_chain_freshness": "stale",
+            "option_chain_quality": "unusable",
+            "options": stale_contracts,
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "heston_contract_inputs_rejected"
+    assert out["calibration_status"] == "rejected"
+    assert out["calibration_data_status"] == "unusable_contracts"
+    assert out["contracts_usable"] == 0
+    assert out["contract_quality_rejections"] == {
+        "contract_spot_timestamp_mismatch": 5,
+        "stale_contract_timestamp": 5,
+        "contract_quote_not_live_usable": 5,
+    }
+    assert fake.HestonModelHelper.created == []
+
+
+@pytest.mark.parametrize(
+    ("contract_patch", "expected_rejection"),
+    [
+        (
+            {
+                "contract_as_of": None,
+                "contract_data_stale": None,
+                "quote_usable_for_live_analysis": False,
+            },
+            "contract_timestamp_unavailable",
+        ),
+        (
+            {"contract_as_of": "2026-12-01T19:30:00Z"},
+            "contract_spot_timestamp_mismatch",
+        ),
+    ],
+)
+def test_calibrate_heston_rejects_unqualified_contract_time(
+    monkeypatch,
+    contract_patch,
+    expected_rejection,
+):
+    fake = _make_fake_quantlib()
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+    contracts = []
+    for strike in (90, 95, 100, 105, 110):
+        contract = _qualified_contract(strike)
+        contract.update(contract_patch)
+        contracts.append(contract)
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            **_current_chain_snapshot(),
+            "options": contracts,
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+    )
+
+    assert out["error_code"] == "heston_contract_inputs_rejected"
+    assert out["contract_quality_rejections"][expected_rejection] == 5
+    assert fake.HestonModelHelper.created == []
 
 
 def test_calibrate_heston_default_selects_nearest_eligible_expiration(monkeypatch):
@@ -463,9 +609,9 @@ def test_calibrate_heston_default_selects_nearest_eligible_expiration(monkeypatc
             "success": True,
             "expiration": kwargs["expiration"],
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
+            **_current_chain_snapshot(),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(strike)
                 for strike in (90, 95, 100, 105, 110)
             ],
         }
@@ -496,9 +642,9 @@ def test_calibrate_heston_rejects_subweek_maturity_before_fit(monkeypatch):
             "success": True,
             "expiration": "2026-12-02",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
+            **_current_chain_snapshot(),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(strike)
                 for strike in (90, 95, 100, 105, 110)
             ],
         },
@@ -533,9 +679,9 @@ def test_calibrate_heston_marks_bound_fit_unusable(monkeypatch):
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
+            **_current_chain_snapshot(),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(strike)
                 for strike in (90, 95, 100, 105, 110)
             ],
         },
@@ -569,9 +715,9 @@ def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch)
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
+            **_current_chain_snapshot(),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": side}
+                _qualified_contract(strike, side=side)
                 for strike, side in zip((90, 95, 100, 105, 110), ("put", "call", "put", "call", "put"))
             ],
         },
@@ -600,14 +746,14 @@ def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monk
             "symbol": kwargs["symbol"],
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T20:00:00Z",
+            **_current_chain_snapshot(),
             "options": [
-                {"strike": 90.0, "implied_volatility": 0.35, "side": "call"},
-                {"strike": 95.0, "implied_volatility": 0.30, "side": "call"},
-                {"strike": 100.0, "implied_volatility": 0.28, "side": "call"},
-                {"strike": 105.0, "implied_volatility": 0.29, "side": "call"},
-                {"strike": 110.0, "implied_volatility": 0.33, "side": "call"},
-                {"strike": 115.0, "implied_volatility": 0.37, "side": "call"},
+                _qualified_contract(90.0, implied_volatility=0.35),
+                _qualified_contract(95.0, implied_volatility=0.30),
+                _qualified_contract(100.0, implied_volatility=0.28),
+                _qualified_contract(105.0, implied_volatility=0.29),
+                _qualified_contract(110.0, implied_volatility=0.33),
+                _qualified_contract(115.0, implied_volatility=0.37),
             ],
         },
     )
@@ -639,9 +785,12 @@ def test_calibrate_heston_rejects_valuation_date_outside_chain_snapshot(monkeypa
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": "2026-12-01T23:30:00Z",
+            **_current_chain_snapshot("2026-12-01T23:30:00Z"),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(
+                    strike,
+                    observed_at="2026-12-01T23:30:00Z",
+                )
                 for strike in (90, 95, 100, 105, 110)
             ],
         },
@@ -668,7 +817,7 @@ def test_calibrate_heston_requires_chain_observation_timestamp(monkeypatch):
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": None,
+            "underlying_as_of": None,
             "options": [
                 {"strike": strike, "implied_volatility": 0.25, "side": "call"}
                 for strike in (90, 95, 100, 105, 110)
@@ -749,9 +898,12 @@ def test_calibrate_heston_rejects_nonpositive_contract_maturity(
             "success": True,
             "expiration": "2026-12-19",
             "underlying_price": 100.0,
-            "as_of": f"{valuation_date}T15:00:00Z",
+            **_current_chain_snapshot(f"{valuation_date}T15:00:00Z"),
             "options": [
-                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                _qualified_contract(
+                    strike,
+                    observed_at=f"{valuation_date}T15:00:00Z",
+                )
                 for strike in (90, 95, 100, 105, 110)
             ],
         },

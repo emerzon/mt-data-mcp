@@ -13,6 +13,7 @@ from ..services.options_service import get_options_chain, get_options_expiration
 
 _DEFAULT_QUANTLIB_CALENDAR = "UnitedStates.NYSE"
 _DEFAULT_MATURITY_BASIS = "calendar_days"
+_HESTON_CONTRACT_SPOT_SKEW_LIMIT_SECONDS = 900.0
 _QUANTLIB_CALENDAR_TIMEZONES = {
     "NullCalendar": "UTC",
     "TARGET": "Europe/Brussels",
@@ -602,6 +603,46 @@ def _chain_observation_date(
         return None
 
 
+def _timezone_qualified_epoch(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        observed_at = _dt.datetime.fromisoformat(text)
+        if observed_at.tzinfo is None:
+            return None
+        return float(observed_at.timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _heston_contract_quality(
+    row: Dict[str, Any],
+    *,
+    spot_epoch: float,
+) -> tuple[List[str], Optional[float]]:
+    failures: List[str] = []
+    contract_epoch = _timezone_qualified_epoch(row.get("contract_as_of"))
+    if contract_epoch is None:
+        failures.append("contract_timestamp_unavailable")
+        skew_seconds = None
+    else:
+        skew_seconds = abs(float(spot_epoch) - contract_epoch)
+        if skew_seconds > _HESTON_CONTRACT_SPOT_SKEW_LIMIT_SECONDS:
+            failures.append("contract_spot_timestamp_mismatch")
+    if row.get("contract_data_stale") is not False:
+        failures.append(
+            "stale_contract_timestamp"
+            if row.get("contract_data_stale") is True
+            else "contract_freshness_unqualified"
+        )
+    if row.get("quote_usable_for_live_analysis") is not True:
+        failures.append("contract_quote_not_live_usable")
+    return failures, skew_seconds
+
+
 def calibrate_heston_quantlib_from_options(  # noqa: C901
     *,
     symbol: str,
@@ -752,18 +793,108 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     if not (spot_val == spot_val and spot_val > 0):
         return {"error": "Underlying spot price unavailable from options provider."}
 
+    spot_as_of = chain.get("underlying_as_of")
+    spot_epoch = _timezone_qualified_epoch(spot_as_of)
+    if spot_epoch is None:
+        return {
+            "error": (
+                "Options provider timestamp is required to anchor Heston "
+                "calibration to a single market snapshot."
+            ),
+            "error_code": "chain_observation_time_unavailable",
+            "spot_as_of": spot_as_of,
+            "remediation": (
+                "Retry with a provider response that includes a timezone-qualified "
+                "underlying_as_of timestamp."
+            ),
+        }
+
     rows: List[Dict[str, Any]] = []
+    contract_quality_rejections: Dict[str, int] = {}
+    contracts_with_valid_iv = 0
     for row in contracts:
         if not isinstance(row, dict):
             continue
-        strike = float(row.get("strike", float("nan")))
-        iv = float(row.get("implied_volatility", float("nan")))
+        try:
+            strike = float(row.get("strike", float("nan")))
+            iv = float(row.get("implied_volatility", float("nan")))
+        except (TypeError, ValueError):
+            strike = float("nan")
+            iv = float("nan")
         if not (np.isfinite(strike) and strike > 0 and np.isfinite(iv) and 0.01 <= iv <= 5.0):
+            contract_quality_rejections["invalid_strike_or_implied_volatility"] = (
+                contract_quality_rejections.get(
+                    "invalid_strike_or_implied_volatility",
+                    0,
+                )
+                + 1
+            )
             continue
-        rows.append({"strike": strike, "iv": iv, "side": row.get("side")})
+        contracts_with_valid_iv += 1
+        quality_failures, skew_seconds = _heston_contract_quality(
+            row,
+            spot_epoch=spot_epoch,
+        )
+        if quality_failures:
+            for failure in quality_failures:
+                contract_quality_rejections[failure] = (
+                    contract_quality_rejections.get(failure, 0) + 1
+                )
+            continue
+        rows.append(
+            {
+                "contract": row.get("contract"),
+                "strike": strike,
+                "iv": iv,
+                "side": row.get("side"),
+                "bid": row.get("bid"),
+                "ask": row.get("ask"),
+                "contract_as_of": row.get("contract_as_of"),
+                "contract_data_age_seconds": row.get(
+                    "contract_data_age_seconds"
+                ),
+                "contract_data_stale": row.get("contract_data_stale"),
+                "contract_freshness": row.get("contract_freshness"),
+                "quote_quality": row.get("quote_quality"),
+                "quote_usable_for_live_analysis": row.get(
+                    "quote_usable_for_live_analysis"
+                ),
+                "spot_contract_skew_seconds": (
+                    round(float(skew_seconds), 3)
+                    if skew_seconds is not None
+                    else None
+                ),
+            }
+        )
 
     if len(rows) < 5:
-        return {"error": "Need at least 5 contracts with valid implied volatility for Heston calibration."}
+        return {
+            "success": False,
+            "error": (
+                "Heston calibration requires at least 5 current, timestamped, "
+                "two-sided option contracts from the same market snapshot."
+            ),
+            "error_code": "heston_contract_inputs_rejected",
+            "calibration_status": "rejected",
+            "calibration_data_status": "unusable_contracts",
+            "usable_for_pricing": False,
+            "spot_as_of": spot_as_of,
+            "contracts_available": len(contracts),
+            "contracts_with_valid_implied_volatility": contracts_with_valid_iv,
+            "contracts_usable": len(rows),
+            "minimum_contracts_required": 5,
+            "contract_spot_skew_limit_seconds": (
+                _HESTON_CONTRACT_SPOT_SKEW_LIMIT_SECONDS
+            ),
+            "contract_quality_rejections": contract_quality_rejections,
+            "pricing_usability_failures": ["unusable_option_contract_inputs"],
+            "warnings": [
+                (
+                    "Calibration was not attempted because fewer than five "
+                    "contracts passed timestamp, freshness, quote, and spot-skew checks."
+                )
+            ],
+        }
 
     rows.sort(key=lambda x: abs(float(x["strike"]) - spot_val))
     contract_limit = int(max_contracts)
@@ -796,7 +927,6 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     except Exception:
         return {"error": f"Invalid expiration format: {expiry_text}"}
     valuation_timezone = _valuation_timezone_for_calendar(calendar_name)
-    spot_as_of = chain.get("as_of")
     observation_day = _chain_observation_date(
         spot_as_of,
         timezone_name=valuation_timezone,
@@ -944,25 +1074,58 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
 
     errors = [float(h.calibrationError()) for h in helpers]
     rmse = float(np.sqrt(np.mean(np.square(errors)))) if errors else float("nan")
-    spot_data_stale = chain.get("data_stale")
-    spot_freshness = chain.get("freshness")
-    calibration_data_stale = spot_data_stale is True or spot_freshness == "stale"
+    spot_data_stale = chain.get("underlying_data_stale")
+    spot_freshness = chain.get("underlying_freshness")
+    selected_contracts_current_count = sum(
+        1 for row in rows if row.get("contract_data_stale") is False
+    )
+    selected_contracts_quote_usable_count = sum(
+        1
+        for row in rows
+        if row.get("quote_usable_for_live_analysis") is True
+    )
+    selected_contract_max_spot_skew_seconds = max(
+        (
+            float(row["spot_contract_skew_seconds"])
+            for row in rows
+            if row.get("spot_contract_skew_seconds") is not None
+        ),
+        default=None,
+    )
+    selected_contracts_qualified = (
+        selected_contracts_current_count == len(rows)
+        and selected_contracts_quote_usable_count == len(rows)
+        and selected_contract_max_spot_skew_seconds is not None
+        and selected_contract_max_spot_skew_seconds
+        <= _HESTON_CONTRACT_SPOT_SKEW_LIMIT_SECONDS
+    )
+    calibration_data_stale = spot_data_stale is True
     calibration_data_status = (
         "stale"
         if calibration_data_stale
         else "current"
-        if spot_data_stale is False
-        else "unknown"
+        if spot_data_stale is False and selected_contracts_qualified
+        else "unqualified"
     )
     warnings = (
         [
-            "Heston calibration used stale options-provider market data; the "
+            "Heston calibration used a stale underlying quote; the "
             "fitted parameters are not usable for pricing until a current "
             "snapshot is calibrated."
         ]
         if calibration_data_stale
         else []
     )
+    if spot_data_stale is not False and not calibration_data_stale:
+        warnings.append(
+            "Underlying quote freshness is unqualified; the fitted parameters "
+            "are not usable for pricing until a timestamped current snapshot is calibrated."
+        )
+    if not selected_contracts_qualified:
+        warnings.append(
+            "Selected option contracts did not all pass timestamp, freshness, "
+            "two-sided quote, and spot-skew checks."
+        )
     params = {
         "kappa": float(model.kappa()),
         "theta": float(model.theta()),
@@ -994,7 +1157,11 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         )
     pricing_usability_failures = list(quality_failures)
     if calibration_data_stale:
-        pricing_usability_failures.append("stale_market_data")
+        pricing_usability_failures.append("stale_underlying_data")
+    elif spot_data_stale is not False:
+        pricing_usability_failures.append("underlying_freshness_unqualified")
+    if not selected_contracts_qualified:
+        pricing_usability_failures.append("option_contract_inputs_unqualified")
     usable_for_pricing = not pricing_usability_failures
 
     return {
@@ -1028,12 +1195,27 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "puts_used": sum(1 for row in rows if row.get("side") == "put"),
         "spot": float(spot_val),
         "spot_as_of": spot_as_of,
-        "spot_data_age_seconds": chain.get("data_age_seconds"),
+        "spot_data_age_seconds": chain.get("underlying_data_age_seconds"),
         "spot_data_stale": spot_data_stale,
         "spot_freshness": spot_freshness,
-        "spot_freshness_reason": chain.get("freshness_reason"),
+        "spot_freshness_reason": chain.get("underlying_freshness_reason"),
         "spot_source": chain.get("underlying_price_source"),
         "spot_session": chain.get("underlying_price_session"),
+        "option_chain_freshness": chain.get("option_chain_freshness"),
+        "option_chain_quality": chain.get("option_chain_quality"),
+        "selected_contracts_current_count": (
+            selected_contracts_current_count
+        ),
+        "selected_contracts_quote_usable_count": (
+            selected_contracts_quote_usable_count
+        ),
+        "selected_contract_max_spot_skew_seconds": (
+            selected_contract_max_spot_skew_seconds
+        ),
+        "contract_spot_skew_limit_seconds": (
+            _HESTON_CONTRACT_SPOT_SKEW_LIMIT_SECONDS
+        ),
+        "contract_quality_rejections": contract_quality_rejections,
         "calibration_data_status": calibration_data_status,
         "warnings": warnings,
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
