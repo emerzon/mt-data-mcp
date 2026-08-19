@@ -125,6 +125,12 @@ never reached, the trade exits at the forecast horizon. There is no stop-loss,
 so losing trades remain open to the horizon. In return mode, the equivalent
 rule is applied to cumulative log returns.
 
+Each forecast is formed after its anchor bar completes. A non-flat signal enters
+at the next bar's open (`signal_timing=completed_bar_close`,
+`execution_timing=next_bar_open`), so overnight and weekend gaps are included in
+the simulated return. The final anchor is used only when that next open and the
+full realized horizon are available.
+
 Consequently, `win_rate`, Sharpe, drawdown, and return metrics describe this
 specific take-profit-only heuristic. They are not directly comparable to a
 hold-to-horizon or dual-barrier strategy.

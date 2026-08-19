@@ -218,6 +218,7 @@ def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():
                     "avg_return_per_trade": 0.008,
                     "calmar_ratio": 1.8,
                     "annual_return": 0.14,
+                    "trades_observed": 30,
                 },
             }
         }
@@ -288,6 +289,65 @@ def test_genetic_search_optimize_hints_falls_back_to_forecast_accuracy():
     assert hint["backtest_metrics"]["metrics_reason"] == "no_non_flat_trades"
 
 
+@pytest.mark.parametrize(
+    ("trades_observed", "expected_source", "expected_comparable"),
+    [
+        (1, "forecast_accuracy_fallback", False),
+        (5, "forecast_accuracy_fallback", False),
+        (29, "forecast_accuracy_fallback", False),
+        (30, "trading_composite", True),
+    ],
+)
+def test_composite_fitness_requires_reliable_trade_sample(
+    trades_observed,
+    expected_source,
+    expected_comparable,
+):
+    backtest_result = {
+        "results": {
+            "theta": {
+                "success": True,
+                "avg_rmse": 0.02,
+                "avg_directional_accuracy": 0.6,
+                "metrics": {
+                    "win_rate": 1.0,
+                    "max_drawdown": 0.0,
+                    "avg_return_per_trade": 0.01,
+                    "trades_observed": trades_observed,
+                },
+            }
+        }
+    }
+
+    with patch(
+        "mtdata.forecast.tune._eval_candidate",
+        return_value=(0.02, backtest_result),
+    ):
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["theta"],
+            population=2,
+            generations=0,
+            top_n=1,
+            fitness_metric="composite",
+            seed=42,
+        )
+
+    hint = result["hints"][0]
+    assert hint["fitness_source"] == expected_source
+    assert hint["fitness_comparable"] is expected_comparable
+    assert hint["trades_observed"] == trades_observed
+    assert hint["metrics_reliability"] == (
+        "standard" if trades_observed >= 30 else "low"
+    )
+    assert hint["minimum_trades_for_comparable_fitness"] == 30
+    assert hint["backtest_metrics"]["trades_observed"] == trades_observed
+    if trades_observed < 30:
+        assert hint["sample_notice"]["minimum_trades"] == 30
+        assert "requires at least 30" in hint["sample_warning"]
+
+
 def test_genetic_search_ranks_trading_composite_above_accuracy_fallback():
     def _candidate(**kwargs):
         method = kwargs["method"]
@@ -299,6 +359,7 @@ def test_genetic_search_ranks_trading_composite_above_accuracy_fallback():
                         "metrics": {
                             "win_rate": 0.55,
                             "sharpe_ratio": 0.4,
+                            "trades_observed": 30,
                         },
                     }
                 }
@@ -377,6 +438,7 @@ def test_genetic_search_optimize_hints_labels_composite_history_scores():
                     "win_rate": 0.6,
                     "max_drawdown": 0.01,
                     "avg_return_per_trade": 0.002,
+                    "trades_observed": 30,
                 },
             }
         }

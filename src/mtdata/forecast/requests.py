@@ -31,6 +31,16 @@ MAX_BACKTEST_STEPS = 200
 MAX_BACKTEST_SPACING = 10_000
 
 
+def _validate_backtest_spacing(*, steps: int, spacing: int, horizon: int) -> None:
+    """Reject overlapping rolling validation windows before work begins."""
+    if steps > 1 and spacing < horizon:
+        raise ValueError(
+            "spacing must be greater than or equal to horizon when steps > 1 "
+            f"(got spacing={spacing}, horizon={horizon}); try "
+            f"spacing={horizon} or steps=1"
+        )
+
+
 def _normalize_methods_value(value: Any) -> Any:
     if value is None:
         return None
@@ -296,12 +306,11 @@ class ForecastBacktestRequest(_PublicForecastRequest):
 
     @model_validator(mode="after")
     def _validate_spacing(self) -> "ForecastBacktestRequest":
-        if self.steps > 1 and self.spacing < self.horizon:
-            raise ValueError(
-                "spacing must be greater than or equal to horizon when steps > 1 "
-                f"(got spacing={self.spacing}, horizon={self.horizon}); try "
-                f"spacing={self.horizon} or steps=1"
-            )
+        _validate_backtest_spacing(
+            steps=self.steps,
+            spacing=self.spacing,
+            horizon=self.horizon,
+        )
         return self
 
 
@@ -397,11 +406,11 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_spacing(self) -> "ForecastConformalIntervalsRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
-        if self.steps > 1 and self.spacing < self.horizon:
-            raise ValueError(
-                "spacing must be greater than or equal to horizon when steps > 1 "
-                f"(got spacing={self.spacing}, horizon={self.horizon})"
-            )
+        _validate_backtest_spacing(
+            steps=self.steps,
+            spacing=self.spacing,
+            horizon=self.horizon,
+        )
         return self
 
 
@@ -418,7 +427,15 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
-    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
+    spacing: int = Field(
+        20,
+        ge=1,
+        le=MAX_BACKTEST_SPACING,
+        description=(
+            "Bars between consecutive tuning backtest anchors. Must be at least "
+            "horizon when steps is greater than 1."
+        ),
+    )
     quantity: Literal["price", "return", "volatility"] = "price"
     search_space: Optional[Dict[str, Any]] = None
     metric: TuningMetricLiteral = "avg_rmse"
@@ -471,6 +488,11 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastTuneGeneticRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
+        _validate_backtest_spacing(
+            steps=self.steps,
+            spacing=self.spacing,
+            horizon=self.horizon,
+        )
         return self
 
 
@@ -487,7 +509,15 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
-    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
+    spacing: int = Field(
+        20,
+        ge=1,
+        le=MAX_BACKTEST_SPACING,
+        description=(
+            "Bars between consecutive tuning backtest anchors. Must be at least "
+            "horizon when steps is greater than 1."
+        ),
+    )
     quantity: Literal["price", "return", "volatility"] = "price"
     search_space: Optional[Dict[str, Any]] = None
     metric: TuningMetricLiteral = "avg_rmse"
@@ -510,7 +540,6 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     )
     n_jobs: int = Field(1, ge=1)
     sampler: Literal["tpe", "random", "cmaes"] = "tpe"
-    pruner: Literal["median", "none", "hyperband", "percentile"] = "median"
     study_name: Optional[str] = None
     storage: Optional[str] = None
     seed: int = 42
@@ -540,6 +569,11 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastTuneOptunaRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
+        _validate_backtest_spacing(
+            steps=self.steps,
+            spacing=self.spacing,
+            horizon=self.horizon,
+        )
         return self
 
 
@@ -653,7 +687,15 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
-    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive optimization backtest anchors.")
+    spacing: int = Field(
+        20,
+        ge=1,
+        le=MAX_BACKTEST_SPACING,
+        description=(
+            "Bars between consecutive optimization backtest anchors. Must be at "
+            "least horizon when steps is greater than 1."
+        ),
+    )
     population: int = Field(
         8,
         ge=2,
@@ -712,6 +754,11 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastOptimizeHintsRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
+        _validate_backtest_spacing(
+            steps=self.steps,
+            spacing=self.spacing,
+            horizon=self.horizon,
+        )
         return self
 
 

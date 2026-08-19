@@ -51,6 +51,27 @@ def test_forecast_requests_reject_extreme_backtest_windows(model) -> None:
         model(symbol="EURUSD", spacing=10_001)
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        ForecastBacktestRequest,
+        ForecastConformalIntervalsRequest,
+        ForecastTuneGeneticRequest,
+        ForecastTuneOptunaRequest,
+        ForecastOptimizeHintsRequest,
+    ],
+)
+def test_forecast_requests_reject_overlapping_rolling_windows(model) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"got spacing=1, horizon=3.*spacing=3 or steps=1",
+    ):
+        model(symbol="EURUSD", horizon=3, steps=2, spacing=1)
+
+    request = model(symbol="EURUSD", horizon=3, steps=1, spacing=1)
+    assert request.spacing == 1
+
+
 @pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf")])
 def test_backtest_requests_reject_invalid_slippage(value) -> None:
     with pytest.raises(ValidationError, match="slippage_bps"):

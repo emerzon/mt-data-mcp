@@ -2286,6 +2286,11 @@ def forecast_backtest(  # noqa: C901
 
         # Build ground-truth windows for each anchor
         closes = df['close'].astype(float).to_numpy()
+        opens = (
+            df['open'].astype(float).to_numpy()
+            if 'open' in df.columns
+            else closes
+        )
         times = df['time'].astype(float).to_numpy()
         actual_windows: Dict[int, Tuple[List[float], List[float]]] = {}
         for idx in anchor_indices:
@@ -2497,7 +2502,19 @@ def forecast_backtest(  # noqa: C901
                         continue
                     mae = float(np.mean(np.abs(fcv[:m] - act[:m])))
                     rmse = float(np.sqrt(np.mean((fcv[:m] - act[:m])**2)))
-                    entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
+                    entry_idx = int(idx + 1)
+                    entry_price = (
+                        float(opens[entry_idx])
+                        if 'open' in df.columns and entry_idx < len(opens)
+                        else float(closes[idx])
+                        if idx < len(closes)
+                        else float('nan')
+                    )
+                    entry_price_source = (
+                        "next_bar_open"
+                        if 'open' in df.columns
+                        else "next_bar_close_fallback_missing_open"
+                    )
                     (
                         (da, directional_calls_made, directional_opportunities),
                         (
@@ -2569,10 +2586,12 @@ def forecast_backtest(  # noqa: C901
                                         hit_idx = np.where(cum_log <= forecast_target_log)[0]
                                     if hit_idx.size > 0:
                                         exit_step = int(hit_idx[0])
-                                realized_log = float(cum_log[exit_step]) if cum_log.size else 0.0
-                                gross_return = direction * float(math.exp(realized_log) - 1.0)
                                 exit_idx = idx + exit_step + 1
                                 exit_price = float(closes[exit_idx]) if exit_idx < len(closes) else float('nan')
+                                if math.isfinite(exit_price):
+                                    gross_return = direction * (
+                                        (exit_price - entry_price) / entry_price
+                                    )
                             except Exception:
                                 gross_return = float('nan')
                             slip = float(abs(slippage_bps) or 0.0) / 10000.0
@@ -2621,6 +2640,8 @@ def forecast_backtest(  # noqa: C901
                         "path_directional_calls_made": path_directional_calls_made,
                         "path_directional_opportunities": path_directional_opportunities,
                         "entry_price": entry_price,
+                        "entry_time": _format_time_minimal(float(times[entry_idx])),
+                        "entry_price_source": entry_price_source,
                         "exit_price": exit_price,
                         "exit_step": int(exit_step) + 1 if m > 0 else 0,
                         "expected_return": expected_return,
@@ -2794,6 +2815,8 @@ def forecast_backtest(  # noqa: C901
             "backtest_plan": backtest_plan,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": trade_threshold_value,
+            "signal_timing": "completed_bar_close",
+            "execution_timing": "next_bar_open",
             "detail": detail_mode,
             "results": results,
         }

@@ -3662,7 +3662,6 @@ def run_forecast_tune_optuna(
             timeout=float(request.timeout) if request.timeout is not None else None,
             n_jobs=int(request.n_jobs),
             sampler=str(request.sampler),
-            pruner=str(request.pruner),
             study_name=str(request.study_name) if request.study_name is not None else None,
             storage=str(request.storage) if request.storage is not None else None,
             seed=int(request.seed),

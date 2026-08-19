@@ -744,6 +744,7 @@ def _next_volatility_times_on_grid(
             horizon,
             skip_weekends=skip_weekends,
             timeframe=timeframe,
+            symbol=symbol,
         )
 
     candidate_count = max(int(horizon) + 8, 16)
@@ -755,6 +756,7 @@ def _next_volatility_times_on_grid(
             candidate_count,
             skip_weekends=skip_weekends,
             timeframe=timeframe,
+            symbol=symbol,
         )
         future = [
             value for value in candidates

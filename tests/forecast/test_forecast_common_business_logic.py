@@ -55,10 +55,14 @@ def test_describe_forecast_calendar_treatment_labels_fx_crypto_and_unknown():
     ) == "broker_calendar_boundaries_continuous_crypto"
     assert fc.describe_forecast_calendar_treatment(
         "US500", day, calendar_timeframe=True
-    ) == "calendar_estimate_session_schedule_unknown"
+    ) == "broker_calendar_boundaries_and_weekend_skipped_holidays_unknown"
     assert fc.describe_forecast_calendar_treatment(
         "US500", hour, calendar_timeframe=False
-    ) == "continuous_no_weekend_skip"
+    ) == "standard_weekend_skipped_session_hours_unknown"
+
+    assert fc.describe_forecast_calendar_treatment(
+        "AAPL.NAS", day, calendar_timeframe=True
+    ) == "broker_calendar_boundaries_and_xnys_holidays_skipped"
 
 
 def test_future_as_of_is_rejected_against_wall_clock():

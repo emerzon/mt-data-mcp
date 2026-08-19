@@ -4,9 +4,11 @@ import math
 import os
 import re
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
+import holidays
 import numpy as np
 import pandas as pd
 
@@ -421,11 +423,50 @@ def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
 
 
 def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
-    """Return whether forecasts should skip the standard FX weekend."""
-    return is_probably_forex_symbol(
-        symbol,
-        currency_codes=FOREX_CURRENCY_CODES,
+    """Return whether forecasts should skip the universal non-crypto weekend."""
+    return not is_probably_crypto_symbol(symbol)
+
+
+def _forecast_exchange_calendar(symbol: Optional[str]) -> Optional[str]:
+    """Resolve an exchange calendar only when the broker suffix is unambiguous."""
+    normalized = str(symbol or "").strip().upper()
+    match = re.search(r"[._-]([A-Z0-9]+)(?:[._-].*)?$", normalized)
+    if match is None:
+        return None
+    if match.group(1) in {
+        "AMEX",
+        "ARCA",
+        "ASE",
+        "BATS",
+        "NAS",
+        "NASDAQ",
+        "NQ",
+        "NY",
+        "NYSE",
+        "NYS",
+        "NYQ",
+        "O",
+        "US",
+    }:
+        return "XNYS"
+    return None
+
+
+def _is_exchange_holiday_epoch(symbol: Optional[str], epoch: float) -> bool:
+    calendar = _forecast_exchange_calendar(symbol)
+    if calendar is None:
+        return False
+    # MT5 daily equity bars commonly open at the prior evening's broker
+    # boundary. The following New York date is therefore the trading session.
+    local_open = datetime.fromtimestamp(float(epoch), tz=timezone.utc).astimezone(
+        ZoneInfo("America/New_York")
     )
+    session_date = (local_open + timedelta(days=1)).date()
+    exchange_holidays = holidays.financial_holidays(
+        calendar,
+        years=[session_date.year],
+    )
+    return session_date in exchange_holidays
 
 
 def describe_forecast_calendar_treatment(
@@ -435,14 +476,30 @@ def describe_forecast_calendar_treatment(
     calendar_timeframe: bool,
 ) -> str:
     """Return the forecast calendar-treatment label for a symbol and step."""
+    exchange_calendar = _forecast_exchange_calendar(symbol)
+    if calendar_timeframe and exchange_calendar is not None:
+        return (
+            "broker_calendar_boundaries_and_"
+            f"{exchange_calendar.lower()}_holidays_skipped"
+        )
     if calendar_timeframe and uses_standard_weekend_projection(symbol, tf_secs):
-        return "broker_calendar_boundaries_and_forex_weekend_skipped"
+        if is_probably_forex_symbol(
+            symbol,
+            currency_codes=FOREX_CURRENCY_CODES,
+        ):
+            return "broker_calendar_boundaries_and_forex_weekend_skipped"
+        return "broker_calendar_boundaries_and_weekend_skipped_holidays_unknown"
     if calendar_timeframe and is_probably_crypto_symbol(symbol):
         return "broker_calendar_boundaries_continuous_crypto"
     if calendar_timeframe:
         return "calendar_estimate_session_schedule_unknown"
     if uses_standard_weekend_projection(symbol, tf_secs):
-        return "forex_weekend_skipped"
+        if is_probably_forex_symbol(
+            symbol,
+            currency_codes=FOREX_CURRENCY_CODES,
+        ):
+            return "forex_weekend_skipped"
+        return "standard_weekend_skipped_session_hours_unknown"
     return "continuous_no_weekend_skip"
 
 
@@ -461,6 +518,7 @@ def next_times_from_last(
     *,
     skip_weekends: bool = False,
     timeframe: Optional[str] = None,
+    symbol: Optional[str] = None,
 ) -> List[float]:
     base = float(last_epoch)
     step = float(tf_secs)
@@ -470,8 +528,20 @@ def next_times_from_last(
         current = base
         for _ in range(int(horizon)):
             current = bar_close_epoch(current, normalized_timeframe)
-            if skip_weekends and is_standard_weekend_closed_epoch(current):
-                current = _next_standard_weekend_open_epoch(current)
+            guard = 0
+            while guard < 10:
+                if skip_weekends and is_standard_weekend_closed_epoch(current):
+                    current = _next_standard_weekend_open_epoch(current)
+                    guard += 1
+                    continue
+                if (
+                    normalized_timeframe == "D1"
+                    and _is_exchange_holiday_epoch(symbol, current)
+                ):
+                    current = bar_close_epoch(current, normalized_timeframe)
+                    guard += 1
+                    continue
+                break
             out.append(current)
         return out
     if not skip_weekends:

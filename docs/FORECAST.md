@@ -298,7 +298,7 @@ See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
 
 ### Optuna (`forecast_tune_optuna`)
 
-Bayesian optimization with TPE, CMA-ES, or random sampling. Supports early stopping (pruning), parallel trials, and persistent study storage.
+Bayesian optimization with TPE, CMA-ES, or random sampling. Supports parallel trials and persistent study storage. Each trial is an atomic rolling backtest, so trial pruning is not exposed.
 
 ```bash
 mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
@@ -310,7 +310,6 @@ mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
 | `--methods` | `fourier_ols` | Forecast methods to optimize |
 | `--n-trials` | 40 | Number of optimization trials |
 | `--sampler` | `tpe` | Sampling algorithm: `tpe`, `random`, `cmaes` |
-| `--pruner` | `median` | Early stopping: `median`, `hyperband`, `percentile`, `none` |
 | `--timeout` | (none) | Max wall-clock seconds |
 | `--n-jobs` | 1 | Parallel trial workers |
 | `--study-name` | (auto) | Name for resumable study |
@@ -321,7 +320,7 @@ mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
 
 ### Configuration Search (`forecast_optimize_hints`)
 
-Broader than single-method tuning: `forecast_optimize_hints` runs a genetic search across **timeframes, methods, and method-specific parameters at once**, returning the top-N configurations ranked by a composite trading-fitness score (it falls back to forecast error and directional accuracy when trade metrics are unavailable). Use it to answer *"which timeframe/method/params should I even start from?"* before drilling in with `forecast_tune_genetic` / `forecast_tune_optuna`.
+Broader than single-method tuning: `forecast_optimize_hints` runs a genetic search across **timeframes, methods, and method-specific parameters at once**, returning the top-N configurations ranked by a composite trading-fitness score. Comparable trading fitness requires at least 30 simulated trades; smaller or unavailable samples fall back to a separately labeled forecast-accuracy tier. Each hint exposes its trade count and reliability. Use it to answer *"which timeframe/method/params should I even start from?"* before drilling in with `forecast_tune_genetic` / `forecast_tune_optuna`.
 
 ```bash
 mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
@@ -335,7 +334,7 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 | `--horizon` | 12 | Bars forecast after each backtest anchor |
 | `--steps` | 5 | Rolling-origin backtest anchors per candidate |
 | `--population` / `--generations` | 8 / 5 | Genetic search population and generation counts |
-| `--fitness-metric` | `composite` | Objective; `composite` blends trading metrics with accuracy |
+| `--fitness-metric` | `composite` | Objective; `composite` uses trading metrics at 30+ trades, otherwise a non-comparable accuracy fallback |
 | `--top-n` | 5 | Number of ranked configurations to return |
 
 ---

@@ -594,6 +594,7 @@ def _prepare_feature_context(
             int(horizon),
             skip_weekends=uses_standard_weekend_projection(symbol, int(tf_secs)),
             timeframe=timeframe,
+            symbol=symbol,
         )
         try:
             X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
@@ -1553,6 +1554,7 @@ def _format_forecast_output(
         horizon,
         skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
         timeframe=timeframe,
+        symbol=symbol,
     )
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None

@@ -19,7 +19,7 @@ from .optimize import (
 from .optimize import (
     extract_method_params_from_genotype as _extract_params,
 )
-from .tuning_contract import resolve_tuning_mode
+from .tuning_contract import MIN_ANNUALIZED_TUNING_TRADES, resolve_tuning_mode
 
 _NOISY_FORECAST_TUNE_LOGGERS = (
     "timesfm",
@@ -73,8 +73,51 @@ def _extract_method_backtest_metrics(
     return merged
 
 
+def _trading_sample_metadata(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    trades_observed = _finite_metric(metrics, "trades_observed")
+    reliability = str(metrics.get("metrics_reliability") or "").strip().lower()
+    trades_count = int(trades_observed) if trades_observed is not None else 0
+    if not reliability:
+        reliability = (
+            "standard"
+            if trades_count >= MIN_ANNUALIZED_TUNING_TRADES
+            else "low"
+            if trades_count > 0
+            else "unavailable"
+        )
+    reason = metrics.get("metrics_reliability_reason")
+    if reason is None and reliability == "low":
+        reason = "low_sample"
+    sample_notice = metrics.get("sample_notice")
+    if sample_notice is None and reliability == "low":
+        sample_notice = {
+            "code": "trading_fitness_suppressed_low_sample",
+            "trades_observed": trades_count,
+            "minimum_trades": MIN_ANNUALIZED_TUNING_TRADES,
+        }
+    sample_warning = metrics.get("sample_warning")
+    if sample_warning is None and reliability == "low":
+        sample_warning = (
+            f"Only {trades_count} trade(s) observed; trading-composite fitness "
+            f"requires at least {MIN_ANNUALIZED_TUNING_TRADES}."
+        )
+    return {
+        "trades_observed": trades_count,
+        "metrics_reliability": reliability,
+        "metrics_reliability_reason": reason,
+        "sample_notice": sample_notice,
+        "sample_warning": sample_warning,
+        "minimum_trades_for_comparable_fitness": MIN_ANNUALIZED_TUNING_TRADES,
+    }
+
+
 def _has_trading_fitness_metrics(metrics: Dict[str, Any]) -> bool:
-    return any(
+    sample = _trading_sample_metadata(metrics)
+    sample_is_reliable = (
+        sample["trades_observed"] >= MIN_ANNUALIZED_TUNING_TRADES
+        and sample["metrics_reliability"] not in {"low", "empty", "unavailable"}
+    )
+    return sample_is_reliable and any(
         _finite_metric(metrics, key) is not None
         for key in (
             "sharpe_ratio",
@@ -577,7 +620,6 @@ def optuna_search_forecast_params(  # noqa: C901
     timeout: Optional[float] = None,
     n_jobs: int = 1,
     sampler: str = 'tpe',
-    pruner: str = 'median',
     seed: int = 42,
     study_name: Optional[str] = None,
     storage: Optional[str] = None,
@@ -627,17 +669,6 @@ def optuna_search_forecast_params(  # noqa: C901
             )
             sampler_obj = optuna.samplers.TPESampler(seed=int(seed), multivariate=True)
 
-    pruner_name = str(pruner or 'median').strip().lower()
-    if pruner_name in {'none', 'off', 'disabled'}:
-        pruner_obj = optuna.pruners.NopPruner()
-    elif pruner_name == 'hyperband':
-        pruner_obj = optuna.pruners.HyperbandPruner()
-    elif pruner_name == 'percentile':
-        pruner_obj = optuna.pruners.PercentilePruner(50.0)
-    else:
-        pruner_name = 'median'
-        pruner_obj = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=0)
-
     storage_val: Optional[str]
     if storage is None:
         storage_val = None
@@ -656,7 +687,6 @@ def optuna_search_forecast_params(  # noqa: C901
     study = optuna.create_study(
         direction=direction,
         sampler=sampler_obj,
-        pruner=pruner_obj,
         study_name=study_name_val,
         storage=storage_val,
         load_if_exists=load_if_exists,
@@ -787,7 +817,6 @@ def optuna_search_forecast_params(  # noqa: C901
         "timeout": float(timeout_val) if timeout_val is not None else None,
         "n_jobs": int(n_jobs_val),
         "sampler": sampler_name,
-        "pruner": pruner_name,
         "seed": int(seed),
         "history_count": len(history),
     }
@@ -1255,6 +1284,9 @@ def genetic_search_optimize_hints(  # noqa: C901
             if isinstance(res, dict):
                 res = dict(res)
                 res['_optimization_fitness_source'] = fitness_source
+                res['_optimization_trading_sample'] = _trading_sample_metadata(
+                    backtest_metrics
+                )
                 if fitness_source == "forecast_accuracy_fallback":
                     res['_optimization_forecast_accuracy_score'] = forecast_accuracy
         else:
@@ -1422,6 +1454,11 @@ def genetic_search_optimize_hints(  # noqa: C901
             if isinstance(backtest_res, dict)
             else None
         )
+        trading_sample = (
+            backtest_res.get('_optimization_trading_sample')
+            if isinstance(backtest_res, dict)
+            else None
+        )
         hint: Dict[str, Any] = {
             'rank': len(top_configs) + 1,
             'timeframe': tf,
@@ -1438,6 +1475,10 @@ def genetic_search_optimize_hints(  # noqa: C901
         }
         if fitness_source:
             hint['fitness_source'] = fitness_source
+        if isinstance(trading_sample, dict):
+            for key, value in trading_sample.items():
+                if value is not None:
+                    hint[key] = value
         if fitness_source == 'forecast_accuracy_fallback':
             hint['fitness_comparable'] = False
             hint['ranking_tier'] = 'forecast_accuracy_fallback'
@@ -1466,6 +1507,31 @@ def genetic_search_optimize_hints(  # noqa: C901
                     'metrics_available': method_metrics.get('metrics_available'),
                     'metrics_reason': method_metrics.get('metrics_reason'),
                     'trade_status': method_metrics.get('trade_status'),
+                    'trades_observed': (
+                        trading_sample.get('trades_observed')
+                        if isinstance(trading_sample, dict)
+                        else method_metrics.get('trades_observed')
+                    ),
+                    'metrics_reliability': (
+                        trading_sample.get('metrics_reliability')
+                        if isinstance(trading_sample, dict)
+                        else method_metrics.get('metrics_reliability')
+                    ),
+                    'metrics_reliability_reason': (
+                        trading_sample.get('metrics_reliability_reason')
+                        if isinstance(trading_sample, dict)
+                        else method_metrics.get('metrics_reliability_reason')
+                    ),
+                    'sample_notice': (
+                        trading_sample.get('sample_notice')
+                        if isinstance(trading_sample, dict)
+                        else method_metrics.get('sample_notice')
+                    ),
+                    'sample_warning': (
+                        trading_sample.get('sample_warning')
+                        if isinstance(trading_sample, dict)
+                        else method_metrics.get('sample_warning')
+                    ),
                 }
         except Exception:
             pass

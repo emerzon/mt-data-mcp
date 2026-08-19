@@ -361,6 +361,33 @@ class TestNextTimesFromLast:
             for epoch in result
         ] == ["2026-08-06 21:00", "2026-08-09 21:00", "2026-08-10 21:00"]
 
+    def test_daily_equity_projection_skips_weekend_and_exchange_holiday(self):
+        friday_projection = next_times_from_last(
+            pd.Timestamp("2026-08-13 21:00", tz="UTC").timestamp(),
+            86400,
+            3,
+            skip_weekends=True,
+            timeframe="D1",
+            symbol="AAPL.NAS",
+        )
+        assert [
+            pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M")
+            for epoch in friday_projection
+        ] == ["2026-08-16 21:00", "2026-08-17 21:00", "2026-08-18 21:00"]
+
+        thanksgiving_projection = next_times_from_last(
+            pd.Timestamp("2026-11-24 22:00", tz="UTC").timestamp(),
+            86400,
+            1,
+            skip_weekends=True,
+            timeframe="D1",
+            symbol="AAPL.NAS",
+        )
+        assert [
+            pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M")
+            for epoch in thanksgiving_projection
+        ] == ["2026-11-26 22:00"]
+
     def test_monthly_projection_uses_calendar_boundaries(self):
         last_epoch = pd.Timestamp("2025-01-01", tz="UTC").timestamp()
         with patch(

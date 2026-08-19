@@ -236,7 +236,6 @@ def test_auto_mode_uses_metric_direction_for_both_tuners(monkeypatch):
         metric="avg_directional_accuracy",
         n_trials=2,
         sampler="random",
-        pruner="none",
         seed=2,
     )
     assert optuna["mode"] == "max"
@@ -340,7 +339,6 @@ def test_optuna_search_fails_when_all_trials_fail(monkeypatch):
         mode="max",
         n_trials=2,
         sampler="random",
-        pruner="none",
     )
 
     assert out["success"] is False
@@ -379,7 +377,6 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
         search_space=method_scoped_space,
         n_trials=8,
         sampler="tpe",
-        pruner="none",
         seed=11,
     )
     assert out["success"] is True
@@ -405,7 +402,6 @@ def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
         mode="max",
         n_trials=6,
         sampler="random",
-        pruner="none",
         seed=17,
     )
     assert out["success"] is True
@@ -455,7 +451,6 @@ def test_optuna_search_suppresses_tpe_multivariate_warning(monkeypatch):
             search_space={"x": {"type": "float", "min": 0.2, "max": 0.9}},
             n_trials=1,
             sampler="tpe",
-            pruner="none",
             seed=17,
         )
 

@@ -176,6 +176,38 @@ def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -
     assert abs(float(detail["trade_return"]) - expected_simple) < 1e-12
 
 
+def test_backtest_executes_completed_close_signal_at_next_open() -> None:
+    times = np.arange(1700000000, 1700000000 + 80 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 80, dtype=float)
+    open_ = close.copy()
+    idx = 70
+    open_[idx + 1] = close[idx] + 5.0
+    df = pd.DataFrame({"time": times, "open": open_, "close": close})
+    anchor = _format_time_minimal(float(times[idx]))
+    forecast_target = float(open_[idx + 1] + 1.0)
+
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        return_value={"forecast_price": [forecast_target]},
+    ):
+        result = forecast_backtest(
+            symbol="AAPL.NAS",
+            timeframe="H1",
+            horizon=1,
+            methods=["naive"],
+            anchors=[anchor],
+        )
+
+    detail = result["results"]["naive"]["details"][0]
+    expected = (close[idx + 1] - open_[idx + 1]) / open_[idx + 1]
+    assert detail["entry_price"] == open_[idx + 1]
+    assert detail["entry_price_source"] == "next_bar_open"
+    assert detail["entry_time"] == _format_time_minimal(float(times[idx + 1]))
+    assert detail["trade_return_gross"] == expected
+    assert result["signal_timing"] == "completed_bar_close"
+    assert result["execution_timing"] == "next_bar_open"
+
+
 def test_performance_metrics_skip_annualization_for_short_samples() -> None:
     metrics = _compute_performance_metrics(
         returns=[0.01, -0.02, 0.015, -0.005, 0.01, 0.0],
