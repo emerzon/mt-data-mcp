@@ -49,7 +49,7 @@ _STANDARD_SECTIONS = (
     "sizing",
     "preview",
 )
-_HISTORICAL_SKIP = frozenset({"sizing", "preview"})
+_HISTORICAL_SKIP = frozenset({"session", "sizing", "preview"})
 _SNAP_DISTANCE_FRACTION = 0.25
 _COMPACT_KEYS = (
     "success",
@@ -61,6 +61,7 @@ _COMPACT_KEYS = (
     "assembled_at",
     "timezone",
     "direction",
+    "direction_basis",
     "suggested_direction",
     "actionability",
     "narrative",
@@ -136,6 +137,27 @@ def _forecast_trend(values: List[float]) -> Optional[str]:
     if last < first:
         return "down"
     return "flat"
+
+
+def _forecast_direction(payload: Any) -> tuple[Optional[str], str]:
+    if not isinstance(payload, dict):
+        return None, "forecast direction metadata is unavailable"
+    context = payload.get("forecast_vs_last_price")
+    if not isinstance(context, dict):
+        return None, "forecast direction metadata is unavailable"
+    if context.get("direction_actionable") is not True:
+        reason = str(
+            context.get("direction_suppressed_reason")
+            or context.get("direction_status")
+            or "forecast direction is neutral or unconfirmed"
+        ).replace("_", " ")
+        return None, reason
+    direction = str(context.get("direction") or "").strip().lower()
+    if direction == "bullish":
+        return "long", ""
+    if direction == "bearish":
+        return "short", ""
+    return None, "forecast direction is neutral or unconfirmed"
 
 
 def _gate(status: str, reason: Optional[str] = None) -> Dict[str, Any]:
@@ -359,6 +381,24 @@ def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -
         compact["bars"] = len(values)
     if trend:
         compact["trend"] = trend
+    if isinstance(payload, dict) and isinstance(payload.get("forecast_vs_last_price"), dict):
+        context = payload["forecast_vs_last_price"]
+        direction_context = {
+            key: context[key]
+            for key in (
+                "direction",
+                "direction_basis",
+                "direction_actionable",
+                "direction_status",
+                "direction_suppressed_reason",
+                "point_estimate_direction",
+                "horizon_delta",
+                "horizon_delta_pct",
+            )
+            if context.get(key) not in (None, "")
+        }
+        if direction_context:
+            compact["forecast_vs_last_price"] = direction_context
     return compact
 
 
@@ -696,11 +736,9 @@ def run_trade_idea_compose(  # noqa: C901
             trend = raw_trend
 
     requested_direction = request.direction
-    suggested_direction: Optional[str] = None
-    if trend == "up":
-        suggested_direction = "long"
-    elif trend == "down":
-        suggested_direction = "short"
+    suggested_direction, forecast_direction_reason = _forecast_direction(
+        forecast_payload
+    )
 
     stand_down_reasons: List[str] = []
     gates: Dict[str, Dict[str, Any]] = {
@@ -736,21 +774,25 @@ def run_trade_idea_compose(  # noqa: C901
             stand_down_reasons.append("market is not accepting new positions")
 
     direction = "stand_down"
+    direction_basis = "forecast_vs_last_price"
     if requested_direction in {"long", "short"}:
         direction = requested_direction
+        direction_basis = "requested"
         if suggested_direction and suggested_direction != requested_direction:
             gates["alignment"] = _gate(
                 "fail",
-                f"forecast trend {trend} disagrees with requested {requested_direction}",
+                f"forecast direction disagrees with requested {requested_direction}",
             )
         elif suggested_direction:
             gates["alignment"] = _gate("pass")
+        else:
+            gates["alignment"] = _gate("fail", forecast_direction_reason)
     elif suggested_direction:
         direction = suggested_direction
         gates["alignment"] = _gate("pass")
     else:
-        stand_down_reasons.append("forecast did not suggest a direction")
-        gates["alignment"] = _gate("fail", "no forecast-based direction")
+        stand_down_reasons.append(forecast_direction_reason)
+        gates["alignment"] = _gate("fail", forecast_direction_reason)
 
     barriers_payload: Any = None
     take_profit: Optional[float] = None
@@ -946,6 +988,7 @@ def run_trade_idea_compose(  # noqa: C901
         "assembled_at": assembled_at,
         "timezone": "UTC",
         "direction": direction,
+        "direction_basis": direction_basis,
         "actionability": actionability,
         "narrative": _build_narrative(
             symbol=symbol,

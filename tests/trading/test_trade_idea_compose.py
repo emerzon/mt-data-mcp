@@ -32,6 +32,7 @@ def _forecast(*, trend: str = "up") -> Dict[str, Any]:
     values = [1.1001, 1.1004, 1.1008] if trend == "up" else [1.1001, 1.0998, 1.0994]
     if trend == "flat":
         values = [1.1001, 1.1001, 1.1001]
+    direction = "bullish" if trend == "up" else "bearish" if trend == "down" else "neutral"
     return {
         "success": True,
         "method": "theta",
@@ -40,6 +41,12 @@ def _forecast(*, trend: str = "up") -> Dict[str, Any]:
         "horizon": 12,
         "forecast_price": values,
         "trend": trend,
+        "forecast_vs_last_price": {
+            "direction": direction,
+            "direction_basis": "horizon_end",
+            "direction_actionable": trend != "flat",
+            "direction_status": "interval_confirmed" if trend != "flat" else "neutral",
+        },
     }
 
 
@@ -149,6 +156,7 @@ def test_trade_idea_compose_quick_preview_path() -> None:
 
     assert idea["success"] is True
     assert idea["direction"] == "long"
+    assert idea["direction_basis"] == "forecast_vs_last_price"
     assert idea["suggested_direction"] == "long"
     assert idea["actionability"] == "preview_only"
     assert idea["preview"]["dry_run"] is True
@@ -241,11 +249,42 @@ def test_trade_idea_compose_historical_skips_preview() -> None:
         call_section=_tracking,
     )
 
+    assert "session" not in calls
     assert "sizing" not in calls
     assert "preview" not in calls
+    assert "quote" not in idea
     assert idea["actionability"] == "research"
     assert idea["preview"]["skipped"] is True
     assert idea["gates"]["preview"]["status"] == "skip"
+
+
+def test_trade_idea_compose_stands_down_on_unconfirmed_direction() -> None:
+    forecast = _forecast(trend="down")
+    forecast["forecast_price"] = [1.15787, 1.15780, 1.15775]
+    forecast["forecast_vs_last_price"] = {
+        "direction": "neutral",
+        "direction_basis": "horizon_end",
+        "direction_actionable": False,
+        "direction_status": "neutral",
+    }
+
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD"),
+        call_section=_caller(
+            {
+                "session": _session(),
+                "forecast": forecast,
+                "volatility": _volatility(),
+            }
+        ),
+    )
+
+    assert idea["direction"] == "stand_down"
+    assert idea["direction_basis"] == "forecast_vs_last_price"
+    assert "suggested_direction" not in idea
+    assert idea["forecast"]["trend"] == "down"
+    assert idea["gates"]["alignment"]["status"] == "fail"
+    assert idea["sizing"]["suggested_volume"] == 0.0
 
 
 def test_trade_idea_compose_standard_snaps_to_confluence() -> None:

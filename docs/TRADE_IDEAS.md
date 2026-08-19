@@ -30,7 +30,7 @@ The composer **reuses existing tools**. It does not invent new forecast or barri
 
 | Step | Tool | Quick | Standard |
 |------|------|-------|----------|
-| Session + quote | `trade_session_context` | yes | yes |
+| Session + quote | `trade_session_context` | live only | live only |
 | Structure | `confluence_levels` | no | yes (and may snap TP/SL toward nearby zones) |
 | Price path | `forecast_generate` (Theta) | yes | yes |
 | Typical movement | `forecast_volatility_estimate` (EWMA) | yes | yes |
@@ -38,9 +38,15 @@ The composer **reuses existing tools**. It does not invent new forecast or barri
 | Size | `trade_risk_analyze` (fixed-fraction) | live only | live only |
 | Preview | `trade_place` with `dry_run=true` | live only | live only |
 
-`--direction auto` (default) may *suggest* long or short from the forecast path. If the forecast is flat, or the barrier sketch says the stop is more likely to hit first, the idea stands down.
+`--direction auto` (default) uses `forecast_generate`'s actionable horizon
+direction relative to its last-price anchor. A neutral or uncertainty-suppressed
+direction stands down; the composer does not infer a side from the slope between
+forecast steps. It also stands down when the barrier sketch says the stop is
+more likely to hit first.
 
-`--as-of` makes the idea historical and **research-only**: no live sizing and no dry-run preview.
+`--as-of` makes the idea historical and **research-only**: no live session or
+quote, no live sizing, and no dry-run preview. Historical geometry uses the
+barrier analysis's cutoff-bound reference price.
 
 ---
 
@@ -49,6 +55,7 @@ The composer **reuses existing tools**. It does not invent new forecast or barri
 | Field | Meaning |
 |-------|---------|
 | `direction` | `long`, `short`, or `stand_down` |
+| `direction_basis` | `forecast_vs_last_price` for auto direction, or `requested` for an explicit side |
 | `suggested_direction` | Forecast-based hint; may differ from `direction` |
 | `actionability` | Always `preview_only` or `research`. Never live. |
 | `gates` | `pass` / `fail` / `skip` for quote, session, forecast, barriers, SL/TP, sizing, preview |
