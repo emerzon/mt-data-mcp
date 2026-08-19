@@ -588,6 +588,7 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'indicator_warmup': 0,
                 'quality_filtered': 0,
                 'window_or_source_shortfall': 0,
+                'simplification': 0,
                 'total': 1,
             },
         )
