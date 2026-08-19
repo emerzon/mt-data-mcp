@@ -88,6 +88,10 @@ _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "avg_loss": "account_currency_per_losing_deal",
     "best_trade": "account_currency",
     "worst_trade": "account_currency",
+    "exit_net_pnl": "account_currency",
+    "entry_commission": "account_currency",
+    "entry_fee": "account_currency",
+    "entry_costs": "account_currency",
     "profit": "account_currency",
     "commission": "account_currency",
     "swap": "account_currency",
@@ -229,6 +233,159 @@ def _trade_journal_net_pnl(row: Dict[str, Any]) -> Optional[float]:
         total += value
         seen = True
     return _round_trade_journal_value(total, digits=2) if seen else None
+
+
+def _trade_journal_position_key(row: Dict[str, Any]) -> Optional[str]:
+    for key in ("position_ticket", "position_id", "position_by_id"):
+        value = row.get(key)
+        if value in (None, ""):
+            continue
+        text = str(value).strip()
+        if text and text != "0":
+            return text
+    return None
+
+
+def _is_entry_deal_row(row: Dict[str, Any]) -> bool:
+    deal_effect = str(row.get("deal_effect") or "").strip().lower()
+    if deal_effect == "open":
+        return True
+    position_action = str(row.get("position_action") or "").strip().lower()
+    if position_action.startswith("open_"):
+        return True
+    entry_text = str(row.get("entry") or "").strip().lower()
+    return bool(entry_text and "in" in entry_text and "out" not in entry_text)
+
+
+def _allocate_trade_journal_entry_costs(
+    history_rows: List[Dict[str, Any]],
+    exit_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Allocate known entry commissions/fees to realized exits by volume."""
+    entries_by_position: Dict[str, List[Dict[str, Any]]] = {}
+    for row in history_rows:
+        if row.get("timestamp_anomaly") is True or not _is_entry_deal_row(row):
+            continue
+        position_key = _trade_journal_position_key(row)
+        if position_key is not None:
+            entries_by_position.setdefault(position_key, []).append(row)
+
+    covered = 0
+    entry_commission_included = 0.0
+    entry_fee_included = 0.0
+    exit_volume_by_position: Dict[str, float] = {}
+    exit_volume_complete: Dict[str, bool] = {}
+    for row in exit_rows:
+        position_key = _trade_journal_position_key(row)
+        if position_key is None:
+            continue
+        exit_volume = _safe_trade_journal_float(row.get("volume"))
+        if exit_volume is None or math.isclose(exit_volume, 0.0, abs_tol=1e-12):
+            exit_volume_complete[position_key] = False
+            continue
+        exit_volume_by_position[position_key] = (
+            exit_volume_by_position.get(position_key, 0.0) + abs(exit_volume)
+        )
+        exit_volume_complete.setdefault(position_key, True)
+
+    for row in exit_rows:
+        exit_net_pnl = _safe_trade_journal_float(row.get("net_pnl"))
+        row["exit_net_pnl"] = _round_trade_journal_value(exit_net_pnl, digits=2)
+        row["entry_commission"] = None
+        row["entry_fee"] = None
+        row["entry_costs"] = None
+        row["pnl_cost_basis"] = "exit_deal_only_entry_cost_unavailable"
+
+        position_key = _trade_journal_position_key(row)
+        entry_rows = entries_by_position.get(position_key or "", [])
+        if not entry_rows or exit_net_pnl is None:
+            continue
+
+        costs_known = any(
+            _safe_trade_journal_float(entry.get(key)) is not None
+            for entry in entry_rows
+            for key in ("commission", "fee")
+        )
+        if not costs_known:
+            continue
+
+        total_entry_commission = sum(
+            _safe_trade_journal_float(entry.get("commission")) or 0.0
+            for entry in entry_rows
+        )
+        total_entry_fee = sum(
+            _safe_trade_journal_float(entry.get("fee")) or 0.0
+            for entry in entry_rows
+        )
+        total_entry_cost = total_entry_commission + total_entry_fee
+        if math.isclose(total_entry_cost, 0.0, abs_tol=1e-12):
+            allocation_ratio = 0.0
+        else:
+            entry_volumes = [
+                abs(float(value))
+                for entry in entry_rows
+                if (value := _safe_trade_journal_float(entry.get("volume"))) is not None
+                and not math.isclose(float(value), 0.0, abs_tol=1e-12)
+            ]
+            exit_volume = _safe_trade_journal_float(row.get("volume"))
+            total_entry_volume = sum(entry_volumes)
+            if (
+                exit_volume is None
+                or math.isclose(exit_volume, 0.0, abs_tol=1e-12)
+                or total_entry_volume <= 0.0
+                or not exit_volume_complete.get(position_key or "", False)
+                or exit_volume_by_position.get(position_key or "", 0.0)
+                > total_entry_volume + 1e-9
+            ):
+                continue
+            allocation_ratio = abs(float(exit_volume)) / total_entry_volume
+
+        entry_commission = total_entry_commission * allocation_ratio
+        entry_fee = total_entry_fee * allocation_ratio
+        entry_costs = entry_commission + entry_fee
+        row["entry_commission"] = _round_trade_journal_value(
+            entry_commission,
+            digits=2,
+        )
+        row["entry_fee"] = _round_trade_journal_value(entry_fee, digits=2)
+        row["entry_costs"] = _round_trade_journal_value(entry_costs, digits=2)
+        row["net_pnl"] = _round_trade_journal_value(
+            exit_net_pnl + entry_costs,
+            digits=2,
+        )
+        row["pnl_cost_basis"] = "round_trip_allocated"
+        covered += 1
+        entry_commission_included += entry_commission
+        entry_fee_included += entry_fee
+
+    exit_count = len(exit_rows)
+    missing = max(0, exit_count - covered)
+    status = (
+        "complete"
+        if exit_count and not missing
+        else "partial"
+        if covered
+        else "unavailable"
+    )
+    return {
+        "status": status,
+        "method": "position_ticket_volume_pro_rata",
+        "exit_deals": int(exit_count),
+        "exit_deals_with_entry_cost_coverage": int(covered),
+        "exit_deals_without_entry_cost_coverage": int(missing),
+        "entry_commission_included": _round_trade_journal_value(
+            entry_commission_included,
+            digits=2,
+        ),
+        "entry_fees_included": _round_trade_journal_value(
+            entry_fee_included,
+            digits=2,
+        ),
+        "entry_costs_included": _round_trade_journal_value(
+            entry_commission_included + entry_fee_included,
+            digits=2,
+        ),
+    }
 
 
 def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -403,6 +560,11 @@ def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "side": row.get("side"),
         "exit_trigger": row.get("exit_trigger"),
         "net_pnl": row.get("net_pnl"),
+        "exit_net_pnl": row.get("exit_net_pnl"),
+        "entry_commission": row.get("entry_commission"),
+        "entry_fee": row.get("entry_fee"),
+        "entry_costs": row.get("entry_costs"),
+        "pnl_cost_basis": row.get("pnl_cost_basis"),
         "profit": row.get("profit"),
         "commission": row.get("commission"),
         "swap": row.get("swap"),
@@ -462,6 +624,13 @@ def _run_trade_journal_request(  # noqa: C901
             f"{value}_"
         )
 
+    def _matches_requested_deal(row: Dict[str, Any]) -> bool:
+        if request.deal_ticket in (None, ""):
+            return True
+        requested = str(request.deal_ticket).strip()
+        actual = row.get("deal_ticket", row.get("ticket"))
+        return actual not in (None, "") and str(actual).strip() == requested
+
     while True:
         history_result = _run_trade_history_request(
             TradeHistoryRequest(
@@ -469,9 +638,9 @@ def _run_trade_journal_request(  # noqa: C901
                 start=request.start,
                 end=request.end,
                 symbol=request.symbol,
-                side=request.side,
+                side=None,
                 position_ticket=request.position_ticket,
-                deal_ticket=request.deal_ticket,
+                deal_ticket=None,
                 minutes_back=request.minutes_back,
                 limit=page_limit,
                 offset=page_offset,
@@ -585,6 +754,8 @@ def _run_trade_journal_request(  # noqa: C901
             continue
         if not _matches_requested_side(row):
             continue
+        if not _matches_requested_deal(row):
+            continue
         symbol = str(row.get("symbol") or "").strip()
         if not symbol or not _is_exit_deal_row(row):
             continue
@@ -609,6 +780,8 @@ def _run_trade_journal_request(  # noqa: C901
                     enriched[money_key] = rounded_value
         enriched["net_pnl"] = net_pnl
         analyzed_rows.append(enriched)
+
+    entry_cost_coverage = _allocate_trade_journal_entry_costs(rows, analyzed_rows)
 
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
@@ -698,6 +871,14 @@ def _run_trade_journal_request(  # noqa: C901
         "sample_size": int(len(analyzed_rows)),
         "sample_quality": sample_quality,
         "sample_provenance": _sample_provenance(len(analyzed_rows)),
+        "pnl_basis": (
+            "round_trip_allocated_entry_and_exit_costs"
+            if entry_cost_coverage["status"] == "complete"
+            else "mixed_round_trip_and_exit_only_costs"
+            if entry_cost_coverage["status"] == "partial"
+            else "exit_deal_only_costs"
+        ),
+        "entry_cost_coverage": entry_cost_coverage,
         "meta": {
             "history_rows": int(len(rows)),
             "exit_deals": int(len(analyzed_rows)),
@@ -710,16 +891,30 @@ def _run_trade_journal_request(  # noqa: C901
     sample_warning = _trade_journal_sample_warning(len(analyzed_rows), minimum=minimum_sample)
     if sample_warning:
         payload["sample_warning"] = sample_warning
+    warnings_out: List[str] = []
     if anomalous_rows:
-        payload["warnings"] = [
+        warnings_out.append(
             f"Excluded {anomalous_rows} future-dated broker deal(s) from journal statistics."
-        ]
+        )
+    if entry_cost_coverage["status"] != "complete":
+        missing_entry_costs = int(
+            entry_cost_coverage["exit_deals_without_entry_cost_coverage"]
+        )
+        warnings_out.append(
+            f"Entry commission/fee coverage is {entry_cost_coverage['status']}: "
+            f"{missing_entry_costs} realized exit deal(s) could not be matched to "
+            "entry costs by position ticket within the requested history window. "
+            "Their net_pnl includes exit-deal costs only; expand the history window "
+            "when possible."
+        )
+    if warnings_out:
+        payload["warnings"] = warnings_out
     if detail_mode == "full":
         payload["items"] = [
             _trade_journal_trade_snapshot(row)
             for row in analyzed_rows[:requested_item_limit]
         ]
-        payload["item_schema"] = "trade_journal_analyzed_exit.v2"
+        payload["item_schema"] = "trade_journal_analyzed_exit.v3"
         payload["best_trades"] = [
             _trade_journal_trade_snapshot(row)
             for row in ranked_best[: min(5, len(ranked_best))]
@@ -1098,7 +1293,12 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
 
 @mcp.tool()
 def trade_journal_analyze(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
-    """Analyze realized exits; long/short selects position side, buy/sell fill side."""
+    """Analyze realized exits with matched entry costs allocated by closed volume.
+
+    `long`/`short` selects position side and `buy`/`sell` selects exit-fill side.
+    `entry_cost_coverage` reports whether entry commissions and fees were available
+    by position ticket inside the requested history window.
+    """
     return run_logged_operation(
         logger,
         operation="trade_journal_analyze",

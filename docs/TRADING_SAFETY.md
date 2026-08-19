@@ -279,10 +279,14 @@ mtdata-cli trade_session_context EURUSD --json
 omit a window.
 
 **History vs journal:** history is the raw deal/order tape. The journal
-summarizes *exit* deals (wins, losses, averages) for review.
+summarizes *exit* deals (wins, losses, averages) for review. It matches entry
+fills by position ticket and allocates their commission and fees by closed
+volume. Check `entry_cost_coverage`: an entry outside the requested history
+window leaves that exit on the explicitly reported exit-deal-only PnL basis.
 
 **Do not paste journal averages into Kelly sizing.**
-`trade_journal_analyze` reports profit and loss in account currency per exit.
+`trade_journal_analyze` reports profit and loss in account currency per exit,
+including matched entry costs where `entry_cost_coverage` permits.
 [Kelly](GLOSSARY.md#kelly-criterion) needs a win rate and average win/loss that
 are normalized to a consistent stake (for example R-multiples). Build those
 inputs on purpose; see [TRADING_RISK.md](TRADING_RISK.md).

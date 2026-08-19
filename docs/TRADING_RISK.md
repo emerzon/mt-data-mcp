@@ -75,8 +75,10 @@ The Kelly fraction is `win_rate − (1 − win_rate) / (avg_win / |avg_loss|)`, 
 by `sizing.fraction_multiplier` and capped by `sizing.max_risk_pct`. On a non-positive edge the tool reports
 `status="kelly_no_edge"` and a suggested volume of `0.0`.
 
-`trade_journal_analyze` reports `avg_win` and `avg_loss` in account currency. Those
-raw PnL averages are not Kelly inputs because deal sizes and capital at risk can vary.
+`trade_journal_analyze` reports `avg_win` and `avg_loss` in account currency.
+Inspect `entry_cost_coverage` before interpreting them: matched entry commission
+and fees are included, while unmatched exits retain an exit-deal-only basis.
+Those raw PnL averages are not Kelly inputs because deal sizes and capital at risk can vary.
 Normalize each historical outcome to a consistent stake or initial risk before
 computing the average return metrics supplied here.
 

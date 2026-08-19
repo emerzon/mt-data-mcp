@@ -1505,16 +1505,19 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
             "symbol": "EURUSD",
             "entry": "In",
             "type": "Buy",
+            "position_ticket": 101,
             "profit": 0.0,
             "commission": -1.0,
             "swap": 0.0,
             "time": "2026-01-01 10:00",
+            "volume": 0.1,
         },
         {
             "ticket": 2,
             "symbol": "EURUSD",
             "entry": "Out",
             "type": "Buy",
+            "position_ticket": 101,
             "profit": 25.000000000000004,
             "commission": -1.0,
             "swap": -0.5,
@@ -1564,19 +1567,196 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["closed_deals"] == 2
     assert out["summary"]["wins"] == 1
     assert out["summary"]["losses"] == 1
-    assert out["summary"]["net_pnl"] == 13.0
-    assert out["summary"]["profit_factor"] == 2.2381
-    assert out["summary"]["expectancy"] == 6.5
+    assert out["summary"]["net_pnl"] == 12.0
+    assert out["summary"]["profit_factor"] == 2.1429
+    assert out["summary"]["expectancy"] == 6.0
     assert out["summary"]["sample_notice"]["code"] == "low_sample_unreliable_metrics"
     assert "avg_pnl" not in out["summary"]
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
-    assert out["item_schema"] == "trade_journal_analyzed_exit.v2"
+    assert out["pnl_basis"] == "mixed_round_trip_and_exit_only_costs"
+    assert out["entry_cost_coverage"] == {
+        "status": "partial",
+        "method": "position_ticket_volume_pro_rata",
+        "exit_deals": 2,
+        "exit_deals_with_entry_cost_coverage": 1,
+        "exit_deals_without_entry_cost_coverage": 1,
+        "entry_commission_included": -1.0,
+        "entry_fees_included": 0.0,
+        "entry_costs_included": -1.0,
+    }
+    assert out["item_schema"] == "trade_journal_analyzed_exit.v3"
     assert [item["deal_ticket"] for item in out["items"]] == [2, 3]
     assert out["items"][0]["fill_time"] == "2026-01-01 12:00"
-    assert out["items"][0]["net_pnl"] == 23.5
+    assert out["items"][0]["exit_net_pnl"] == 23.5
+    assert out["items"][0]["entry_commission"] == -1.0
+    assert out["items"][0]["net_pnl"] == 22.5
     assert out["best_trades"][0]["deal_ticket"] == 2
     assert out["best_trades"][0]["profit"] == 25.0
     assert out["worst_trades"][0]["deal_ticket"] == 3
+
+
+def test_trade_journal_allocates_entry_costs_across_partial_exits() -> None:
+    history_rows = [
+        {
+            "deal_ticket": 10,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "open",
+            "commission": -2.0,
+            "fee": -0.4,
+            "volume": 0.2,
+        },
+        {
+            "deal_ticket": 11,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "profit": 5.0,
+            "commission": -0.5,
+            "fee": -0.1,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 12,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "profit": -1.0,
+            "commission": -0.5,
+            "fee": -0.1,
+            "volume": 0.1,
+        },
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={"success": True, "items": history_rows},
+    ):
+        out = trade_journal_analyze(detail="full", __cli_raw=True)
+
+    assert out["pnl_basis"] == "round_trip_allocated_entry_and_exit_costs"
+    assert out["entry_cost_coverage"] == {
+        "status": "complete",
+        "method": "position_ticket_volume_pro_rata",
+        "exit_deals": 2,
+        "exit_deals_with_entry_cost_coverage": 2,
+        "exit_deals_without_entry_cost_coverage": 0,
+        "entry_commission_included": -2.0,
+        "entry_fees_included": -0.4,
+        "entry_costs_included": -2.4,
+    }
+    assert out["summary"]["net_pnl"] == 0.4
+    assert [row["exit_net_pnl"] for row in out["items"]] == [4.4, -1.6]
+    assert [row["entry_costs"] for row in out["items"]] == [-1.2, -1.2]
+    assert [row["net_pnl"] for row in out["items"]] == [3.2, -2.8]
+    assert all(row["pnl_cost_basis"] == "round_trip_allocated" for row in out["items"])
+    assert "warnings" not in out
+
+
+def test_trade_journal_side_filter_keeps_matching_entry_costs() -> None:
+    history_rows = [
+        {
+            "deal_ticket": 10,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "open",
+            "position_side": "long",
+            "fill_side": "buy",
+            "commission": -1.0,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 11,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "position_side": "long",
+            "fill_side": "sell",
+            "profit": 5.0,
+            "commission": -0.5,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 12,
+            "position_ticket": 200,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "position_side": "short",
+            "fill_side": "buy",
+            "profit": 9.0,
+            "commission": -0.5,
+            "volume": 0.1,
+        },
+    ]
+    captured = {}
+
+    def _fake_history(request):
+        captured["request"] = request
+        return {"success": True, "items": history_rows}
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        side_effect=_fake_history,
+    ):
+        out = trade_journal_analyze(side="long", detail="full", __cli_raw=True)
+
+    assert captured["request"].side is None
+    assert out["sample_size"] == 1
+    assert out["summary"]["net_pnl"] == 3.5
+    assert out["entry_cost_coverage"]["status"] == "complete"
+    assert out["items"][0]["deal_ticket"] == 11
+
+
+def test_trade_journal_deal_filter_keeps_matching_entry_costs() -> None:
+    history_rows = [
+        {
+            "deal_ticket": 10,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "open",
+            "commission": -1.0,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 11,
+            "position_ticket": 100,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "profit": 5.0,
+            "commission": -0.5,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 12,
+            "position_ticket": 200,
+            "symbol": "EURUSD",
+            "deal_effect": "close",
+            "profit": 9.0,
+            "commission": -0.5,
+            "volume": 0.1,
+        },
+    ]
+    captured = {}
+
+    def _fake_history(request):
+        captured["request"] = request
+        return {"success": True, "items": history_rows}
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        side_effect=_fake_history,
+    ):
+        out = trade_journal_analyze(
+            deal_ticket=11,
+            detail="full",
+            __cli_raw=True,
+        )
+
+    assert captured["request"].deal_ticket is None
+    assert out["sample_size"] == 1
+    assert out["summary"]["net_pnl"] == 3.5
+    assert out["entry_cost_coverage"]["status"] == "complete"
+    assert out["items"][0]["deal_ticket"] == 11
 
 
 def test_trade_journal_includes_canonical_manual_close_deals() -> None:
@@ -1620,6 +1800,11 @@ def test_trade_journal_includes_canonical_manual_close_deals() -> None:
             "side": "long",
             "exit_trigger": "Unspecified",
             "net_pnl": 0.9,
+            "exit_net_pnl": 0.9,
+            "entry_commission": None,
+            "entry_fee": None,
+            "entry_costs": None,
+            "pnl_cost_basis": "exit_deal_only_entry_cost_unavailable",
             "profit": 0.92,
             "commission": -0.02,
             "swap": None,
@@ -2103,7 +2288,7 @@ def test_trade_journal_analyze_propagates_history_errors() -> None:
     assert out == {"error": "boom"}
 
 
-def test_trade_journal_analyze_forwards_side_filter() -> None:
+def test_trade_journal_analyze_applies_side_filter_after_history_reconciliation() -> None:
     captured = {}
 
     def _fake_history(request):
@@ -2116,7 +2301,7 @@ def test_trade_journal_analyze_forwards_side_filter() -> None:
     ):
         out = trade_journal_analyze(side="long", __cli_raw=True)
 
-    assert captured["request"].side == "LONG"
+    assert captured["request"].side is None
     assert out["success"] is True
     assert out["summary"]["closed_deals"] == 0
     assert out["side_filter"] == {

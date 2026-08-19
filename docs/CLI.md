@@ -473,9 +473,12 @@ Denoising is applied to data via the `--denoise`/`--denoise-params` flags (see [
 | `trade_stress_test` | Apply deterministic percentage shocks to open positions |
 
 See [TRADING_RISK.md](TRADING_RISK.md) for position sizing (fixed-fraction + Kelly), VaR/CVaR, and stress-test parameters and output.
-`trade_journal_analyze` reports raw account-currency PnL per exit deal. Those
-averages are useful for journal review, but they are not Kelly inputs because
-they are not normalized to a consistent stake or unit of risk.
+`trade_journal_analyze` reports account-currency PnL per realized exit. When the
+matching entry fill is present in the requested history window, entry commission
+and fees are allocated by closed volume. Check `entry_cost_coverage` and
+`pnl_basis`: unmatched exits remain exit-deal-only and may overstate net PnL.
+These averages are useful for journal review, but they are not Kelly inputs
+because they are not normalized to a consistent stake or unit of risk.
 
 ### News
 | Command | Description |
