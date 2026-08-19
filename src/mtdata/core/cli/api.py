@@ -58,6 +58,7 @@ from .output_format import (
 from .parsing.discovery import (
     _COMMAND_PARAM_CHOICE_OVERRIDES,
     _COMMAND_PARAM_HELP_OVERRIDES,
+    _case_insensitive_choice_parser,
 )
 from .parsing.discovery import (
     add_dynamic_arguments as _add_dynamic_arguments_impl,
@@ -1090,9 +1091,10 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     cmd_parser.usage = "%(prog)s (SYMBOL | --symbol SYMBOL) [options]"
 
     cmd_parser.add_argument(
-        "symbol",
+        "symbol_positional",
         nargs="?",
         default=argparse.SUPPRESS,
+        metavar="SYMBOL",
         help=_PARAM_HINTS["symbol"],
     )
     cmd_parser.add_argument(
@@ -1106,7 +1108,9 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_method.add_argument(
         "--library",
         dest="library",
-        type=str,
+        type=_case_insensitive_choice_parser(
+            ["native", "statsforecast", "sktime", "mlforecast", "pretrained"]
+        ),
         choices=["native", "statsforecast", "sktime", "mlforecast", "pretrained"],
         default="native",
         help="Method library.",
@@ -1132,7 +1136,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_window = cmd_parser.add_argument_group("Window")
     group_window.add_argument(
         "--timeframe",
-        type=str,
+        type=_case_insensitive_choice_parser(tuple(TIMEFRAME_MAP)),
         choices=tuple(TIMEFRAME_MAP),
         default="H1",
         help=_PARAM_HINTS["timeframe"],
@@ -1171,12 +1175,16 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_target = cmd_parser.add_argument_group("Target")
     group_target.add_argument(
         "--quantity",
+        type=_case_insensitive_choice_parser(["price", "return", "volatility"]),
         choices=["price", "return", "volatility"],
         default="price",
         help="Target quantity.",
     )
     group_target.add_argument(
         "--proxy",
+        type=_case_insensitive_choice_parser(
+            ["squared_return", "abs_return", "log_r2"]
+        ),
         choices=["squared_return", "abs_return", "log_r2"],
         default=None,
         help="Volatility proxy when quantity=volatility.",
@@ -1195,6 +1203,9 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     )
     group_uncertainty.add_argument(
         "--detail",
+        type=_case_insensitive_choice_parser(
+            ["compact", "standard", "summary", "full"]
+        ),
         choices=["compact", "standard", "summary", "full"],
         default="compact",
         help="Output detail level.",
@@ -1264,6 +1275,9 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_exec.add_argument(
         "--model-cache",
         dest="model_cache",
+        type=_case_insensitive_choice_parser(
+            ("reuse", "ephemeral", "require_existing")
+        ),
         choices=("reuse", "ephemeral", "require_existing"),
         default="reuse",
         help=(
@@ -2255,7 +2269,21 @@ def main():  # noqa: C901
         )
 
         def _forecast_generate_cmd(args):
-            if not hasattr(args, "symbol") or not str(args.symbol or "").strip():
+            positional_symbol = getattr(args, "symbol_positional", None)
+            named_symbol = getattr(args, "symbol", None)
+            if positional_symbol is not None and named_symbol is not None:
+                _render_cli_result(
+                    build_error_payload(
+                        "Provide symbol either positionally or with --symbol, not both.",
+                        code="cli_invalid_arguments",
+                        operation=cmd_name,
+                    ),
+                    args=args,
+                    cmd_name=cmd_name,
+                )
+                return 2
+            resolved_symbol = named_symbol or positional_symbol
+            if not str(resolved_symbol or "").strip():
                 _render_cli_result(
                     build_error_payload(
                         "Missing required argument(s): symbol. Use symbols_list "
@@ -2359,7 +2387,7 @@ def main():  # noqa: C901
 
             try:
                 request = ForecastGenerateRequest(
-                    symbol=args.symbol,
+                    symbol=resolved_symbol,
                     timeframe=args.timeframe,
                     library=args.library,
                     method=args.method,

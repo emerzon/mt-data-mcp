@@ -1992,6 +1992,37 @@ class TestForecastGenerateIntegration:
         assert result == 0
         assert mock_fn.call_args.kwargs["request"].symbol == "BTCUSD"
 
+    @pytest.mark.parametrize(
+        "selectors",
+        [
+            ["EURUSD", "--symbol", "GBPUSD"],
+            ["--symbol", "GBPUSD", "EURUSD"],
+        ],
+    )
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_rejects_conflicting_symbol_forms(
+        self, mock_discover, selectors, capsys
+    ):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "forecast_generate", *selectors, "--json"]):
+            status = main()
+
+        assert status == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert "not both" in payload["error"]
+        mock_fn.assert_not_called()
+
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_rejects_malformed_params(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0]})

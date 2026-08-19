@@ -322,7 +322,7 @@ class TestAddForecastGenerateArgs:
         _add_forecast_generate_args(parser)
         # Should parse without error when given required args
         args = parser.parse_args(["EURUSD"])
-        assert args.symbol == "EURUSD"
+        assert args.symbol_positional == "EURUSD"
         assert args.library == "native"
         assert args.method == "theta"
         assert args.timeframe == "H1"
@@ -354,7 +354,7 @@ class TestAddForecastGenerateArgs:
                 "--print-config",
             ]
         )
-        assert args.symbol == "GBPUSD"
+        assert args.symbol_positional == "GBPUSD"
         assert args.library == "pretrained"
         assert args.method == "chronos2"
         assert args.horizon == 24
@@ -369,6 +369,34 @@ class TestAddForecastGenerateArgs:
         _add_forecast_generate_args(parser)
         args = parser.parse_args(["--symbol", "GBPUSD"])
         assert args.symbol == "GBPUSD"
+
+    def test_choice_values_are_case_insensitive(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+        args = parser.parse_args(
+            [
+                "EURUSD",
+                "--library",
+                "NATIVE",
+                "--timeframe",
+                "h1",
+                "--quantity",
+                "RETURN",
+                "--proxy",
+                "ABS_RETURN",
+                "--detail",
+                "FULL",
+                "--model-cache",
+                "EPHEMERAL",
+            ]
+        )
+
+        assert args.library == "native"
+        assert args.timeframe == "H1"
+        assert args.quantity == "return"
+        assert args.proxy == "abs_return"
+        assert args.detail == "full"
+        assert args.model_cache == "ephemeral"
 
     def test_detail_accepts_summary(self):
         parser = argparse.ArgumentParser()
@@ -1223,6 +1251,24 @@ class TestParseKvString:
 
 
 class TestResolveParamKwargs:
+    def test_forecast_method_profile_help_matches_public_choices(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": "profile",
+                "type": Literal["quickstart", "core", "all"],
+                "required": False,
+                "default": "all",
+            },
+            None,
+            cmd_name="forecast_list_methods",
+        )
+
+        assert all(value in kwargs["help"] for value in ("quickstart", "core", "all"))
+        assert all(
+            value not in kwargs["help"]
+            for value in ("fast", "statistical", "machine_learning", "pretrained")
+        )
+
     @pytest.mark.parametrize(
         ("command", "parameter", "expected"),
         [

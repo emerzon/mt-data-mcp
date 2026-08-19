@@ -747,8 +747,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "persists one, and require_existing fails unless a compatible model exists."
     ),
     ("forecast_list_methods", "profile"): (
-        "Filter methods by forecast workflow profile, such as fast, statistical, "
-        "machine_learning, or pretrained."
+        "Filter methods by workflow profile: quickstart is a small native baseline "
+        "set, core is the recommended general catalog, and all disables profile "
+        "filtering."
     ),
     ("labels_triple_barrier", "same_bar_policy"): (
         "Resolve a bar that touches TP and SL: sl_first labels -1, tp_first labels "
