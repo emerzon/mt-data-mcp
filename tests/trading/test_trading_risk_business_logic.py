@@ -1391,6 +1391,8 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> Non
     assert position["reward_currency"] == 10.0
     assert position["rr_ratio"] == 0.5
     assert out["portfolio_risk"]["total_risk_currency"] == 20.0
+    assert out["portfolio_risk"]["risk_total_complete"] is True
+    assert out["portfolio_risk"]["quantified_risk_currency"] == 20.0
 
 
 def test_trade_risk_analyze_measures_trailed_stop_from_current_mark() -> None:
@@ -1452,7 +1454,10 @@ def test_trade_risk_analyze_marks_breached_stop_as_unbounded() -> None:
     assert position["risk_currency"] is None
     assert position["stop_overrun_currency"] == 20.0
     assert position["risk_status"] == "breached"
-    assert out["portfolio_risk"]["total_risk_currency"] == 0.0
+    assert out["portfolio_risk"]["total_risk_currency"] is None
+    assert out["portfolio_risk"]["total_risk_pct"] is None
+    assert out["portfolio_risk"]["quantified_risk_currency"] == 0.0
+    assert out["portfolio_risk"]["risk_total_complete"] is False
     assert out["portfolio_risk"]["stop_overrun_currency"] == 20.0
     assert out["portfolio_risk"]["positions_with_breached_stops"] == 1
     assert out["portfolio_risk"]["overall_risk_status"] == "unlimited"
@@ -1647,5 +1652,43 @@ def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_posit
     assert out["portfolio_risk"]["overall_risk_status"] == "unlimited"
     assert out["portfolio_risk"]["quantified_risk_level"] == "unlimited"
     assert out["portfolio_risk"]["stop_risk_level"] == "unlimited"
-    assert out["portfolio_risk"]["total_risk_pct"] == 20.0
+    assert out["portfolio_risk"]["total_risk_currency"] is None
+    assert out["portfolio_risk"]["total_risk_pct"] is None
+    assert out["portfolio_risk"]["quantified_risk_currency"] == 20.0
+    assert out["portfolio_risk"]["quantified_risk_pct"] == 20.0
+    assert out["portfolio_risk"]["risk_total_complete"] is False
     assert out["portfolio_risk"]["positions_without_sl"] == 1
+
+
+def test_trade_risk_analyze_marks_no_stop_total_incomplete() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [
+            SimpleNamespace(
+                ticket=21,
+                symbol="EURUSD",
+                type=0,
+                volume=1.0,
+                price_open=100.0,
+                price_current=100.0,
+                sl=0.0,
+                tp=0.0,
+            )
+        ],
+        orders_get=lambda symbol=None, ticket=None: [],
+        symbol_info=lambda symbol: _make_symbol_info(),
+    )
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(detail="full"),
+        gateway=gateway,
+    )
+
+    risk = out["portfolio_risk"]
+    assert risk["overall_risk_status"] == "unlimited"
+    assert risk["risk_total_complete"] is False
+    assert risk["total_risk_currency"] is None
+    assert risk["total_risk_pct"] is None
+    assert risk["open_position_risk_currency"] is None
+    assert risk["quantified_risk_currency"] == 0.0

@@ -4160,6 +4160,10 @@ def run_trade_risk_analyze(  # noqa: C901
             risk_calculation_failures: List[Dict[str, Any]] = []
             total_risk_currency = 0.0
             total_pending_risk_currency = 0.0
+            open_risk_items_total = 0
+            open_risk_items_quantified = 0
+            pending_risk_items_total = 0
+            pending_risk_items_quantified = 0
             positions_without_sl = 0
             positions_with_breached_stops = 0
             total_stop_overrun_currency = 0.0
@@ -4171,6 +4175,7 @@ def run_trade_risk_analyze(  # noqa: C901
             symbol_info_cache: Dict[str, Any] = {}
 
             for pos in positions:
+                open_risk_items_total += 1
                 try:
                     symbol_key = str(getattr(pos, "symbol", ""))
                     if symbol_key not in symbol_info_cache:
@@ -4297,6 +4302,9 @@ def run_trade_risk_analyze(  # noqa: C901
                         positions_without_sl += 1
                         risk_status = "unlimited"
 
+                    if risk_status == "defined":
+                        open_risk_items_quantified += 1
+
                     position_risks.append(
                         {
                             "ticket": pos.ticket,
@@ -4346,7 +4354,15 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                     continue
 
-            open_position_risk_currency = total_risk_currency
+            quantified_open_position_risk_currency = total_risk_currency
+            open_position_risk_complete = (
+                open_risk_items_quantified == open_risk_items_total
+            )
+            open_position_risk_currency = (
+                quantified_open_position_risk_currency
+                if open_position_risk_complete
+                else None
+            )
             open_position_notional_exposure = total_notional_exposure
 
             if getattr(request, "include_pending", True):
@@ -4372,6 +4388,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     validation._safe_int_attr(gateway, "ORDER_TYPE_SELL_STOP_LIMIT", 7),
                 }
                 for order in pending_orders:
+                    pending_risk_items_total += 1
                     try:
                         symbol_key = str(getattr(order, "symbol", ""))
                         if symbol_key not in symbol_info_cache:
@@ -4478,6 +4495,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             pending_orders_without_sl += 1
                             risk_status = "unlimited"
 
+                        if risk_status == "defined":
+                            pending_risk_items_quantified += 1
+
                         pending_order_risks.append(
                             {
                                 "ticket": getattr(order, "ticket", None),
@@ -4518,10 +4538,29 @@ def run_trade_risk_analyze(  # noqa: C901
                         )
                         continue
 
-            total_risk_currency += total_pending_risk_currency
+            quantified_risk_currency = (
+                total_risk_currency + total_pending_risk_currency
+            )
+            risk_items_total = open_risk_items_total + pending_risk_items_total
+            risk_items_quantified = (
+                open_risk_items_quantified + pending_risk_items_quantified
+            )
+            risk_total_complete = risk_items_quantified == risk_items_total
+            total_risk_currency = (
+                quantified_risk_currency if risk_total_complete else None
+            )
+            pending_risk_complete = (
+                pending_risk_items_quantified == pending_risk_items_total
+            )
+            contingent_pending_risk_currency = (
+                total_pending_risk_currency if pending_risk_complete else None
+            )
             total_notional_exposure += total_pending_notional_exposure
+            quantified_risk_pct = (
+                (quantified_risk_currency / equity) * 100.0 if equity > 0 else 0.0
+            )
             total_risk_pct = (
-                (total_risk_currency / equity) * 100.0 if equity > 0 else 0.0
+                quantified_risk_pct if risk_total_complete else None
             )
             notional_exposure_pct = (
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
@@ -4536,9 +4575,9 @@ def run_trade_risk_analyze(  # noqa: C901
             else:
                 stop_risk_level = (
                     "high"
-                    if total_risk_pct > 10
+                    if quantified_risk_pct > 10
                     else "moderate"
-                    if total_risk_pct > 5
+                    if quantified_risk_pct > 5
                     else "low"
                 )
             margin_risk_level = (
@@ -4598,10 +4637,29 @@ def run_trade_risk_analyze(  # noqa: C901
                     "margin_risk_level": margin_risk_level,
                     "notional_risk_level": notional_risk_level,
                     "margin_stress": margin_stress,
-                    "total_risk_currency": round(total_risk_currency, 2),
-                    "total_risk_pct": round(total_risk_pct, 2),
-                    "open_position_risk_currency": round(open_position_risk_currency, 2),
-                    "contingent_pending_risk_currency": round(total_pending_risk_currency, 2),
+                    "risk_total_complete": risk_total_complete,
+                    "risk_items_quantified": risk_items_quantified,
+                    "risk_items_total": risk_items_total,
+                    "quantified_risk_currency": round(quantified_risk_currency, 2),
+                    "quantified_risk_pct": round(quantified_risk_pct, 2),
+                    "total_risk_currency": _round_optional_number(
+                        total_risk_currency, 2
+                    ),
+                    "total_risk_pct": _round_optional_number(total_risk_pct, 2),
+                    "open_position_risk_complete": open_position_risk_complete,
+                    "quantified_open_position_risk_currency": round(
+                        quantified_open_position_risk_currency, 2
+                    ),
+                    "open_position_risk_currency": _round_optional_number(
+                        open_position_risk_currency, 2
+                    ),
+                    "pending_risk_complete": pending_risk_complete,
+                    "quantified_pending_risk_currency": round(
+                        total_pending_risk_currency, 2
+                    ),
+                    "contingent_pending_risk_currency": _round_optional_number(
+                        contingent_pending_risk_currency, 2
+                    ),
                     "positions_count": len(position_risks),
                     "pending_orders_included": bool(getattr(request, "include_pending", True)),
                     "pending_orders_count": len(pending_order_risks),

@@ -1379,11 +1379,25 @@ class TestFormatResultMinimal:
             "portfolio_risk": {
                 "overall_risk_status": "defined",
                 "quantified_risk_level": "low",
+                "risk_total_complete": True,
                 "total_risk_currency": 100.0,
                 "total_risk_pct": 1.0,
                 "positions_count": 1,
                 "notional_exposure": 100000.0,
             },
+            "positions": [
+                {
+                    "ticket": 1867597160,
+                    "symbol": "EURUSD",
+                    "type": "BUY",
+                    "volume": 1.0,
+                    "current_mark": 1.15733,
+                    "sl": None,
+                    "tp": None,
+                    "notional_value": 115733.0,
+                    "risk_status": "unlimited",
+                }
+            ],
             "position_sizing": {
                 "symbol": "EURUSD",
                 "direction": "long",
@@ -1413,7 +1427,10 @@ class TestFormatResultMinimal:
         assert "rr_ratio: 2" in compact
         assert "raw_volume" not in compact
         assert "volume_step" not in compact
-        assert "notional_exposure" not in compact
+        assert "notional_exposure: 100000" in compact
+        assert "positions[1]" in compact
+        assert "notional_value" in compact
+        assert "1867597160" in compact
         assert "raw_volume" in verbose
 
     def test_compact_trade_idea_output_hides_source_calls(self):

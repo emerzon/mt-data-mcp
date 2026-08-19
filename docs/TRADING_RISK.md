@@ -93,6 +93,14 @@ can trigger both sides of a hedge sequentially. Pending-order stop risk is
 reported separately as contingent and is included in the total only when
 `include_pending=true`.
 
+Default compact output retains a per-position exposure summary, including the
+ticket, side, volume, current mark, stop/target, notional value, and stop-risk
+status. When every included position and pending order has quantifiable stop
+risk, `risk_total_complete=true` and the unconditional `total_risk_*` fields are
+numeric. If any component has no stop, a breached stop, or unusable tick
+metadata, those totals are `null`; `quantified_risk_*` remains the explicitly
+labeled subtotal of components that could be measured.
+
 `notional_value` and portfolio notional fields are linearized account-currency
 exposures derived from the broker's tick value and tick size. The per-position
 `contract_price_product` diagnostic preserves raw `volume × contract_size × price`

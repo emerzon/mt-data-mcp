@@ -1514,26 +1514,100 @@ def _normalize_trade_risk_payload(
         if account_out:
             out["account"] = account_out
 
-    portfolio = payload.get("portfolio_risk")
+    portfolio_name = (
+        "portfolio_risk"
+        if isinstance(payload.get("portfolio_risk"), dict)
+        else "scoped_risk"
+    )
+    portfolio = payload.get(portfolio_name)
     if isinstance(portfolio, dict):
         portfolio_keys = (
             "overall_risk_status",
             "quantified_risk_level",
+            "risk_total_complete",
+            "risk_items_quantified",
+            "risk_items_total",
+            "quantified_risk_currency",
+            "quantified_risk_pct",
             "total_risk_currency",
             "total_risk_pct",
+            "open_position_risk_complete",
+            "quantified_open_position_risk_currency",
+            "open_position_risk_currency",
+            "pending_risk_complete",
+            "quantified_pending_risk_currency",
+            "contingent_pending_risk_currency",
             "positions_count",
             "positions_without_sl",
+            "positions_with_breached_stops",
+            "pending_orders_count",
+            "pending_orders_without_sl",
+            "notional_exposure",
+            "notional_exposure_pct",
         )
+        nullable_totals = {
+            "total_risk_currency",
+            "total_risk_pct",
+            "open_position_risk_currency",
+            "contingent_pending_risk_currency",
+        }
         portfolio_out = {
             key: portfolio.get(key)
             for key in portfolio_keys
-            if not _is_empty_value(portfolio.get(key))
+            if key in portfolio
+            and (key in nullable_totals or not _is_empty_value(portfolio.get(key)))
         }
         failures = portfolio.get("positions_with_risk_calculation_failures")
         if failures:
             portfolio_out["positions_with_risk_calculation_failures"] = failures
         if portfolio_out:
-            out["portfolio_risk"] = portfolio_out
+            out[portfolio_name] = portfolio_out
+
+    for key in ("risk_visibility", "scope", "scope_warning"):
+        value = payload.get(key)
+        if not _is_empty_value(value):
+            out[key] = value
+
+    def _compact_risk_rows(rows: Any, *, pending: bool = False) -> List[Dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        compact_rows: List[Dict[str, Any]] = []
+        value_keys = (
+            ("entry",) if pending else ("current_mark", "risk_reference_price")
+        ) + (
+            "volume",
+            "sl",
+            "tp",
+            "notional_value",
+            "risk_status",
+            "risk_currency",
+            "risk_pct",
+            "stop_overrun_currency",
+        )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            compact: Dict[str, Any] = {
+                key: row[key]
+                for key in ("ticket", "symbol")
+                if key in row
+            }
+            side = row.get("side", row.get("type"))
+            if side not in (None, ""):
+                compact["side"] = side
+            compact.update({key: row[key] for key in value_keys if key in row})
+            compact_rows.append(compact)
+        return compact_rows
+
+    positions = payload.get("positions")
+    if isinstance(positions, list):
+        out["positions"] = _compact_risk_rows(positions)
+    pending_orders = payload.get("pending_orders")
+    if isinstance(pending_orders, list):
+        out["pending_orders"] = _compact_risk_rows(
+            pending_orders,
+            pending=True,
+        )
 
     sizing = payload.get("position_sizing")
     if isinstance(sizing, dict):
