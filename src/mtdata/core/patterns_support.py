@@ -79,6 +79,7 @@ def _empty_patterns_note(
     timeframe: Any,
     *,
     min_strength: Any = None,
+    observed_bars: Any = None,
 ) -> str:
     mode_label = str(mode or "pattern").strip().lower() or "pattern"
     tf_label = str(timeframe or "selected timeframe").strip() or "selected timeframe"
@@ -86,6 +87,21 @@ def _empty_patterns_note(
         limit_label = str(int(limit))
     except Exception:
         limit_label = str(limit or "requested")
+    try:
+        observed_count = int(observed_bars)
+        requested_count = int(limit)
+    except (TypeError, ValueError):
+        observed_count = requested_count = None
+    if (
+        observed_count is not None
+        and requested_count is not None
+        and observed_count < requested_count
+    ):
+        return (
+            f"Only {observed_count} of {requested_count} requested {tf_label} bars "
+            "were available; no reliable pattern-absence conclusion was made. "
+            "Choose a more populated date range or verify source history."
+        )
     if mode_label == "candlestick" and min_strength is not None:
         strength = _round_value(min_strength)
         return (

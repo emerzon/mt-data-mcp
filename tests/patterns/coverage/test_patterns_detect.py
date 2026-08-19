@@ -354,6 +354,22 @@ class TestPatternsDetect:
         )
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_candlestick_empty_note_reports_short_history(self, mock_detect):
+        mock_detect.return_value = {"success": True, "data": [], "candles": 2}
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            timeframe="H1",
+            lookback=150,
+            min_strength=0.7,
+        )
+
+        assert "Only 2 of 150 requested H1 bars were available" in result["note"]
+        assert "lowering min_strength" not in result["note"]
+        assert "detected in 150" not in result["note"]
+
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_summary_omits_diagnostics(self, mock_detect):
         mock_detect.return_value = {
             "success": True,

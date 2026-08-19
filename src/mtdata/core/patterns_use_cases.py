@@ -517,6 +517,7 @@ def run_patterns_detect(  # noqa: C901
                     request.lookback,
                     tf_single,
                     min_strength=request.min_strength,
+                    observed_bars=out.get("candles"),
                 )
         if detail_value == "summary":
             rows = out.get("data") if isinstance(out, dict) else []
