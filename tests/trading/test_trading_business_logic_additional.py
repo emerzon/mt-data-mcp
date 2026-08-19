@@ -82,9 +82,8 @@ def test_trade_done_helpers_use_safe_int_attr_and_cached_codes():
     assert _retcode_is_accepted(mt5, 1, accepted_codes) is False
 
 
-def test_normalize_price_for_symbol_accepts_negative_non_zero_values():
-    normalized = _normalize_price_for_symbol(-37.634, point=0.01, digits=2)
-    assert normalized == -37.63
+def test_normalize_price_for_symbol_rejects_negative_values():
+    assert _normalize_price_for_symbol(-37.634, point=0.01, digits=2) is None
 
 
 def test_normalize_price_for_symbol_removes_binary_tick_residue():
@@ -555,6 +554,49 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["units"]["sl_distance_points"] == "broker_point_count"
     assert result["units"]["sl_distance_pips"] == "pip_count"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
+
+
+@pytest.mark.parametrize(
+    ("price", "stop_loss", "take_profit"),
+    [
+        (0, None, None),
+        (-1, None, None),
+        (float("nan"), None, None),
+        (float("inf"), None, None),
+        (float("-inf"), None, None),
+        (0, 1.08, 1.12),
+    ],
+)
+def test_pending_dry_run_rejects_invalid_price_before_quote_resolution(
+    price,
+    stop_loss,
+    take_profit,
+):
+    gateway = MagicMock()
+    gateway.account_info.return_value = None
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.00001,
+        digits=5,
+    )
+
+    result = build_trade_place_dry_run_preview(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY_LIMIT",
+        pending=True,
+        price=price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        gateway=gateway,
+    )
+
+    assert result["preview_error_code"] == "invalid_pending_price"
+    assert "strictly positive finite" in result["preview_error"]
+    gateway.symbol_info_tick.assert_not_called()
 
 
 @pytest.mark.parametrize(

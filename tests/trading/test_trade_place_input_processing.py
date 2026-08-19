@@ -710,6 +710,92 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("expiration") == "2026-08-20"
     assert out.get("expiration_normalized") == 1787270399
     assert out.get("expiration_resolved_utc") == "2026-08-20T23:59:59Z"
+    assert out.get("expiration_policy") == "expires_at"
+    assert out.get("expiration_explicit") is True
+    mock_pending.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "price",
+    [0, -1, float("nan"), float("inf"), float("-inf")],
+)
+def test_trade_place_pending_preview_fails_closed_for_invalid_price(price) -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "preview_error": (
+                "price must be a strictly positive finite number after symbol normalization."
+            ),
+            "preview_error_code": "invalid_pending_price",
+        },
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY_LIMIT",
+            price=price,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_pending_price"
+    assert out["preview_ok"] is False
+    assert out["validation_passed"] is False
+    assert out["validation"]["local_requirements_passed"] is False
+    assert out["validation"]["live_submission_eligible"] is False
+    assert "invalid_pending_price" in out["validation"]["blockers"]
+    assert out["blockers"] == ["invalid_pending_price"]
+    mock_pending.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "expiration",
+    [0, -1, float("nan"), float("inf"), float("-inf"), "0", "-1", "nan", "inf", "-inf"],
+)
+def test_trade_place_pending_preview_rejects_invalid_expiration(
+    expiration,
+) -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview"
+    ) as mock_preview:
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY_LIMIT",
+            price=1.09,
+            expiration=expiration,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_pending_expiration"
+    assert out["preview_ok"] is False
+    assert out["validation_passed"] is False
+    assert out["validation"]["live_submission_eligible"] is False
+    assert out["blockers"] == ["invalid_pending_expiration"]
+    mock_preview.assert_not_called()
+    mock_pending.assert_not_called()
+
+
+def test_trade_place_pending_preview_rejects_past_expiration_with_context() -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending:
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY_LIMIT",
+            price=1.09,
+            expiration="2020-01-01T00:00:00+00:00",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["error_code"] == "invalid_pending_expiration"
+    assert out["expiration_context"]["reason"] == "not_in_future"
+    assert out["expiration_context"]["expiration_resolved_utc"] == (
+        "2020-01-01T00:00:00Z"
+    )
     mock_pending.assert_not_called()
 
 
@@ -973,6 +1059,28 @@ def test_trade_modify_blank_expiration_keeps_position_path() -> None:
         assert out.get("success") is True
         mock_pos.assert_called_once()
         mock_pending.assert_not_called()
+
+
+@pytest.mark.parametrize("expiration", [0, -1, "0", "-1", "2020-01-01"])
+def test_trade_modify_rejects_invalid_expiration_before_order_lookup(
+    expiration,
+) -> None:
+    with patch("mtdata.core.trading._modify_pending_order") as mock_pending, patch(
+        "mtdata.core.trading._modify_position"
+    ) as mock_position:
+        out = trade_modify(
+            ticket=123,
+            expiration=expiration,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_pending_expiration"
+    assert out["preview_ok"] is False
+    assert out["validation"]["live_submission_eligible"] is False
+    mock_pending.assert_not_called()
+    mock_position.assert_not_called()
 
 
 def test_trade_modify_pending_not_found_reports_checked_scope() -> None:

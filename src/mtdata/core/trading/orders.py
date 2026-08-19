@@ -1076,6 +1076,32 @@ def build_trade_place_dry_run_preview(
     if volume_error:
         return {"preview_error": volume_error}
 
+    price_context = validation._symbol_price_context(symbol_info)
+    price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
+        symbol_info=symbol_info,
+        price=price,
+        require_price=pending,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+    )
+    if price_inputs_error is not None:
+        invalid_pending_price = pending and validation._normalize_price_for_symbol(
+            price,
+            point=float(price_context["price_increment"]),
+            digits=int(price_context["digits"]),
+        ) is None
+        return {
+            "preview_error": price_inputs_error,
+            "preview_error_code": (
+                "invalid_pending_price"
+                if invalid_pending_price
+                else "invalid_protection_levels"
+            ),
+        }
+    normalized_price = price_inputs["price"]
+    normalized_sl = price_inputs["stop_loss"]
+    normalized_tp = price_inputs["take_profit"]
+
     quote_now = _stdlib_time.time()
     tick, quote_source = resolve_quote_tick(
         mt5,
@@ -1095,7 +1121,11 @@ def build_trade_place_dry_run_preview(
     point = validation._safe_float_attr(symbol_info, "point") or 0.0
     side = "BUY" if str(order_type).upper().startswith("BUY") else "SELL"
     order_type_value = _order_type_constant(mt5, order_type)
-    entry_price = float(price) if pending and price not in (None, 0) else (ask if side == "BUY" else bid)
+    entry_price = (
+        float(normalized_price)
+        if pending
+        else (ask if side == "BUY" else bid)
+    )
     points_per_pip = forex_points_per_pip(
         symbol,
         path=str(getattr(symbol_info, "path", "") or ""),
@@ -1141,7 +1171,7 @@ def build_trade_place_dry_run_preview(
     out.update(
         _level_preview_fields(
             "sl",
-            stop_loss,
+            normalized_sl,
             entry_price=entry_price,
             point=point,
             points_per_pip=points_per_pip,
@@ -1150,7 +1180,7 @@ def build_trade_place_dry_run_preview(
     out.update(
         _level_preview_fields(
             "tp",
-            take_profit,
+            normalized_tp,
             entry_price=entry_price,
             point=point,
             points_per_pip=points_per_pip,
@@ -1176,8 +1206,8 @@ def build_trade_place_dry_run_preview(
                 tick=tick,
                 order_type_value=order_type_value,
                 price=float(entry_price),
-                stop_loss=float(stop_loss) if stop_loss not in (None, 0) else None,
-                take_profit=float(take_profit) if take_profit not in (None, 0) else None,
+                stop_loss=None if normalized_sl is None else float(normalized_sl),
+                take_profit=None if normalized_tp is None else float(normalized_tp),
                 mt5=mt5,
             )
     else:
@@ -1185,10 +1215,16 @@ def build_trade_place_dry_run_preview(
             symbol_info=symbol_info,
             tick=tick,
             side=side,
-            stop_loss=float(stop_loss) if stop_loss not in (None, 0) else None,
-            take_profit=float(take_profit) if take_profit not in (None, 0) else None,
+            stop_loss=None if normalized_sl is None else float(normalized_sl),
+            take_profit=None if normalized_tp is None else float(normalized_tp),
         )
-    if stop_loss not in (None, 0) or take_profit not in (None, 0):
+    if pending:
+        out["pending_levels_valid"] = validation_error is None
+        if validation_error is not None:
+            out["pending_levels_error"] = validation_error.get("error")
+            out["preview_error"] = validation_error.get("error")
+            out["preview_error_code"] = "invalid_pending_order_levels"
+    if normalized_sl is not None or normalized_tp is not None:
         out["sl_tp_valid"] = validation_error is None
         if validation_error is not None:
             out["sl_tp_error"] = validation_error.get("error")
@@ -1289,7 +1325,10 @@ def _place_market_order(  # noqa: C901
                 take_profit=take_profit,
             )
             if price_inputs_error is not None:
-                return {"error": price_inputs_error}
+                return {
+                    "error": price_inputs_error,
+                    "error_code": "invalid_protection_levels",
+                }
             norm_sl = price_inputs["stop_loss"]
             norm_tp = price_inputs["take_profit"]
             if (
@@ -1724,7 +1763,20 @@ def _place_pending_order(  # noqa: C901
                 take_profit=take_profit,
             )
             if price_inputs_error is not None:
-                return {"error": price_inputs_error}
+                price_context = validation._symbol_price_context(symbol_info)
+                invalid_pending_price = validation._normalize_price_for_symbol(
+                    price,
+                    point=float(price_context["price_increment"]),
+                    digits=int(price_context["digits"]),
+                ) is None
+                return {
+                    "error": price_inputs_error,
+                    "error_code": (
+                        "invalid_pending_price"
+                        if invalid_pending_price
+                        else "invalid_protection_levels"
+                    ),
+                }
             point = float(price_inputs["point"])
             norm_price = float(price_inputs["price"])
             norm_sl = price_inputs["stop_loss"]
@@ -1901,6 +1953,12 @@ def _place_pending_order(  # noqa: C901
                 out["warnings"] = warnings_out
             return out
 
+        except time.PendingExpirationValidationError as e:
+            return {
+                "error": str(e),
+                "error_code": e.error_code,
+                "expiration_context": dict(e.context),
+            }
         except Exception as e:
             return {"error": str(e)}
 

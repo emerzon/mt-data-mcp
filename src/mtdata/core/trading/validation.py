@@ -536,20 +536,20 @@ def _normalize_price_for_symbol(
     point: float,
     digits: int,
 ) -> Optional[float]:
-    """Normalize a price to symbol precision, rejecting zero and non-finite outputs."""
+    """Normalize a price to symbol precision, rejecting nonpositive/non-finite outputs."""
     if value is None or isinstance(value, bool):
         return None
     try:
         numeric = float(value)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(numeric) or numeric == 0.0:
+    if not math.isfinite(numeric) or numeric <= 0.0:
         return None
     if point > 0:
         numeric = snap_to_increment(numeric, point, digits=digits)
     else:
         numeric = float(f"{numeric:.{max(0, min(15, int(digits)))}f}")
-    if numeric is None or not math.isfinite(numeric) or numeric == 0.0:
+    if numeric is None or not math.isfinite(numeric) or numeric <= 0.0:
         return None
     return float(numeric)
 
@@ -576,7 +576,7 @@ def _normalize_requested_protection_price(
         return None, explicit_remove, None
     normalized = _normalize_price_for_symbol(value, point=point, digits=digits)
     if normalized is None:
-        return None, explicit_remove, f"{field_name} must be a non-zero finite price after symbol normalization."
+        return None, explicit_remove, f"{field_name} must be a strictly positive finite price after symbol normalization."
     return float(normalized), explicit_remove, None
 
 
@@ -616,7 +616,7 @@ def _normalize_trade_price_inputs(
             digits=digits,
         )
         if normalized_price is None:
-            return None, f"{price_field_name} must be a non-zero finite number after symbol normalization."
+            return None, f"{price_field_name} must be a strictly positive finite number after symbol normalization."
 
     requested_sl, explicit_remove_sl, sl_error = _normalize_requested_protection_price(
         stop_loss,

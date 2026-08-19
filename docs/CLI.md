@@ -758,7 +758,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--detail` | `trade_place` | Preview detail level; use `full` for execution diagnostics. |
 | `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close` | MT5 magic-number filter or default strategy identifier. |
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
-| `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
+| `--expiration` | `trade_place`, `trade_modify` | Future expiration for pending orders (`dateparser` or positive UTC epoch seconds); use literal `GTC` for no expiration. Invalid or past values are rejected locally. |
 | `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |
 | `--target` | `trade_close` | Select `positions` (default), `pending`, or `all_exposure`. |
 | `--close-all` | `trade_close` | Select the whole account when ticket, symbol, and magic are omitted. |

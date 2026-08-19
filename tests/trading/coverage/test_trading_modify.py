@@ -570,6 +570,24 @@ class TestModifyPendingOrder:
         assert result["applied_price"] == 1.09
         assert result["applied_sl"] == 1.08
         assert result["applied_tp"] == 1.11
+        assert result["expiration_policy"] == "preserve_existing"
+        assert result["expiration_explicit"] is False
+        mt5.order_send.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "expiration",
+        [0, -1, float("nan"), float("inf"), float("-inf"), "0", "-1"],
+    )
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_invalid_expiration_cannot_modify_order_to_gtc(self, expiration):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(ticket=100, expiration=expiration)
+
+        assert result["error_code"] == "invalid_pending_expiration"
         mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})

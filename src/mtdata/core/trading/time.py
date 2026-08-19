@@ -13,8 +13,80 @@ from ...shared.constants import TIMEFRAME_SECONDS
 from ...shared.validators import unsupported_timeframe_seconds_error
 
 ExpirationValue = Union[int, float, str, datetime]
-_GTC_EXPIRATION_TOKENS = {"GTC", "GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"}
+_GTC_EXPIRATION_TOKENS = {"GTC"}
 _SIMPLE_RELATIVE_PATTERN = re.compile(r"^(?:in\s+)?(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$", re.IGNORECASE)
+
+
+class PendingExpirationValidationError(ValueError):
+    """Stable validation failure for an explicit pending-order expiration."""
+
+    error_code = "invalid_pending_expiration"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str,
+        expiration: object,
+        resolved_epoch: Optional[int] = None,
+        observed_epoch: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.context = {
+            "reason": reason,
+            "expiration_received": str(expiration),
+        }
+        if resolved_epoch is not None:
+            self.context["expiration_resolved_utc"] = _format_expiration_utc(
+                resolved_epoch
+            )
+        if observed_epoch is not None:
+            self.context["validation_observed_utc"] = _format_expiration_utc(
+                observed_epoch
+            )
+
+
+def _format_expiration_utc(epoch_seconds: int) -> str:
+    return (
+        datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _validate_pending_expiration_timestamp(
+    timestamp: int,
+    *,
+    expiration: object,
+) -> int:
+    observed_epoch = int(datetime.now(timezone.utc).timestamp())
+    if timestamp <= observed_epoch:
+        resolved_utc = _format_expiration_utc(timestamp)
+        observed_utc = _format_expiration_utc(observed_epoch)
+        raise PendingExpirationValidationError(
+            (
+                "expiration must resolve to a future UTC instant; "
+                f"resolved_utc={resolved_utc}, validation_observed_utc={observed_utc}"
+            ),
+            reason="not_in_future",
+            expiration=expiration,
+            resolved_epoch=timestamp,
+            observed_epoch=observed_epoch,
+        )
+    return timestamp
+
+
+def _invalid_pending_expiration(
+    expiration: object,
+    *,
+    reason: str,
+    message: str,
+) -> PendingExpirationValidationError:
+    return PendingExpirationValidationError(
+        message,
+        reason=reason,
+        expiration=expiration,
+    )
 
 
 def _to_server_time_naive(dt: datetime) -> datetime:
@@ -243,23 +315,41 @@ def _relative_expiration_base(*, now_utc: Optional[datetime] = None) -> datetime
     return current_utc.replace(tzinfo=None)
 
 
-def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:
+def _normalize_pending_expiration(  # noqa: C901
+    expiration: Optional[ExpirationValue],
+) -> Tuple[Optional[int], bool]:
     """Convert user-supplied expiration data into an MT5-compatible timestamp."""
     if expiration is None:
         return None, False
 
     if isinstance(expiration, datetime):
         server_dt = _to_server_time_naive(expiration)
-        return _server_time_naive_to_mt5_timestamp(server_dt), True
+        timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+        return _validate_pending_expiration_timestamp(
+            timestamp,
+            expiration=expiration,
+        ), True
 
     if isinstance(expiration, (int, float)):
         if not math.isfinite(expiration) or expiration <= 0:
-            return None, True
+            raise _invalid_pending_expiration(
+                expiration,
+                reason="nonpositive_or_nonfinite",
+                message="expiration must be a positive finite UTC epoch timestamp or the GTC token.",
+            )
         try:
             server_dt = _to_server_time_naive(datetime.fromtimestamp(expiration, tz=timezone.utc))
-            return _server_time_naive_to_mt5_timestamp(server_dt), True
+            timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+            return _validate_pending_expiration_timestamp(
+                timestamp,
+                expiration=expiration,
+            ), True
         except (OverflowError, OSError) as exc:
-            raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
+            raise _invalid_pending_expiration(
+                expiration,
+                reason="timestamp_out_of_range",
+                message=f"Expiration timestamp out of range: {expiration}",
+            ) from exc
 
     if isinstance(expiration, str):
         cleaned = expiration.strip().strip('"').strip("'")
@@ -279,9 +369,17 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
                     microsecond=999999,
                 )
             except ValueError as exc:
-                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
+                raise _invalid_pending_expiration(
+                    expiration,
+                    reason="unsupported_format",
+                    message=f"Unsupported expiration format: {expiration}",
+                ) from exc
             server_dt = _to_server_time_naive(end_of_client_day)
-            return _server_time_naive_to_mt5_timestamp(server_dt), True
+            timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+            return _validate_pending_expiration_timestamp(
+                timestamp,
+                expiration=expiration,
+            ), True
 
         match = _SIMPLE_RELATIVE_PATTERN.match(cleaned)
         if match:
@@ -300,39 +398,79 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
                 delta = timedelta(weeks=value)
             if delta is not None:
                 server_dt = _to_server_time_naive(datetime.now(timezone.utc) + delta)
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-
-        try:
-            import dateparser  # type: ignore
-
-            dt = dateparser.parse(
-                cleaned,
-                settings={
-                    "RETURN_AS_TIMEZONE_AWARE": False,
-                    "PREFER_DATES_FROM": "future",
-                    "RELATIVE_BASE": _relative_expiration_base(),
-                },
-            )
-            if dt is not None:
-                server_dt = _to_server_time_naive(dt)
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-        except Exception:
-            pass
+                timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+                return _validate_pending_expiration_timestamp(
+                    timestamp,
+                    expiration=expiration,
+                ), True
 
         try:
             numeric = float(cleaned)
-            if not math.isfinite(numeric) or numeric <= 0:
-                return None, True
-            try:
-                server_dt = _to_server_time_naive(datetime.fromtimestamp(numeric, tz=timezone.utc))
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-            except (OverflowError, OSError) as exc:
-                raise ValueError(f"Expiration timestamp out of range: {expiration}") from exc
         except ValueError:
+            numeric = None
+        if numeric is not None:
+            if not math.isfinite(numeric) or numeric <= 0:
+                raise _invalid_pending_expiration(
+                    expiration,
+                    reason="nonpositive_or_nonfinite",
+                    message="expiration must be a positive finite UTC epoch timestamp or the GTC token.",
+                )
             try:
-                server_dt = _to_server_time_naive(datetime.fromisoformat(cleaned))
-                return _server_time_naive_to_mt5_timestamp(server_dt), True
-            except ValueError as exc:
-                raise ValueError(f"Unsupported expiration format: {expiration}") from exc
+                server_dt = _to_server_time_naive(
+                    datetime.fromtimestamp(numeric, tz=timezone.utc)
+                )
+                timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+                return _validate_pending_expiration_timestamp(
+                    timestamp,
+                    expiration=expiration,
+                ), True
+            except (OverflowError, OSError) as exc:
+                raise _invalid_pending_expiration(
+                    expiration,
+                    reason="timestamp_out_of_range",
+                    message=f"Expiration timestamp out of range: {expiration}",
+                ) from exc
+
+        try:
+            iso_datetime = datetime.fromisoformat(cleaned)
+        except ValueError:
+            iso_datetime = None
+        if iso_datetime is not None:
+            server_dt = _to_server_time_naive(iso_datetime)
+            timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+            return _validate_pending_expiration_timestamp(
+                timestamp,
+                expiration=expiration,
+            ), True
+
+        try:
+            import dateparser  # type: ignore
+        except Exception:
+            dateparser = None
+        if dateparser is not None:
+            try:
+                dt = dateparser.parse(
+                    cleaned,
+                    settings={
+                        "RETURN_AS_TIMEZONE_AWARE": False,
+                        "PREFER_DATES_FROM": "future",
+                        "RELATIVE_BASE": _relative_expiration_base(),
+                    },
+                )
+            except Exception:
+                dt = None
+            if dt is not None:
+                server_dt = _to_server_time_naive(dt)
+                timestamp = _server_time_naive_to_mt5_timestamp(server_dt)
+                return _validate_pending_expiration_timestamp(
+                    timestamp,
+                    expiration=expiration,
+                ), True
+
+        raise _invalid_pending_expiration(
+            expiration,
+            reason="unsupported_format",
+            message=f"Unsupported expiration format: {expiration}",
+        )
 
     raise TypeError(f"Unsupported expiration type: {type(expiration).__name__}")

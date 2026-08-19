@@ -1017,6 +1017,21 @@ def _modify_pending_order(  # noqa: C901
                     "applied_sl": request.get("sl"),
                     "applied_tp": request.get("tp"),
                     "applied_expiration": request.get("expiration"),
+                    "expiration_explicit": expiration_specified,
+                    "expiration_policy": (
+                        (
+                            "gtc"
+                            if normalized_expiration is None
+                            else "expires_at"
+                        )
+                        if expiration_specified
+                        else "preserve_existing"
+                    ),
+                    "expiration_resolved_utc": (
+                        time._format_expiration_utc(normalized_expiration)
+                        if normalized_expiration is not None
+                        else None
+                    ),
                     "not_estimated": [
                         "broker_acceptance",
                         "execution_latency",
@@ -1211,6 +1226,12 @@ def _modify_pending_order(  # noqa: C901
                     ]
             return out
 
+        except time.PendingExpirationValidationError as e:
+            return {
+                "error": str(e),
+                "error_code": e.error_code,
+                "expiration_context": dict(e.context),
+            }
         except Exception as e:
             return _unexpected_operation_error(
                 "modifying pending order",

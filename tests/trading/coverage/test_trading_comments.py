@@ -49,6 +49,7 @@ from mtdata.core.trading.comments import (
 )
 from mtdata.core.trading.time import (
     _GTC_EXPIRATION_TOKENS,
+    PendingExpirationValidationError,
     _normalize_pending_expiration,
 )
 
@@ -302,38 +303,38 @@ class TestNormalizePendingExpiration:
         val, explicit = _normalize_pending_expiration("gtc")
         assert val is None and explicit is True
 
-    def test_negative_number_clears(self):
-        val, explicit = _normalize_pending_expiration(-1)
-        assert val is None and explicit is True
+    def test_negative_number_rejected(self):
+        with pytest.raises(PendingExpirationValidationError):
+            _normalize_pending_expiration(-1)
 
-    def test_zero_clears(self):
-        val, explicit = _normalize_pending_expiration(0)
-        assert val is None and explicit is True
+    def test_zero_rejected(self):
+        with pytest.raises(PendingExpirationValidationError):
+            _normalize_pending_expiration(0)
 
-    def test_inf_clears(self):
-        val, explicit = _normalize_pending_expiration(float("inf"))
-        assert val is None and explicit is True
+    def test_inf_rejected(self):
+        with pytest.raises(PendingExpirationValidationError):
+            _normalize_pending_expiration(float("inf"))
 
     @patch("mtdata.core.trading.time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_datetime_returns_timestamp(self, _mock):
-        dt = datetime(2025, 6, 1, 12, 0, 0)
+        dt = datetime(2099, 6, 1, 12, 0, 0)
         val, explicit = _normalize_pending_expiration(dt)
         assert isinstance(val, int) and explicit is True
 
     @patch("mtdata.core.trading.time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_positive_numeric_epoch(self, _mock):
-        ts = 1717200000.0  # some future epoch
+        ts = 4083998400.0
         val, explicit = _normalize_pending_expiration(ts)
         assert isinstance(val, int) and explicit is True
 
     @patch("mtdata.core.trading.time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_string_numeric_epoch(self, _mock):
-        val, explicit = _normalize_pending_expiration("1717200000")
+        val, explicit = _normalize_pending_expiration("4083998400")
         assert isinstance(val, int) and explicit is True
 
     @patch("mtdata.core.trading.time._to_server_time_naive", side_effect=lambda dt: dt.replace(tzinfo=None) if dt.tzinfo else dt)
     def test_iso8601_string(self, _mock):
-        val, explicit = _normalize_pending_expiration("2025-06-01T12:00:00")
+        val, explicit = _normalize_pending_expiration("2099-06-01T12:00:00")
         assert isinstance(val, int) and explicit is True
 
     def test_date_only_expiration_is_good_through_client_day(self):
@@ -344,11 +345,11 @@ class TestNormalizePendingExpiration:
             "mtdata.core.trading.time._server_time_naive_to_mt5_timestamp",
             side_effect=lambda dt: int(dt.replace(tzinfo=timezone.utc).timestamp()),
         ):
-            value, explicit = _normalize_pending_expiration("2026-08-20")
+            value, explicit = _normalize_pending_expiration("2099-08-20")
 
         assert explicit is True
         assert datetime.fromtimestamp(value, tz=timezone.utc) == datetime(
-            2026,
+            2099,
             8,
             20,
             23,
@@ -358,10 +359,8 @@ class TestNormalizePendingExpiration:
         )
 
     def test_string_negative_numeric(self):
-        # "-1" may be parsed by dateparser as a relative date; the key point
-        # is that a negative numeric string is handled without raising.
-        val, explicit = _normalize_pending_expiration("-1")
-        assert explicit is True
+        with pytest.raises(PendingExpirationValidationError):
+            _normalize_pending_expiration("-1")
 
     def test_unsupported_type_raises(self):
         with pytest.raises(TypeError, match="Unsupported expiration type"):
@@ -392,9 +391,9 @@ class TestNormalizePendingExpiration:
         val, explicit = _normalize_pending_expiration("2w")
         assert isinstance(val, int) and explicit is True
 
-    def test_string_inf_clears(self):
-        val, explicit = _normalize_pending_expiration("inf")
-        assert val is None and explicit is True
+    def test_string_inf_rejected(self):
+        with pytest.raises(PendingExpirationValidationError):
+            _normalize_pending_expiration("inf")
 
     def test_quoted_gtc(self):
         val, explicit = _normalize_pending_expiration('"GTC"')

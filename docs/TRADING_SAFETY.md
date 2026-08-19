@@ -83,7 +83,7 @@ Requires `symbol`, `volume`, and `order_type`.
 | `--take-profit` | — | Take-profit price |
 | `--deviation` | `20` | Max slippage in points (market orders) |
 | `--require-sl-tp` | `true` | Require both SL and TP on market orders |
-| `--expiration` | — | Pending-order expiry (`dateparser`, UTC epoch seconds, or `GTC`) |
+| `--expiration` | — | Future pending-order expiry (`dateparser` or positive UTC epoch seconds); literal `GTC` means no expiry |
 | `--magic` | `MTDATA_ORDER_MAGIC` | Strategy identifier stamped on the order |
 | `--comment` | — | Free-text order comment |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts (24-hour default retention) |
@@ -133,7 +133,7 @@ an error.
 | `--price` | — | New pending-order price |
 | `--stop-loss` | — | New stop-loss |
 | `--take-profit` | — | New take-profit |
-| `--expiration` | — | New pending-order expiry |
+| `--expiration` | — | New future pending-order expiry, or literal `GTC` |
 | `--comment` | — | Updated comment |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts |
 | `--dry-run` | `true` | Preview by default; set `false` explicitly for a live modification |

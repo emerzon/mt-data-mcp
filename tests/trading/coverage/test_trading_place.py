@@ -1239,13 +1239,60 @@ class TestPlacePendingOrder:
         result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
         assert "error" in result
 
+    @pytest.mark.parametrize(
+        "price",
+        [0, -1, float("nan"), float("inf"), float("-inf")],
+    )
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_non_finite_price_rejected(self):
+    def test_invalid_pending_price_rejected_before_order_send(self, price):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         from mtdata.core.trading import _place_pending_order
-        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=float("inf"))
-        assert "error" in result and "finite" in result["error"]
+        result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=price)
+        assert result["error_code"] == "invalid_pending_price"
+        assert "strictly positive finite" in result["error"]
+        mt5.order_send.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "expiration",
+        [0, -1, float("nan"), float("inf"), float("-inf"), "0", "-1"],
+    )
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_invalid_expiration_cannot_create_gtc_request(self, expiration):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        from mtdata.core.trading import _place_pending_order
+
+        result = _place_pending_order(
+            "EURUSD",
+            0.01,
+            "BUY_LIMIT",
+            price=1.09,
+            expiration=expiration,
+        )
+
+        assert result["error_code"] == "invalid_pending_expiration"
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_explicit_gtc_token_sets_gtc_request(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _place_pending_order
+
+        result = _place_pending_order(
+            "EURUSD",
+            0.01,
+            "BUY_LIMIT",
+            price=1.09,
+            expiration="GTC",
+        )
+
+        assert result["success"] is True
+        request = mt5.order_send.call_args.args[0]
+        assert request["type_time"] == mt5.ORDER_TIME_GTC
+        assert "expiration" not in request
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_with_expiration_sets_type_time_specified(self):

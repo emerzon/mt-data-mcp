@@ -93,6 +93,42 @@ def _invalid_order_type_payload(message: str) -> Dict[str, Any]:
     }
 
 
+def _invalid_pending_expiration_payload(
+    exc: Exception,
+    *,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    error_code = str(
+        getattr(exc, "error_code", "invalid_pending_expiration")
+    )
+    payload: Dict[str, Any] = {
+        "success": False,
+        "error": str(exc),
+        "error_code": error_code,
+    }
+    context = getattr(exc, "context", None)
+    if isinstance(context, dict):
+        payload["expiration_context"] = dict(context)
+    if dry_run:
+        payload.update(
+            {
+                "dry_run": True,
+                "no_action": True,
+                "would_send_order": False,
+                "preview_ok": False,
+                "validation_passed": False,
+                "blockers": [error_code],
+                "validation": {
+                    "local_requirements_passed": False,
+                    "live_submission_eligible": False,
+                    "blockers": [error_code],
+                    "broker_validation_performed": False,
+                },
+            }
+        )
+    return payload
+
+
 _TRADE_PLACE_PREVIEW_KEYS = (
     "success",
     "status",
@@ -160,8 +196,11 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "stop_loss",
     "take_profit",
     "expiration",
+    "expiration_policy",
+    "expiration_explicit",
     "expiration_normalized",
     "expiration_resolved_utc",
+    "expiration_context",
     "quote_context",
 )
 
@@ -1818,6 +1857,15 @@ def run_trade_place(  # noqa: C901
                     blocker = str(preview.get("error_code") or "preview_error")
                     if blocker not in blockers:
                         blockers.append(blocker)
+                    if blocker in {
+                        "invalid_pending_price",
+                        "invalid_pending_order_levels",
+                        "invalid_protection_levels",
+                    }:
+                        validation_payload["local_requirements_passed"] = False
+                    preview["blockers"] = list(
+                        validation_payload.get("blockers") or []
+                    )
                 preview["validation_passed"] = False
                 preview["preview_ok"] = False
                 preview["actionability"] = "preview_failed"
@@ -1890,6 +1938,7 @@ def run_trade_place(  # noqa: C901
             if expiration_provided:
                 preview["expiration"] = request.expiration
                 if normalized_expiration is not None:
+                    preview["expiration_policy"] = "expires_at"
                     preview["expiration_normalized"] = normalized_expiration
                     preview["expiration_resolved_utc"] = (
                         datetime.fromtimestamp(
@@ -1899,6 +1948,12 @@ def run_trade_place(  # noqa: C901
                         .isoformat()
                         .replace("+00:00", "Z")
                     )
+                else:
+                    preview["expiration_policy"] = "gtc"
+                preview["expiration_explicit"] = True
+            elif pending:
+                preview["expiration_policy"] = "broker_default_gtc"
+                preview["expiration_explicit"] = False
             return _shape_trade_place_preview(preview, detail=preview_detail)
 
         if not symbol_norm:
@@ -1960,13 +2015,19 @@ def run_trade_place(  # noqa: C901
                 order_type=order_type_norm,
             )
 
-        price_provided = request.price not in (None, 0)
+        price_provided = request.price is not None
         try:
             normalized_expiration, expiration_provided = normalize_pending_expiration(
                 request.expiration
             )
         except (TypeError, ValueError) as ex:
-            return _finish({"error": str(ex)}, order_type=order_type_norm)
+            return _finish(
+                _invalid_pending_expiration_payload(
+                    ex,
+                    dry_run=bool(request.dry_run),
+                ),
+                order_type=order_type_norm,
+            )
 
         ignore_market_gtc_expiration = (
             order_type_norm in market_side_types
@@ -2097,6 +2158,35 @@ def run_trade_place(  # noqa: C901
                         pending=is_pending,
                     )
 
+        if is_pending and request.price is None:
+            missing_price_payload: Dict[str, Any] = {
+                "success": False,
+                "error": "price is required for pending orders.",
+                "error_code": "invalid_pending_price",
+            }
+            if request.dry_run:
+                missing_price_payload.update(
+                    {
+                        "dry_run": True,
+                        "no_action": True,
+                        "would_send_order": False,
+                        "preview_ok": False,
+                        "validation_passed": False,
+                        "blockers": ["invalid_pending_price"],
+                        "validation": {
+                            "local_requirements_passed": False,
+                            "live_submission_eligible": False,
+                            "blockers": ["invalid_pending_price"],
+                            "broker_validation_performed": False,
+                        },
+                    }
+                )
+            return _finish(
+                missing_price_payload,
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
+
         if bool(request.dry_run):
             order_preview: Optional[Dict[str, Any]] = None
             if dry_run_protection_error is None and callable(build_dry_run_preview):
@@ -2108,6 +2198,21 @@ def run_trade_place(  # noqa: C901
                     price=request.price,
                     stop_loss=request.stop_loss,
                     take_profit=request.take_profit,
+                )
+            if str((order_preview or {}).get("preview_error") or "").strip():
+                return _finish(
+                    _dry_run_preview(
+                        order_type=order_type_norm,
+                        pending=is_pending,
+                        normalized_expiration=normalized_expiration,
+                        expiration_provided=expiration_provided,
+                        guardrail_preview={
+                            "enabled": bool(trade_guardrails_config.is_enabled())
+                        },
+                        order_preview=order_preview,
+                    ),
+                    order_type=order_type_norm,
+                    pending=is_pending,
                 )
             entry_price = validation.coerce_finite_float(
                 (order_preview or {}).get("estimated_fill_price")
@@ -2202,12 +2307,6 @@ def run_trade_place(  # noqa: C901
                         blocked_payload[key] = value
                 return _finish(
                     blocked_payload,
-                    order_type=order_type_norm,
-                    pending=is_pending,
-                )
-            if is_pending and request.price is None:
-                return _finish(
-                    {"error": "price is required for pending orders."},
                     order_type=order_type_norm,
                     pending=is_pending,
                 )
@@ -2400,12 +2499,6 @@ def run_trade_place(  # noqa: C901
                         )
                     )
             return _finish(result, order_type=order_type_norm, pending=is_pending)
-        if request.price is None:
-            return _finish(
-                {"error": "price is required for pending orders."},
-                order_type=order_type_norm,
-                pending=is_pending,
-            )
         return _finish(
             place_pending_order(
                 symbol=symbol_norm,
@@ -2532,11 +2625,16 @@ def run_trade_modify(
         return _finish(duplicate_result)
 
     try:
-        price_val = None if request.price in (None, 0) else request.price
+        price_val = request.price
         try:
             _, expiration_specified = normalize_pending_expiration(request.expiration)
         except (TypeError, ValueError) as ex:
-            return _finish({"error": str(ex)})
+            return _finish(
+                _invalid_pending_expiration_payload(
+                    ex,
+                    dry_run=bool(request.dry_run),
+                )
+            )
 
         if price_val is not None or expiration_specified:
             pending_kwargs = {

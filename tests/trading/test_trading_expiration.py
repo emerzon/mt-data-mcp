@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from mtdata.bootstrap import settings as mt5_config_module
 from mtdata.core.trading.time import (
+    PendingExpirationValidationError,
     _normalize_pending_expiration,
     _relative_expiration_base,
     mt5_config,
@@ -44,9 +45,9 @@ def _restore_tz_config(original) -> None:
 def test_normalize_pending_expiration_datetime_returns_int_timestamp() -> None:
     original = _with_clean_tz_config()
     try:
-        exp, specified = _normalize_pending_expiration(datetime(2020, 1, 1, 0, 0, 0))
+        exp, specified = _normalize_pending_expiration(datetime(2099, 1, 1, 0, 0, 0))
         assert specified is True
-        assert exp == 1577836800
+        assert exp == 4070908800
     finally:
         _restore_tz_config(original)
 
@@ -54,9 +55,9 @@ def test_normalize_pending_expiration_datetime_returns_int_timestamp() -> None:
 def test_normalize_pending_expiration_string_iso_returns_int_timestamp() -> None:
     original = _with_clean_tz_config()
     try:
-        exp, specified = _normalize_pending_expiration("2020-01-01 00:00:00")
+        exp, specified = _normalize_pending_expiration("2099-01-01 00:00:00")
         assert specified is True
-        assert exp == 1577836800
+        assert exp == 4070908800
     finally:
         _restore_tz_config(original)
 
@@ -64,9 +65,9 @@ def test_normalize_pending_expiration_string_iso_returns_int_timestamp() -> None
 def test_normalize_pending_expiration_numeric_epoch_returns_int_timestamp() -> None:
     original = _with_clean_tz_config()
     try:
-        exp, specified = _normalize_pending_expiration(1577836800)
+        exp, specified = _normalize_pending_expiration(4070908800)
         assert specified is True
-        assert exp == 1577836800
+        assert exp == 4070908800
     finally:
         _restore_tz_config(original)
 
@@ -94,9 +95,9 @@ def test_normalize_pending_expiration_preserves_absolute_epoch_with_server_tz() 
     original = _with_clean_tz_config()
     try:
         mt5_config.server_tz_name = "Europe/Athens"
-        exp, specified = _normalize_pending_expiration(1577836800)
+        exp, specified = _normalize_pending_expiration(4070908800)
         assert specified is True
-        assert exp == 1577836800
+        assert exp == 4070908800
     finally:
         _restore_tz_config(original)
 
@@ -125,3 +126,50 @@ def test_relative_expiration_base_uses_configured_client_timezone() -> None:
         assert base == datetime(2026, 6, 15, 8, 0)
     finally:
         _restore_tz_config(original)
+
+
+@pytest.mark.parametrize(
+    "expiration",
+    [
+        0,
+        -1,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        "0",
+        "-1",
+        "nan",
+        "inf",
+        "-inf",
+    ],
+)
+def test_normalize_pending_expiration_rejects_invalid_numeric_values(
+    expiration,
+) -> None:
+    with pytest.raises(PendingExpirationValidationError) as exc_info:
+        _normalize_pending_expiration(expiration)
+
+    assert exc_info.value.error_code == "invalid_pending_expiration"
+    assert exc_info.value.context["reason"] == "nonpositive_or_nonfinite"
+
+
+def test_normalize_pending_expiration_rejects_past_with_resolved_utc() -> None:
+    with pytest.raises(PendingExpirationValidationError) as exc_info:
+        _normalize_pending_expiration("2020-01-01T00:00:00+00:00")
+
+    assert exc_info.value.context["reason"] == "not_in_future"
+    assert exc_info.value.context["expiration_resolved_utc"] == (
+        "2020-01-01T00:00:00Z"
+    )
+    assert "validation_observed_utc" in exc_info.value.context
+
+
+@pytest.mark.parametrize(
+    "undocumented_alias",
+    ["GOOD_TILL_CANCEL", "GOOD_TILL_CANCELLED", "NONE", "NO_EXPIRATION"],
+)
+def test_normalize_pending_expiration_rejects_undocumented_gtc_aliases(
+    undocumented_alias,
+) -> None:
+    with pytest.raises(PendingExpirationValidationError):
+        _normalize_pending_expiration(undocumented_alias)
