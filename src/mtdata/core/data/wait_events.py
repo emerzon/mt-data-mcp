@@ -149,6 +149,7 @@ def run_wait_event_loop(  # noqa: C901
             gateway=None,
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
+            now_utc_impl=now_utc_impl,
         )
 
     if (timeout_result := _timeout_if_expired()) is not None:
@@ -189,6 +190,7 @@ def run_wait_event_loop(  # noqa: C901
             gateway=gateway,
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
+            now_utc_impl=now_utc_impl,
         )
 
     history_state = _build_account_history_state(
@@ -712,6 +714,7 @@ def _run_candle_boundary_only(
     gateway: Any,
     sleep_impl: Callable[[float], None],
     now_utc: datetime,
+    now_utc_impl: Callable[[], datetime],
 ) -> Dict[str, Any]:
     preview = dict(boundary["preview"])
     identity_payload = _wait_result_identity_payload(
@@ -780,21 +783,14 @@ def _run_candle_boundary_only(
         payload.update(identity_payload)
     if request.symbols is not None:
         payload["symbols"] = list(request.symbols)
-    started_at_value = _normalize_optional_utc_datetime(payload.get("started_at_utc"))
-    if started_at_value is not None:
-        payload["observed_at_utc"] = (
-            started_at_value + timedelta(seconds=float(payload.get("slept_seconds") or 0.0))
-        ).isoformat()
+    observed_at_value = _normalize_utc_datetime(now_utc_impl())
+    payload["observed_at_utc"] = observed_at_value.isoformat()
     quote_after_wait = _wait_result_quote_payload(
         request=request,
         watch_for_payload=[],
         market_state=None,
         gateway=gateway,
-        observed_at_utc=(
-            started_at_value + timedelta(seconds=float(payload.get("slept_seconds") or 0.0))
-            if started_at_value is not None
-            else now_utc
-        ),
+        observed_at_utc=observed_at_value,
     )
     if quote_after_wait:
         payload.update(quote_after_wait)

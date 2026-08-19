@@ -46,7 +46,7 @@ def test_wait_quote_payload_includes_quote_freshness() -> None:
     )
 
     result = wait_events_mod._wait_result_quote_payload(
-        request=WaitEventRequest(symbol="EURUSD", max_wait_seconds=2),
+        request=WaitEventRequest(symbol="EURUSD", timeframe="M1", max_wait_seconds=2),
         watch_for_payload=[],
         market_state=None,
         gateway=gateway,
@@ -78,7 +78,7 @@ def test_wait_quote_payload_marks_locked_quote_unusable() -> None:
     )
 
     result = wait_events_mod._wait_result_quote_payload(
-        request=WaitEventRequest(symbol="EURUSD", max_wait_seconds=2),
+        request=WaitEventRequest(symbol="EURUSD", timeframe="M1", max_wait_seconds=2),
         watch_for_payload=[],
         market_state=None,
         gateway=gateway,
@@ -108,7 +108,7 @@ def test_zero_wait_budget_returns_before_gateway_bootstrap() -> None:
             raise AssertionError("zero wait budget must not bootstrap MT5")
 
     result = run_wait_event(
-        WaitEventRequest(symbol="EURUSD", max_wait_seconds=0.0),
+        WaitEventRequest(max_wait_seconds=0.0),
         gateway=UnexpectedGateway(),
         sleep_impl=clock.sleep,
         monotonic_impl=clock.monotonic,
@@ -831,7 +831,6 @@ def test_run_wait_event_omitted_duration_watchers_do_not_poll_account_state() ->
 
     result = run_wait_event(
         WaitEventRequest(
-            symbol="EURUSD",
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
         ),
@@ -1078,7 +1077,7 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
     assert result["event"] == "candle_close"
     assert result["bid"] == 1.305
     assert result["ask"] == 1.3054
-    assert result["observed_at_utc"] == "2026-03-15T12:00:01+00:00"
+    assert result["observed_at_utc"] == "2026-03-15T12:00:00+00:00"
 
 def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) -> None:
     monkeypatch.setattr(

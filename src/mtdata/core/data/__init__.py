@@ -866,8 +866,6 @@ def wait_event(
             ]
         if normalized_watch_for is not None:
             resolved_watch_for = list(normalized_watch_for)
-        elif max_wait_seconds is not None:
-            resolved_watch_for = []
         else:
             watcher_symbols = (
                 list(symbols_value)

@@ -643,7 +643,7 @@ def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
         limit = DATA_FETCH_CANDLES_DEFAULT_LIMIT
     fields_set = getattr(request, "model_fields_set", set())
     limit_explicit = "limit" in fields_set
-    if (request.start or request.end) and not limit_explicit:
+    if request.start and not limit_explicit:
         return _RANGE_CANDLE_DEFAULT_LIMIT
     has_indicators = request.indicators not in (None, "", [], {})
     if has_indicators and not limit_explicit:
@@ -1653,11 +1653,7 @@ def _run_data_fetch_ticks_impl(
         effective_limit if effective_limit is not None else request.limit
     )
     limit_explicit = "limit" in getattr(request, "model_fields_set", set())
-    range_selection = (
-        "last_n"
-        if request.start and request.end and not limit_explicit
-        else "first_n"
-    )
+    range_selection = "first_n"
     page_offset = 0
     if request.cursor:
         if not request.start or not request.end:
