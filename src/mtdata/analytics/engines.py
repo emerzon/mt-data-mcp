@@ -1708,6 +1708,40 @@ def _candidate_signal_definition(candidate: StrategyCandidate) -> str:
     return "zone_entry_event"
 
 
+def _candidate_result_identity(
+    candidate: StrategyCandidate,
+    *,
+    include_effective_parameters: bool,
+) -> Dict[str, Any]:
+    identity: Dict[str, Any] = {
+        "id": candidate.id,
+        "type": candidate.type,
+    }
+    effective = dict(candidate.params)
+    if candidate.type == "builtin_strategy":
+        identity["strategy"] = candidate.strategy
+        if candidate.strategy in {"sma_cross", "ema_cross"}:
+            effective.setdefault("fast_period", 10)
+            effective.setdefault("slow_period", 30)
+        else:
+            effective.setdefault("rsi_length", 14)
+            effective.setdefault("oversold", 30.0)
+            effective.setdefault("overbought", 70.0)
+    else:
+        identity["method"] = candidate.method
+        effective.setdefault("lookback", 200)
+        effective.update(
+            {
+                "horizon": int(candidate.horizon),
+                "long_above": float(candidate.long_above),
+                "short_below": float(candidate.short_below),
+            }
+        )
+    if include_effective_parameters:
+        identity["effective_parameters"] = effective
+    return identity
+
+
 _MAX_FORECAST_SIGNAL_ANCHORS = 200
 
 
@@ -2095,7 +2129,10 @@ def validate_strategies(  # noqa: C901
         arr = np.asarray(all_net, dtype=float)
         if not len(arr):
             results.append({
-                "id": candidate.id,
+                **_candidate_result_identity(
+                    candidate,
+                    include_effective_parameters=request.detail == "full",
+                ),
                 "evaluation_status": "insufficient_data",
                 "signal_definition": signal_definition,
                 "trades": 0,
@@ -2152,8 +2189,10 @@ def validate_strategies(  # noqa: C901
                 "interpretation": "Long/short win-rate stability across folds; not continuous-score calibration.",
             }
         results.append({
-            "id": candidate.id,
-            "type": candidate.type,
+            **_candidate_result_identity(
+                candidate,
+                include_effective_parameters=request.detail == "full",
+            ),
             "evaluation_status": (
                 "complete" if folds_evaluated == request.n_splits else "partial"
             ),
@@ -2167,7 +2206,7 @@ def validate_strategies(  # noqa: C901
             "mean_return_t_stat": mean_return_t_stat,
             "deflated_sharpe_probability": deflated_probability,
             "mean_return_p_value": mean_return_p_value,
-            "max_drawdown": float(np.min(drawdown)),
+            "max_drawdown": abs(float(np.min(drawdown))),
             "fold_stability": fold_stability,
             "folds_requested": int(request.n_splits),
             "folds_evaluated": folds_evaluated,
@@ -2289,7 +2328,7 @@ def validate_strategies(  # noqa: C901
         },
         "units": {
             "net_expectancy": "return_fraction_per_trade",
-            "max_drawdown": "return_fraction",
+            "max_drawdown": "nonnegative_return_fraction",
             "sharpe": "mean_net_return_per_trade_divided_by_per_trade_standard_deviation",
             "mean_return_t_stat": "dimensionless_test_statistic",
             "trades": "non_overlapping_positions",

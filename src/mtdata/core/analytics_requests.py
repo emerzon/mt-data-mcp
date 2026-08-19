@@ -108,6 +108,14 @@ class StrategyCandidate(BaseModel):
     long_above: float = 0.0
     short_below: float = 0.0
 
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str) -> str:
+        normalized = str(value).strip()
+        if not normalized:
+            raise ValueError("candidate id must not be blank")
+        return normalized
+
     @model_validator(mode="after")
     def _source(self) -> "StrategyCandidate":
         if self.type == "builtin_strategy" and not self.strategy:
@@ -165,6 +173,26 @@ class StrategyValidateRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "StrategyValidateRequest":
         validate_complete_time_window(self.start, self.end)
+        positions_by_id: Dict[str, List[int]] = {}
+        display_by_id: Dict[str, str] = {}
+        for position, candidate in enumerate(self.candidates):
+            normalized_id = candidate.id.casefold()
+            positions_by_id.setdefault(normalized_id, []).append(position)
+            display_by_id.setdefault(normalized_id, candidate.id)
+        duplicates = [
+            (display_by_id[candidate_id], positions)
+            for candidate_id, positions in positions_by_id.items()
+            if len(positions) > 1
+        ]
+        if duplicates:
+            duplicate_text = "; ".join(
+                f"{candidate_id!r} at positions {positions}"
+                for candidate_id, positions in duplicates
+            )
+            raise ValueError(
+                "candidate ids must be unique after trimming and case normalization; "
+                f"duplicates: {duplicate_text}"
+            )
         if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
             raise ValueError("--spread-bps is only valid with --cost-model fixed")
         if self.cost_model == "fixed" and self.spread_bps is None:

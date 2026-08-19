@@ -76,6 +76,57 @@ def test_builtin_rsi_reversion_signals_only_on_zone_entry() -> None:
 
     assert signal.iloc[:2].isna().all()
     assert signal.iloc[2:].tolist() == [0.0, 0.0, -1.0, 1.0, 0.0]
+
+
+def test_strategy_candidate_rejects_blank_id() -> None:
+    with pytest.raises(ValueError, match="candidate id must not be blank"):
+        StrategyCandidate(
+            id="   ",
+            type="builtin_strategy",
+            strategy="sma_cross",
+        )
+
+
+def test_strategy_validation_rejects_normalized_duplicate_ids() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"'Alpha' at positions \[0, 1\]",
+    ):
+        StrategyValidateRequest(
+            symbol="EURUSD",
+            candidates=[
+                {
+                    "id": "Alpha",
+                    "type": "builtin_strategy",
+                    "strategy": "sma_cross",
+                },
+                {
+                    "id": " alpha ",
+                    "type": "builtin_strategy",
+                    "strategy": "ema_cross",
+                },
+            ],
+        )
+
+
+def test_strategy_validation_trims_unique_candidate_ids() -> None:
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        candidates=[
+            {
+                "id": " first ",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+            },
+            {
+                "id": "SECOND",
+                "type": "builtin_strategy",
+                "strategy": "ema_cross",
+            },
+        ],
+    )
+
+    assert [candidate.id for candidate in request.candidates] == ["first", "SECOND"]
 from mtdata.utils.sessions import market_session_label
 
 
@@ -1399,6 +1450,11 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["validation"]["protocol"] == "anchored_expanding_fixed_candidate_oos"
     assert result["validation"]["execution_timing"] == "next_bar_open"
     assert result["rankings"][0]["id"] == "cross"
+    assert result["rankings"][0]["strategy"] == "sma_cross"
+    assert result["rankings"][0]["effective_parameters"] == {
+        "fast_period": 5,
+        "slow_period": 20,
+    }
     assert result["rankings"][0]["trades"] > 0
     assert result["rankings"][0]["evaluation_status"] == "partial"
     candidate = result["rankings"][0]
@@ -1415,6 +1471,8 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
             candidate["sharpe"] * math.sqrt(candidate["trades"])
         )
     assert result["units"]["trades"] == "non_overlapping_positions"
+    assert result["units"]["max_drawdown"] == "nonnegative_return_fraction"
+    assert result["rankings"][0]["max_drawdown"] >= 0.0
     assert result["rankings"][0]["evidence"]["classification"] in {
         "positive", "negative", "inconclusive"
     }

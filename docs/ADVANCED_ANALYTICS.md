@@ -70,7 +70,10 @@ mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
 ```
 
 Candidate parameters are fixed before validation; this tool does not optimize
-and validate on the same sample.
+and validate on the same sample. Candidate IDs are trimmed, case-insensitively
+unique within the request, and remain the stable correlation key after ranking.
+Every ranking also echoes the concrete built-in strategy or forecast method;
+full detail includes the effective parameters after defaults are applied.
 
 Built-in `sma_cross` and `ema_cross` candidates enter only on fast/slow moving-
 average cross events; `rsi_reversion` enters only when RSI crosses into an
@@ -100,6 +103,8 @@ broker's stored bars omit spreads, pass `--cost-model fixed --spread-bps <value>
 to either tool and choose a venue-appropriate round-trip assumption.
 
 Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
+`max_drawdown` is always the non-negative peak-to-trough return magnitude, in
+the same convention used by the backtest tools.
 
 ## Portfolio risk decomposition
 
