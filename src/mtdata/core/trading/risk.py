@@ -6,7 +6,7 @@ import logging
 
 from ...utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
 from .._mcp_instance import mcp
-from ..execution_logging import run_logged_operation
+from ..runtime_metadata import run_mt5_logged_operation
 from .gateway import create_trading_gateway
 from .requests import (
     TradeRiskAnalyzeRequest,
@@ -44,7 +44,7 @@ def trade_risk_analyze(request: TradeRiskAnalyzeRequest) -> dict:
     strict_risk=True blocks positive suggested volume when broker minimum volume
     would exceed the requested risk.
     """
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_risk_analyze",
         symbol=request.symbol,
@@ -72,7 +72,7 @@ def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
     execution snapshot that includes account, quote, open positions, and pending
     orders, use `trade_session_context`.
     """
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_var_cvar_calculate",
         symbol=request.symbol,
@@ -94,7 +94,7 @@ def trade_stress_test(request: TradeStressTestRequest) -> dict:
     This tool is read-only. It estimates position-level and aggregate P&L impact
     using current position marks and broker tick-value metadata.
     """
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_stress_test",
         shocks=request.shocks,

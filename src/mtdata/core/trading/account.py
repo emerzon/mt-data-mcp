@@ -37,7 +37,7 @@ from ..output_contract import (
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
-from ..runtime_metadata import attach_mt5_source
+from ..runtime_metadata import attach_mt5_source, run_mt5_logged_operation
 from . import comments, safety, validation
 from .gateway import create_trading_gateway
 from .positions import normalize_trade_history_output
@@ -1308,7 +1308,7 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     while `side=long|short` filters the derived `position_side`; `side_filter`
     identifies the selected dimension. Use `detail="full"` for request echo fields.
     """
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_history",
         history_kind=request.history_kind,
@@ -1327,7 +1327,7 @@ def trade_journal_analyze(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]
     `entry_cost_coverage` reports whether entry commissions and fees were available
     by position ticket inside the requested history window.
     """
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_journal_analyze",
         symbol=request.symbol,

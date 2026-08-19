@@ -150,6 +150,7 @@ def test_trade_stress_test_flat_account_has_no_live_quote_gate():
     assert result["actionability"] == "informational_no_exposure"
     assert result["positions_evaluated"] == 0
     assert result["mark_freshness_status"] == "not_applicable"
+    assert result["valuation_time"].endswith("Z")
     assert "usable_for_live_trading" not in result
 
 

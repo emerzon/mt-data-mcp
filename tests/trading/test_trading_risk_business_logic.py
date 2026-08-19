@@ -1255,6 +1255,7 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
 
     assert out["success"] is True
     assert out["positions"][0]["type"] == "BUY"
+    assert out["as_of"].endswith("Z")
 
 
 def test_run_trade_risk_analyze_rejects_failed_position_snapshot() -> None:

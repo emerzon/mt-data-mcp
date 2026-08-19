@@ -568,6 +568,7 @@ def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> 
     assert "summary" not in out
     assert out["equity"] == 1000.0
     assert out["currency"] == "USD"
+    assert out["valuation_time"].endswith("Z")
     assert "symbol_exposures" not in out
     assert "worst_observations" not in out
     assert "usable_for_live_trading" not in out

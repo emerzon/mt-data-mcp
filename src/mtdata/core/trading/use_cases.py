@@ -4182,6 +4182,9 @@ def run_trade_risk_analyze(  # noqa: C901
     gateway: Any,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
+    observed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+        "+00:00", "Z"
+    )
     log_operation_start(
         logger,
         operation="trade_risk_analyze",
@@ -4195,6 +4198,8 @@ def run_trade_risk_analyze(  # noqa: C901
             result,
             detail=str(getattr(request, "detail", "compact")),
         )
+        if not str(result.get("error") or "").strip():
+            result.setdefault("as_of", observed_at)
         log_operation_finish(
             logger,
             operation="trade_risk_analyze",
@@ -5774,6 +5779,9 @@ def run_trade_stress_test(
     gateway: Any,
 ) -> Dict[str, Any]:
     """Apply deterministic price shocks to the current open-position snapshot."""
+    observed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+        "+00:00", "Z"
+    )
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
@@ -5941,6 +5949,7 @@ def run_trade_stress_test(
             include_contexts=request.detail == "full",
         )
     )
+    result.setdefault("valuation_time", observed_at)
     return result
 
 
@@ -6109,6 +6118,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     import pandas as pd
 
     started_at = time.perf_counter()
+    observed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+        "+00:00", "Z"
+    )
     log_operation_start(
         logger,
         operation="trade_var_cvar_calculate",
@@ -6119,6 +6131,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     )
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        if not str(result.get("error") or "").strip():
+            result.setdefault("valuation_time", observed_at)
         log_operation_finish(
             logger,
             operation="trade_var_cvar_calculate",

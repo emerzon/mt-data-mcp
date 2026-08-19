@@ -4,7 +4,7 @@ import logging
 
 from .._mcp_instance import mcp
 from ..error_envelope import new_request_id
-from ..execution_logging import run_logged_operation
+from ..runtime_metadata import run_mt5_logged_operation
 from . import time, validation
 from .account import (
     lookup_trade_ticket_history,
@@ -59,7 +59,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
       replays also identify the original invocation.
     """
     correlation_id = new_request_id()
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_place",
         correlation_id=correlation_id,
@@ -97,7 +97,7 @@ def trade_modify(request: TradeModifyRequest) -> dict:
     Responses include a correlation_id shared with execution logs.
     """
     correlation_id = new_request_id()
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_modify",
         correlation_id=correlation_id,
@@ -131,7 +131,7 @@ def trade_close(request: TradeCloseRequest) -> dict:
     Responses include a correlation_id shared with execution logs.
     """
     correlation_id = new_request_id()
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_close",
         correlation_id=correlation_id,

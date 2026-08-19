@@ -14,8 +14,8 @@ from ...utils.quote import resolve_quote_tick, tick_epoch
 from ...utils.time import format_datetime_utc, format_epoch_utc
 from ...utils.utils import _normalize_limit
 from .._mcp_instance import mcp
-from ..execution_logging import run_logged_operation
 from ..output_contract import build_pagination_meta, resolve_output_contract
+from ..runtime_metadata import run_mt5_logged_operation
 from . import comments, validation
 from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
@@ -1725,7 +1725,7 @@ def trade_get_open(
         _project_open_position_rows(out, request=request)
         return out
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_get_open",
         symbol=request.symbol,
@@ -1757,7 +1757,7 @@ def trade_get_pending(
             account_currency=account_currency_from_gateway(gateway),
         )
 
-    return run_logged_operation(
+    return run_mt5_logged_operation(
         logger,
         operation="trade_get_pending",
         symbol=request.symbol,

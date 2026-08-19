@@ -277,6 +277,7 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("bid") == 64999.0
     assert out.get("ask") == 65001.0
     assert out.get("estimated_fill_price") == 65001.0
+    assert out["source"]["provider"] == "mt5"
     mock_preview.assert_called_once()
     mock_market.assert_not_called()
 

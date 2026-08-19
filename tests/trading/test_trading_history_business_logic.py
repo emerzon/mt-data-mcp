@@ -108,6 +108,7 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["time_basis"] == "utc"
     assert out["raw_timestamp_mode"] == "native_utc"
     assert out["time_normalization"] == "mt5_utc_native"
+    assert out["source"]["provider"] == "mt5"
 
 
 def test_trade_history_filters_magic_before_pagination() -> None:
