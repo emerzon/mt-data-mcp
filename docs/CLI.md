@@ -761,7 +761,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 |------|------------|-------------|
 | `--dry-run` | `trade_place`, `trade_modify`, `trade_close` | Preview the request without sending it to MT5. |
 | `--detail` | `trade_place` | Preview detail level; use `full` for execution diagnostics. |
-| `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close` | MT5 magic-number filter or default strategy identifier. |
+| `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close`, `trade_history`, `trade_journal_analyze` | MT5 magic-number filter or default strategy identifier. History and journal filtering happens before pagination and aggregation. |
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
 | `--expiration` | `trade_place`, `trade_modify` | Future expiration for pending orders (`dateparser` or positive UTC epoch seconds); use literal `GTC` for no expiration. Invalid or past values are rejected locally. |
 | `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |
@@ -802,9 +802,13 @@ mtdata-cli trade_journal_analyze --minutes-back 10080 --json
 mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdown-limit 5 --json
 mtdata-cli trade_journal_analyze --side long --minutes-back 43200 --json
 mtdata-cli trade_history --history-kind deals --side buy --minutes-back 1440 --json
+mtdata-cli trade_journal_analyze --magic 3001 --minutes-back 43200 --json
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
+Use `--magic` to isolate one strategy on shared accounts. The
+`trade_history --column-style humanized` option applies display labels at every
+detail level, including `--detail full`.
 For deal history and journals, `--side buy|sell` filters the execution
 `fill_side`, while `--side long|short` filters the economic `position_side`
 after open/close direction is derived. Responses echo this choice in

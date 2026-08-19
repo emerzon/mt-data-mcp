@@ -272,11 +272,14 @@ mtdata-cli trade_get_open --json
 mtdata-cli trade_get_pending --json
 mtdata-cli trade_history --history-kind deals --minutes-back 10080 --json
 mtdata-cli trade_journal_analyze --minutes-back 10080 --json
+mtdata-cli trade_journal_analyze --magic 3001 --minutes-back 10080 --json
 mtdata-cli trade_session_context EURUSD --json
 ```
 
 `trade_history` and `trade_journal_analyze` default to the last 7 days when you
 omit a window.
+On accounts shared by multiple strategies, pass `--magic` to either command so
+history pagination and journal metrics are scoped to one MT5 strategy identifier.
 
 **History vs journal:** history is the raw deal/order tape. The journal
 summarizes *exit* deals (wins, losses, averages) for review. It matches entry

@@ -3776,6 +3776,17 @@ def run_trade_history(  # noqa: C901
                     mask = mask | extra
                 return df_in.loc[mask]
 
+            def _filter_by_magic(df_in: "pd.DataFrame") -> "pd.DataFrame":
+                if request.magic is None:
+                    return df_in
+                if "magic" not in df_in.columns:
+                    return df_in.iloc[0:0]
+                return df_in.loc[
+                    pd.to_numeric(df_in["magic"], errors="coerce").eq(
+                        int(request.magic)
+                    )
+                ]
+
             def _is_non_informative_series(series: "pd.Series") -> bool:
                 vals = pd.Series(series)
                 if vals.dropna().empty:
@@ -3842,6 +3853,8 @@ def run_trade_history(  # noqa: C901
                     message += f" for {side_value} {side_dimension}"
                 elif request.symbol:
                     message += f" for {request.symbol}"
+                if request.magic is not None:
+                    message += f" with magic {int(request.magic)}"
                 if minutes_back_value is not None:
                     message += f" in the last {int(minutes_back_value)} minute(s)"
                 elif default_window_label:
@@ -3914,6 +3927,7 @@ def run_trade_history(  # noqa: C901
                         df["symbol"].astype(str).str.upper()
                         == str(request.symbol).upper()
                     ]
+                df = _filter_by_magic(df)
                 df = _filter_by_ticket_columns(
                     df, deal_ticket_value, columns=("ticket",)
                 )
@@ -3991,6 +4005,7 @@ def run_trade_history(  # noqa: C901
                         df["symbol"].astype(str).str.upper()
                         == str(request.symbol).upper()
                     ]
+                df = _filter_by_magic(df)
                 df = _filter_by_ticket_columns(
                     df, order_ticket_value, columns=("ticket",)
                 )

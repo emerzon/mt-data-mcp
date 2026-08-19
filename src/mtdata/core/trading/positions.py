@@ -777,6 +777,7 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "order_ticket",
     "position_ticket",
     "symbol",
+    "magic",
     "fill_side",
     "deal_effect",
     "position_side",
@@ -801,6 +802,7 @@ _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "order_ticket",
     "position_ticket",
     "symbol",
+    "magic",
     "order_type",
     "state",
     "volume_initial",
@@ -1000,7 +1002,7 @@ def _full_trade_history_row(
             "position_by_id", "time_setup", "time_done", "time_setup_msc",
             "time_done_msc", "type", "type_label", "state", "state_label",
             "volume", "volume_initial", "volume_current", "price", "price_open",
-            "price_current", "sl", "tp", "symbol", "comment",
+            "price_current", "sl", "tp", "symbol", "magic", "comment",
         }
     else:
         if rounded.get("time_msc") is not None:
@@ -1011,7 +1013,7 @@ def _full_trade_history_row(
             "ticket", "deal_ticket", "deal", "order", "order_ticket",
             "position_ticket", "position_id", "position_by_id", "time", "time_msc",
             "type", "type_label", "symbol", "volume", "price", "profit",
-            "commission", "swap", "fee", "comment", "exit_trigger",
+            "commission", "swap", "fee", "magic", "comment", "exit_trigger",
             "exit_trigger_price", "timestamp_anomaly", "original_fill_time",
             "fill_time_future_seconds",
         }
@@ -1121,6 +1123,7 @@ def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str,
         "start",
         "end",
         "side",
+        "magic",
         "minutes_back",
         "position_ticket",
         "deal_ticket",
@@ -1295,11 +1298,14 @@ def normalize_trade_history_output(
                 timezone_label = str(item["timezone"])
                 break
         if include_request_metadata:
-            out["items"] = [
-                _full_trade_history_row(item, history_kind=history_kind)
-                for item in raw_items
-                if isinstance(item, dict)
-            ]
+            out["items"] = _style_trade_history_items(
+                [
+                    _full_trade_history_row(item, history_kind=history_kind)
+                    for item in raw_items
+                    if isinstance(item, dict)
+                ],
+                column_style=getattr(request, "column_style", "snake_case"),
+            )
             out["item_schema"] = "trade_history.v3"
         else:
             out["items"] = _style_trade_history_items(

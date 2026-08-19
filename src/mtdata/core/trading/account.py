@@ -178,6 +178,10 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
                 != str(request.position_ticket)
             ):
                 continue
+            if request.magic is not None and validation._safe_int_attr(
+                position, "magic", -1
+            ) != int(request.magic):
+                continue
             older.append(
                 {
                     "ticket": getattr(position, "ticket", None),
@@ -602,6 +606,8 @@ def _run_trade_journal_request(  # noqa: C901
     )
     if side_filter is not None:
         period_context["side_filter"] = side_filter
+    if request.magic is not None:
+        period_context["magic"] = int(request.magic)
     requested_item_limit = int(request.limit)
     page_limit = min(1_000, max(100, requested_item_limit * 2))
     raw_rows: List[Dict[str, Any]] = []
@@ -640,6 +646,7 @@ def _run_trade_journal_request(  # noqa: C901
                 start=request.start,
                 end=request.end,
                 symbol=request.symbol,
+                magic=request.magic,
                 side=None,
                 position_ticket=request.position_ticket,
                 deal_ticket=None,
@@ -751,6 +758,16 @@ def _run_trade_journal_request(  # noqa: C901
         return _attach_trade_journal_units(payload, currency=currency)
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
+    if request.magic is not None:
+        magic_value = int(request.magic)
+
+        def _matches_magic(row: Dict[str, Any]) -> bool:
+            try:
+                return int(row.get("magic")) == magic_value
+            except (TypeError, ValueError):
+                return False
+
+        rows = [row for row in rows if _matches_magic(row)]
     anomalous_rows = sum(1 for row in rows if row.get("timestamp_anomaly") is True)
     analyzed_rows: List[Dict[str, Any]] = []
     for row in rows:

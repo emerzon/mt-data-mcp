@@ -110,6 +110,35 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["time_normalization"] == "mt5_utc_native"
 
 
+def test_trade_history_filters_magic_before_pagination() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "magic"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1_700_000_001, symbol="EURUSD", magic=3001),
+        Deal(ticket=2, time=1_700_000_002, symbol="EURUSD", magic=3002),
+        Deal(ticket=3, time=1_700_000_003, symbol="EURUSD", magic=3001),
+    ]
+
+    try:
+        with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+            out = trade_history(
+                history_kind="deals",
+                magic=3001,
+                limit=1,
+                detail="full",
+                __cli_raw=True,
+            )
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+
+    assert out["count"] == 1
+    assert out["pagination"]["total"] == 2
+    assert out["pagination"]["has_more"] is True
+    assert out["items"][0]["magic"] == 3001
+    assert out["request_echo"]["magic"] == 3001
+
+
 def test_trade_history_flags_future_broker_fill_timestamp() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
@@ -516,7 +545,7 @@ def test_trade_history_full_detail_uses_top_level_timezone_only() -> None:
     assert "deal_details" not in out["items"][0]
 
 
-def test_trade_history_full_detail_ignores_humanized_style_for_canonical_items() -> None:
+def test_trade_history_full_detail_applies_humanized_style() -> None:
     out = normalize_trade_history_output(
         [
             {
@@ -537,11 +566,11 @@ def test_trade_history_full_detail_ignores_humanized_style_for_canonical_items()
         ),
     )
 
-    assert out["items"][0]["deal_ticket"] == 11
-    assert out["items"][0]["symbol"] == "EURUSD"
-    assert out["items"][0]["comment"] == "closed"
-    assert "deal_details" not in out["items"][0]
-    assert "Ticket" not in out["items"][0]
+    assert out["items"][0]["Deal Ticket"] == 11
+    assert out["items"][0]["Symbol"] == "EURUSD"
+    assert out["items"][0]["Comments"] == "closed"
+    assert "Deal Details" not in out["items"][0]
+    assert "deal_ticket" not in out["items"][0]
     assert "normalized_items" not in out
     assert out["request_echo"]["column_style"] == "humanized"
 
@@ -1593,6 +1622,43 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["best_trades"][0]["deal_ticket"] == 2
     assert out["best_trades"][0]["profit"] == 25.0
     assert out["worst_trades"][0]["deal_ticket"] == 3
+
+
+def test_trade_journal_magic_scope_excludes_other_strategies() -> None:
+    history_rows = [
+        {
+            "deal_ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "magic": 3001,
+            "profit": 12.0,
+            "volume": 0.1,
+        },
+        {
+            "deal_ticket": 2,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "magic": 3002,
+            "profit": -50.0,
+            "volume": 0.1,
+        },
+    ]
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={"success": True, "items": history_rows},
+    ) as history_mock:
+        out = trade_journal_analyze(
+            magic=3001,
+            min_sample=1,
+            detail="full",
+            __cli_raw=True,
+        )
+
+    assert history_mock.call_args.args[0].magic == 3001
+    assert out["magic"] == 3001
+    assert out["summary"]["closed_deals"] == 1
+    assert out["summary"]["net_pnl"] == 12.0
+    assert [row["deal_ticket"] for row in out["items"]] == [1]
 
 
 def test_trade_journal_allocates_entry_costs_across_partial_exits() -> None:

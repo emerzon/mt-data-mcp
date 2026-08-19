@@ -324,6 +324,7 @@ class TradeHistoryRequest(_SideNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
+    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     side: Optional[str] = Field(
         default=None,
         description=(
@@ -363,6 +364,7 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     symbol: Optional[str] = None
+    magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     side: Optional[str] = Field(
         default=None,
         description=(
