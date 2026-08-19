@@ -247,6 +247,8 @@ def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():
     assert metrics["avg_rmse"] == 0.12
     assert hint["fitness_source"] == "trading_composite"
     assert hint["fitness_score"] > 0.1
+    assert hint["fitness_score_unit"] == "dimensionless"
+    assert result["search_summary"]["fitness_score_unit"] == "dimensionless"
 
 
 def test_genetic_search_optimize_hints_falls_back_to_forecast_accuracy():
@@ -493,6 +495,7 @@ def test_genetic_search_maximizes_higher_is_better_metric():
 
     assert all(call.kwargs["mode"] == "max" for call in evaluate.call_args_list)
     assert result["hints"][0]["fitness_score"] == 0.8
+    assert result["hints"][0]["fitness_score_unit"] == "dimensionless"
     assert result["search_summary"]["fitness_score_direction"] == "higher_is_better"
 
 
@@ -552,6 +555,8 @@ def test_genetic_search_timeout_retains_completed_candidate(monkeypatch):
     assert result["stop_reason"] == "timeout"
     assert result["evaluations_completed"] == 2
     assert result["hints"][0]["fitness_score"] == 0.12
+    assert result["hints"][0]["fitness_score_unit"] == "price"
+    assert result["search_summary"]["fitness_score_unit"] == "price"
     assert result["search_summary"]["elapsed_seconds"] == 1.3
 
 

@@ -253,6 +253,15 @@ def test_auto_mode_uses_metric_direction_for_both_tuners(monkeypatch):
     assert set(observed_modes) == {"max"}
 
 
+def test_tuning_units_follow_quantity_and_dimensionless_metrics():
+    assert tune._tuning_units("avg_rmse", "price")["best_score"] == "price"
+    assert tune._tuning_units("avg_rmse", "return")["best_score"] == "log_return"
+    assert (
+        tune._tuning_units("avg_directional_accuracy", "return")["best_score"]
+        == "fraction"
+    )
+
+
 def test_genetic_search_method_scoped_and_flat_spaces(monkeypatch):
     def fake_eval_candidate(**kwargs):
         cand = kwargs["candidate_params"]

@@ -34,13 +34,20 @@ _NOISY_FORECAST_TUNE_LOGGERS = (
 )
 
 
-def _tuning_units(metric: Any) -> Dict[str, str]:
-    units = _backtest_units("price")
+def _tuning_units(metric: Any, quantity: Any) -> Dict[str, str]:
+    units = _backtest_units(str(quantity or "price"))
     metric_key = str(metric or "").strip()
-    metric_unit = units.get(metric_key, "metric_value")
+    metric_unit = units.get(metric_key, "dimensionless")
     units["best_score"] = metric_unit
     units["score"] = metric_unit
     return units
+
+
+def _optimization_fitness_unit(metric: Any) -> str:
+    metric_key = str(metric or "").strip()
+    if metric_key == "composite":
+        return "dimensionless"
+    return _backtest_units("price").get(metric_key, "dimensionless")
 
 
 def _suppress_noisy_forecast_tune_loggers() -> None:
@@ -825,7 +832,7 @@ def optuna_search_forecast_params(  # noqa: C901
         "best_score": float(best_score),
         "best_params": best_params,
         "metric": metric,
-        "units": _tuning_units(metric),
+        "units": _tuning_units(metric, quantity),
         "mode": mode_val,
         "optimizer": "optuna",
         "n_trials": int(n_trials_val),
@@ -1078,7 +1085,7 @@ def genetic_search_forecast_params(  # noqa: C901
         "best_score": float(best_score),
         "best_params": best_params,
         "metric": metric,
-        "units": _tuning_units(metric),
+        "units": _tuning_units(metric, quantity),
         "mode": mode,
         "population": population_size,
         "population_requested": int(population),
@@ -1487,6 +1494,7 @@ def genetic_search_optimize_hints(  # noqa: C901
                 if fitness_metric == 'composite'
                 else (-fitness if metric_mode == 'max' else fitness)
             ),
+            'fitness_score_unit': _optimization_fitness_unit(fitness_metric),
         }
         if fitness_source:
             hint['fitness_source'] = fitness_source
@@ -1568,6 +1576,7 @@ def genetic_search_optimize_hints(  # noqa: C901
             'generations_completed': len(history),
             'elapsed_seconds': round(elapsed, 2),
             'fitness_metric': fitness_metric,
+            'fitness_score_unit': _optimization_fitness_unit(fitness_metric),
             'fitness_score_direction': (
                 'higher_is_better'
                 if fitness_metric == 'composite' or metric_mode == 'max'
