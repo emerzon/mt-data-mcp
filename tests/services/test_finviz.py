@@ -2,6 +2,7 @@
 Tests for finviz service and tools.
 """
 
+import datetime
 import re
 from unittest.mock import MagicMock, patch
 
@@ -1020,6 +1021,34 @@ class TestFinvizService:
         assert result["pages"] == 2
         assert [item["ticker"] for item in result["items"]] == ["SYM0", "SYM1", "SYM2", "SYM3"]
         assert "dividends" not in result
+
+    @patch("mtdata.services.finviz.api._finviz_market_date")
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_client_page")
+    def test_dividends_retries_current_forward_after_empty_past_start(
+        self, mock_fetch_page, mock_market_date
+    ):
+        from mtdata.services.finviz import get_dividends_calendar_api
+
+        mock_market_date.return_value = datetime.date(2026, 8, 19)
+        mock_fetch_page.side_effect = [
+            {"items": [], "totalItemsCount": 0},
+            {
+                "items": [{"ticker": "ADM", "exDate": "2026-08-19"}],
+                "totalItemsCount": 1,
+            },
+        ]
+
+        result = get_dividends_calendar_api(
+            date_from="2026-08-01", date_to="2026-08-31", limit=10, page=1
+        )
+
+        assert mock_fetch_page.call_args_list[1].kwargs["date_from"] == "2026-08-19"
+        assert result["dateFrom"] == "2026-08-19"
+        assert result["requested_start"] == "2026-08-01"
+        assert result["supported_start"] == "2026-08-19"
+        assert result["range_complete"] is False
+        assert result["partial"] is True
+        assert result["count"] == 1
 
 
 class TestFinvizTools:

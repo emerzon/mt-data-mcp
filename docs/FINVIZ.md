@@ -117,6 +117,13 @@ mtdata-cli finviz_news NVDA --limit 10 --json
 | `--limit` | 20 | Max news items |
 | `--page` | 1 | Pagination page |
 
+Finviz may return an empty dividend payload when a requested range begins
+before the current New York date but extends into the future. In that case,
+mtdata retries the current-forward portion. The response reports the effective
+`start`, preserves `requested_start`, and sets `partial=true` and
+`range_complete=false`; it never presents the unsupported historical portion
+as a complete empty result.
+
 Stock-specific responses use a normalized `items` list with `title`, `source`,
 `published_at`, and `url`. Ticker-page membership is reported as
 `provider_associated`; only an explicit ticker token in the headline is labeled

@@ -722,6 +722,29 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
+    @patch("mtdata.core.finviz.get_dividends_calendar_api")
+    def test_calendar_dividends_labels_recovered_range_as_partial(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [],
+            "total": 0,
+            "dateFrom": "2026-08-19",
+            "dateTo": "2026-08-31",
+            "requested_start": "2026-08-01",
+            "requested_end": "2026-08-31",
+            "supported_start": "2026-08-19",
+            "range_complete": False,
+            "partial": True,
+            "range_recovery": "current_forward_retry",
+        }
+
+        result = _unwrap(finviz_calendar)(calendar="dividends", limit=10)
+
+        assert result["start"] == "2026-08-19"
+        assert result["requested_start"] == "2026-08-01"
+        assert result["range_complete"] is False
+        assert "supported current-forward portion" in result["message"]
+
 
 class TestFinvizInsiderActivityOutputContract:
     @patch("mtdata.core.finviz.get_insider_activity")

@@ -1328,6 +1328,8 @@ def get_dividends_calendar_api(
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
         date_from, date_to = resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
+        requested_date_from = date_from
+        requested_date_to = date_to
         payload = _fetch_finviz_calendar_client_page(
             kind="dividends",
             date_from=date_from,
@@ -1336,6 +1338,34 @@ def get_dividends_calendar_api(
             limit=safe_limit,
         )
         items = payload.get("items") or []
+        range_metadata: Dict[str, Any] = {}
+        market_date = _finviz_market_date()
+        requested_start = datetime.date.fromisoformat(date_from)
+        requested_end = datetime.date.fromisoformat(date_to)
+        if not items and requested_start < market_date <= requested_end:
+            supported_start = market_date.isoformat()
+            payload = _fetch_finviz_calendar_client_page(
+                kind="dividends",
+                date_from=supported_start,
+                date_to=date_to,
+                page=safe_page,
+                limit=safe_limit,
+            )
+            items = payload.get("items") or []
+            date_from = supported_start
+            range_metadata = {
+                "requested_start": requested_date_from,
+                "requested_end": requested_date_to,
+                "supported_start": supported_start,
+                "range_complete": False,
+                "partial": True,
+                "range_recovery": "current_forward_retry",
+                "warnings": [
+                    "Finviz returned no dividend rows for a range beginning before "
+                    "the current New York date. Results were retried from the current "
+                    "date; the earlier portion is not represented."
+                ],
+            }
         total = int(payload.get("totalItemsCount") or len(items))
         pages = (total + safe_limit - 1) // safe_limit if total else 0
         return {
@@ -1350,6 +1380,7 @@ def get_dividends_calendar_api(
             "page": safe_page,
             "pages": pages,
             "items": items,
+            **range_metadata,
         }
     except ValueError as e:
         return {"error": str(e)}

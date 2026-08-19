@@ -2783,7 +2783,13 @@ def _apply_finviz_calendar_empty_hint(
         )
         return
     if cal_type == "dividends":
-        out["message"] = "No dividend calendar rows matched the date range."
+        if out.get("range_complete") is False:
+            out["message"] = (
+                "No dividend rows matched the supported current-forward portion; "
+                "the earlier requested portion was not represented by the provider."
+            )
+        else:
+            out["message"] = "No dividend calendar rows matched the date range."
         return
     out["message"] = "No economic calendar events matched the filters."
     if upcoming_only:
