@@ -127,6 +127,34 @@ def test_strategy_validation_trims_unique_candidate_ids() -> None:
     )
 
     assert [candidate.id for candidate in request.candidates] == ["first", "SECOND"]
+
+
+def test_strategy_validation_single_strategy_shortcut_builds_candidate() -> None:
+    request = StrategyValidateRequest(symbol="EURUSD", strategy="ema_cross")
+
+    assert len(request.candidates) == 1
+    assert request.candidates[0] == StrategyCandidate(
+        id="ema_cross",
+        type="builtin_strategy",
+        strategy="ema_cross",
+    )
+
+
+def test_strategy_validation_requires_exactly_one_candidate_input() -> None:
+    with pytest.raises(ValueError, match="Provide strategy or at least one candidate"):
+        StrategyValidateRequest(symbol="EURUSD")
+    with pytest.raises(ValueError, match="strategy and candidates cannot be combined"):
+        StrategyValidateRequest(
+            symbol="EURUSD",
+            strategy="ema_cross",
+            candidates=[
+                {
+                    "id": "cross",
+                    "type": "builtin_strategy",
+                    "strategy": "sma_cross",
+                }
+            ],
+        )
 from mtdata.utils.sessions import market_session_label
 
 
@@ -2827,6 +2855,69 @@ def test_relative_strength_fetches_external_benchmark_without_ranking_it() -> No
     assert result["data_quality"]["selected_symbols"] == 2
     assert result["data_quality"]["data_symbols_fetched"] == 3
     assert "USDJPY" not in {row["symbol"] for row in result["rankings"]}
+
+
+@pytest.mark.parametrize(
+    ("candidate", "benchmark", "path"),
+    [
+        ("GBPUSD", "EURUSD", "Forex\\Majors"),
+        ("ETHUSD", "BTCUSD", "Crypto\\Majors"),
+    ],
+)
+def test_relative_strength_supports_pairwise_benchmark_comparison(
+    candidate: str,
+    benchmark: str,
+    path: str,
+) -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows[candidate] = _bars(drift=0.0002)
+    gateway.bar_rows[benchmark] = _bars(drift=0.00005)
+    gateway.symbols_get = lambda: [
+        SimpleNamespace(name=candidate, path=path, visible=True),
+        SimpleNamespace(name=benchmark, path=path, visible=True),
+    ]
+    request = MarketRelativeStrengthRequest(
+        symbols=candidate,
+        benchmark=benchmark,
+        horizons=[5],
+        weights=[1.0],
+        volatility_lookback=30,
+        limit=1,
+        detail="full",
+    )
+
+    result = rank_relative_strength(request, gateway)
+
+    assert result["success"] is True
+    assert result["status"] == "compared"
+    assert result["rank_quality"] == "pairwise_benchmark"
+    assert result["ranking_selection"]["method"] == (
+        "pairwise_benchmark_comparison"
+    )
+    assert result["score_definition"]["method"] == (
+        "weighted_volatility_scaled_benchmark_residual_momentum"
+    )
+    assert result["breadth"]["status"] == "not_applicable_pairwise"
+    assert result["leaders"][0]["symbol"] == candidate
+    assert result["laggards"] == []
+    assert result["rankings"][0]["symbol"] == candidate
+    assert result["factor"]["source"] == benchmark
+
+
+def test_relative_strength_rejects_unknown_group_before_history_fetch() -> None:
+    gateway = FakeGateway()
+    gateway.copy_rates_from_pos = MagicMock()
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(group="NoSuchGroup"),
+        gateway,
+    )
+
+    assert result["error_code"] == "symbol_group_error"
+    assert result["requested_group"] == "NoSuchGroup"
+    assert result["available_groups"] == ["Forex\\Majors"]
+    assert result["related_tools"] == ["symbols_list"]
+    gateway.copy_rates_from_pos.assert_not_called()
 
 
 def test_relative_strength_does_not_rank_benchmark_from_requested_symbols() -> None:

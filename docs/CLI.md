@@ -651,15 +651,17 @@ mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
   --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only \
   --cost-model fixed --spread-bps 1.2 --json
 
-# Historical MT5 bar spreads are the default. For a controlled constant:
+# For a controlled constant instead of the default current-spread snapshot:
 mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
 The runnable examples use a fixed 1.2 bps round-trip assumption; replace it with
-a defensible value for the instrument and venue. The default
-`historical_bar_spread` model uses only spreads stored with the evaluation bars.
-`strategy_backtest` fails closed before evaluation unless every required bar has
-a usable spread. `strategy_validate` may evaluate with at least some historical
+a defensible value for the instrument and venue. By default,
+`strategy_backtest` uses the current positive two-sided MT5 spread as a
+disclosed fixed round-trip cost snapshot. Pass `historical_bar_spread`
+explicitly to use only spreads stored with the evaluation bars; that mode fails
+closed before evaluation unless every required bar has a usable spread.
+`strategy_validate` may evaluate with at least some historical
 spread observations, but coverage below 90% prevents a positive evidence
 classification. Select `fixed` with an explicit spread for controlled
 comparisons.

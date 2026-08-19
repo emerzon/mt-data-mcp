@@ -3043,6 +3043,30 @@ def rank_relative_strength(  # noqa: C901
         for item in raw_symbols
         if str(_mapping(item).get("name") or getattr(item, "name", "")).strip()
     }
+    available_groups = sorted(
+        {
+            str(_mapping(item).get("path") or getattr(item, "path", "")).strip()
+            for item in raw_symbols
+            if str(
+                _mapping(item).get("path") or getattr(item, "path", "")
+            ).strip()
+        }
+    )
+    if request.group and not any(
+        str(request.group).lower() in group.lower() for group in available_groups
+    ):
+        return {
+            "success": False,
+            "error": f"No symbol group matched {request.group!r}.",
+            "error_code": "symbol_group_error",
+            "requested_group": request.group,
+            "available_groups": available_groups[:25],
+            "remediation": (
+                "Use symbols_list to inspect broker symbol paths, then retry with "
+                "an exact or uniquely identifying group substring."
+            ),
+            "related_tools": ["symbols_list"],
+        }
     missing_explicit = sorted(explicit - available_names)
     selected = []
     for item in raw_symbols:
@@ -3130,7 +3154,12 @@ def rank_relative_strength(  # noqa: C901
             "benchmark": benchmark_symbol,
             "skipped": skipped,
         }
-    if len(candidate_histories) < 2:
+    pairwise_mode = bool(
+        len(candidate_histories) == 1
+        and benchmark_symbol
+        and benchmark_symbol in histories
+    )
+    if len(candidate_histories) < 2 and not pairwise_mode:
         return {
             "error": "At least two available symbols with sufficient history are required.",
             "error_code": "insufficient_data",
@@ -3138,6 +3167,10 @@ def rank_relative_strength(  # noqa: C901
                 set(missing_explicit) | set(missing_candidate_history)
             ),
             "skipped": skipped,
+            "remediation": (
+                "Provide at least two available candidates, or provide one "
+                "candidate with an external benchmark."
+            ),
         }
     quote_excluded_symbols: List[str] = []
     quote_contexts: Dict[str, Dict[str, Any]] = {}
@@ -3343,14 +3376,16 @@ def rank_relative_strength(  # noqa: C901
     composite = pd.Series(0.0, index=list(row_by_symbol), dtype=float)
     for horizon, weight in zip(request.horizons, request.weights):
         values = pd.Series({symbol: value for symbol, value in score_parts[horizon].items() if symbol in row_by_symbol}, dtype=float)
-        composite = composite.add(_robust_z(values) * weight, fill_value=0.0)
+        score_values = values if pairwise_mode else _robust_z(values)
+        composite = composite.add(score_values * weight, fill_value=0.0)
     ranked = composite.sort_values(ascending=False)
     offset_ranks: Dict[int, Dict[str, int]] = {}
     for offset, horizons_data in stability_parts.items():
         offset_score = pd.Series(0.0, index=list(row_by_symbol), dtype=float)
         for horizon, weight in zip(request.horizons, request.weights):
             values = pd.Series({symbol: value for symbol, value in horizons_data[horizon].items() if symbol in row_by_symbol}, dtype=float)
-            offset_score = offset_score.add(_robust_z(values) * weight, fill_value=0.0)
+            score_values = values if pairwise_mode else _robust_z(values)
+            offset_score = offset_score.add(score_values * weight, fill_value=0.0)
         offset_ranks[offset] = {symbol: rank for rank, symbol in enumerate(offset_score.sort_values(ascending=False).index, start=1)}
     score_tie_tolerance = 1e-12
     previous_score: Optional[float] = None
@@ -3382,6 +3417,14 @@ def rank_relative_strength(  # noqa: C901
         "above_sma20": float(np.mean([row["above_sma20"] for row in ordered])) if ordered else None,
         "above_sma50": float(np.mean([row["above_sma50"] for row in ordered])) if ordered else None,
     }
+    if pairwise_mode:
+        breadth = {
+            "status": "not_applicable_pairwise",
+            "reason": (
+                "Cross-sectional breadth is not defined for one candidate versus "
+                "an explicit benchmark."
+            ),
+        }
     returned_count = min(int(request.limit), len(ordered))
     leader_count = (returned_count + 1) // 2
     laggard_count = returned_count - leader_count
@@ -3468,7 +3511,7 @@ def rank_relative_strength(  # noqa: C901
             }
         )
 
-    tied_universe = bool(ordered) and (
+    tied_universe = not pairwise_mode and bool(ordered) and (
         float(ranked.max()) - float(ranked.min()) <= score_tie_tolerance
     )
     ranking_withheld = bool(ordered) and endpoint_alignment.get("comparable") is False
@@ -3500,6 +3543,8 @@ def rank_relative_strength(  # noqa: C901
         "status": (
             "incomparable"
             if endpoint_alignment.get("comparable") is False
+            else "compared"
+            if pairwise_mode and ordered
             else "tied"
             if tied_universe
             else "ranked" if ordered else "no_matches"
@@ -3522,6 +3567,8 @@ def rank_relative_strength(  # noqa: C901
             "method": (
                 "withheld_incomparable_endpoints"
                 if endpoint_alignment.get("comparable") is False
+                else "pairwise_benchmark_comparison"
+                if pairwise_mode
                 else "withheld_tied_scores"
                 if tied_universe
                 else "strongest_and_weakest_tails"
@@ -3533,12 +3580,18 @@ def rank_relative_strength(  # noqa: C901
         "rank_quality": (
             "incomparable_endpoints"
             if endpoint_alignment.get("comparable") is False
+            else "pairwise_benchmark"
+            if pairwise_mode
             else "tied_scores"
             if tied_universe
             else "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
         ),
         "score_definition": {
-            "method": "weighted_robust_z_of_volatility_scaled_residual_momentum",
+            "method": (
+                "weighted_volatility_scaled_benchmark_residual_momentum"
+                if pairwise_mode
+                else "weighted_robust_z_of_volatility_scaled_residual_momentum"
+            ),
             "horizons_bars": list(request.horizons),
             "weights": list(request.weights),
             "higher_is_stronger": True,
@@ -3574,7 +3627,7 @@ def rank_relative_strength(  # noqa: C901
                 else {}
             ),
         },
-        "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
+        "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "volatility_scaled_residual_momentum" if pairwise_mode else "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
         **({"rankings": published_rankings} if request.detail == "full" else {}),
     }
     result_warnings: List[str] = []

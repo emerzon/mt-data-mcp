@@ -337,18 +337,20 @@ class StrategyBacktestRequest(_PublicForecastRequest):
     overbought: float = Field(70.0, gt=0.0, lt=100.0)
     max_hold_bars: Optional[int] = Field(None, ge=1)
     cost_model: Literal["historical_bar_spread", "fixed"] = Field(
-        "historical_bar_spread",
+        "fixed",
         description=(
-            "Transaction-cost spread source. Historical bar spread uses only the "
-            "evaluation data and requires complete spread coverage; otherwise the "
-            "backtest returns cost_model_unavailable before evaluation. Fixed requires "
-            "an explicit spread_bps."
+            "Transaction-cost spread source. Fixed uses spread_bps when supplied, "
+            "otherwise the current two-sided MT5 spread snapshot. Historical bar "
+            "spread is an explicit fail-closed mode requiring complete coverage."
         ),
     )
     spread_bps: Optional[float] = Field(
         None,
         ge=0.0,
-        description="Required round-trip spread assumption when cost_model is fixed.",
+        description=(
+            "Optional round-trip spread assumption for the fixed model. When omitted, "
+            "the current two-sided MT5 spread snapshot is used and disclosed."
+        ),
     )
     slippage_bps: FiniteFloat = Field(1.0, ge=0.0)
 
@@ -360,8 +362,6 @@ class StrategyBacktestRequest(_PublicForecastRequest):
             raise ValueError("oversold must be less than overbought")
         if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
             raise ValueError("--spread-bps is only valid with --cost-model fixed")
-        if self.cost_model == "fixed" and self.spread_bps is None:
-            raise ValueError("--spread-bps is required with --cost-model fixed")
         return self
 
 

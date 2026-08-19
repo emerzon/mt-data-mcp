@@ -1603,10 +1603,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         None,
     ),
     "strategy_validate": (
+        f"{CLI_PROGRAM} strategy_validate EURUSD --strategy ema_cross",
         f"{CLI_PROGRAM} strategy_validate EURUSD --candidates "
         "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
         "\"strategy\":\"ema_cross\"}]'",
-        None,
     ),
     "labels_triple_barrier": (
         f'{CLI_PROGRAM} labels_triple_barrier EURUSD --barriers '

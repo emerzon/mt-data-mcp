@@ -140,7 +140,16 @@ class StrategyValidateRequest(BaseModel):
     lookback: int = Field(3_000, ge=200, le=50_000)
     start: Optional[str] = None
     end: Optional[str] = None
-    candidates: List[StrategyCandidate] = Field(min_length=1, max_length=10)
+    candidates: List[StrategyCandidate] = Field(default_factory=list, max_length=10)
+    strategy: Optional[
+        Literal["sma_cross", "ema_cross", "rsi_reversion"]
+    ] = Field(
+        None,
+        description=(
+            "Single built-in strategy shortcut. Use candidates instead for "
+            "parameterized or mixed validation sets."
+        ),
+    )
     n_splits: int = Field(5, ge=2, le=10)
     barrier: BarrierSpec = Field(default_factory=BarrierSpec)
     purge_bars: Optional[int] = Field(None, ge=0)
@@ -173,6 +182,18 @@ class StrategyValidateRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "StrategyValidateRequest":
         validate_complete_time_window(self.start, self.end)
+        if self.strategy is not None and self.candidates:
+            raise ValueError("strategy and candidates cannot be combined")
+        if self.strategy is not None:
+            self.candidates = [
+                StrategyCandidate(
+                    id=str(self.strategy),
+                    type="builtin_strategy",
+                    strategy=self.strategy,
+                )
+            ]
+        if not self.candidates:
+            raise ValueError("Provide strategy or at least one candidate.")
         positions_by_id: Dict[str, List[int]] = {}
         display_by_id: Dict[str, str] = {}
         for position, candidate in enumerate(self.candidates):

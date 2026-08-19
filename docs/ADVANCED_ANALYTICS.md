@@ -69,10 +69,16 @@ embargo bars are excluded. Evidence uses block-bootstrap expectancy tests with
 Holm correction and reports `positive`, `negative`, or `inconclusive`.
 
 ```bash
+mtdata-cli strategy_validate EURUSD --strategy ema_cross --json
+
 mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
   --candidates '[{"id":"fast-cross","type":"builtin_strategy","strategy":"ema_cross","params":{"fast_period":10,"slow_period":30}}]' \
   --barrier '{"horizon":12,"tp_pct":0.5,"sl_pct":0.5}' --json
 ```
+
+Use `--strategy` for a single built-in strategy with default parameters. Use
+the JSON `--candidates` form for parameterized built-ins, forecast-threshold
+candidates, or multi-candidate validation.
 
 Candidate parameters are fixed before validation; this tool does not optimize
 and validate on the same sample. Candidate IDs are trimmed, case-insensitively
@@ -156,7 +162,16 @@ breadth instead of publishing a misleading cross-section.
 ```bash
 mtdata-cli market_relative_strength --group "Forex\\Majors" --timeframe H1 \
   --horizons 5,20,60 --weights 0.2,0.3,0.5 --limit 10 --json
+
+# Pairwise comparison (no cross-sectional breadth is implied)
+mtdata-cli market_relative_strength GBPUSD --benchmark EURUSD --timeframe H1 --json
 ```
+
+A single explicit candidate is supported only with an external benchmark. It
+returns `status=compared`, a direct volatility-scaled residual-momentum score,
+and `breadth.status=not_applicable_pairwise`; it does not present the result as
+a multi-symbol rank. Unknown group names fail as `symbol_group_error` before
+history retrieval and include broker paths from `symbols_list` for correction.
 
 Use homogeneous symbol groups when possible. Instruments with substantially
 different trading sessions can produce less comparable cross-sectional ranks.
