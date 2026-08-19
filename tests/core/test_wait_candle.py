@@ -96,7 +96,10 @@ def test_next_candle_wait_payload_handles_pytz_dst_gap(monkeypatch) -> None:
         now_utc=datetime(2026, 3, 29, 0, 54, 0, tzinfo=timezone.utc),
     )
 
-    assert payload["next_candle_close_server"] == "2026-03-29T03:00:00"
+    assert payload["next_candle_close_server"] == "2026-03-29T03:00:00+02:00"
+    assert datetime.fromisoformat(payload["next_candle_close_server"]).astimezone(
+        timezone.utc
+    ) == datetime.fromisoformat(payload["next_candle_close_utc"])
     assert payload["next_candle_close_utc"] == "2026-03-29T01:00:00+00:00"
     assert payload["sleep_seconds"] == 361.0
 

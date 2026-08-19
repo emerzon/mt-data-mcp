@@ -177,6 +177,9 @@ def _next_candle_wait_payload(
         )
     )
     server_utc_offset = _format_utc_offset(server_offset_seconds)
+    server_close_aware = next_close_utc.astimezone(
+        timezone(timedelta(seconds=server_offset_seconds))
+    )
     wait_seconds = max(
         0.0,
         float((next_close_utc - current_utc).total_seconds()) + max(0.0, float(buffer_seconds)),
@@ -193,7 +196,7 @@ def _next_candle_wait_payload(
         "sleep_seconds": float(wait_seconds),
         "started_at_utc": current_utc.isoformat(),
         "next_candle_close_utc": next_close_utc.isoformat(),
-        "next_candle_close_server": next_close_server.isoformat(),
+        "next_candle_close_server": server_close_aware.isoformat(),
         "server_timezone": str(server_tz_name),
         "server_utc_offset": server_utc_offset,
     }

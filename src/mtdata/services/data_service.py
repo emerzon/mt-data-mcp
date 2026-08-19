@@ -1131,9 +1131,8 @@ def _candle_query_applied(
         elif is_iso_day:
             bound_mode = "inclusive_day_end" if end_bound else "inclusive_day_start"
         elif is_natural_period:
-            period_kind = (
-                "week" if "week" in str(raw_value).strip().lower() else "day"
-            )
+            period = _calendar_period_bounds(str(raw_value))
+            period_kind = period[2] if period is not None else "day"
             bound_mode = f"inclusive_{period_kind}_{'end' if end_bound else 'start'}"
         else:
             bound_mode = "inclusive_instant"

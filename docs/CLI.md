@@ -293,11 +293,12 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 For intraday candle ranges, bounds are inclusive and resolved in UTC. An ISO
 date-only value and natural calendar days such as `today`, `yesterday`, or
 `last Friday` span the full UTC day: `--start` resolves to 00:00:00 and `--end`
-to 23:59:59.999999. `this week`, `last week`, and `next week` similarly span
-Monday through Sunday. For D1/W1/MN1, those same calendar labels select broker
-session periods instead: their resolved bounds use broker-local midnight and
-may therefore fall on the previous UTC date. Relative durations such as
-`2 days ago` remain exact instants. Include an explicit time
+to 23:59:59.999999. Week phrases span Monday through Sunday. `this month`,
+`last month`, and `next month` span calendar months; `this year`, `last year`,
+and `next year` span calendar years. For D1/W1/MN1, those same calendar labels
+select broker session periods instead: their resolved bounds use broker-local
+midnight and may therefore fall on the previous UTC date. Relative durations
+such as `2 days ago` remain exact instants. Include an explicit time
 and timezone when automation needs an exact instant, using either an ISO offset
 (`2026-08-03T09:30-04:00`) or an IANA name
 (`2026-08-03 09:30 America/New_York`). Ambiguous or nonexistent daylight-saving

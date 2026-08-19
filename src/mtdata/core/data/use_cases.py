@@ -938,6 +938,7 @@ def _normalize_range_limit_contract(
                 for key, value in excluded.items()
                 if key != "total" and isinstance(value, int) and value > 0
             )
+            result["candles_excluded"] = int(excluded["total"])
 
 
 def _normalize_candle_count_field(result: Dict[str, Any]) -> None:
@@ -1004,6 +1005,8 @@ def _compact_candles_payload(
         "query_end_gap_anchor",
         "query_end_gap_metric",
         "mt5_time_alignment",
+        "bar_spacing",
+        "source_bar_spacing",
     ):
         compact.pop(key, None)
     if not bool(compact.get("has_forming_candle")):
@@ -1048,6 +1051,13 @@ def _compact_candles_payload(
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     _attach_denoise_disclosure(compact)
     attach_candle_volume_semantics(compact)
+    for key in (
+        "tick_volume_event_basis",
+        "tick_volume_tape_equivalent",
+        "tick_volume_comparison_note",
+        "time_normalization",
+    ):
+        compact.pop(key, None)
     return compact
 
 
@@ -1621,6 +1631,12 @@ def _run_data_fetch_ticks_impl(
             result["warnings"] = list(dict.fromkeys(warnings))
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
+    if isinstance(result, dict) and not result.get("error"):
+        result["timestamp_format"] = (
+            "iso_utc"
+            if str(request.timestamp_format).strip().lower() == "iso"
+            else "epoch_seconds"
+        )
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(
         result,

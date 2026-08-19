@@ -1686,7 +1686,7 @@ def test_compact_candles_always_names_forming_candle_status():
     assert result["forming_candle_status"] == "none"
 
 
-def test_compact_server_clock_candles_keep_utc_normalization_disclosure():
+def test_compact_server_clock_candles_keep_concise_utc_disclosure():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=1)
 
     result = run_data_fetch_candles(
@@ -1709,7 +1709,7 @@ def test_compact_server_clock_candles_keep_utc_normalization_disclosure():
     assert result["public_timestamp_mode"] == "utc"
     assert "raw_timestamp_mode" not in result
     assert result["time_basis"] == "utc"
-    assert result["time_normalization"] == "server_clock_to_utc"
+    assert "time_normalization" not in result
 
 
 def test_full_server_clock_candles_disclose_raw_and_public_modes():
@@ -2215,9 +2215,10 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "freshness": "stale, tick 10m 0s ago",
         "data_age_seconds": 600.0,
         "data_age_anchor": "wall_clock",
-        "data_age_metric": "last_tick_age_seconds",
-        "data_stale": True,
-        "units": {
+            "data_age_metric": "last_tick_age_seconds",
+            "data_stale": True,
+            "timestamp_format": "iso_utc",
+            "units": {
             "bid": "absolute_price",
             "ask": "absolute_price",
             "spread": "absolute_price",

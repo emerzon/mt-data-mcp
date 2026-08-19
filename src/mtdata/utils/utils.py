@@ -449,7 +449,7 @@ def _calendar_period_bounds(
     now: Optional[datetime] = None,
     calendar_timezone: Any = timezone.utc,
 ) -> Optional[tuple[datetime, datetime, str]]:
-    """Resolve day/week-valued natural language to inclusive calendar bounds."""
+    """Resolve supported natural-language calendar periods to inclusive bounds."""
     text = " ".join(str(value or "").strip().lower().split())
     if not text:
         return None
@@ -471,6 +471,16 @@ def _calendar_period_bounds(
             datetime.min.time(),
         )
         kind = "week"
+    elif text in {"last month", "this month", "next month"}:
+        month_offset = {"last month": -1, "this month": 0, "next month": 1}[text]
+        month_index = current_date.year * 12 + current_date.month - 1 + month_offset
+        year, zero_based_month = divmod(month_index, 12)
+        period_start = datetime(year, zero_based_month + 1, 1)
+        kind = "month"
+    elif text in {"last year", "this year", "next year"}:
+        year_offset = {"last year": -1, "this year": 0, "next year": 1}[text]
+        period_start = datetime(current_date.year + year_offset, 1, 1)
+        kind = "year"
     else:
         parts = text.split()
         weekdays = {
@@ -493,8 +503,17 @@ def _calendar_period_bounds(
             current_date + timedelta(days=days),
             datetime.min.time(),
         )
-    duration = timedelta(weeks=1) if kind == "week" else timedelta(days=1)
-    return period_start, period_start + duration - timedelta(microseconds=1), kind
+    if kind == "week":
+        period_end_exclusive = period_start + timedelta(weeks=1)
+    elif kind == "month":
+        next_month_index = period_start.year * 12 + period_start.month
+        next_year, next_zero_based_month = divmod(next_month_index, 12)
+        period_end_exclusive = datetime(next_year, next_zero_based_month + 1, 1)
+    elif kind == "year":
+        period_end_exclusive = datetime(period_start.year + 1, 1, 1)
+    else:
+        period_end_exclusive = period_start + timedelta(days=1)
+    return period_start, period_end_exclusive - timedelta(microseconds=1), kind
 
 
 def _is_calendar_period_expression(value: Optional[str]) -> bool:
