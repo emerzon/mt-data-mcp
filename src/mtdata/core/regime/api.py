@@ -579,17 +579,18 @@ def _method_parameter_warnings(
             )
         if requested_min_regime_bars >= 0 or "min_regime_bars" in params:
             warnings_out.append(
-                "min_regime_bars is not used by rule_based because it emits one "
-                "current-window regime."
+                "min_regime_bars is not used by rule_based because it does not "
+                "estimate regime boundaries or persistence."
             )
         if max_regimes != 10:
             warnings_out.append(
-                "max_regimes has no effect for rule_based because it emits one "
-                "current-window regime."
+                "max_regimes has no effect for rule_based because it does not "
+                "produce historical regime segments."
             )
-        if include_series and output != "full":
+        if include_series:
             warnings_out.append(
-                "include_series is only emitted for rule_based when detail='full'."
+                "include_series is not available for rule_based because it classifies "
+                "one aggregate window rather than estimating a per-bar state sequence."
             )
     return warnings_out
 
@@ -626,7 +627,13 @@ def _summarize_rule_based_current_regime(result: Dict[str, Any]) -> Optional[Dic
         )
         if regime.get(key) is not None
     }
-    for key in ("regime_id", "label", "since", "bars"):
+    for key in (
+        "regime_id",
+        "label",
+        "classification_scope",
+        "boundary_status",
+        "persistence_status",
+    ):
         value = current_regime.get(key)
         if value is not None:
             entry[key] = value
@@ -1219,9 +1226,12 @@ def regime_detect(  # noqa: C901
             otherwise → 2 states (10 or fewer usable volatility observations defaults to 3)
           Explicit n_states parameter overrides auto-detection.
           Uses percentile-based classification with volatility characteristics reported in output.
-        - 'rule_based': Returns `current_regime` and a single-item `regimes` list with
-          state (trending/ranging/transition), direction (bullish/bearish/neutral),
-          trend_strength, and efficiency_ratio.
+        - 'rule_based': Returns an aggregate-window `current_regime` classification
+          with state (trending/ranging/transition), direction
+          (bullish/bearish/neutral), trend_strength, and efficiency_ratio.
+          `classification_window` identifies the exact start, end, and bar count.
+          This method does not estimate onset, persistence, historical segments, or
+          a per-bar state series, so those fields are omitted.
           Trend metrics use the recent price window so direction/window_move_pct stay coherent
           even when target='return'. Best for quick trend classification.
         - 'wavelet': Returns 'regime_params' with 'energy_profiles' showing frequency distribution.
@@ -3123,7 +3133,8 @@ def regime_detect(  # noqa: C901
                     "a choppy path; state uses both metrics."
                 )
 
-            # Build payload - single regime for the window
+            # Build an aggregate-window classification. This method does not detect
+            # historical boundaries, persistence, or a per-bar state sequence.
             trend_strength_out = round(trend_strength, 4)
             efficiency_ratio_out = round(efficiency_ratio, 4)
             window_move_pct = round(window_move_pct_raw, 4)
@@ -3185,18 +3196,25 @@ def regime_detect(  # noqa: C901
             regime_id_by_state = {"ranging": 0, "trending": 1, "transition": 2}
             regime_id = regime_id_by_state.get(regime_state, 2)
             rule_t_fmt = [_format_time_minimal(tt) for tt in price_times]
-            regime_since = (
+            classification_start = (
                 rule_t_fmt[-int(window_bars)]
                 if len(rule_t_fmt) >= int(window_bars)
                 else rule_t_fmt[0]
             )
-            regime_end = rule_t_fmt[-1]
+            classification_end = rule_t_fmt[-1]
+            classification_window = {
+                "start": classification_start,
+                "end": classification_end,
+                "bars": int(window_bars),
+                "basis": "aggregate_price_window",
+            }
             current_regime = {
                 "regime_id": int(regime_id),
                 "label": regime_state,
                 "regime_confidence": regime_confidence,
-                "since": regime_since,
-                "bars": int(window_bars),
+                "classification_scope": "aggregate_window",
+                "boundary_status": "not_estimated",
+                "persistence_status": "not_estimated",
                 "state_label_native": regime_state,
                 "state_label_canonical": regime_state,
                 "headline": f"regime={regime_state}; window_bias={direction}",
@@ -3223,21 +3241,7 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "regime": regime_payload,
                 "current_regime": current_regime,
-                "regimes": [
-                    {
-                        "start": regime_since,
-                        "end": regime_end,
-                        "bars": int(window_bars),
-                        "regime": int(regime_id),
-                        "label": regime_state,
-                        "regime_confidence": regime_confidence,
-                        **(
-                            {"direction": direction}
-                            if regime_state == "trending"
-                            else {"window_bias": direction}
-                        ),
-                    }
-                ],
+                "classification_window": classification_window,
                 "regime_info": {
                     int(regime_id): {
                         "label": regime_state,
@@ -3252,7 +3256,6 @@ def regime_detect(  # noqa: C901
                     }
                 },
                 "reliability": reliability,
-                "total_regimes": 1,
                 "params_used": {
                     "efficiency_threshold": float(efficiency_threshold),
                     "trend_strength_threshold": float(trend_strength_threshold),
@@ -3265,7 +3268,7 @@ def regime_detect(  # noqa: C901
                 current_regime["window_quality"] = window_quality["status"]
             if output == "summary":
                 payload["summary"] = {
-                    "lookback": int(window_bars),
+                    "classification_window_bars": int(window_bars),
                     "last_state": int(regime_id),
                     "label": regime_state,
                     **(
@@ -3287,11 +3290,6 @@ def regime_detect(  # noqa: C901
                 if state_note:
                     payload["summary"]["note"] = state_note
                 return _finish(_summary_only_payload(payload))
-            if output == "full" and include_series:
-                payload["series"] = {
-                    "times": rule_t_fmt[-int(window_bars) :],
-                    "state": [int(regime_id)] * int(window_bars),
-                }
             if output == "compact":
                 compact_current_regime = dict(current_regime)
                 for key in (
@@ -3324,6 +3322,7 @@ def regime_detect(  # noqa: C901
                         "information_only" if regime_state == "trending" else "not_actionable"
                     ),
                     "current_regime": compact_current_regime,
+                    "classification_window": classification_window,
                 }
                 if window_quality:
                     payload["data_quality"] = window_quality

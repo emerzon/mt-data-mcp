@@ -467,7 +467,7 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
     assert out["params_used"]["signal_source"] == "price"
 
 
-def test_rule_based_full_series_uses_price_window_timestamps_for_return_target() -> None:
+def test_rule_based_exposes_classification_window_without_segment_claims() -> None:
     raw = _unwrap(regime_detect)
 
     with (
@@ -486,11 +486,23 @@ def test_rule_based_full_series_uses_price_window_timestamps_for_return_target()
             include_series=True,
         )
 
-    series = out["series"]
-    assert out["current_regime"]["since"] == "T0.0"
-    assert out["regimes"][0]["start"] == "T0.0"
-    assert series["times"][0] == "T0.0"
-    assert len(series["times"]) == len(series["state"]) == 100
+    assert out["classification_window"] == {
+        "start": "T0.0",
+        "end": "T99.0",
+        "bars": 100,
+        "basis": "aggregate_price_window",
+    }
+    assert out["current_regime"]["classification_scope"] == "aggregate_window"
+    assert out["current_regime"]["boundary_status"] == "not_estimated"
+    assert out["current_regime"]["persistence_status"] == "not_estimated"
+    assert "since" not in out["current_regime"]
+    assert "bars" not in out["current_regime"]
+    assert "regimes" not in out
+    assert "total_regimes" not in out
+    assert "series" not in out
+    assert "include_series is not available for rule_based" in "\n".join(
+        out["warnings"]
+    )
 
 
 def test_rule_based_rejects_limit_below_explicit_window() -> None:
@@ -648,7 +660,9 @@ def test_rule_based_compact_explains_direction_bias() -> None:
 
     current_regime = out["current_regime"]
     assert out["signal_status"] == "not_actionable"
-    assert current_regime["bars"] == 60
+    assert out["classification_window"]["bars"] == 60
+    assert "bars" not in current_regime
+    assert "since" not in current_regime
     assert current_regime["label"] == "ranging"
     assert "direction" not in current_regime
     assert current_regime["window_bias"] == "bearish"
@@ -695,6 +709,8 @@ def test_rule_based_summary_explains_direction_bias() -> None:
     assert summary["window_bias"] == "bearish"
     assert summary["direction_basis"] == "net_window_move"
     assert "window bias, not a trend classification" in summary["interpretation"]
+    assert out["classification_window"]["bars"] == 60
+    assert out["classification_window"]["basis"] == "aggregate_price_window"
 
 
 def test_rule_based_warns_for_inapplicable_parameters() -> None:
@@ -738,10 +754,12 @@ def test_rule_based_lookback_controls_window_when_window_bars_omitted() -> None:
             fetch_limit=120,
             method="rule_based",
             lookback=50,
-        )
+    )
 
     current_regime = out["current_regime"]
-    assert current_regime["bars"] == 50
+    assert out["classification_window"]["bars"] == 50
+    assert "bars" not in current_regime
+    assert "since" not in current_regime
     assert out["data_quality"]["status"] == "limited_history"
     assert out["data_quality"]["lookback_too_short"] is True
     assert out["data_quality"]["recommended_min_bars"] == 160

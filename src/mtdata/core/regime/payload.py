@@ -1303,6 +1303,8 @@ def _summary_only_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     if "summary" in payload:
         out["summary"] = payload["summary"]
+    if "classification_window" in payload:
+        out["classification_window"] = payload["classification_window"]
     if "reliability" in payload:
         out["reliability"] = payload["reliability"]
     if "params_used" in payload:

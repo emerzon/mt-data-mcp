@@ -287,9 +287,10 @@ Canonical fields for successful compact/full JSON responses:
 | Field | Applies to | Notes |
 |-------|------------|-------|
 | `method` | all methods | Actual implementation method. `hmm` and `gmm` are distinct. |
-| `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
+| `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. Rule-based output instead marks `classification_scope=aggregate_window` and boundary/persistence as `not_estimated`. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
+| `classification_window` | rule-based | Exact start, end, and bar count used for the aggregate classification. These bounds are not a detected regime onset or duration. |
 | `transition_summary` | BOCPD | Recent-window transition maximum, accepted/raw/filtered change-point counts, activity, and calibration status. Raw `cp_prob` requires `detail=full` with `include_series=true`. |
-| `regimes` | all compact/full methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. |
+| `regimes` | segmentation methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. Omitted for rule-based classification. |
 | `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
 | `reliability` | all methods | Always includes `confidence`, `reliability_label`, and `source`; method-specific diagnostics may add more fields. |
 | `historical_label_scope` | full-window fitted methods | Marks historical labels as retrospective; use `point_in_time_guidance` for rolling `as_of` evaluation. |
@@ -317,7 +318,12 @@ Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, cluste
 
 `threshold` only applies to BOCPD change-point detection. If supplied for non-BOCPD methods, the tool reports a warning rather than silently changing confidence filtering.
 
-For `rule_based`, use `params.window_bars` to choose the analysis window. `lookback`, `min_regime_bars`, and `max_regimes` do not change rule-based output because it emits one current-window regime; non-default uses are reported in `warnings`.
+For `rule_based`, use `params.window_bars` to choose the analysis window. The
+method classifies the aggregate window; it does not detect when that label began,
+how long it has persisted, historical segments, or a per-bar state series. Read
+the bounds from `classification_window`, not as regime onset/duration.
+`lookback`, `min_regime_bars`, `max_regimes`, and `include_series` do not add
+segmentation semantics; inapplicable uses are reported in `warnings`.
 
 ### Heuristic state counts
 
