@@ -93,6 +93,27 @@ def _invalid_order_type_payload(message: str) -> Dict[str, Any]:
     }
 
 
+def _dry_run_blocker_error(blockers: Any) -> str:
+    blocker_list = [str(item).strip() for item in list(blockers or []) if str(item).strip()]
+    blocker_set = set(blocker_list)
+    if {"missing_stop_loss", "missing_take_profit"}.issubset(blocker_set):
+        return (
+            "stop_loss and take_profit are required when require_sl_tp=true. "
+            "Provide both levels or explicitly set require_sl_tp=false."
+        )
+    if "missing_stop_loss" in blocker_set:
+        return "stop_loss is required when require_sl_tp=true."
+    if "missing_take_profit" in blocker_set:
+        return "take_profit is required when require_sl_tp=true."
+    if "margin_insufficient" in blocker_set:
+        return "Estimated free margin is insufficient for this order."
+    if "quote_not_live_ready" in blocker_set:
+        return "The current quote is not usable for live submission; refresh it and retry."
+    if blocker_list:
+        return "Dry-run preview blocked by: " + ", ".join(blocker_list) + "."
+    return "Dry-run preview is not eligible for live submission."
+
+
 def _invalid_pending_expiration_payload(
     exc: Exception,
     *,
@@ -1889,10 +1910,7 @@ def run_trade_place(  # noqa: C901
             if preview.get("preview_ok") is not True:
                 preview["success"] = False
                 preview.setdefault("error_code", "preview_blocked")
-                preview.setdefault(
-                    "error",
-                    "Dry-run preview is not eligible for live submission.",
-                )
+                preview.setdefault("error", _dry_run_blocker_error(preview.get("blockers")))
                 preview.setdefault(
                     "remediation",
                     "Resolve every blocker and run the dry-run preview again before submitting live.",
@@ -2756,35 +2774,8 @@ def _run_trade_close_once(  # noqa: C901
             and result.get("success") is True
             and not str(result.get("error") or "").strip()
         ):
-            if bulk_request and not request.confirm_close_all:
-                result["preview_ok"] = False
-                result["confirm_close_all"] = False
-                result["required_confirmation"] = "--confirm-close-all true"
-                validation = (
-                    dict(result.get("validation"))
-                    if isinstance(result.get("validation"), dict)
-                    else {}
-                )
-                validation["live_submission_eligible"] = False
-                blockers = list(validation.get("blockers") or [])
-                if "bulk_confirmation_required" not in blockers:
-                    blockers.append("bulk_confirmation_required")
-                validation["blockers"] = blockers
-                result["validation"] = validation
-            else:
-                result.setdefault("preview_ok", True)
+            result.setdefault("preview_ok", True)
             result.setdefault("would_send_order", False)
-            if result.get("preview_ok") is not True:
-                result["success"] = False
-                result.setdefault("error_code", "preview_blocked")
-                result.setdefault(
-                    "error",
-                    "Dry-run preview is not eligible for live submission.",
-                )
-                result.setdefault(
-                    "remediation",
-                    "Resolve every blocker and run the dry-run preview again before submitting live.",
-                )
         if request.detail == "compact":
             result = _compact_close_preview_payload(result)
         if isinstance(result, dict) and str(result.get("error") or "").strip():

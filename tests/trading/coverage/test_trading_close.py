@@ -527,7 +527,7 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_symbol_bulk_close_dry_run_discloses_missing_confirmation(self, mock_close, mock_cancel):
+    def test_symbol_bulk_close_dry_run_does_not_require_live_confirmation(self, mock_close, mock_cancel):
         mock_close.return_value = {
             "success": True,
             "matched_count": 0,
@@ -536,16 +536,9 @@ class TestTradeClose:
             "message": "No open positions for EURUSD",
         }
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
-        assert out["success"] is False
-        assert out["error_code"] == "preview_blocked"
+        assert out["success"] is True
         assert out["dry_run"] is True
-        assert out["preview_ok"] is False
-        assert out["confirm_close_all"] is False
-        assert out["required_confirmation"] == "--confirm-close-all true"
-        assert out["validation"] == {
-            "live_submission_eligible": False,
-            "blockers": ["bulk_confirmation_required"],
-        }
+        assert out["preview_ok"] is True
         assert out["would_send_order"] is False
         assert out["operation"] == "close_symbol_positions"
         assert out["symbol"] == "EURUSD"
@@ -749,8 +742,8 @@ class TestTradeClose:
 
         out = trade_close(magic=3001, dry_run=True, __cli_raw=True)
 
-        assert out["success"] is False
-        assert out["error_code"] == "preview_blocked"
+        assert out["success"] is True
+        assert out["preview_ok"] is True
         assert out["target"] == "positions"
         assert out["matched_count"] == 2
         assert {row["magic"] for row in out["matched_positions"]} == {3001}
@@ -782,8 +775,8 @@ class TestTradeClose:
             __cli_raw=True,
         )
 
-        assert out["success"] is False
-        assert out["error_code"] == "preview_blocked"
+        assert out["success"] is True
+        assert out["preview_ok"] is True
         assert out["would_send_orders"] == 2
         assert out["would_cancel_pending_orders"] == 1
         assert out["closed_positions"]["matched_count"] == 2

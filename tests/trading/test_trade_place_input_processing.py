@@ -296,7 +296,7 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
 
     assert out.get("success") is False
     assert out["error_code"] == "preview_blocked"
-    assert "not eligible" in out["error"]
+    assert "stop_loss and take_profit are required" in out["error"]
     assert out.get("blockers") == ["missing_stop_loss", "missing_take_profit"]
     assert out.get("no_action_reason") == "dry_run_validation_blocked"
     assert out.get("dry_run") is True
