@@ -25,7 +25,7 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from ..shared.symbols import FIAT_CURRENCY_CODES as _CURRENCY_CODES
-from ..utils.mt5 import get_symbol_info_cached
+from ..utils.mt5 import ensure_mt5_connection_or_raise, get_symbol_info_cached, mt5
 from .finviz import (
     get_crypto_performance,
     get_economic_calendar,
@@ -643,6 +643,12 @@ def _parse_published_text(value: str) -> Optional[datetime]:
 def _safe_symbol_metadata(symbol: str) -> Dict[str, str]:
     try:
         info = get_symbol_info_cached(symbol)
+        if info is None:
+            # A one-shot news process may not have initialized MT5 yet. Resolve
+            # broker metadata directly after initialization rather than making
+            # classification depend on a cache warmed by an earlier command.
+            ensure_mt5_connection_or_raise()
+            info = mt5.symbol_info(symbol)
     except Exception:
         return {}
     if info is None:
@@ -789,6 +795,13 @@ def _classify_instrument(symbol: str) -> InstrumentContext:  # noqa: C901
         asset_class = "crypto"
     elif base_asset in _CURRENCY_CODES and quote_asset in _CURRENCY_CODES:
         asset_class = "forex"
+
+    if asset_class == "index":
+        # MT5 currency fields describe settlement/exposure for an index; they are
+        # not the two legs of a synthetic FX pair.
+        if detected_asset_class != "index" or base_asset in _CURRENCY_CODES:
+            base_asset = compact or None
+        quote_asset = None
 
     aliases = [symbol_norm]
     if symbol_root and symbol_root != symbol_norm:

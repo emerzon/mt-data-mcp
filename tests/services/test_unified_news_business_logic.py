@@ -18,6 +18,11 @@ def _default_empty_economic_calendar(monkeypatch) -> None:
             "items": [],
         },
     )
+    monkeypatch.setattr(
+        svc,
+        "ensure_mt5_connection_or_raise",
+        lambda: (_ for _ in ()).throw(RuntimeError("MT5 disabled in unit tests")),
+    )
 
 
 def _reset_aggregator(monkeypatch) -> None:
@@ -740,6 +745,34 @@ def test_classify_index_hints_override_mt5_currency_metadata(monkeypatch) -> Non
     assert context.base_asset == "NAS"
     assert context.quote_asset is None
     assert "NQ" in context.aliases
+
+
+def test_classify_metadata_only_index_initializes_mt5_without_fx_alias(monkeypatch) -> None:
+    class FakeInfo:
+        path = "Stock Indices\\Asia"
+        description = "Hong Kong 50 Index"
+        currency_base = "USD"
+        currency_profit = "HKD"
+        currency_margin = "USD"
+        basis = ""
+
+    initialized = []
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        svc, "ensure_mt5_connection_or_raise", lambda: initialized.append(True)
+    )
+    monkeypatch.setattr(svc.mt5, "symbol_info", lambda symbol: FakeInfo())
+
+    cold = svc._classify_instrument("HK50")
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: FakeInfo())
+    warm = svc._classify_instrument("HK50")
+
+    assert initialized == [True]
+    assert cold.asset_class == warm.asset_class == "index"
+    assert cold.base_asset == warm.base_asset == "HK50"
+    assert cold.quote_asset is None
+    assert "USD/HKD" not in cold.aliases
+    assert cold.metadata_hints["currency_profit"] == "HKD"
 
 
 def test_classify_instrument_supports_common_index_aliases(monkeypatch) -> None:
