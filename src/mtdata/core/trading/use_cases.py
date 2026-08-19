@@ -1838,6 +1838,17 @@ def run_trade_place(  # noqa: C901
                 isinstance(validation_payload, dict)
                 and validation_payload.get("local_requirements_passed") is True
             )
+            if preview.get("preview_ok") is not True:
+                preview["success"] = False
+                preview.setdefault("error_code", "preview_blocked")
+                preview.setdefault(
+                    "error",
+                    "Dry-run preview is not eligible for live submission.",
+                )
+                preview.setdefault(
+                    "remediation",
+                    "Resolve every blocker and run the dry-run preview again before submitting live.",
+                )
             if not local_requirements_passed:
                 final_safety_warning = (
                     "Dry run only. Local protection validation failed; no order was "
@@ -2493,6 +2504,24 @@ def run_trade_modify(
         )
         return result
 
+    mutable_fields = {"price", "stop_loss", "take_profit", "expiration", "comment"}
+    if not (request.model_fields_set & mutable_fields):
+        return _finish(
+            {
+                "success": False,
+                "error_code": "no_modification_fields",
+                "error": (
+                    "trade_modify requires at least one field to change: price, "
+                    "stop_loss, take_profit, expiration, or comment."
+                ),
+                "remediation": (
+                    "Provide at least one modification field. Price and expiration "
+                    "apply only to pending orders."
+                ),
+                "ticket": request.ticket,
+            }
+        )
+
     duplicate_result, idempotency_reserved = _begin_trade_idempotency(
         idempotency_store=idempotency_store,
         key=idempotency_key,
@@ -2647,6 +2676,17 @@ def _run_trade_close_once(  # noqa: C901
             else:
                 result.setdefault("preview_ok", True)
             result.setdefault("would_send_order", False)
+            if result.get("preview_ok") is not True:
+                result["success"] = False
+                result.setdefault("error_code", "preview_blocked")
+                result.setdefault(
+                    "error",
+                    "Dry-run preview is not eligible for live submission.",
+                )
+                result.setdefault(
+                    "remediation",
+                    "Resolve every blocker and run the dry-run preview again before submitting live.",
+                )
         if request.detail == "compact":
             result = _compact_close_preview_payload(result)
         if isinstance(result, dict) and str(result.get("error") or "").strip():

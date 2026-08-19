@@ -481,7 +481,8 @@ def test_run_trade_place_dry_run_blocks_untrusted_quote_preview():
     )
 
     assert result["preview_ok"] is False
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["error_code"] == "preview_blocked"
     assert result["status"] == "preview_blocked"
     assert result["validation_passed"] is False
     assert result["blockers"] == ["quote_not_live_ready"]

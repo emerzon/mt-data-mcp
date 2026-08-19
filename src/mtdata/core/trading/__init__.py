@@ -85,6 +85,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
 def trade_modify(request: TradeModifyRequest) -> dict:
     """Modify an open position or pending order by ticket.
 
+    Supply at least one of price, stop_loss, take_profit, expiration, or comment.
     Defaults to preview mode. Set `dry_run=false` explicitly to send a live
     modify request.
     Risk-increasing pending-order and position-protection changes can be

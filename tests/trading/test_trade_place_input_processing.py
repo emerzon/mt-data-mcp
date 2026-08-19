@@ -294,9 +294,9 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is True
-    assert "error_code" not in out
-    assert "error" not in out
+    assert out.get("success") is False
+    assert out["error_code"] == "preview_blocked"
+    assert "not eligible" in out["error"]
     assert out.get("blockers") == ["missing_stop_loss", "missing_take_profit"]
     assert out.get("no_action_reason") == "dry_run_validation_blocked"
     assert out.get("dry_run") is True
@@ -454,7 +454,8 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is True
+    assert out.get("success") is False
+    assert out.get("error_code") == "preview_blocked"
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("validation_code") == "invalid_protection_levels"
@@ -465,6 +466,15 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     assert "Local protection validation failed" in out["warnings"][0]
     assert "checks passed" not in out["warnings"][0]
     mock_market.assert_not_called()
+
+
+def test_trade_modify_rejects_request_without_modification_fields() -> None:
+    out = trade_modify(ticket=100, __cli_raw=True)
+
+    assert out["success"] is False
+    assert out["error_code"] == "no_modification_fields"
+    assert "at least one field" in out["error"]
+    assert out["ticket"] == 100
 
 
 def test_trade_place_dry_run_orders_account_quote_and_protection_blockers() -> None:
@@ -504,6 +514,8 @@ def test_trade_place_dry_run_orders_account_quote_and_protection_blockers() -> N
         "quote_not_live_ready",
         "invalid_protection_levels",
     ]
+    assert out["success"] is False
+    assert out["error_code"] == "preview_blocked"
     assert out["preview_ok"] is False
     assert out["account_state"]["margin_stress"]["status"] == "critical"
     mock_market.assert_not_called()
@@ -531,6 +543,8 @@ def test_trade_place_dry_run_blocks_insufficient_estimated_margin() -> None:
             __cli_raw=True,
         )
 
+    assert out["success"] is False
+    assert out["error_code"] == "preview_blocked"
     assert out["preview_ok"] is False
     assert out["validation_passed"] is False
     assert out["blockers"] == ["margin_insufficient"]
@@ -554,7 +568,8 @@ def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
             __cli_raw=True,
         )
 
-    assert out["success"] is True
+    assert out["success"] is False
+    assert out["error_code"] == "preview_blocked"
     assert out["validation_code"] == "invalid_protection_levels"
     assert out["validation_error"] == "stop_loss and take_profit must be different prices."
     assert out["validation"]["local_requirements_passed"] is False
@@ -592,7 +607,8 @@ def test_trade_place_dry_run_rejects_reversed_protection_before_mt5(
             __cli_raw=True,
         )
 
-    assert out["success"] is True
+    assert out["success"] is False
+    assert out["error_code"] == "preview_blocked"
     assert out["validation_code"] == "invalid_protection_levels"
     assert out["validation_error"] == expected_error
     assert out["validation"]["local_requirements_passed"] is False
@@ -650,7 +666,8 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
             __cli_raw=True,
         )
 
-    assert out.get("success") is True
+    assert out.get("success") is False
+    assert out.get("error_code") == "preview_blocked"
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("validation_code") == "invalid_protection_levels"

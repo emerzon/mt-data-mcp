@@ -216,8 +216,9 @@ the returned shape.
 
 Scripts should parse JSON error fields when they need to distinguish provider,
 validation, and internal failures that share exit code `1`.
-Trading dry-runs with `preview_ok=false` print the preview and exit `1`; eligible
-previews with `preview_ok=true` exit `0`. Always inspect `blockers` before live use.
+Trading dry-runs with `preview_ok=false` return `success=false`, print the
+retained preview body, and exit `1`; eligible previews return `success=true`,
+`preview_ok=true`, and exit `0`. Always inspect `blockers` before live use.
 
 ---
 

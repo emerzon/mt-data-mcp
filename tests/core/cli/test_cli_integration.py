@@ -1438,7 +1438,7 @@ class TestMain:
     ):
         mock_fn = MagicMock(
             return_value={
-                "success": True,
+                "success": False,
                 "status": "preview_blocked",
                 "preview_ok": False,
                 "blockers": ["missing_stop_loss"],

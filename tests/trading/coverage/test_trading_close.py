@@ -536,7 +536,8 @@ class TestTradeClose:
             "message": "No open positions for EURUSD",
         }
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
-        assert out["success"] is True
+        assert out["success"] is False
+        assert out["error_code"] == "preview_blocked"
         assert out["dry_run"] is True
         assert out["preview_ok"] is False
         assert out["confirm_close_all"] is False
@@ -748,7 +749,8 @@ class TestTradeClose:
 
         out = trade_close(magic=3001, dry_run=True, __cli_raw=True)
 
-        assert out["success"] is True
+        assert out["success"] is False
+        assert out["error_code"] == "preview_blocked"
         assert out["target"] == "positions"
         assert out["matched_count"] == 2
         assert {row["magic"] for row in out["matched_positions"]} == {3001}
@@ -780,7 +782,8 @@ class TestTradeClose:
             __cli_raw=True,
         )
 
-        assert out["success"] is True
+        assert out["success"] is False
+        assert out["error_code"] == "preview_blocked"
         assert out["would_send_orders"] == 2
         assert out["would_cancel_pending_orders"] == 1
         assert out["closed_positions"]["matched_count"] == 2
