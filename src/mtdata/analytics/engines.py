@@ -1455,8 +1455,35 @@ def analyze_execution_quality(  # noqa: C901
     }
     if duration_display:
         summary["duration_display"] = duration_display
+    insufficient_markout_horizons: List[str] = []
     for horizon in request.markout_seconds:
-        summary.setdefault("markout_bps", {})[str(horizon)] = _execution_percentiles(item["markout_bps"].get(str(horizon)) for item in fills if item["markout_bps"].get(str(horizon)) is not None)
+        horizon_key = str(horizon)
+        values = [
+            float(value)
+            for item in fills
+            if (value := item["markout_bps"].get(horizon_key)) is not None
+        ]
+        observations = len(values)
+        missing = max(0, len(fills) - observations)
+        markout_summary = _execution_percentiles(values)
+        markout_summary.update(
+            {
+                "observations": observations,
+                "missing": missing,
+                "coverage_pct": _round_execution_stat(
+                    observations / len(fills) * 100.0
+                )
+                if fills
+                else 0.0,
+                "minimum": request.min_sample,
+                "sample_status": (
+                    "ok" if observations >= request.min_sample else "insufficient"
+                ),
+            }
+        )
+        summary.setdefault("markout_bps", {})[horizon_key] = markout_summary
+        if observations < request.min_sample:
+            insufficient_markout_horizons.append(horizon_key)
     breakdowns: Dict[str, List[Dict[str, Any]]] = {}
     if fills:
         fill_frame = pd.DataFrame(fills)
@@ -1512,6 +1539,12 @@ def analyze_execution_quality(  # noqa: C901
             f"Skipped {skipped['future_timestamp']} fill(s) whose broker timestamp "
             "was more than 5 minutes ahead of the observation clock."
         )
+    if insufficient_markout_horizons:
+        warnings.append(
+            "Markout evidence is below min_sample for horizon(s) "
+            + ", ".join(f"{horizon}s" for horizon in insufficient_markout_horizons)
+            + "; descriptive statistics are retained but marked insufficient."
+        )
     session_calendars = sorted(
         {
             str(item.get("session_calendar"))
@@ -1559,7 +1592,12 @@ def analyze_execution_quality(  # noqa: C901
         "summary": summary,
         **({"breakdowns": breakdowns} if request.detail != "compact" else {}),
         **({"items": fills} if request.detail == "full" else {}),
-        "sample_quality": {"status": "ok" if len(fills) >= request.min_sample else "insufficient", "minimum": request.min_sample, "observed": len(fills)},
+        "fill_sample_quality": {
+            "status": "ok" if len(fills) >= request.min_sample else "insufficient",
+            "minimum": request.min_sample,
+            "observed": len(fills),
+            "scope": "matched_fills_for_fill_level_metrics",
+        },
         "data_quality": {
             "history_deals": len(deals),
             "history_orders": len(orders),

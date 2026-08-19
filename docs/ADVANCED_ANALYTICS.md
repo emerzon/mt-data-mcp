@@ -54,6 +54,11 @@ implementation shortfall. Unmatched or unbenchmarked fills are counted rather
 than silently discarded.
 Commission and fee percentiles are non-negative cost magnitudes per broker lot;
 signed commission and fee fields remain available on full-detail fill rows.
+Each `summary.markout_bps.<seconds>` entry reports `observations`, `missing`,
+`coverage_pct`, and a `sample_status` evaluated against `--min-sample`.
+Markout cohorts may differ by horizon because a future tick can be available for
+one horizon but not another. Root `fill_sample_quality` applies only to
+fill-level metrics, not to these horizon-specific distributions.
 
 ## Fixed-candidate chronological validation
 

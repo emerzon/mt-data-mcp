@@ -723,6 +723,16 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         "not_execution_latency"
     )
     assert result["items"][0]["markout_bps"]["5"] is not None
+    for horizon in ("1", "5"):
+        markout = result["summary"]["markout_bps"][horizon]
+        assert markout["observations"] == 1
+        assert markout["missing"] == 0
+        assert markout["coverage_pct"] == 100.0
+        assert markout["sample_status"] == "insufficient"
+    assert result["fill_sample_quality"]["observed"] == 1
+    assert result["fill_sample_quality"]["scope"] == (
+        "matched_fills_for_fill_level_metrics"
+    )
     assert result["items"][0]["order_type"] == "BUY"
     assert result["items"][0]["order_type_code"] == 0
     assert result["breakdowns"]["by_order_type"][0]["order_type"] == "BUY"
@@ -1378,7 +1388,13 @@ def test_execution_quality_handles_empty_tick_history() -> None:
     assert fallback_result["summary"]["fills"] == 1
     assert fallback_result["items"][0]["benchmark_source"] == "order_price_fallback"
     assert fallback_result["data_quality"]["benchmark"]["fallback_count"] == 1
-    assert "used order price" in fallback_result["warnings"][0]
+    markout = fallback_result["summary"]["markout_bps"]["1"]
+    assert markout["observations"] == 0
+    assert markout["missing"] == 1
+    assert markout["coverage_pct"] == 0.0
+    assert markout["sample_status"] == "insufficient"
+    assert any("used order price" in warning for warning in fallback_result["warnings"])
+    assert any("1s" in warning for warning in fallback_result["warnings"])
 
 
 def test_execution_quality_limit_selects_latest_eligible_fill() -> None:
