@@ -42,13 +42,11 @@ def _fetch_diagnostic_bars(
     *,
     include_incomplete: bool = False,
     as_of: Optional[str] = None,
-) -> tuple[pd.DataFrame, str | None]:
+    operation: str = "diagnostic_analysis",
+) -> tuple[pd.DataFrame, str | Dict[str, Any] | None]:
     tf = TIMEFRAME_MAP.get(str(timeframe or "").strip().upper())
     if tf is None:
         return pd.DataFrame(), f"Invalid timeframe '{timeframe}'."
-    symbol_error = _ensure_symbol_ready(symbol)
-    if symbol_error:
-        return pd.DataFrame(), symbol_error
     anchor = _parse_end_datetime(as_of) if as_of else datetime.now(timezone.utc)
     if anchor is None:
         return pd.DataFrame(), "as_of must be a valid date or ISO 8601 timestamp."
@@ -56,8 +54,29 @@ def _fetch_diagnostic_bars(
         anchor = anchor.replace(tzinfo=timezone.utc)
     else:
         anchor = anchor.astimezone(timezone.utc)
+    supported_boundary = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if anchor < supported_boundary:
+        return pd.DataFrame(), build_error_payload(
+            (
+                f"as_of {as_of!r} is before MT5's supported history boundary "
+                "(1970-01-01T00:00:00Z)."
+            ),
+            code="diagnostic_unsupported_date_range",
+            operation=operation,
+            remediation=(
+                "Use an as_of date or timestamp on or after "
+                "1970-01-01T00:00:00Z."
+            ),
+            details={
+                "as_of": as_of,
+                "supported_start": "1970-01-01T00:00:00Z",
+            },
+        )
     if anchor > datetime.now(timezone.utc):
         return pd.DataFrame(), "as_of cannot be in the future."
+    symbol_error = _ensure_symbol_ready(symbol)
+    if symbol_error:
+        return pd.DataFrame(), symbol_error
     rates = _mt5_copy_rates_from(
         symbol,
         tf,
@@ -90,6 +109,8 @@ def _fetch_diagnostic_bars(
         "includes_current_forming_bar" if include_incomplete else "completed_bars_only"
     )
     frame.attrs["forming_candle_status"] = forming_status
+    frame.attrs["requested_as_of"] = as_of
+    frame.attrs["resolved_as_of"] = format_datetime_utc(anchor)
     return frame, None
 
 
@@ -98,6 +119,21 @@ def _diagnostic_history_metadata(
     *,
     include_incomplete: bool,
 ) -> Dict[str, Any]:
+    times = (
+        pd.to_numeric(frame["time"], errors="coerce").dropna()
+        if "time" in frame.columns
+        else pd.Series(dtype=float)
+    )
+    period_start = (
+        format_datetime_utc(datetime.fromtimestamp(float(times.iloc[0]), tz=timezone.utc))
+        if len(times)
+        else None
+    )
+    period_end = (
+        format_datetime_utc(datetime.fromtimestamp(float(times.iloc[-1]), tz=timezone.utc))
+        if len(times)
+        else None
+    )
     return {
         "history_policy": frame.attrs.get(
             "history_policy",
@@ -108,6 +144,15 @@ def _diagnostic_history_metadata(
         "forming_candle_status": frame.attrs.get(
             "forming_candle_status", "not_reported"
         ),
+        "analysis_window": {
+            "requested_as_of": frame.attrs.get("requested_as_of"),
+            "resolved_as_of": frame.attrs.get("resolved_as_of"),
+            "period_start": period_start,
+            "period_end": period_end,
+            "timezone": "UTC",
+            "bar_timestamp_basis": "open_time",
+            "bars_used": int(len(frame)),
+        },
     }
 
 
@@ -293,9 +338,10 @@ def stationarity_test(
             int(lookback),
             include_incomplete=include_incomplete,
             as_of=as_of,
+            operation="stationarity_test",
         )
         if fetch_error:
-            return {"error": fetch_error}
+            return fetch_error if isinstance(fetch_error, dict) else {"error": fetch_error}
         try:
             series = _diagnostic_series(frame, target)
         except ValueError as exc:
@@ -441,9 +487,10 @@ def seasonality_detect(
             int(lookback),
             include_incomplete=include_incomplete,
             as_of=as_of,
+            operation="seasonality_detect",
         )
         if fetch_error:
-            return {"error": fetch_error}
+            return fetch_error if isinstance(fetch_error, dict) else {"error": fetch_error}
         try:
             series = _diagnostic_series(frame, target)
         except ValueError as exc:
@@ -643,9 +690,10 @@ def outliers_detect(
             int(lookback),
             include_incomplete=include_incomplete,
             as_of=as_of,
+            operation="outliers_detect",
         )
         if fetch_error:
-            return {"error": fetch_error}
+            return fetch_error if isinstance(fetch_error, dict) else {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
         data: Dict[str, pd.Series] = {"return": close.pct_change(fill_method=None).abs()}
         volume_col: Optional[str] = None
@@ -808,9 +856,10 @@ def volatility_term_structure(
             int(lookback),
             include_incomplete=include_incomplete,
             as_of=as_of,
+            operation="volatility_term_structure",
         )
         if fetch_error:
-            return {"error": fetch_error}
+            return fetch_error if isinstance(fetch_error, dict) else {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
         returns = np.log(close.where(close > 0)).diff().replace([np.inf, -np.inf], np.nan)
         observed_times = frame["time"] if "time" in frame else None

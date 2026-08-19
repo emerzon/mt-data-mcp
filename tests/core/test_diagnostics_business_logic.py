@@ -100,6 +100,52 @@ def test_fetch_diagnostic_bars_applies_date_only_as_of_cutoff(monkeypatch):
     assert error is None
     assert requested_anchors[0].tzinfo is timezone.utc
     assert completed["close"].tolist() == [100.0]
+    assert completed.attrs["requested_as_of"] == "2024-01-02"
+    assert completed.attrs["resolved_as_of"] == "2024-01-02T23:59:59Z"
+
+
+def test_diagnostic_history_metadata_describes_effective_window() -> None:
+    frame = _bars(np.linspace(100.0, 110.0, 3))
+    frame.attrs.update(
+        {
+            "requested_as_of": "2023-11-15T01:00:00Z",
+            "resolved_as_of": "2023-11-15T01:00:00Z",
+        }
+    )
+
+    metadata = diagnostics._diagnostic_history_metadata(
+        frame,
+        include_incomplete=False,
+    )
+
+    assert metadata["analysis_window"] == {
+        "requested_as_of": "2023-11-15T01:00:00Z",
+        "resolved_as_of": "2023-11-15T01:00:00Z",
+        "period_start": "2023-11-14T22:13:20Z",
+        "period_end": "2023-11-15T00:13:20Z",
+        "timezone": "UTC",
+        "bar_timestamp_basis": "open_time",
+        "bars_used": 3,
+    }
+
+
+def test_diagnostics_reject_pre_epoch_as_of_with_actionable_error(monkeypatch):
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    tools = (
+        (diagnostics.stationarity_test, "stationarity_test"),
+        (diagnostics.seasonality_detect, "seasonality_detect"),
+        (diagnostics.outliers_detect, "outliers_detect"),
+        (diagnostics.volatility_term_structure, "volatility_term_structure"),
+    )
+
+    for tool, operation in tools:
+        result = _raw(tool)(symbol="TEST", as_of="1960-01-01")
+
+        assert result["success"] is False
+        assert result["error_code"] == "diagnostic_unsupported_date_range"
+        assert result["operation"] == operation
+        assert result["details"]["supported_start"] == "1970-01-01T00:00:00Z"
+        assert "Errno" not in result["error"]
 
 
 def test_stationarity_test_combines_adf_and_kpss(monkeypatch):
@@ -117,6 +163,7 @@ def test_stationarity_test_combines_adf_and_kpss(monkeypatch):
     assert result["success"] is True
     assert result["conclusion"] == "stationary"
     assert {row["test"] for row in result["items"]} == {"adf", "kpss"}
+    assert result["analysis_window"]["bars_used"] == len(frame)
 
 
 def test_stationarity_default_target_has_usable_minimum_lookback(monkeypatch):
@@ -204,6 +251,7 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert result["score_formula"].startswith("0.55*acf + 0.45*spectral_strength")
 
     assert result["success"] is True
+    assert result["analysis_window"]["bars_used"] == len(frame)
     assert result["dominant_period_bars"] == 12
     assert result["signal_quality"] in {"moderate", "strong"}
     assert result["detection_status"] in {"candidate", "detected"}
@@ -371,6 +419,7 @@ def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
 
     assert result["success"] is True
     assert result["outliers_total"] >= 1
+    assert result["analysis_window"]["bars_used"] == len(frame)
     assert any("volume" in row["fields"] for row in result["items"])
     assert result["volume_source"] == "tick_volume"
     assert result["volume_type"] == "tick_count"
@@ -418,6 +467,7 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
 
     assert result["success"] is True
     assert [row["horizon_bars"] for row in result["items"]] == [1, 5, 20]
+    assert result["analysis_window"]["bars_used"] == len(frame)
     assert all("p50" in row["cone"] for row in result["items"])
     assert result["items"][0]["stability"] == "very_low"
     assert all("per_bar_volatility" in row for row in result["items"])
