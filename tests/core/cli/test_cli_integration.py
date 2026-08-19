@@ -1349,7 +1349,7 @@ class TestMain:
         assert str(request.position_ticket) == "123456"
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_trade_history_minutes_back_overrides_days_alias(self, mock_discover):
+    def test_trade_history_rejects_conflicting_lookback_aliases(self, mock_discover):
         mock_fn = MagicMock(return_value=[])
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "trade_history"
@@ -1372,11 +1372,11 @@ class TestMain:
         with patch(
             "sys.argv",
             ["cli.py", "trade_history", "--days", "2", "--minutes-back", "60"],
-        ):
-            result = main()
-        assert result == 0
-        request = mock_fn.call_args[1]["request"]
-        assert request.minutes_back == 60
+        ), pytest.raises(SystemExit) as caught:
+            main()
+
+        assert caught.value.code == 2
+        mock_fn.assert_not_called()
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_history_side_flag_populates_request(self, mock_discover):

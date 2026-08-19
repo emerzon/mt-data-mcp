@@ -113,6 +113,27 @@ def test_global_timeframe_does_not_change_mode_switch_commands(
     assert result.timeframe == command_default
 
 
+@pytest.mark.parametrize(
+    "command",
+    ["trade_history", "trade_journal_analyze", "trade_execution_quality"],
+)
+def test_trade_lookback_aliases_are_mutually_exclusive(command: str) -> None:
+    from mtdata.core.cli import api as cli_api
+
+    args = argparse.Namespace(
+        command=command,
+        _global_timeframe=None,
+        _trade_days=1.0,
+        minutes_back=1440,
+    )
+
+    with pytest.raises(ValueError, match="cannot be used together"):
+        cli_api._apply_global_cli_overrides(
+            args,
+            [command, "--days", "1", "--minutes-back", "1440"],
+        )
+
+
 def test_shell_timeframe_support_matches_one_shot_inheritance_policy() -> None:
     from mtdata.core.cli import api as cli_api
 

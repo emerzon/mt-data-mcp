@@ -1521,7 +1521,10 @@ def add_dynamic_arguments(  # noqa: C901
                 type=float,
                 default=argparse.SUPPRESS,
                 metavar="DAYS",
-                help="Alias for --minutes-back expressed in days.",
+                help=(
+                    "Alias for --minutes-back expressed in days; choose one "
+                    "lookback spelling."
+                ),
         )
 
         if is_mapping_type:

@@ -497,14 +497,19 @@ def _apply_global_cli_overrides(
             args.timeframe = global_timeframe
     trade_days = getattr(args, "_trade_days", None)
     if command.startswith("trade_") and trade_days is not None:
-        if not (
+        minutes_back_present = (
             _argv_option_present_after_command(argv, command, "--minutes-back")
             or _argv_option_present_after_command(argv, command, "--minutes_back")
-        ):
-            try:
-                args.minutes_back = int(round(float(trade_days) * 1440.0))
-            except Exception:
-                args.minutes_back = trade_days
+        )
+        if minutes_back_present:
+            raise ValueError(
+                "--days and --minutes-back are aliases and cannot be used together; "
+                "choose one lookback spelling."
+            )
+        try:
+            args.minutes_back = int(round(float(trade_days) * 1440.0))
+        except Exception:
+            args.minutes_back = trade_days
     return args
 
 
