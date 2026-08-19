@@ -497,7 +497,7 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
 
         steps = actionability["remediation"]["next_steps"]
         self.assertTrue(any("--search-profile long" in step for step in steps))
-        self.assertTrue(any("--viable-only false" in step for step in steps))
+        self.assertTrue(any("--candidate-filter all" in step for step in steps))
         self.assertFalse(any("search_profile=" in step for step in steps))
         self.assertFalse(any("viable_only=" in step for step in steps))
 

@@ -159,7 +159,7 @@ Barrier optimization (search a TP/SL grid):
 
 ```bash
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --preset volatility --search-profile medium \
+  --method hmm_mc --mode pct --grid-style volatility --search-profile medium \
   --params "n_sims=5000 seed=7" --json
 ```
 

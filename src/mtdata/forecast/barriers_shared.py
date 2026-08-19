@@ -752,7 +752,7 @@ def _build_actionability_payload(  # noqa: C901
             "next_steps": [
                 "Retry with --search-profile long or a wider TP/SL grid.",
                 "Run forecast_barrier_prob with explicit TP/SL levels to inspect hit probabilities.",
-                "Use --viable-only false only for diagnostics; keep non-tradable setups out of execution.",
+                "Use --candidate-filter all only for diagnostics; keep non-tradable setups out of execution.",
             ]
         }
     return out
