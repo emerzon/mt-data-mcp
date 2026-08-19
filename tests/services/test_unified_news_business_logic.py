@@ -80,6 +80,29 @@ def test_score_then_dedupe_keeps_the_more_relevant_duplicate(monkeypatch) -> Non
     assert result == [direct]
 
 
+def test_dedupe_collapses_alternate_urls_with_typographic_title_variants() -> None:
+    older = svc.NewsItem(
+        title="Treasury's bond-buyback plans lift stocks",
+        provider="finviz",
+        source="MarketWatch",
+        url="https://www.marketwatch.com/bulletins/redirect/example",
+        published_at=datetime(2026, 8, 19, 13, 30, tzinfo=timezone.utc),
+    )
+    newer = svc.NewsItem(
+        title="Treasury’s bond-buyback plans lift stocks",
+        provider="finviz",
+        source="MarketWatch",
+        url="https://www.marketwatch.com/livecoverage/example",
+        published_at=datetime(2026, 8, 19, 13, 35, tzinfo=timezone.utc),
+    )
+    newer.importance_score = 2.0
+
+    result = svc._dedupe_items([older, newer])
+
+    assert result == [newer]
+    assert newer.metadata["alternate_urls"] == [older.url]
+
+
 def test_news_item_resolves_known_provider_relative_url() -> None:
     item = svc.NewsItem(
         title="Magnificent Seven earnings remain robust",

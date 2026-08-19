@@ -92,7 +92,7 @@ def test_news_tool_limits_globally(monkeypatch) -> None:
 
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
-    assert limited["row_keys"] == ["related_news", "upcoming_events"]
+    assert limited["row_keys"] == ["upcoming_events", "related_news"]
     assert "general_news" not in limited
     assert "impact_news" not in limited
     assert "recent_events" not in limited
@@ -169,7 +169,7 @@ def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:
 
     assert limited["related_news"] == [{"title": "r1"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
-    assert limited["row_keys"] == ["related_news", "upcoming_events"]
+    assert limited["row_keys"] == ["upcoming_events", "related_news"]
     assert "general_news" not in limited
     assert "impact_news" not in limited
     assert "recent_events" not in limited
@@ -278,9 +278,9 @@ def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> 
     assert limited["general_news"] == [{"title": "g1"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
     assert limited["row_keys"] == [
+        "upcoming_events",
         "related_news",
         "general_news",
-        "upcoming_events",
     ]
     assert "impact_news" not in limited
     assert "recent_events" not in limited
@@ -319,6 +319,31 @@ def test_news_tool_supports_global_offset(monkeypatch) -> None:
         "more_available": 2,
     }
     assert page["limit_scope"] == "global"
+
+
+def test_news_reserved_event_pagination_slices_one_stable_sequence(monkeypatch) -> None:
+    raw = _unwrap(news)
+    payload = {
+        "success": True,
+        "general_news": [{"title": f"g{i}"} for i in range(8)],
+        "upcoming_events": [{"title": "u0"}],
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    pages = [raw(limit=3, offset=offset, detail="full") for offset in (0, 3, 6)]
+    whole = raw(limit=9, offset=0, detail="full")
+
+    def _titles(result):
+        return [
+            item["title"]
+            for key in result["row_keys"]
+            for item in result.get(key, [])
+        ]
+
+    paged_titles = [title for page in pages for title in _titles(page)]
+    assert paged_titles == _titles(whole)
+    assert len(paged_titles) == len(set(paged_titles)) == 9
+    assert paged_titles.count("u0") == 1
 
 
 def test_news_tool_keeps_per_bucket_limit_mode(monkeypatch) -> None:

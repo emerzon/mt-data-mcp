@@ -1242,16 +1242,57 @@ def _apply_embedding_rerank(items: List[NewsItem], context: InstrumentContext) -
 
 
 def _dedupe_items(items: Iterable[NewsItem]) -> List[NewsItem]:
-    deduped: Dict[str, NewsItem] = {}
+    deduped: List[NewsItem] = []
+
+    def _title_fingerprint(item: NewsItem) -> tuple[str, str, str]:
+        title = str(item.title or "").casefold().translate(
+            str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
+        )
+        title = re.sub(r"[^a-z0-9]+", " ", title).strip()
+        return (
+            str(item.provider or "").strip().casefold(),
+            str(item.source or "").strip().casefold(),
+            title,
+        )
+
+    def _same_story(left: NewsItem, right: NewsItem) -> bool:
+        if left.dedupe_key() == right.dedupe_key():
+            return True
+        if _title_fingerprint(left) != _title_fingerprint(right):
+            return False
+        if left.published_at is None or right.published_at is None:
+            return True
+        return abs((left.published_at - right.published_at).total_seconds()) <= 15 * 60
+
     for item in items:
-        key = item.dedupe_key()
-        existing = deduped.get(key)
-        if existing is None or (item.importance_score, item.relevance_score) > (
+        duplicate_index = next(
+            (index for index, existing in enumerate(deduped) if _same_story(existing, item)),
+            None,
+        )
+        if duplicate_index is None:
+            deduped.append(item)
+            continue
+        existing = deduped[duplicate_index]
+        alternate_urls = {
+            str(url)
+            for url in (
+                existing.url,
+                item.url,
+                *(existing.metadata.get("alternate_urls") or []),
+                *(item.metadata.get("alternate_urls") or []),
+            )
+            if str(url or "").strip()
+        }
+        preferred = item if (item.importance_score, item.relevance_score) > (
             existing.importance_score,
             existing.relevance_score,
-        ):
-            deduped[key] = item
-    return list(deduped.values())
+        ) else existing
+        if preferred.url:
+            alternate_urls.discard(preferred.url)
+        if alternate_urls:
+            preferred.metadata["alternate_urls"] = sorted(alternate_urls)
+        deduped[duplicate_index] = preferred
+    return deduped
 
 
 def _score_then_dedupe_items(

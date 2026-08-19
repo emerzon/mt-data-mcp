@@ -357,6 +357,66 @@ def normalize_news_output(
     return out
 
 
+def _apply_news_global_page(
+    result: Dict[str, Any],
+    *,
+    limit: Optional[int],
+    offset: int,
+) -> Dict[str, Any]:
+    """Slice one stable reserved-event ordering for every global page."""
+    out = dict(result)
+    original_buckets = {
+        key: list(out.get(key) or [])
+        for key in _NEWS_BUCKET_KEYS
+        if isinstance(out.get(key), list)
+    }
+    reserved_key = None
+    if original_buckets.get("upcoming_events"):
+        reserved_key = "upcoming_events"
+    elif original_buckets.get("recent_events"):
+        reserved_key = "recent_events"
+
+    logical_rows: list[tuple[str, Any]] = []
+    if reserved_key is not None:
+        logical_rows.append((reserved_key, original_buckets[reserved_key][0]))
+    for key in _NEWS_BUCKET_KEYS:
+        rows = original_buckets.get(key, [])
+        start_index = 1 if key == reserved_key else 0
+        logical_rows.extend((key, item) for item in rows[start_index:])
+
+    offset_value = max(0, int(offset or 0))
+    stop = None if limit is None else offset_value + max(0, int(limit))
+    selected = logical_rows[offset_value:stop]
+    for key in _NEWS_BUCKET_KEYS:
+        out.pop(key, None)
+    selected_buckets: Dict[str, list[Any]] = {}
+    for key, item in selected:
+        selected_buckets.setdefault(key, []).append(item)
+    for key, rows in selected_buckets.items():
+        out[key] = rows
+    for key, count_key in _NEWS_BUCKET_COUNT_KEYS.items():
+        if count_key in out:
+            out[count_key] = len(selected_buckets.get(key, []))
+
+    total_candidates = len(logical_rows)
+    out["total_candidates"] = total_candidates
+    out["limit_scope"] = "global"
+    out["pagination"] = build_pagination_meta(
+        total=total_candidates,
+        returned=len(selected),
+        offset=offset_value,
+        limit=limit,
+    )
+    out["_pagination_bucket_order"] = list(
+        dict.fromkeys(key for key, _ in selected)
+    )
+    out["bucket_truncation"] = {
+        key: len(selected_buckets.get(key, [])) < len(rows)
+        for key, rows in original_buckets.items()
+    }
+    return out
+
+
 def _apply_news_limit(
     result: Dict[str, Any],
     *,
@@ -367,6 +427,9 @@ def _apply_news_limit(
 ) -> Dict[str, Any]:
     if limit is None and limit_per_bucket is None and not offset:
         return result
+    if limit is not None or offset:
+        return _apply_news_global_page(result, limit=limit, offset=offset)
+
     out = dict(result)
     total_candidates = 0
     returned = 0
@@ -492,18 +555,24 @@ def _apply_news_limit(
 
 
 def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
-    row_keys = [
+    out = dict(result)
+    pagination_order = out.pop("_pagination_bucket_order", None)
+    default_row_keys = [
         key
         for key in _NEWS_BUCKET_KEYS
-        if isinstance(result.get(key), list)
+        if isinstance(out.get(key), list)
     ]
+    row_keys = (
+        [key for key in pagination_order if key in default_row_keys]
+        if isinstance(pagination_order, list)
+        else default_row_keys
+    )
     if row_keys:
-        out = dict(result)
         out["row_keys"] = row_keys
         summary_present = False
         summary_missing = False
         for key in row_keys:
-            rows = result.get(key)
+            rows = out.get(key)
             if not isinstance(rows, list):
                 continue
             for row in rows:
@@ -518,7 +587,7 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
                 "summary": "source-dependent preview; omitted when unavailable"
             }
         return out
-    return result
+    return out
 
 
 @mcp.tool()
