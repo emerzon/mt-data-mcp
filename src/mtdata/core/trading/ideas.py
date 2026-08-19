@@ -509,7 +509,7 @@ def _build_narrative(
         parts.append(f"Stand down: {reason}.")
     else:
         parts.append(f"Suggested {direction} geometry for study only.")
-    if trend:
+    if trend and direction != "stand_down":
         parts.append(f"Forecast path is {trend}.")
     tp_prob = barriers.get("prob_tp_first")
     sl_prob = barriers.get("prob_sl_first")

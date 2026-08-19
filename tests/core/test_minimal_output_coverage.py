@@ -684,6 +684,8 @@ class TestNormalizeTradePayload:
     ):
         payload = {
             "success": False,
+            "error": "Dry-run preview is not eligible for live submission.",
+            "error_code": "preview_blocked",
             "dry_run": True,
             "preview_ok": False,
             "validation_passed": False,
@@ -698,6 +700,8 @@ class TestNormalizeTradePayload:
         )
 
         assert result["blockers"] == blockers
+        assert result["preview_ok"] is False
+        assert result["error_code"] == "preview_blocked"
         assert result["dry_run_note"] == "Correct the blockers and retry the dry run."
 
     def test_trade_place_full_preview_preserves_nested_validation(self):

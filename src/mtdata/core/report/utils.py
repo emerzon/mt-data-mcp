@@ -986,7 +986,7 @@ def context_for_tf(
             'EMA_20': _get_indicator_value(last, 'EMA_20'),
             'EMA_50': _get_indicator_value(last, 'EMA_50'),
             'RSI_14': _get_indicator_value(last, 'RSI_14'),
-            'MACD': _get_indicator_value(last, 'MACD_12_26_9'),
+            'macd': _get_indicator_value(last, 'MACD_12_26_9'),
         }
         source_bar_time = _normalize_source_bar_time(last.get('time'))
         if source_bar_time is not None:
@@ -1007,7 +1007,6 @@ def context_for_tf(
         if rows:
             last_row = rows[-1]
             out['rsi'] = _get_indicator_value(last_row, 'RSI_14')
-            out['macd'] = _get_indicator_value(last_row, 'MACD_12_26_9')
             out['macd_signal'] = _get_indicator_value(last_row, 'MACDs_12_26_9')
             out['ema20'] = _get_indicator_value(last_row, 'EMA_20')
             out['ema50'] = _get_indicator_value(last_row, 'EMA_50')

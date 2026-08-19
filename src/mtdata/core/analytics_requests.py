@@ -273,10 +273,10 @@ class MarketRelativeStrengthRequest(BaseModel):
                 "market_relative_strength cannot combine symbols with group; "
                 "choose one selector mode"
             )
-        if len(explicit_symbols) == 1:
+        if len(explicit_symbols) == 1 and not str(self.benchmark or "").strip():
             raise ValueError(
                 "market_relative_strength requires at least two comma-separated symbols; "
-                "omit symbols and use group to rank an MT5 group."
+                "or supply --benchmark for a one-candidate comparison."
             )
         if len(self.weights) != len(self.horizons):
             raise ValueError("weights must have the same length as horizons")

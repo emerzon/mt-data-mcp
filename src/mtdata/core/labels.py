@@ -867,6 +867,24 @@ def labels_triple_barrier(  # noqa: C901
             if trade_tick_size is not None and trade_tick_size > 0:
                 payload["trade_tick_size"] = trade_tick_size
             if output_mode == "full":
+                payload["data"] = [
+                    _triple_barrier_sample_row(
+                        result_idx=idx,
+                        source_idx=source_indices[idx],
+                        closes=closes,
+                        t_entry=t_entry,
+                        labels=labels,
+                        hold=hold,
+                        tp_times=tp_times,
+                        sl_times=sl_times,
+                        same_bar_flags=same_bar_flags,
+                        direction_value=direction_value,
+                        tick_size=tick_size,
+                        barrier_kwargs=barrier_kwargs,
+                        price_digits=price_digits,
+                    )
+                    for idx in range(len(labels))
+                ]
                 payload["label_legend"] = {
                     "1": {
                         "code": 1,

@@ -853,9 +853,19 @@ def _normalize_trade_payload(  # noqa: C901
 
     out: Dict[str, Any] = {}
     if "error" in payload and not _is_empty_value(payload.get("error")):
+        for key in ("success", "error_code", "dry_run", "preview_ok"):
+            _maybe_add_trade_key(out, key, payload.get(key))
         out["error"] = payload.get("error")
         _maybe_add_trade_key(out, "checked_scopes", payload.get("checked_scopes"))
         _maybe_add_trade_key(out, "message", payload.get("message"))
+        blockers = payload.get("blockers")
+        validation_payload = payload.get("validation")
+        if _is_empty_value(blockers) and isinstance(validation_payload, dict):
+            blockers = validation_payload.get("blockers")
+        if isinstance(blockers, list):
+            out["blockers"] = blockers
+        _maybe_add_trade_key(out, "dry_run_note", payload.get("dry_run_note"))
+        _maybe_add_trade_key(out, "remediation", payload.get("remediation"))
         warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
         if warnings_out:
             out["warnings"] = warnings_out

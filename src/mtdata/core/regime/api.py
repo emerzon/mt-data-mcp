@@ -1142,7 +1142,7 @@ def regime_detect(  # noqa: C901
     lookback: Annotated[Optional[int], Field(ge=1)] = None,
     include_series: bool = False,
     min_regime_bars: Optional[int] = None,
-    max_regimes: int = 10,  # Maximum regimes to show in compact mode
+    max_regimes: Annotated[int, Field(ge=1)] = 10,  # Maximum regimes in compact mode
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over a bounded history window.
 
@@ -3599,7 +3599,25 @@ def regime_detect(  # noqa: C901
             if not sub_methods:
                 return _finish({"error": "No valid sub-methods for ensemble."})
 
-            voting = str(p.get("voting", "soft")).strip().lower()
+            voting_input = p.get("voting", "soft")
+            if not isinstance(voting_input, str) or not voting_input.strip():
+                return _finish(
+                    {
+                        "error": "Ensemble voting must be one of: soft, hard.",
+                        "error_code": "invalid_ensemble_voting",
+                    }
+                )
+            voting = voting_input.strip().lower()
+            if voting not in {"soft", "hard"}:
+                return _finish(
+                    {
+                        "error": (
+                            f"Unsupported ensemble voting mode '{voting_input}'. "
+                            "Expected one of: soft, hard."
+                        ),
+                        "error_code": "invalid_ensemble_voting",
+                    }
+                )
 
             # Use the documented kurtosis heuristic when n_states is omitted.
             # This controls output granularity; it is not statistical model selection.

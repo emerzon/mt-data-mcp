@@ -73,6 +73,8 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "leverage",
     "trade_allowed",
     "broker_trade_allowed",
+    "execution_ready",
+    "execution_hard_blockers",
     "account_risk_status",
     "account_risk_reasons",
     "trade_expert",
@@ -683,7 +685,7 @@ def _run_trade_journal_request(  # noqa: C901
     def _sample_provenance(exit_deals: int) -> Dict[str, Any]:
         items_returned = (
             min(int(exit_deals), requested_item_limit)
-            if detail_mode == "full"
+            if detail_mode == "full" and not request.check_only
             else 0
         )
         out = {
@@ -693,7 +695,9 @@ def _run_trade_journal_request(  # noqa: C901
             "analysis_complete": not history_has_more,
             "items_returned": items_returned,
             "items_truncated": bool(
-                detail_mode == "full" and int(exit_deals) > requested_item_limit
+                detail_mode == "full"
+                and not request.check_only
+                and int(exit_deals) > requested_item_limit
             ),
             "history_has_more": history_has_more,
         }
@@ -888,6 +892,13 @@ def _run_trade_journal_request(  # noqa: C901
     }
     if breakdowns:
         payload["breakdowns"] = breakdowns
+    elif detail_mode == "compact":
+        payload["breakdowns_available"] = [
+            "by_symbol",
+            "by_side",
+            "by_exit_trigger",
+        ]
+        payload["breakdowns_hint"] = "Use --detail standard for performance breakdowns."
     sample_warning = _trade_journal_sample_warning(len(analyzed_rows), minimum=minimum_sample)
     if sample_warning:
         payload["sample_warning"] = sample_warning

@@ -147,7 +147,7 @@ class TestTradeAccountInfo:
         assert result["is_demo"] is True
         assert result["is_live"] is False
         assert result["trade_mode"] == "demo"
-        assert "execution_ready" not in result
+        assert result["execution_ready"] is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_account_info_success(self):

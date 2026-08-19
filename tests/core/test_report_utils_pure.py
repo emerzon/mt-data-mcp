@@ -1014,7 +1014,7 @@ class TestContextForTf:
         assert result["EMA_20"] == 100.5
         assert result["EMA_50"] == 99.5
         assert result["RSI_14"] == 57.0
-        assert result["MACD"] == 0.12
+        assert result["macd"] == 0.12
         assert result["source_bar_time"] == "2026-08-18T23:45:00Z"
         assert result["source_bar_timezone"] == "UTC"
         assert result["source_bar_state"] == "completed"

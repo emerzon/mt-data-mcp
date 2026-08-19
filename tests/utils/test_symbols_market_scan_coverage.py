@@ -1277,7 +1277,7 @@ class TestSymbolsTopMarkets:
 
         assert result["success"] is True
         assert result["ranking"] == "lowest_spread"
-        assert "universe" not in result
+        assert result["universe"] == "visible"
         assert "scanned_symbols" not in result
         assert "evaluated_symbols" not in result
         assert "detail" not in result
@@ -1818,7 +1818,9 @@ class TestMarketScan:
         assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]
         assert result["units"]["price_change_pct"] == "percent (1.0 = 1%)"
-        assert result["units"]["spread_pips"] == "pips"
+        assert result["units"]["spread_pips"] == (
+            "pips (forex_only; null when not applicable)"
+        )
         assert "volume_type" not in result
         assert "volume_semantics" not in result
         row = result["data"][0]

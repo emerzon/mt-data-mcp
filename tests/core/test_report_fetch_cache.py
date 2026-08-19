@@ -357,7 +357,6 @@ class TestAttachMultiTimeframesCacheThreading:
                 "EMA_20": 1.104,
                 "EMA_50": 1.102,
                 "RSI_14": 55.0,
-                "MACD": 0.0005,
                 "rsi": 55.0,
                 "macd": 0.0005,
                 "macd_signal": 0.0003,

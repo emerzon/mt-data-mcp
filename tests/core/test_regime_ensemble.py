@@ -118,6 +118,20 @@ class TestEnsembleRegime:
         assert res.get("success") or not res.get("error")
         assert res.get("params_used", {}).get("voting") == "hard"
 
+    def test_ensemble_rejects_unknown_voting_mode(self, _mock):
+        res = regime_detect(
+            symbol="TEST",
+            timeframe="H1",
+            fetch_limit=800,
+            method="ensemble",
+            params={"n_states": 2, "voting": "weighted"},
+            detail="full",
+            __cli_raw=True,
+        )
+
+        assert res["error_code"] == "invalid_ensemble_voting"
+        assert "soft, hard" in res["error"]
+
     def test_ensemble_rebins_collapsed_state_count(self, _mock):
         limit = 120
         history = _mock_fetch_history("TEST", "H1", limit)

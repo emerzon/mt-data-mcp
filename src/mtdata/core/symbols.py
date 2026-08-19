@@ -2555,7 +2555,7 @@ _MARKET_SCAN_UNITS = {
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
     "spread_points": "broker_points",
-    "spread_pips": "pips",
+    "spread_pips": "pips (forex_only; null when not applicable)",
     "spread_pct": "percent (1.0 = 1%)",
     "spread_cost_per_lot": "currency_per_lot_estimate",
     "rsi": "0_100",
@@ -3215,6 +3215,19 @@ def _select_market_scan_symbols(
                 continue
             selected.append(symbol_obj)
         if not selected:
+            suggestions = []
+            for requested in missing:
+                prefix = requested.upper()
+                matches = [
+                    symbol
+                    for symbol in tradable_symbols
+                    if str(getattr(symbol, "name", "") or "").upper().startswith(prefix)
+                ]
+                suggestions.extend(
+                    _symbol_suggestion_from_info(symbol) for symbol in matches[:5]
+                )
+            if suggestions:
+                selection_meta["did_you_mean"] = suggestions[:5]
             return [], selection_meta, "None of the requested symbols matched the MT5 symbol list."
         return selected, {
             **selection_meta,
@@ -4035,7 +4048,21 @@ def symbols_top_markets(  # noqa: C901
                     )
                 return fields
 
-            scan_meta = {"success": True, "source": source}
+            scan_meta = {
+                "success": True,
+                "source": source,
+                "universe": universe_value,
+                "broker_symbol_count": len(tradable_symbols),
+                "visible_count": sum(
+                    1 for symbol in tradable_symbols if bool(getattr(symbol, "visible", False))
+                ),
+            }
+            if universe_value == "visible" and len(tradable_symbols) > len(selected_symbols):
+                scan_meta["note"] = (
+                    f"Ranked visible Market Watch symbols only ({len(selected_symbols)} of "
+                    f"{len(tradable_symbols)} tradable broker symbols); pass --universe all "
+                    "to scan the full catalog."
+                )
             if filters:
                 scan_meta["filters"] = filters
             if group_has_no_universe_members:
@@ -4729,6 +4756,12 @@ def market_scan(  # noqa: C901
                         selection_error,
                         code=error_code,
                         request=request,
+                        details={
+                            "did_you_mean": selection_meta.get("did_you_mean", []),
+                            "search_hint": "Use symbols_list --search to browse matching broker symbols.",
+                        }
+                        if selection_meta.get("did_you_mean")
+                        else None,
                     ),
                     mt5_gateway,
                 )

@@ -997,11 +997,11 @@ def _build_trade_evaluation(
         key: value
         for key, value in {
             "sl_distance_price": "price",
-            "sl_distance_pct": "percent",
+            "sl_distance_pct": "percentage_points (1.0 = 1%)",
             "sl_distance_ticks": "ticks",
             "risk_per_lot": "account_currency_per_lot",
             "tp_distance_price": "price",
-            "tp_distance_pct": "percent",
+            "tp_distance_pct": "percentage_points (1.0 = 1%)",
             "tp_distance_ticks": "ticks",
             "reward_risk_ratio": "scalar",
         }.items()
@@ -4788,6 +4788,7 @@ def run_trade_risk_analyze(  # noqa: C901
                 "positions": position_risks,
                 "units": {
                     "risk_currency": "account_currency",
+                    "risk_pct": "percentage_points_of_equity (1.0 = 1%)",
                     "notional_value": "account_currency_linearized",
                     "notional_exposure": "account_currency_linearized",
                     "notional_to_equity": "ratio",

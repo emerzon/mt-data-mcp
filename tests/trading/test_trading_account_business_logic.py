@@ -211,7 +211,7 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["broker_trade_allowed"] is True
     assert out["account_risk_status"] == "healthy"
     assert out["trade_expert"] is True
-    assert "execution_ready" not in out
+    assert out["execution_ready"] is True
 
 
 def test_trade_account_info_blocks_actionable_flag_on_critical_margin() -> None:
@@ -316,7 +316,7 @@ def test_trade_account_info_accepts_canonical_compact_detail_modes(detail) -> No
 
     assert out["success"] is True
     assert out["balance"] == 10000.0
-    assert "execution_ready" not in out
+    assert out["execution_ready"] is True
 
 
 def test_trade_account_info_rejects_unknown_detail() -> None:

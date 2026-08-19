@@ -237,6 +237,18 @@ def assemble_radar_payload(
         "count": len(ordered),
         "rows": ordered,
     }
+    if isinstance(scan, dict):
+        for key in (
+            "universe",
+            "price_change_basis",
+            "price_change_period",
+            "units",
+            "broker_symbol_count",
+            "visible_count",
+            "note",
+        ):
+            if scan.get(key) is not None:
+                payload[key] = scan[key]
     if missing:
         payload["missing"] = missing
     if seeded:
