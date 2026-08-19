@@ -875,10 +875,10 @@ def wait_event(
             resolved_watch_for = (
                 _build_default_wait_event_basket_watchers(
                     symbols=watcher_symbols,
-                    timeframe=timeframe or "M1",
+                    timeframe=timeframe,
                     watch_tick_count_spike=watch_tick_count_spike,
                 )
-                if watcher_symbols
+                if watcher_symbols and timeframe is not None
                 else []
             )
         try:

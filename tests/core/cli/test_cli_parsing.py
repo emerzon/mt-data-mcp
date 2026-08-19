@@ -1524,9 +1524,13 @@ class TestResolveParamKwargs:
             "default": None,
         }
         kwargs, _ = _resolve_param_kwargs(param, None)
-        assert kwargs["choices"] == ["a", "b"]
+        assert "choices" not in kwargs
+        assert kwargs["metavar"] == "{a,b}"
         assert kwargs["nargs"] == "+"
         assert kwargs["type"]("A") == "a"
+        assert kwargs["type"]("A,b") == "a,b"
+        with pytest.raises(argparse.ArgumentTypeError, match="invalid choice"):
+            kwargs["type"]("a,c")
 
     def test_forecast_method_help_avoids_massive_choices(self):
         param = {"name": "method", "type": str, "required": False, "default": None}

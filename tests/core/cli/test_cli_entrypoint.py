@@ -248,6 +248,18 @@ def test_invalid_output_format_fails_in_lightweight_entrypoint(monkeypatch, caps
     }
 
 
+def test_explicit_json_overrides_invalid_output_environment(monkeypatch, capsys):
+    from mtdata.core.cli import main
+
+    monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "jsoon")
+    with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
+        status = main(["--json", "no-such-command"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert status == 2
+    assert payload["error_code"] == "cli_unknown_command"
+
+
 @pytest.mark.parametrize(
     "argv",
     [

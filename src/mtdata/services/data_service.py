@@ -3752,7 +3752,7 @@ def fetch_ticks(  # noqa: C901
                 )
                 if history_window_floor is not None:
                     effective_start = _format_time_explicit(
-                        history_window_floor.timestamp()
+                        _utc_epoch_seconds(history_window_floor)
                     )
                     empty_payload["history_window_floor"] = effective_start
                     empty_payload["effective_start"] = effective_start
@@ -4159,7 +4159,7 @@ def fetch_ticks(  # noqa: C901
                 )
                 if history_window_floor is not None:
                     effective_start = _format_time_explicit(
-                        history_window_floor.timestamp()
+                        _utc_epoch_seconds(history_window_floor)
                     )
                     payload["history_window_floor"] = effective_start
                     payload["effective_start"] = effective_start

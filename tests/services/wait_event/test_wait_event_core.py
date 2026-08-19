@@ -886,6 +886,29 @@ def test_symbol_less_duration_timer_completes_when_clock_expires() -> None:
     assert "source" not in result
 
 
+def test_inferred_market_watcher_reports_timeout_when_unmatched() -> None:
+    request = WaitEventRequest(
+        symbol="EURUSD",
+        watch_for=[
+            {
+                "type": "price_change",
+                "direction": "up",
+                "threshold_mode": "fixed_pct",
+                "threshold_value": 0.1,
+            }
+        ],
+        max_wait_seconds=0,
+    )
+    request._watch_for_inferred = True
+
+    result = run_wait_event(request, gateway=SequenceGateway())
+
+    assert result["status"] == "timeout"
+    assert result["success"] is False
+    assert result["timed_out"] is True
+    assert result["matched"] is False
+
+
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
     monkeypatch.setattr(
         "mtdata.core.data.wait_events._next_candle_wait_payload",

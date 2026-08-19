@@ -920,6 +920,26 @@ def _case_insensitive_choice_parser(choices: Sequence[str]) -> Callable[[Any], s
     return _parse
 
 
+def _comma_aware_choice_parser(choices: Sequence[str]) -> Callable[[Any], str]:
+    """Validate and canonicalize one CLI token containing one or more choices."""
+    parse_choice = _case_insensitive_choice_parser(choices)
+    canonical = {str(choice) for choice in choices}
+
+    def _parse(value: Any) -> str:
+        parts = [part.strip() for part in str(value or "").split(",")]
+        if not parts or any(not part for part in parts):
+            raise argparse.ArgumentTypeError("expected one or more non-empty values")
+        parsed = [parse_choice(part) for part in parts]
+        invalid = [part for part in parsed if part not in canonical]
+        if invalid:
+            raise argparse.ArgumentTypeError(
+                f"invalid choice: {invalid[0]!r} (choose from {', '.join(choices)})"
+            )
+        return ",".join(parsed)
+
+    return _parse
+
+
 def _is_forecast_method_literal(
     ptype: Any,
     *,
@@ -1224,8 +1244,8 @@ def resolve_param_kwargs(
                 if is_literal_origin(inner_origin):
                     choices = [str(v) for v in get_args(inner)]
                     if choices:
-                        kwargs["choices"] = choices
-                        kwargs["type"] = _case_insensitive_choice_parser(choices)
+                        kwargs["type"] = _comma_aware_choice_parser(choices)
+                        kwargs["metavar"] = "{" + ",".join(choices) + "}"
                     else:
                         kwargs["type"] = str
                     kwargs["nargs"] = "+"

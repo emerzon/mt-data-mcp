@@ -805,6 +805,49 @@ class TestMain:
         assert mock_fn.call_args.kwargs["timeframes"] == ["H1"]
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_literal_list_accepts_comma_and_space_separated_tokens(
+        self,
+        mock_discover,
+    ):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_optimize_hints"
+        mock_fn.__doc__ = "Optimize hints."
+
+        def forecast_optimize_hints(
+            symbol: str,
+            timeframes: Optional[List[Literal["H4", "D1", "W1"]]] = None,
+        ):
+            """Optimize hints."""
+
+        info = get_function_info(forecast_optimize_hints)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "forecast_optimize_hints": {
+                "func": mock_fn,
+                "meta": {"description": "Optimize hints"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "forecast_optimize_hints",
+                "EURUSD",
+                "--timeframes",
+                "H4,D1",
+                "W1",
+                "--json",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        assert mock_fn.call_args.kwargs["timeframes"] == ["H4", "D1", "W1"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_explicit_confluence_pivot_timeframe_overrides_global(
         self,
         mock_discover,
@@ -923,6 +966,20 @@ class TestMain:
         assert payload["error_code"] == "cli_invalid_output_format"
         assert payload["operation"] == "cli"
         mock_discover.assert_not_called()
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_explicit_json_overrides_invalid_env_output_format(
+        self, mock_discover, monkeypatch, capsys
+    ):
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "jsoon")
+        mock_discover.return_value = {}
+
+        with patch("sys.argv", ["cli.py", "--json", "no-such-command"]):
+            result = main()
+
+        assert result == 1
+        assert "No tools discovered" in capsys.readouterr().err
+        mock_discover.assert_called_once()
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_json_output_suppresses_stream_noise_and_third_party_logs(

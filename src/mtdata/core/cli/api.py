@@ -642,7 +642,9 @@ def _json_parse_errors_requested() -> bool:
     return _parse_error_output_format() == CLI_FORMAT_JSON
 
 
-def _invalid_output_format_status() -> Optional[int]:
+def _invalid_output_format_status(argv: Sequence[str]) -> Optional[int]:
+    if "--json" in argv:
+        return None
     try:
         resolve_cli_output_format_env()
     except ValueError as exc:
@@ -2093,7 +2095,7 @@ def main():  # noqa: C901
         return 0
 
     load_environment()
-    invalid_format_status = _invalid_output_format_status()
+    invalid_format_status = _invalid_output_format_status(raw_argv)
     if invalid_format_status is not None:
         return invalid_format_status
     # Discover only the requested command family for one-shot execution. Root

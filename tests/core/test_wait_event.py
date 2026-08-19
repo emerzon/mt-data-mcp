@@ -539,10 +539,21 @@ def test_wait_event_timeout_preserves_inferred_symbol_watchers(
     mock_run_wait,
     _mock_gateway,
 ) -> None:
-    result = _raw_wait_event()(symbol="EURUSD", max_wait_seconds=1)
+    result = _raw_wait_event()(symbol="EURUSD", timeframe="M1", max_wait_seconds=1)
 
     assert result["success"] is True
     mock_run_wait.assert_called_once()
+
+
+@patch("mtdata.core.data.run_wait_event")
+def test_wait_event_rejects_symbol_duration_without_market_condition(
+    mock_run_wait,
+) -> None:
+    result = _raw_wait_event()(symbol="EURUSD", max_wait_seconds=1)
+
+    assert result["error_code"] == "wait_event_invalid_request"
+    assert "timer, not a market wait" in result["error"]
+    mock_run_wait.assert_not_called()
 
 
 def test_wait_event_request_rejects_instrument_as_extra_field() -> None:

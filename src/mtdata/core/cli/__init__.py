@@ -36,7 +36,9 @@ def _json_output_requested(argv: Sequence[str]) -> bool:
     return resolve_cli_output_format_env() == CLI_FORMAT_JSON
 
 
-def _invalid_output_format_status() -> Optional[int]:
+def _invalid_output_format_status(argv: Sequence[str]) -> Optional[int]:
+    if "--json" in argv:
+        return None
     try:
         resolve_cli_output_format_env()
     except ValueError as exc:
@@ -92,7 +94,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(format_root_help(program))
         return 1
 
-    invalid_format_status = _invalid_output_format_status()
+    invalid_format_status = _invalid_output_format_status(effective_argv)
     if invalid_format_status is not None:
         return invalid_format_status
 

@@ -125,7 +125,7 @@ def run_wait_event_loop(  # noqa: C901
             return None
         return _build_wait_result(
             request=request,
-            status="completed" if watch_for_inferred or timer_only else "timeout",
+            status="completed" if timer_only else "timeout",
             started_at_utc=started_at_utc,
             observed_at_utc=_normalize_utc_datetime(now_utc_impl()),
             polls=polls,
