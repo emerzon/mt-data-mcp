@@ -803,6 +803,9 @@ For deal history and journals, `--side buy|sell` filters the execution
 after open/close direction is derived. Responses echo this choice in
 `side_filter.dimension`. Order-lifecycle history has no derived position side,
 so it accepts only `buy|sell`.
+Order-history `order_type` values use canonical uppercase tokens such as `BUY`
+and `SELL_LIMIT`; deal `fill_side` and `position_side` remain lower-case because
+they are separate fill-direction and economic-position enums.
 For Kelly sizing in `trade_risk_analyze`, provide a `--sizing` JSON object with
 `win_rate`, `avg_win`, and `avg_loss` derived from complete trade lifecycles whose
 returns are normalized consistently (for example, R-multiples). Do not map the

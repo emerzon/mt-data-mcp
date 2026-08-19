@@ -634,6 +634,24 @@ def test_trade_history_compact_humanized_column_style_renames_order_times() -> N
     assert "normalized_items" not in out
 
 
+def test_trade_history_order_type_uses_canonical_token() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 33,
+                "time_setup": "2024-01-01 12:00:00",
+                "symbol": "GBPUSD",
+                "type_label": "Sell Limit",
+                "volume_initial": 1.0,
+                "price_open": 1.25,
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="orders"),
+    )
+
+    assert out["items"][0]["order_type"] == "SELL_LIMIT"
+
+
 def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
@@ -792,7 +810,7 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
     assert out["request_echo"]["side"] == "sell"
     assert out["count"] == 1
     assert out["items"][0]["order_ticket"] == 12
-    assert out["items"][0]["order_type"] == "Sell Stop"
+    assert out["items"][0]["order_type"] == "SELL_STOP"
     assert out["items"][0]["raw"]["type_code"] == 5
 
 

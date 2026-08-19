@@ -812,6 +812,36 @@ _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "comment",
 )
 
+_TRADE_HISTORY_ORDER_TYPES_BY_CODE = {
+    0: "BUY",
+    1: "SELL",
+    2: "BUY_LIMIT",
+    3: "SELL_LIMIT",
+    4: "BUY_STOP",
+    5: "SELL_STOP",
+    6: "BUY_STOP_LIMIT",
+    7: "SELL_STOP_LIMIT",
+    8: "CLOSE_BY",
+}
+
+
+def _canonical_trade_history_order_type(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return _TRADE_HISTORY_ORDER_TYPES_BY_CODE.get(value, value)
+    text = str(value or "").strip()
+    if not text:
+        return value
+    if text.isdigit():
+        return _TRADE_HISTORY_ORDER_TYPES_BY_CODE.get(int(text), value)
+    token = text.upper().replace("-", "_").replace(" ", "_")
+    while "__" in token:
+        token = token.replace("__", "_")
+    if token.startswith("ORDER_TYPE_"):
+        token = token.removeprefix("ORDER_TYPE_")
+    return token
+
 
 def _round_trade_money_value(value: Any) -> Any:
     try:
@@ -896,7 +926,9 @@ def _compact_trade_history_row(
             compact["done_time"] = compact["time_done"]
         raw_order_type = _first_present(compact, "type_label", "type")
         if raw_order_type is not None:
-            compact["order_type"] = raw_order_type
+            compact["order_type"] = _canonical_trade_history_order_type(
+                raw_order_type
+            )
         state = _first_present(compact, "state_label", "state")
         if state is not None:
             compact["state"] = state
