@@ -1014,7 +1014,20 @@ def market_ticker(  # noqa: C901
                     "price": price,
                     "price_precision": digits,
                     "price_currency": price_currency,
+                    "price_currency_basis": "quote_currency_not_cash_cost",
+                    "unit": out["units"].get(field_value, "absolute_price"),
+                    "point": out.get("point"),
+                    "units": {
+                        "price": out["units"].get(field_value, "absolute_price"),
+                        "point": out["units"]["point"],
+                    },
                 }
+                if field_value == "spread":
+                    for key in ("spread_points", "spread_pips", "spread_pct"):
+                        if out.get(key) is not None:
+                            simple[key] = out[key]
+                            if key in out["units"]:
+                                simple["units"][key] = out["units"][key]
                 for key in (
                     "quote_as_of",
                     "time",

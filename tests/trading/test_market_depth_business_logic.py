@@ -608,6 +608,13 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["price"] == pytest.approx(1.17229)
     assert out["price_precision"] == 5
     assert out["price_currency"] == "USD"
+    assert out["price_currency_basis"] == "quote_currency_not_cash_cost"
+    assert out["unit"] == "absolute_price"
+    assert out["point"] == 0.00001
+    assert out["units"] == {
+        "price": "absolute_price",
+        "point": "price_increment",
+    }
     assert out["time"] == "2023-11-14T22:13:20Z"
     assert out["time_epoch"] == 1700000000.0
     assert out["data_age_seconds"] >= 0
@@ -621,6 +628,72 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert "bid" not in out
     assert "spread_pips" not in out
     assert out["meta"]["tool"] == "market_ticker"
+
+
+def test_market_ticker_spread_field_retains_spread_units() -> None:
+    tick = SimpleNamespace(
+        bid=1.17221,
+        ask=1.17237,
+        last=1.17230,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD", price_field="spread", detail="full")
+
+    assert out["success"] is True
+    assert out["field"] == "spread"
+    assert out["price"] == pytest.approx(0.00016)
+    assert out["unit"] == "absolute_price"
+    assert out["point"] == 0.00001
+    assert out["spread_points"] == 16.0
+    assert out["spread_pips"] == 1.6
+    assert out["units"] == {
+        "price": "absolute_price",
+        "point": "price_increment",
+        "spread_points": "broker_points",
+        "spread_pips": "pips",
+        "spread_pct": "percent (1.0 = 1%)",
+    }
+
+
+def test_market_ticker_non_fx_spread_does_not_invent_pips() -> None:
+    tick = SimpleNamespace(
+        bid=200.0,
+        ask=200.05,
+        last=200.0,
+        volume=5,
+        time=1700000000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth._use_client_tz", return_value=False
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("XAUUSD", price_field="spread", detail="compact")
+
+    assert out["point"] == 0.01
+    assert out["unit"] == "absolute_price"
+    assert "spread_pips" not in out
+    assert "spread_pips" not in out["units"]
 
 
 def test_market_ticker_refreshes_stale_symbol_tick_from_live_stream() -> None:
