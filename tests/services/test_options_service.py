@@ -127,6 +127,51 @@ def test_get_options_expirations_parses_payload(monkeypatch):
     assert out["underlying_price_session"] == "regular_market"
 
 
+def test_get_options_expirations_rejects_empty_provider_snapshot(monkeypatch):
+    monkeypatch.setattr(osvc._time, "time", lambda: 1_700_000_120.0)
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_yahoo_options_payload",
+        lambda symbol, expiry_epoch=None: {
+            "expirationDates": [],
+            "quote": {
+                "regularMarketPrice": None,
+                "regularMarketTime": 1_700_000_000,
+            },
+        },
+    )
+
+    out = osvc.get_options_expirations("SPX")
+
+    assert out["success"] is False
+    assert out["error_code"] == "options_expirations_unavailable"
+    assert out["provider"] == "yahoo"
+    assert out["symbol"] == "SPX"
+    assert out["underlying_price"] is None
+    assert out["expirations"] == []
+    assert out["expiration_count"] == 0
+    assert out["did_you_mean"] == ["^SPX"]
+    assert "Use ^SPX" in out["remediation"]
+
+
+def test_get_options_chain_rejects_empty_expiration_snapshot(monkeypatch):
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_yahoo_options_payload",
+        lambda symbol, expiry_epoch=None: {
+            "expirationDates": [],
+            "quote": {},
+        },
+    )
+
+    out = osvc.get_options_chain("NOOPT")
+
+    assert out["success"] is False
+    assert out["error_code"] == "options_expirations_unavailable"
+    assert out["provider"] == "yahoo"
+    assert out["symbol"] == "NOOPT"
+
+
 def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     expiry_a = osvc._ymd_to_epoch("2026-04-17")
     expiry_b = osvc._ymd_to_epoch("2026-05-15")
@@ -547,6 +592,30 @@ def test_configured_tradier_provider_without_token_falls_back_to_yahoo(monkeypat
             ),
         },
         {"provider": "yahoo", "success": True},
+    ]
+
+
+def test_invalid_provider_selection_is_explicit_on_yahoo_fallback(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "yahho")
+    expiry = osvc._ymd_to_epoch("2026-04-17")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_yahoo_options_payload",
+        lambda symbol, expiry_epoch=None: {
+            "expirationDates": [expiry],
+            "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+        },
+    )
+
+    out = osvc.get_options_expirations("AAPL")
+
+    assert out["success"] is True
+    assert out["provider"] == "yahoo"
+    assert out["configured_provider"] == "yahho"
+    assert out["provider_effective"] == "yahoo"
+    assert out["warnings"] == [
+        "Invalid MTDATA_OPTIONS_PROVIDER value 'yahho'; effective provider "
+        "fallback is yahoo."
     ]
 
 

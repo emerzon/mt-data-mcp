@@ -39,6 +39,11 @@ _OPTIONS_CHAIN_COMPACT_FIELDS = (
 )
 _OPTIONS_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^][A-Z0-9.^=_/-]{0,63}$")
 _OPTIONS_EXPIRATION_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_OPTIONS_PROVIDER_SYMBOL_ALIASES = {
+    "yahoo": {
+        "SPX": "^SPX",
+    },
+}
 
 
 def _normalize_options_symbol(
@@ -79,6 +84,23 @@ def _normalize_options_symbol(
             ],
         }
     return normalize_equity_provider_symbol(normalized), None
+
+
+def _resolve_options_provider_symbol(symbol: str) -> str:
+    provider_symbol = str(symbol).upper().strip()
+    if provider_symbol not in {
+        alias
+        for aliases in _OPTIONS_PROVIDER_SYMBOL_ALIASES.values()
+        for alias in aliases
+    }:
+        return provider_symbol
+    effective_provider = str(
+        _options_provider_readiness().get("effective_provider") or "yahoo"
+    ).strip().lower()
+    return _OPTIONS_PROVIDER_SYMBOL_ALIASES.get(
+        effective_provider,
+        {},
+    ).get(provider_symbol, provider_symbol)
 
 
 def _attach_options_symbol_mapping(
@@ -186,9 +208,22 @@ def _options_detail_mode(detail: str) -> str:
 def _options_provider_readiness() -> Dict[str, Any]:
     from ..bootstrap.settings import options_data_config
 
-    provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
+    provider = str(getattr(options_data_config, "provider", "yahoo")).strip().lower()
+    allowed_provider_values = {"auto", "tradier", "yahoo"}
+    provider_configuration_valid = provider in allowed_provider_values
     api_key_configured = bool(getattr(options_data_config, "api_key", None))
-    if provider == "tradier" and not api_key_configured:
+    configuration_error_code = None
+    if not provider_configuration_valid:
+        effective_provider = "yahoo"
+        configured_provider_ready = False
+        configured_provider_status = "invalid_using_fallback"
+        configuration_error_code = "options_provider_invalid"
+        recommendation = (
+            f"MTDATA_OPTIONS_PROVIDER={provider!r} is unsupported. mtdata will "
+            "use anonymous Yahoo only as an explicit best-effort fallback until "
+            "the setting is corrected."
+        )
+    elif provider == "tradier" and not api_key_configured:
         effective_provider = "yahoo"
         configured_provider_ready = False
         configured_provider_status = "misconfigured_using_fallback"
@@ -221,13 +256,29 @@ def _options_provider_readiness() -> Dict[str, Any]:
     provider_mode = (
         "anonymous_fallback" if effective_provider == "yahoo" else "credentialed"
     )
-    action_required = None if usable_now else "configure_options_provider"
-    remediation = (
-        None
+    action_required = (
+        "correct_options_provider"
+        if not provider_configuration_valid
+        else None
         if usable_now
-        else "Set MTDATA_OPTIONS_PROVIDER to yahoo or configure Tradier credentials."
+        else "configure_options_provider"
     )
+    remediation = None
+    if not provider_configuration_valid:
+        remediation = (
+            "Set MTDATA_OPTIONS_PROVIDER to one of: auto, tradier, yahoo; then "
+            "restart mtdata."
+        )
+    elif not usable_now:
+        remediation = (
+            "Set MTDATA_OPTIONS_PROVIDER to yahoo or configure Tradier credentials."
+        )
     warnings = []
+    if not provider_configuration_valid:
+        warnings.append(
+            f"Invalid MTDATA_OPTIONS_PROVIDER value {provider!r}; effective "
+            "provider fallback is yahoo."
+        )
     if provider_mode == "anonymous_fallback":
         warnings.append(
             "Options chain access is using anonymous Yahoo cookie/crumb fallback; "
@@ -237,6 +288,8 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "configured_provider": provider,
         "effective_provider": effective_provider,
         "api_key_configured": api_key_configured,
+        "provider_configuration_valid": provider_configuration_valid,
+        "configuration_error_code": configuration_error_code,
         "configured_provider_ready": configured_provider_ready,
         "configured_provider_status": configured_provider_status,
         "local_tools_ready": True,
@@ -255,6 +308,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "degraded": bool(provider_mode == "anonymous_fallback"),
         "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
+        "allowed_provider_values": sorted(allowed_provider_values),
         "chain_dependent_tools": [
             "options_expirations",
             "options_chain",
@@ -263,7 +317,9 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "local_tools": ["options_barrier_price"],
         "action_required": action_required,
         "recommended_action": (
-            "configure_tradier_credentials"
+            "correct_provider_configuration"
+            if not provider_configuration_valid
+            else "configure_tradier_credentials"
             if provider_mode == "anonymous_fallback"
             else None
         ),
@@ -521,15 +577,44 @@ def options_provider_status(
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Report configured options-chain provider readiness without querying market data."""
+    readiness = _options_provider_readiness()
+    invalid_provider = readiness.get("configuration_error_code") == (
+        "options_provider_invalid"
+    )
     payload: Dict[str, Any] = {
-        "success": True,
-        **_options_provider_readiness(),
+        "success": not invalid_provider,
+        **readiness,
     }
+    if invalid_provider:
+        payload.update(
+            {
+                "error": (
+                    "MTDATA_OPTIONS_PROVIDER contains an unsupported provider "
+                    "selection."
+                ),
+                "error_code": "options_provider_invalid",
+                "parameter": "MTDATA_OPTIONS_PROVIDER",
+                "value": readiness.get("configured_provider"),
+                "valid_values": {
+                    "MTDATA_OPTIONS_PROVIDER": readiness.get(
+                        "allowed_provider_values"
+                    )
+                },
+            }
+        )
     if _options_detail_mode(detail) == "full":
         from ..bootstrap.settings import options_data_config
 
         payload["tradier_docs"] = "https://documentation.tradier.com/"
         payload["base_url"] = getattr(options_data_config, "base_url", None)
+    elif invalid_provider:
+        payload["remediation_hint"] = (
+            "Correct MTDATA_OPTIONS_PROVIDER; Yahoo is only the effective fallback."
+        )
+        payload["next_steps"] = [
+            "Set MTDATA_OPTIONS_PROVIDER to auto, tradier, or yahoo.",
+            "If using Tradier, set MTDATA_OPTIONS_API_KEY, then restart mtdata.",
+        ]
     elif payload.get("action_required") and payload.get("remediation"):
         payload["remediation_hint"] = (
             "Reliable options-chain access requires Tradier credentials."
@@ -583,6 +668,7 @@ def options_expirations(
             detail=detail,
             func=lambda: gate,
         )
+    symbol_value = _resolve_options_provider_symbol(symbol_value)
 
     return _run_options_operation(
         "options_expirations",
@@ -687,6 +773,7 @@ def options_chain(
             detail=detail,
             func=lambda: gate,
         )
+    symbol_value = _resolve_options_provider_symbol(symbol_value)
 
     return _run_options_operation(
         "options_chain",
@@ -815,10 +902,10 @@ def options_heston_calibrate(
     `maturity_basis` to override the default `UnitedStates.NYSE` /
     `calendar_days` maturity assumptions. The selected expiry must be at least
     seven calendar days after the chain observation date. Fits that hit
-    parameter or IV-error quality gates return `usable_for_pricing=false` and
-    `calibration_status=rejected`. Stale inputs also return
-    `usable_for_pricing=false`, while preserving the numerical calibration
-    status and parameters for diagnostics.
+    parameter, IV-error, or input-freshness quality gates return
+    `success=false`, `usable_for_pricing=false`, and
+    `calibration_status=rejected`, while preserving fitted parameters for
+    diagnostics.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
@@ -878,6 +965,7 @@ def options_heston_calibrate(
             detail=detail,
             func=lambda: gate,
         )
+    symbol_value = _resolve_options_provider_symbol(symbol_value)
 
     return _run_options_operation(
         "options_heston_calibrate",

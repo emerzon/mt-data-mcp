@@ -36,6 +36,11 @@ Run `options_provider_status` to see the configured vs. effective provider and w
 mtdata-cli options_provider_status --json
 ```
 
+An unsupported `MTDATA_OPTIONS_PROVIDER` value makes this status command fail
+with `options_provider_invalid`. Its structured output preserves the configured
+value and labels Yahoo separately as the effective fallback, so health checks
+cannot mistake a typo for a valid Yahoo configuration.
+
 `options_barrier_price` is a local QuantLib calculator and still works without options-chain provider access when you supply spot, strike, barrier, maturity, and volatility.
 
 ### `options_expirations`
@@ -44,9 +49,15 @@ List available option expiration dates for a US stock.
 
 ```bash
 mtdata-cli options_expirations AAPL --json
+
+# Provider-neutral S&P 500 alias (resolved to ^SPX for Yahoo)
+mtdata-cli options_expirations SPX --json
 ```
 
-**Returns:** List of expiration dates available for the symbol.
+**Returns:** List of expiration dates available for the symbol. When an alias is
+used, the response includes `requested_symbol` and `provider_symbol`. An empty
+provider expiration snapshot fails with `options_expirations_unavailable`
+instead of reporting a successful zero-expiration result.
 
 ### `options_chain`
 
@@ -200,7 +211,10 @@ freshness reason, and stale flag. Stale calibration inputs set
 `calibration_data_status: stale`, set `usable_for_pricing: false`, add
 `stale_market_data` to `pricing_usability_failures`, and emit a warning. The
 numerical fit and its parameters remain available for research diagnostics,
-but calibrate a current snapshot before using them to price an option. Omit
+but the result returns `success: false`,
+`error_code: heston_calibration_rejected`, and a nonzero CLI exit status. The
+same failure contract applies to parameter and IV-error quality gates. Calibrate
+a current, accepted snapshot before using the parameters to price an option. Omit
 `--valuation-date` to derive it from the chain snapshot.
 When `--expiration` is omitted, calibration skips same-day and short-dated
 contracts that do not meet its seven-calendar-day minimum.

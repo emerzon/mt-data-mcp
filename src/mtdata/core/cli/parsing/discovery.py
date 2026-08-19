@@ -406,13 +406,16 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "is mark-to-market return, not a 0 label."
     ),
     ("options_chain", "symbol"): (
-        "Underlying symbol for listed options, e.g. AAPL or SPX."
+        "Underlying symbol for listed options, e.g. AAPL or SPX. SPX resolves "
+        "to Yahoo's ^SPX identifier when Yahoo is effective."
     ),
     ("options_expirations", "symbol"): (
-        "Underlying symbol for listed options, e.g. AAPL or SPX."
+        "Underlying symbol for listed options, e.g. AAPL or SPX. SPX resolves "
+        "to Yahoo's ^SPX identifier when Yahoo is effective."
     ),
     ("options_heston_calibrate", "symbol"): (
-        "Underlying symbol for listed options, e.g. AAPL or SPX."
+        "Underlying symbol for listed options, e.g. AAPL or SPX. SPX resolves "
+        "to Yahoo's ^SPX identifier when Yahoo is effective."
     ),
     ("finviz_fundamentals", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
     ("finviz_description", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",

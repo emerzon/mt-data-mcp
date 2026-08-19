@@ -995,9 +995,22 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     pricing_usability_failures = list(quality_failures)
     if calibration_data_stale:
         pricing_usability_failures.append("stale_market_data")
+    usable_for_pricing = not pricing_usability_failures
 
     return {
-        "success": True,
+        "success": usable_for_pricing,
+        **(
+            {
+                "error": (
+                    "Heston calibration is not usable for pricing: "
+                    + ", ".join(pricing_usability_failures)
+                    + "."
+                ),
+                "error_code": "heston_calibration_rejected",
+            }
+            if not usable_for_pricing
+            else {}
+        ),
         "symbol": str(symbol).upper().strip(),
         "expiration": expiry_text,
         **(
@@ -1025,8 +1038,8 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "warnings": warnings,
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
         "calibration_error_rmse_unit": "absolute_implied_volatility",
-        "calibration_status": "rejected" if quality_failures else "accepted",
-        "usable_for_pricing": not pricing_usability_failures,
+        "calibration_status": "accepted" if usable_for_pricing else "rejected",
+        "usable_for_pricing": usable_for_pricing,
         "calibration_quality_failures": quality_failures,
         "pricing_usability_failures": pricing_usability_failures,
         "feller_satisfied": feller_satisfied,

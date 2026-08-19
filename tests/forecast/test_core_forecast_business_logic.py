@@ -4247,6 +4247,77 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["option_type"] == "put"
 
 
+def test_options_tools_resolve_spx_for_default_yahoo_provider(monkeypatch):
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(
+        opt,
+        "_options_provider_readiness",
+        lambda: {
+            "configured_provider": "yahoo",
+            "effective_provider": "yahoo",
+            "chain_request_supported": True,
+        },
+    )
+    monkeypatch.setattr(
+        options_service,
+        "get_options_expirations",
+        lambda **kwargs: {"success": True, **kwargs},
+    )
+    monkeypatch.setattr(
+        options_service,
+        "get_options_chain",
+        lambda **kwargs: {"success": True, **kwargs},
+    )
+    monkeypatch.setattr(
+        quantlib_tools,
+        "calibrate_heston_quantlib_from_options",
+        lambda **kwargs: {"success": True, **kwargs},
+    )
+
+    for result in (
+        raw_exp(symbol="SPX"),
+        raw_chain(symbol="SPX"),
+        raw_cal(symbol="SPX"),
+    ):
+        assert result["symbol"] == "^SPX"
+        assert result["requested_symbol"] == "SPX"
+        assert result["provider_symbol"] == "^SPX"
+
+
+def test_options_heston_compact_preserves_rejected_fit_diagnostics(monkeypatch):
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+    monkeypatch.setattr(
+        quantlib_tools,
+        "calibrate_heston_quantlib_from_options",
+        lambda **_kwargs: {
+            "success": False,
+            "error": "Heston calibration is not usable for pricing.",
+            "error_code": "heston_calibration_rejected",
+            "calibration_status": "rejected",
+            "usable_for_pricing": False,
+            "pricing_usability_failures": ["kappa_near_zero"],
+            "params": {"kappa": 0.00001, "theta": 0.04},
+        },
+    )
+
+    result = raw_cal(symbol="AAPL", detail="compact")
+
+    assert result["success"] is False
+    assert result["error_code"] == "heston_calibration_rejected"
+    assert result["params"] == {"kappa": 0.00001, "theta": 0.04}
+    assert result["pricing_usability_failures"] == ["kappa_near_zero"]
+
+
 def test_options_tools_validate_and_normalize_symbols(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)

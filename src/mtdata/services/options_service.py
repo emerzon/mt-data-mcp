@@ -52,6 +52,7 @@ _YAHOO_SESSION_LOCK = _threading.Lock()
 _YAHOO_AUTH_LOCK = _threading.Lock()
 _YAHOO_RATE_LIMIT_LOCK = _threading.Lock()
 _YAHOO_LAST_REQUEST_MONOTONIC = 0.0
+_OPTIONS_PROVIDER_MODES = {"auto", "tradier", "yahoo"}
 
 
 class _OptionsRateLimitError(ValueError):
@@ -289,6 +290,53 @@ def _expiration_not_listed_payload(
     }
 
 
+def _options_expirations_unavailable_payload(
+    *,
+    symbol: str,
+    provider: str,
+    quote: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return a typed failure when a provider resolves no listed expirations."""
+    symbol_norm = str(symbol).upper().strip()
+    quote = quote if isinstance(quote, dict) else {}
+    price_key = "regularMarketPrice" if provider == "yahoo" else "last"
+    underlying_price = _to_numeric(
+        quote.get(price_key) or quote.get("close"),
+        float,
+        float("nan"),
+        field_name=f"quote.{price_key}",
+    )
+    if underlying_price != underlying_price:
+        underlying_price = None
+    remediation = (
+        "Verify the provider-specific underlier symbol and retry, or use a "
+        "different supported options provider."
+    )
+    out: Dict[str, Any] = {
+        "success": False,
+        "error": (
+            f"No listed option expirations were returned for {symbol_norm} by "
+            f"the {provider.title()} options provider."
+        ),
+        "error_code": "options_expirations_unavailable",
+        **_options_quote_metadata(provider, quote),
+        "symbol": symbol_norm,
+        "underlying_price": underlying_price,
+        "currency": quote.get("currency"),
+        "expirations": [],
+        "expiration_count": 0,
+        "remediation": remediation,
+        "related_tools": ["options_provider_status"],
+    }
+    if provider == "yahoo" and symbol_norm == "SPX":
+        out["did_you_mean"] = ["^SPX"]
+        out["remediation"] = (
+            "Use ^SPX for the Yahoo S&P 500 index underlier, or pass SPX "
+            "through the public options tools so provider aliasing is applied."
+        )
+    return out
+
+
 def _build_yahoo_session() -> requests.Session:
     """Create a configured Yahoo HTTP session."""
     return requests.Session()
@@ -364,9 +412,13 @@ def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any
     return out
 
 
+def _requested_options_provider_mode() -> str:
+    return str(getattr(options_data_config, "provider", "yahoo")).strip().lower()
+
+
 def _configured_options_provider_mode() -> str:
-    provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
-    if provider not in {"auto", "yahoo", "tradier"}:
+    provider = _requested_options_provider_mode()
+    if provider not in _OPTIONS_PROVIDER_MODES:
         return "yahoo"
     return provider
 
@@ -455,6 +507,28 @@ def _annotate_fallback_payload(
     return out
 
 
+def _annotate_provider_selection(
+    payload: Dict[str, Any],
+    *,
+    configured_provider: str,
+    effective_provider: str,
+) -> Dict[str, Any]:
+    """Expose provider provenance when selection differs from configuration."""
+    out = dict(payload)
+    out["configured_provider"] = configured_provider
+    out["provider_effective"] = effective_provider
+    if configured_provider not in _OPTIONS_PROVIDER_MODES:
+        warning = (
+            f"Invalid MTDATA_OPTIONS_PROVIDER value {configured_provider!r}; "
+            f"effective provider fallback is {effective_provider}."
+        )
+        warnings = list(out.get("warnings") or [])
+        if warning not in warnings:
+            warnings.insert(0, warning)
+        out["warnings"] = warnings
+    return out
+
+
 def _provider_error_payload(
     error: Any,
     *,
@@ -480,7 +554,7 @@ def _run_options_provider_query(
     yahoo_func: Callable[[], Dict[str, Any]],
     tradier_func: Callable[[], Dict[str, Any]],
 ) -> Dict[str, Any]:
-    configured_provider = _configured_options_provider_mode()
+    configured_provider = _requested_options_provider_mode()
     providers = _options_provider_attempt_order()
     failures: List[tuple[str, BaseException]] = []
     for index, provider in enumerate(providers):
@@ -523,6 +597,12 @@ def _run_options_provider_query(
                     configured_provider=configured_provider,
                     effective_provider=provider,
                     failures=failures,
+                )
+            if configured_provider != provider:
+                return _annotate_provider_selection(
+                    payload,
+                    configured_provider=configured_provider,
+                    effective_provider=provider,
                 )
             return payload
         if fallback_remaining:
@@ -1054,6 +1134,12 @@ def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
         quote = _extract_tradier_quote(_fetch_tradier_quote_payload(symbol_norm))
     except Exception:
         quote = {}
+    if not expirations:
+        return _options_expirations_unavailable_payload(
+            symbol=symbol_norm,
+            provider="tradier",
+            quote=quote,
+        )
     return {
         "success": True,
         **_options_quote_metadata("tradier", quote),
@@ -1085,7 +1171,10 @@ def _get_tradier_options_chain(
         _fetch_tradier_expirations_payload(symbol_norm)
     )
     if not expirations:
-        return {"error": f"No option expirations found for {symbol_norm}"}
+        return _options_expirations_unavailable_payload(
+            symbol=symbol_norm,
+            provider="tradier",
+        )
     chosen_expiry, expiration_status, _ = _select_options_expiration(
         expirations,
         expiration,
@@ -1160,6 +1249,12 @@ def _get_yahoo_options_expirations(symbol: str) -> Dict[str, Any]:
     expiration_epochs = _extract_expiration_epochs(payload)
     expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
     quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
+    if not expirations:
+        return _options_expirations_unavailable_payload(
+            symbol=symbol,
+            provider="yahoo",
+            quote=quote,
+        )
     return {
         "success": True,
         **_options_quote_metadata("yahoo", quote),
@@ -1190,7 +1285,12 @@ def _get_yahoo_options_chain(
     base = _fetch_yahoo_options_payload(symbol_norm)
     expiration_epochs = _extract_expiration_epochs(base)
     if not expiration_epochs:
-        return {"error": f"No option expirations found for {symbol_norm}"}
+        quote = base.get("quote", {}) if isinstance(base.get("quote"), dict) else {}
+        return _options_expirations_unavailable_payload(
+            symbol=symbol_norm,
+            provider="yahoo",
+            quote=quote,
+        )
 
     available_map = {_epoch_to_ymd(ep): int(ep) for ep in expiration_epochs}
     chosen_expiry_ymd, expiration_status, _ = _select_options_expiration(

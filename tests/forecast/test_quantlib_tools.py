@@ -434,9 +434,10 @@ def test_calibrate_heston_marks_stale_snapshot_unusable_for_pricing(monkeypatch)
         expiration="2026-12-19",
     )
 
-    assert out["success"] is True
+    assert out["success"] is False
+    assert out["error_code"] == "heston_calibration_rejected"
     assert out["calibration_data_status"] == "stale"
-    assert out["calibration_status"] == "accepted"
+    assert out["calibration_status"] == "rejected"
     assert out["calibration_quality_failures"] == []
     assert out["usable_for_pricing"] is False
     assert out["pricing_usability_failures"] == ["stale_market_data"]
@@ -544,7 +545,8 @@ def test_calibrate_heston_marks_bound_fit_unusable(monkeypatch):
         symbol="AAPL", expiration="2026-12-19"
     )
 
-    assert out["success"] is True
+    assert out["success"] is False
+    assert out["error_code"] == "heston_calibration_rejected"
     assert out["calibration_status"] == "rejected"
     assert out["usable_for_pricing"] is False
     assert out["rho_at_bound"] is True
@@ -553,6 +555,7 @@ def test_calibrate_heston_marks_bound_fit_unusable(monkeypatch):
         "rho_at_calibration_bound",
         "kappa_near_zero",
     }
+    assert set(out["params"]) == {"kappa", "theta", "sigma", "rho", "v0"}
 
 
 def test_calibrate_heston_both_sides_use_supported_helper_signature(monkeypatch):

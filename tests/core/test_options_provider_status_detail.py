@@ -1,4 +1,7 @@
 """Tests for options_provider_status compact remediation gating."""
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -80,6 +83,43 @@ def test_provider_status_marks_anonymous_yahoo_as_degraded_but_usable(monkeypatc
     assert out["action_required"] is None
     assert out["degraded"] is True
     assert out["provider_mode"] == "anonymous_fallback"
+
+
+def test_provider_status_cli_preserves_invalid_environment_selection():
+    env = os.environ.copy()
+    env["MTDATA_OPTIONS_PROVIDER"] = "yahho"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mtdata",
+            "options_provider_status",
+            "--detail",
+            "full",
+            "--json",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert completed.returncode == 1
+    assert payload["success"] is False
+    assert payload["error_code"] == "options_provider_invalid"
+    assert payload["configured_provider"] == "yahho"
+    assert payload["effective_provider"] == "yahoo"
+    assert payload["provider_configuration_valid"] is False
+    assert payload["configured_provider_ready"] is False
+    assert payload["configured_provider_status"] == "invalid_using_fallback"
+    assert payload["configuration_error_code"] == "options_provider_invalid"
+    assert payload["valid_values"] == {
+        "MTDATA_OPTIONS_PROVIDER": ["auto", "tradier", "yahoo"]
+    }
+    assert "effective provider fallback is yahoo" in payload["warnings"][0]
+    assert "configured_provider" not in completed.stderr
 
 
 def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):

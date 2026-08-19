@@ -568,7 +568,6 @@ class OptionsDataConfig:
                 "Invalid MTDATA_OPTIONS_PROVIDER=%r; using yahoo.",
                 provider,
             )
-            provider = "yahoo"
         api_key = (
             os.getenv("MTDATA_OPTIONS_API_KEY")
             or os.getenv("TRADIER_TOKEN")
