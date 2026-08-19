@@ -601,7 +601,7 @@ def _extract_candlestick_rows(
     rows: List[List[Any]] = []
     gap = max(0, int(min_gap))
     k = max(1, int(top_k))
-    last_pick_idx = -(10**9)
+    last_pick_idx = 10**9
     non_dep_mask = np.asarray(
         [str(name) not in deprioritize for name in normalized_names], dtype=bool
     )
@@ -623,8 +623,11 @@ def _extract_candlestick_rows(
     candidate_rows = np.flatnonzero(np.any(active_mask, axis=1))
     if start_idx > 0:
         candidate_rows = candidate_rows[candidate_rows >= start_idx]
-    for i in candidate_rows.tolist():
-        if i - last_pick_idx < gap:
+    # Recent-signal consumers care about the newest completed pattern in a
+    # collision window. Select newest-first so an older hit cannot suppress a
+    # later signal merely because the detector returned chronological rows.
+    for i in candidate_rows[::-1].tolist():
+        if last_pick_idx - i < gap:
             continue
         hit_idx = np.flatnonzero(active_mask[i])
         if hit_idx.size == 0:
@@ -1000,6 +1003,7 @@ def detect_candlestick_patterns(  # noqa: C901
             "min_strength": float(thr),
             "strength_scale": "ohlc_geometry_and_pattern_reliability_v3",
             "signal_scale": "backend_native_cdl_signal",
+            "gap_selection_policy": "newest_first",
         }
     )
     if warnings_out:

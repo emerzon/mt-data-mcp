@@ -205,6 +205,24 @@ class TestExtractCandlestickRows:
         )
         assert len(rows_gap) <= len(rows_no_gap)
 
+    def test_min_gap_retains_newest_candidate(self):
+        df_tail, temp_tail = self._make_data()
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_doji", "cdl_hammer"],
+            threshold=0.5,
+            robust_only=False,
+            robust_set=set(),
+            whitelist_set=None,
+            min_gap=100,
+            top_k=5,
+            deprioritize=set(),
+        )
+
+        assert rows == [["2024-01-06", "Bearish DOJI"]]
+
     def test_bearish_detection(self):
         df_tail, temp_tail = self._make_data()
         rows = _extract_candlestick_rows(

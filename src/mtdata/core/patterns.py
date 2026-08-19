@@ -1468,7 +1468,8 @@ def patterns_detect(
         range expansion. Backend-native detector magnitude is diagnostic only.
     
     min_gap : int, optional (default=3)
-        Minimum gap between patterns (in bars)
+        Minimum gap between patterns (in bars). When signals collide, the
+        newest completed pattern is retained.
     
     robust_only : bool, optional (default=False)
         Restrict candlestick detection to a curated subset of established
