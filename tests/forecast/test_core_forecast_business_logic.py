@@ -38,6 +38,18 @@ def _unwrap(fn):
     return current
 
 
+def test_stored_alias_rejects_conflicting_selector():
+    with pytest.raises(ForecastError, match="conflicting selector"):
+        forecast_use_cases._resolve_stored_model_execution_alias(
+            library="statsforecast",
+            requested_method="sf_naive",
+            resolved_method="statsforecast",
+            params={"model_name": "Theta"},
+            original_params={"model_name": "Theta"},
+            model_id="sf_naive/EURUSD_H1/hash",
+        )
+
+
 @pytest.fixture(autouse=True)
 def _skip_mt5_connection(monkeypatch):
     monkeypatch.setattr(cf, "ensure_mt5_connection_or_raise", lambda: None)

@@ -178,6 +178,10 @@ class ForecastModelsCleanupRequest(BaseModel):
         description="Delete models idle for at least this many days. Omit to use the store TTL.",
     )
     method: Optional[str] = Field(None, description="Optional method filter.")
+    adapter: Optional[str] = Field(
+        None,
+        description="Optional adapter-family filter such as statsforecast or sktime.",
+    )
     dry_run: bool = Field(True, description="Preview matching models without deleting them.")
     detail: DetailLevel = Field(
         "compact",
@@ -207,14 +211,42 @@ def _detail_mode(value: Any) -> DetailLevel:
     return "full" if str(value or "compact").strip().lower() == "full" else "compact"
 
 
+def _adapter_method(method: Any) -> str:
+    """Return the execution adapter without replacing the public method identity."""
+    method_name = str(method or "").strip()
+    if not method_name:
+        return method_name
+    try:
+        method_class = _get_registry().get_class(method_name)
+    except Exception:
+        return method_name
+    explicit = str(
+        getattr(method_class, "CAPABILITY_ADAPTER_METHOD", "") or ""
+    ).strip()
+    if explicit:
+        return explicit
+    selector_key = str(
+        getattr(method_class, "CAPABILITY_SELECTOR_KEY", "") or ""
+    ).strip()
+    execution_library = str(
+        getattr(method_class, "CAPABILITY_EXECUTION_LIBRARY", "") or ""
+    ).strip()
+    if selector_key and execution_library:
+        return execution_library
+    return method_name
+
+
 def _task_matches_filters(
     task: Any,
     *,
     method: Optional[str] = None,
+    adapter: Optional[str] = None,
     data_scope: Optional[str] = None,
     since_minutes: Optional[float] = None,
 ) -> bool:
     if method and str(getattr(task, "method", "")) != str(method):
+        return False
+    if adapter and _adapter_method(getattr(task, "method", "")) != str(adapter):
         return False
     if data_scope and str(getattr(task, "data_scope", "")) != str(data_scope):
         return False
@@ -278,6 +310,7 @@ def _serialize_model_handle(
     payload: Dict[str, Any] = {
         "model_id": handle.model_id,
         "method": handle.method,
+        "adapter_method": _adapter_method(handle.method),
         "data_scope": handle.data_scope,
         "params_hash": handle.params_hash,
         "created_at": format_epoch_utc(created_at_epoch) or created_at_epoch,
@@ -507,6 +540,7 @@ def _task_status_payload(
         "detail": detail,
         "task_id": task.task_id,
         "method": task.method,
+        "adapter_method": _adapter_method(task.method),
         "data_scope": task.data_scope,
         "status": task.status,
         "timezone": "UTC",
@@ -569,6 +603,7 @@ def _task_list_item_payload(
     payload: Dict[str, Any] = {
         "task_id": task.task_id,
         "method": task.method,
+        "adapter_method": _adapter_method(task.method),
         "data_scope": task.data_scope,
         "status": task.status,
         "timezone": "UTC",
@@ -647,16 +682,24 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
 
         ensure_mt5_connection_or_raise()
 
-        _, resolved_method, resolved_params = resolve_capability_request(
-            library="native",
-            method=request.method,
-            params=request.params,
-        )
-        training_params = (
-            resolved_params
-            if request.params is not None or resolved_method != request.method
-            else None
-        )
+        try:
+            registered_info = _get_registry().get_method_info(request.method)
+        except (ImportError, ValueError):
+            registered_info = {}
+        if registered_info.get("supports_training"):
+            resolved_method = request.method
+            training_params = request.params
+        else:
+            _, resolved_method, resolved_params = resolve_capability_request(
+                library="native",
+                method=request.method,
+                params=request.params,
+            )
+            training_params = (
+                resolved_params
+                if request.params is not None or resolved_method != request.method
+                else None
+            )
 
         tm = _get_task_manager()
         task_id, _ = tm.submit_forecast_request(
@@ -978,6 +1021,7 @@ def forecast_task_list(
     status_filter: Literal["all", "pending", "running", "completed", "failed", "cancelled"] = "all",
     since_minutes: Optional[float] = None,
     method: Optional[str] = None,
+    adapter: Optional[str] = None,
     data_scope: Optional[str] = None,
     detail: DetailLevel = "compact",
     limit: Annotated[int, Field(ge=1)] = 50,
@@ -985,7 +1029,8 @@ def forecast_task_list(
 ) -> Dict[str, Any]:
     """List active and recent forecast training tasks.
 
-    Optionally filter by status, method, data_scope, or recent creation window.
+    Optionally filter by status, public method, adapter family, data_scope, or
+    recent creation window.
     Results are ordered newest first and paged with ``limit``/``offset``.
     Use ``detail='full'`` for expanded progress and result payloads.
     """
@@ -1017,6 +1062,7 @@ def forecast_task_list(
             if _task_matches_filters(
                 task,
                 method=method,
+                adapter=adapter,
                 data_scope=data_scope,
                 since_minutes=since_minutes,
             )
@@ -1051,6 +1097,7 @@ def forecast_task_list(
                 "status_filter": None if status_filter == "all" else status_filter,
                 "since_minutes": since_minutes,
                 "method": method,
+                "adapter": adapter,
                 "data_scope": data_scope,
             }.items()
             if value is not None
@@ -1085,6 +1132,7 @@ def forecast_task_list(
         status_filter=status_filter,
         since_minutes=since_minutes,
         method=method,
+        adapter=adapter,
         data_scope=data_scope,
         detail=detail,
         limit=limit,
@@ -1095,13 +1143,15 @@ def forecast_task_list(
 @mcp.tool()
 def forecast_models_list(
     method: Optional[str] = None,
+    adapter: Optional[str] = None,
     detail: DetailLevel = "compact",
     limit: Annotated[int, Field(ge=1, le=500)] = 10,
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """List usable stored trained forecast models.
 
-    Optionally filter by method name (e.g. nhits, tft, mlforecast).
+    Optionally filter by public method name (for example sf_naive) or by
+    adapter family (for example statsforecast).
     Expired artifacts are intentionally excluded; use a dry-run
     ``forecast_models_cleanup`` call to inspect them. Use ``detail='full'`` to
     include stored model metadata. Results use deterministic model-id ordering
@@ -1113,6 +1163,15 @@ def forecast_models_list(
         store = _get_model_store()
         handles = store.list_models(method=method)
         all_handles = store.list_models(method=method, include_expired=True)
+        if adapter:
+            handles = [
+                handle for handle in handles
+                if _adapter_method(handle.method) == str(adapter)
+            ]
+            all_handles = [
+                handle for handle in all_handles
+                if _adapter_method(handle.method) == str(adapter)
+            ]
         handles = sorted(handles, key=lambda handle: str(handle.model_id))
         total_count = len(handles)
         page = handles[int(offset) : int(offset) + int(limit)]
@@ -1165,6 +1224,10 @@ def forecast_models_list(
                 }
             elif method:
                 out["message"] = f"No stored forecast models matched method={method!r}."
+            elif adapter:
+                out["message"] = (
+                    f"No stored forecast models matched adapter={adapter!r}."
+                )
             else:
                 out["message"] = (
                     "No stored forecast models found. Trainable methods persist "
@@ -1194,6 +1257,7 @@ def forecast_models_list(
         operation="forecast_models_list",
         func=_execute,
         method=method,
+        adapter=adapter,
         detail=detail,
         limit=limit,
         offset=offset,
@@ -1241,6 +1305,11 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
         detail_mode = _detail_mode(request.detail)
         store = _get_model_store()
         handles = store.list_models(method=request.method, include_expired=True)
+        if request.adapter:
+            handles = [
+                handle for handle in handles
+                if _adapter_method(handle.method) == str(request.adapter)
+            ]
         generated_at = time.time()
         matches = []
         for handle in handles:
@@ -1257,6 +1326,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
             row: Dict[str, Any] = {
                 "model_id": handle.model_id,
                 "method": handle.method,
+                "adapter_method": _adapter_method(handle.method),
                 "reason": reason,
             }
             if detail_mode == "full":
@@ -1287,6 +1357,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
             "detail": detail_mode,
             "dry_run": bool(request.dry_run),
             "method": request.method,
+            "adapter": request.adapter,
             "older_than_days": request.older_than_days,
             "ttl_days": _days(getattr(store, "ttl_seconds", 0.0)),
             "matched": total_matches,
@@ -1308,6 +1379,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
         operation="forecast_models_cleanup",
         func=_execute,
         method=request.method,
+        adapter=request.adapter,
         dry_run=request.dry_run,
         limit=request.limit,
         offset=request.offset,

@@ -2431,6 +2431,18 @@ def _resolve_stored_model_execution_alias(
     selector_value = str(
         getattr(stored_class, "CAPABILITY_SELECTOR_VALUE", "") or ""
     )
+    supplied_selector = str(original_params.get(selector_key) or "")
+    if (
+        selector_key
+        and selector_value
+        and selector_key in original_params
+        and supplied_selector.lower() != selector_value.lower()
+    ):
+        raise ForecastError(
+            f"model_id '{model_id}' identifies method '{stored_method}' with "
+            f"{selector_key}={selector_value!r}, but the request supplied "
+            f"{selector_key}={supplied_selector!r}. Remove the conflicting selector."
+        )
     requested_selector = str(params.get(selector_key) or "")
     method_matches = requested_method.strip().lower() == stored_method.lower()
     selector_matches = bool(

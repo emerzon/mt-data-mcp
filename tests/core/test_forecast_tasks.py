@@ -448,6 +448,27 @@ class TestForecastTaskList:
         }
         assert [task["task_id"] for task in result["tasks"]] == ["t2"]
 
+    def test_filters_public_method_and_adapter_independently(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_list
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.return_value = [
+            _make_task("naive", method="sf_naive"),
+            _make_task("theta", method="sf_theta"),
+            _make_task("native", method="theta"),
+        ]
+        mock_tm.runtime_snapshot.return_value = {}
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            exact = _unwrap(forecast_task_list)(method="sf_naive")
+            family = _unwrap(forecast_task_list)(adapter="statsforecast")
+
+        assert [row["task_id"] for row in exact["tasks"]] == ["naive"]
+        assert [row["task_id"] for row in family["tasks"]] == ["naive", "theta"]
+        assert all(
+            row["adapter_method"] == "statsforecast" for row in family["tasks"]
+        )
+
     @pytest.mark.parametrize(
         ("kwargs", "error_code"),
         [
@@ -527,6 +548,31 @@ class TestForecastModels:
         assert result["pagination"]["has_more"] is False
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
         mock_store.describe_model.assert_not_called()
+
+    def test_lists_library_aliases_by_public_method_or_adapter(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(
+                "sf_naive/EURUSD_H1/a", "sf_naive", "EURUSD_H1", "a", 1000.0
+            ),
+            TrainedModelHandle(
+                "sf_theta/EURUSD_H1/b", "sf_theta", "EURUSD_H1", "b", 1000.0
+            ),
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = handles
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            family = _unwrap(forecast_models_list)(adapter="statsforecast")
+
+        assert [row["method"] for row in family["models"]] == [
+            "sf_naive",
+            "sf_theta",
+        ]
+        assert all(
+            row["adapter_method"] == "statsforecast" for row in family["models"]
+        )
 
     def test_compact_model_rows_show_training_anchor(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
@@ -794,10 +840,11 @@ class TestForecastTrain:
             quantity="price",
         )
 
-    def test_training_resolves_registered_sktime_alias_like_generate(self):
+    @pytest.mark.parametrize("method", ["sf_naive", "skt_naive"])
+    def test_training_preserves_registered_library_alias_identity(self, method):
         from src.mtdata.core.forecast_tasks import forecast_train
 
-        task = _make_task(status="pending", method="sktime")
+        task = _make_task(status="pending", method=method)
         mock_tm = MagicMock()
         mock_tm.submit_forecast_request.return_value = ("task-train-1", True)
         mock_tm.get_status.return_value = task
@@ -807,13 +854,14 @@ class TestForecastTrain:
             patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
             result = _unwrap(forecast_train)(
-                ForecastTrainRequest(symbol="EURUSD", method="skt_naive")
+                ForecastTrainRequest(symbol="EURUSD", method=method)
             )
 
         call = mock_tm.submit_forecast_request.call_args.kwargs
-        assert call["method_name"] == "sktime"
-        assert call["params"]["estimator"].endswith("NaiveForecaster")
-        assert result["requested_method"] == "skt_naive"
+        assert call["method_name"] == method
+        assert call["params"] is None
+        assert result["method"] == method
+        assert "requested_method" not in result
 
     def test_training_can_wait_for_completed_model(self):
         from src.mtdata.core.forecast_tasks import forecast_train

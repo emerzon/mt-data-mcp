@@ -407,6 +407,10 @@ mode. Re-run the preview with identical filters before setting
 
 The compact listing defaults to ten models and reports total pagination plus
 counts by method. Increase `--limit` explicitly when browsing a larger store.
+Concrete library aliases such as `sf_naive` and `skt_naive` remain the public
+method identity in tasks, model IDs, listings, and cleanup. Use `--method` for
+that exact identity or `--adapter statsforecast` / `--adapter sktime` for an
+explicit family-wide view.
 
 Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 

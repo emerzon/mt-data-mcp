@@ -164,6 +164,7 @@ PARAM_HINTS = {
     "allow_stale": "Return the latest available closed bars when freshness checks would otherwise fail; defaults to false.",
     "explain_indicators": "Add compact latest-value interpretation notes for requested indicators; defaults to false.",
     "method": "Method/algorithm for this tool.",
+    "adapter": "Optional forecast adapter-family filter, such as statsforecast or sktime.",
     "mode": "Mode for this tool.",
     "source": "Input data source selector; volume profile uses auto, ticks, or m1_bars.",
     "engine": "Detection engine or comma-separated engines (for ensemble mode).",
