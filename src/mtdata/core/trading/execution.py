@@ -592,28 +592,32 @@ def _modify_position(  # noqa: C901
             )
 
             if dry_run:
-                return {
-                    "success": True,
-                    "dry_run": True,
-                    "actionability": "preview_only",
-                    "operation": "modify_position",
-                    "scope": "positions",
-                    "ticket": ticket_id,
-                    "position_ticket": resolved_ticket,
-                    "ticket_requested": ticket_id,
-                    "ticket_resolution": ticket_resolution,
-                    "symbol": position.symbol,
-                    "would_send_order": False,
-                    "preview_scope_summary": (
-                        "Validated position routing and protection levels; no modify request was sent to MT5."
-                    ),
-                    "applied_sl": desired_sl,
-                    "applied_tp": desired_tp,
-                    "not_estimated": [
-                        "broker_acceptance",
-                        "execution_latency",
-                    ],
-                }
+                return comments._attach_comment_preview_metadata(
+                    {
+                        "success": True,
+                        "dry_run": True,
+                        "actionability": "preview_only",
+                        "operation": "modify_position",
+                        "scope": "positions",
+                        "ticket": ticket_id,
+                        "position_ticket": resolved_ticket,
+                        "ticket_requested": ticket_id,
+                        "ticket_resolution": ticket_resolution,
+                        "symbol": position.symbol,
+                        "would_send_order": False,
+                        "preview_scope_summary": (
+                            "Validated position routing and protection levels; no modify request was sent to MT5."
+                        ),
+                        "applied_sl": desired_sl,
+                        "applied_tp": desired_tp,
+                        "not_estimated": [
+                            "broker_acceptance",
+                            "execution_latency",
+                        ],
+                    },
+                    comment,
+                    default="MCP modify position",
+                )
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,
@@ -1052,7 +1056,7 @@ def _modify_pending_order(  # noqa: C901
                                 request["expiration"] = time._server_time_naive_to_mt5_timestamp(server_dt)
 
             if dry_run:
-                return {
+                preview = {
                     "success": True,
                     "dry_run": True,
                     "actionability": "preview_only",
@@ -1092,6 +1096,11 @@ def _modify_pending_order(  # noqa: C901
                         "execution_latency",
                     ],
                 }
+                return comments._attach_comment_preview_metadata(
+                    preview,
+                    comment,
+                    default="MCP modify pending order",
+                )
 
             send_tick = mt5.symbol_info_tick(order.symbol)
             if send_tick is None:
@@ -1705,6 +1714,7 @@ def _close_positions_dry_run_preview(
     profit_only: bool,
     loss_only: bool,
     close_priority: Optional[str],
+    comment: Optional[str] = None,
     mt5: Any,
 ) -> Dict[str, Any]:
     rows = [_close_position_preview_row(position, mt5) for position in positions]
@@ -1758,7 +1768,7 @@ def _close_positions_dry_run_preview(
         filters["loss_only"] = True
     if close_priority not in (None, ""):
         filters["close_priority"] = close_priority
-    return {
+    preview = {
         "success": True,
         "dry_run": True,
         "actionability": "preview_only",
@@ -1778,6 +1788,12 @@ def _close_positions_dry_run_preview(
         "filters_applied": filters,
         "would_send_orders": len(rows),
     }
+    return comments._attach_comment_preview_metadata(
+        preview,
+        comment,
+        default="MCP close",
+        close=True,
+    )
 
 
 def _pending_order_preview_row(order: Any) -> Dict[str, Any]:
@@ -1803,6 +1819,7 @@ def _cancel_pending_dry_run_preview(
     *,
     symbol: Optional[str],
     magic: Optional[int],
+    comment: Optional[str] = None,
 ) -> Dict[str, Any]:
     rows = [_pending_order_preview_row(order) for order in orders]
     filters = {
@@ -1813,7 +1830,7 @@ def _cancel_pending_dry_run_preview(
         }.items()
         if value not in (None, "")
     }
-    return {
+    preview = {
         "success": True,
         "dry_run": True,
         "actionability": "preview_only",
@@ -1822,6 +1839,11 @@ def _cancel_pending_dry_run_preview(
         "filters_applied": filters,
         "would_cancel_pending_orders": len(rows),
     }
+    return comments._attach_comment_preview_metadata(
+        preview,
+        comment,
+        default="MCP cancel pending order",
+    )
 
 
 def _close_positions(  # noqa: C901
@@ -1965,6 +1987,7 @@ def _close_positions(  # noqa: C901
                     profit_only=profit_only,
                     loss_only=loss_only,
                     close_priority=close_priority,
+                    comment=comment,
                     mt5=mt5,
                 )
 
@@ -2463,6 +2486,7 @@ def _cancel_pending(  # noqa: C901
                     list(orders),
                     symbol=symbol,
                     magic=magic_filter,
+                    comment=comment,
                 )
 
             # 2. Cancel orders

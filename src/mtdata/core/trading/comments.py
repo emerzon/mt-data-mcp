@@ -77,7 +77,12 @@ def _comment_sanitization_info(comment: Optional[str], applied_comment: str) -> 
     }
 
 
-def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Optional[Dict[str, Any]]:
+def _comment_truncation_info(
+    comment: Optional[str],
+    applied_comment: str,
+    *,
+    max_length: int = _MT5_COMMENT_MAX_LENGTH,
+) -> Optional[Dict[str, Any]]:
     """Return metadata when a user-supplied comment is truncated."""
     if comment is None:
         return None
@@ -85,13 +90,84 @@ def _comment_truncation_info(comment: Optional[str], applied_comment: str) -> Op
         requested = str(comment).strip()
     except Exception:
         requested = ""
-    if not requested or requested == applied_comment:
+    sanitized = _sanitize_trade_comment_text(requested)
+    if not requested or len(sanitized) <= max_length:
         return None
     return {
         "requested": requested,
         "applied": applied_comment,
-        "max_length": _MT5_COMMENT_MAX_LENGTH,
+        "max_length": max_length,
     }
+
+
+def _attach_comment_preview_metadata(
+    payload: Dict[str, Any],
+    comment: Optional[str],
+    *,
+    default: str,
+    close: bool = False,
+) -> Dict[str, Any]:
+    """Attach the exact comment that a dry-run operation would submit."""
+    max_length = (
+        _MT5_CLOSE_COMMENT_MAX_LENGTH if close else _MT5_COMMENT_MAX_LENGTH
+    )
+    applied_comment = (
+        _normalize_close_trade_comment(comment, default=default)
+        if close
+        else _normalize_trade_comment(comment, default=default)
+    )
+    try:
+        requested_comment = None if comment is None else str(comment).strip()
+    except Exception:
+        requested_comment = ""
+
+    out = dict(payload)
+    out.update(
+        {
+            "comment": applied_comment,
+            "requested_comment": requested_comment,
+            "applied_comment": applied_comment,
+            "comment_max_length": max_length,
+        }
+    )
+    if comment is None or requested_comment == applied_comment:
+        return out
+
+    out["comment_changed"] = True
+    sanitization = _comment_sanitization_info(comment, applied_comment)
+    truncation = _comment_truncation_info(
+        comment,
+        applied_comment,
+        max_length=max_length,
+    )
+    warnings = [
+        str(item).strip()
+        for item in list(out.get("warnings") or [])
+        if str(item).strip()
+    ]
+    if sanitization is not None:
+        out["comment_sanitization"] = sanitization
+        warning = (
+            "Comment will be sanitized for broker compatibility: "
+            f"'{applied_comment}'"
+        )
+        if warning not in warnings:
+            warnings.append(warning)
+    if truncation is not None:
+        out["comment_truncation"] = truncation
+        warning = (
+            f"Comment will be truncated to {max_length} characters: "
+            f"'{applied_comment}'"
+        )
+        if warning not in warnings:
+            warnings.append(warning)
+    if sanitization is None and truncation is None:
+        warning = f"Comment will be normalized before submission: '{applied_comment}'"
+        if warning not in warnings:
+            warnings.append(warning)
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def _comment_row_metadata(comment: Any) -> Dict[str, Any]:

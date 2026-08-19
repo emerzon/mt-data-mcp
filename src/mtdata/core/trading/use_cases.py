@@ -35,7 +35,7 @@ from ..execution_logging import (
     run_logged_operation,
 )
 from ..output_contract import resolve_output_contract
-from . import validation
+from . import comments, validation
 from .common import build_trade_quote_context
 from .idempotency import (
     IdempotencyStore,
@@ -217,6 +217,12 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "guardrails_preview",
     "magic",
     "comment",
+    "requested_comment",
+    "applied_comment",
+    "comment_max_length",
+    "comment_changed",
+    "comment_sanitization",
+    "comment_truncation",
     "requested_price",
     "requested_stop_limit_price",
     "stop_loss",
@@ -1955,8 +1961,11 @@ def run_trade_place(  # noqa: C901
                     preview["requested_stop_limit_price"] = request.stop_limit_price
             if request.magic is not None:
                 preview["magic"] = request.magic
-            if request.comment:
-                preview["comment"] = request.comment
+            preview = comments._attach_comment_preview_metadata(
+                preview,
+                request.comment,
+                default="MCP pending order" if pending else "MCP order",
+            )
             if request.stop_loss not in (None, 0):
                 preview["stop_loss"] = request.stop_loss
             if request.take_profit not in (None, 0):
@@ -2636,6 +2645,16 @@ def run_trade_modify(
         ):
             result.setdefault("preview_ok", True)
             result.setdefault("would_send_order", False)
+            if pending is not None:
+                result = comments._attach_comment_preview_metadata(
+                    result,
+                    request.comment,
+                    default=(
+                        "MCP modify pending order"
+                        if pending
+                        else "MCP modify position"
+                    ),
+                )
         if correlation_id and str(result.get("error") or "").strip():
             result = normalize_error_payload(
                 result,
@@ -2841,6 +2860,35 @@ def _run_trade_close_once(  # noqa: C901
         ):
             result.setdefault("preview_ok", True)
             result.setdefault("would_send_order", False)
+            if request.target == "all_exposure":
+                result.setdefault(
+                    "comment_previews",
+                    {
+                        "positions": comments._attach_comment_preview_metadata(
+                            {},
+                            request.comment,
+                            default="MCP close",
+                            close=True,
+                        ),
+                        "pending_orders": comments._attach_comment_preview_metadata(
+                            {},
+                            request.comment,
+                            default="MCP cancel pending order",
+                        ),
+                    },
+                )
+                result.setdefault("requested_comment", request.comment)
+            else:
+                result = comments._attach_comment_preview_metadata(
+                    result,
+                    request.comment,
+                    default=(
+                        "MCP cancel pending order"
+                        if request.target == "pending"
+                        else "MCP close"
+                    ),
+                    close=request.target != "pending",
+                )
         if request.detail == "compact":
             result = _compact_close_preview_payload(result)
         if isinstance(result, dict) and str(result.get("error") or "").strip():
@@ -3281,8 +3329,6 @@ def _run_trade_close_once(  # noqa: C901
             preview["loss_only"] = True
         if request.close_priority:
             preview["close_priority"] = request.close_priority
-        if request.comment:
-            preview["comment"] = request.comment
         if request.deviation != 20:
             preview["deviation"] = request.deviation
         return _finish(preview, scope=scope)

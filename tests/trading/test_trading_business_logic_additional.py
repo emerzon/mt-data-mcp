@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from mtdata.core._mcp_tools import _select_output_fields
 from mtdata.core.trading.comments import (
+    _attach_comment_preview_metadata,
     _comment_sanitization_info,
     _normalize_trade_comment,
 )
@@ -312,6 +313,42 @@ def test_comment_sanitization_info_reports_changes():
     }
 
 
+def test_comment_preview_reports_exact_close_comment_and_limit():
+    requested = "Close 🚀 because this explanation is much too long"
+
+    result = _attach_comment_preview_metadata(
+        {"warnings": ["Existing warning"]},
+        requested,
+        default="MCP close",
+        close=True,
+    )
+
+    assert result["requested_comment"] == requested
+    assert result["applied_comment"] == "Close because this expla"
+    assert result["comment"] == result["applied_comment"]
+    assert result["comment_max_length"] == 24
+    assert result["comment_changed"] is True
+    assert result["comment_sanitization"]["requested"] == requested
+    assert result["comment_truncation"]["max_length"] == 24
+    assert result["warnings"][0] == "Existing warning"
+    assert any("sanitized" in warning for warning in result["warnings"])
+    assert any("truncated to 24" in warning for warning in result["warnings"])
+
+
+def test_comment_preview_leaves_short_safe_comment_without_warning():
+    result = _attach_comment_preview_metadata(
+        {},
+        "strategy 42",
+        default="MCP order",
+    )
+
+    assert result["requested_comment"] == "strategy 42"
+    assert result["applied_comment"] == "strategy 42"
+    assert result["comment_max_length"] == 31
+    assert "comment_changed" not in result
+    assert "warnings" not in result
+
+
 def test_server_time_naive_to_mt5_timestamp_strips_timezone():
     ts = _server_time_naive_to_mt5_timestamp(datetime(1970, 1, 1, 0, 1, 0, tzinfo=timezone.utc))
     assert ts == 60
@@ -413,6 +450,7 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
         order_type="BUY",
         stop_loss=1.08,
         take_profit=1.12,
+        comment="Preview 🚀 comment that exceeds thirty-one characters",
         dry_run=True,
         detail="full",
     )
@@ -448,6 +486,12 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert result["stop_loss"] == 1.08
     assert result["take_profit"] == 1.12
     assert result["blockers"] == []
+    assert result["requested_comment"].startswith("Preview 🚀")
+    assert result["applied_comment"] == "Preview comment that exceeds th"
+    assert result["comment"] == result["applied_comment"]
+    assert result["comment_max_length"] == 31
+    assert result["comment_sanitization"]["requested"] == request.comment
+    assert result["comment_truncation"]["max_length"] == 31
     assert "requested_sl" not in result
     assert "requested_tp" not in result
     selected = _select_output_fields(result, "stop_loss,take_profit,blockers")

@@ -65,6 +65,14 @@ limitations. Its `guardrails_preview` summary retains `enabled`, `blocked`,
 `ignored_for_demo`, and `checks_not_performed`; standard/full detail includes
 the complete guardrail diagnostics.
 
+Trade previews also report `requested_comment`, `applied_comment`, and
+`comment_max_length`. MT5-bound comments use a conservative ASCII subset and
+are capped at 31 characters for place, modify, and cancel requests, or 24
+characters for position-close requests. When a supplied comment changes, the
+preview includes structured sanitization or truncation metadata and a warning.
+For `target=all_exposure`, `comment_previews` shows the separate close and
+pending-cancel forms because their limits differ.
+
 **What a dry run *does* check:** required fields, order-type validity,
 market-vs-pending routing, an indicative margin estimate when MT5 exposes one,
 and a guardrails preview. For pending orders, `margin_required_when_filled` is
