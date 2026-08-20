@@ -254,6 +254,7 @@ def _attach_pattern_window_metadata(
     lookback: Any,
     top_k: Any,
     last_n_bars: Any = None,
+    detail: str = "compact",
 ) -> None:
     if not isinstance(payload, dict) or payload.get("error"):
         return
@@ -270,8 +271,19 @@ def _attach_pattern_window_metadata(
     except Exception:
         applied_last_n = last_n_bars
     payload.setdefault("applied_lookback", applied_lookback)
-    payload.setdefault("applied_top_k", applied_top_k)
     payload.setdefault("applied_last_n_bars", applied_last_n)
+    detail_value = str(detail or "compact").strip().lower()
+    output_row_cap = applied_top_k if detail_value != "full" else None
+    payload["top_k_contract"] = {
+        "value": applied_top_k,
+        "detector_scope": "maximum competing candlestick patterns retained per bar",
+        "output_scope": (
+            "ranked preview or standard rows"
+            if detail_value != "full"
+            else "no global row cap for complete full output"
+        ),
+        "output_row_cap": output_row_cap,
+    }
     try:
         observed_bars = int(payload.get("candles", applied_lookback))
     except Exception:
@@ -283,7 +295,6 @@ def _attach_pattern_window_metadata(
         else observed_bars,
         "requested_lookback": applied_lookback,
         "lookback_satisfied": observed_bars >= applied_lookback,
-        "returned_cap": applied_top_k,
     }
 
 
@@ -583,6 +594,7 @@ def run_patterns_detect(  # noqa: C901
                 lookback=request.lookback,
                 top_k=request.top_k,
                 last_n_bars=last_n_bars_val,
+                detail=detail_value,
             )
             rows = out.get("data")
             if isinstance(rows, list) and not rows and not out.get("note"):
@@ -620,6 +632,7 @@ def run_patterns_detect(  # noqa: C901
                 "review_recommended",
                 "suggested_review",
                 "applied_last_n_bars",
+                "top_k_contract",
                 "timezone",
             ):
                 if isinstance(compact_src, dict) and compact_src.get(key) not in (None, ""):

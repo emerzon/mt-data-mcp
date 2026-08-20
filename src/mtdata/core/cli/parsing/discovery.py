@@ -181,6 +181,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Candlestick mode always scans closed-bar detections; use --last-n-bars "
         "to restrict their recency. Harmonic mode always returns both states."
     ),
+    ("patterns_detect", "top_k"): (
+        "Detector candidate/collision budget and compact, summary, or standard "
+        "row cap. Full detail returns every surviving row; for candlesticks this "
+        "still caps competing pattern types per bar. Use --last-n-bars to bound "
+        "the full candlestick scan window."
+    ),
     ("symbols_list", "universe"): (
         "Symbol scan universe. When omitted, unfiltered listings use visible "
         "Market Watch symbols while searches use the full broker catalog."

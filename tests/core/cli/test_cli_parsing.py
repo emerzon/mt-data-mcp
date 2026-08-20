@@ -1302,6 +1302,7 @@ class TestResolveParamKwargs:
                 "include_completed",
                 "Candlestick mode always scans closed-bar detections",
             ),
+            ("patterns_detect", "top_k", "Full detail returns every surviving row"),
             ("options_chain", "limit", "option contracts"),
             ("volume_profile_levels", "lookback", "Historical bar count"),
             ("outliers_detect", "limit", "anomalous bars"),

@@ -1539,9 +1539,9 @@ def patterns_detect(
         patterns to detect (e.g., "doji,hammer,engulfing").
     
     top_k : int, optional (default=3)
-        Result preview budget. `lookback` controls the scanned bar window;
-        `top_k` controls how many `top_patterns` rows compact output returns
-        and is reported as `patterns_shown`.
+        Detector candidate/collision budget and compact, summary, or standard
+        row budget. Full detail returns every surviving row. For candlesticks,
+        top_k still caps competing detector types on each bar.
 
     last_n_bars : int, optional
         Candlestick mode only. Restrict detections to patterns that occur in the

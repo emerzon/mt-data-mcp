@@ -54,7 +54,15 @@ class PatternsDetectRequest(BaseModel):
     min_gap: int = Field(3, ge=0)
     robust_only: bool = False
     whitelist: Optional[str] = None
-    top_k: int = Field(3, ge=1)
+    top_k: int = Field(
+        3,
+        ge=1,
+        description=(
+            "Detector candidate/collision budget and compact, summary, or standard "
+            "row-preview cap. Full detail returns every surviving pattern row; in "
+            "candlestick mode, top_k still caps competing pattern types per bar."
+        ),
+    )
     last_n_bars: Optional[int] = Field(None, ge=1)
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None

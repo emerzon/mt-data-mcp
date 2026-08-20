@@ -157,6 +157,8 @@ use `--include-completed true` to include broken levels as well.
 | `--robust-only` | false | Restrict detection to a curated subset of established multi-bar candlestick types. This is a name preset, not a confidence threshold. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
 | `--min-strength` | 0.70 | Minimum OHLC-geometry and pattern-reliability strength score (0.0-1.0) |
+| `--top-k` | `3` | Candidate/collision budget and compact, summary, or standard row cap; it is not a global cap for `--detail full` |
+| `--last-n-bars` | — | Candlestick-only recency window for returned detections; use it to bound a full scan |
 | `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. Harmonics support `pattern_types`, `ratio_tolerance`, `min_confidence`, and pivot controls. |
 
 Detector config is strict. Candlestick mode accepts
@@ -180,6 +182,12 @@ Named whitelists are resolved against both individual backend methods and an
 aggregate pattern dispatcher. Full results report `requested_detectors`,
 `detectors_evaluated`, and any `unsupported_detectors`, so a zero-hit detector
 is distinguishable from one the active backend could not run.
+
+For candlesticks, `top_k` also resolves collisions when several detector types
+fire on the same bar. Compact and summary use it as a preview budget, and
+standard uses it as a returned-row cap. Full detail deliberately keeps every
+surviving row and reports that scope in `top_k_contract`; combine full detail
+with `--last-n-bars` when the complete row set must remain small.
 
 ### Filtering Patterns
 

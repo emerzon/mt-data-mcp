@@ -361,6 +361,64 @@ def test_patterns_detect_candlestick_passes_config(monkeypatch):
     assert captured["config"] == {"use_volume_confirmation": False}
 
 
+@pytest.mark.parametrize(
+    ("detail", "expected_rows", "expected_output_cap"),
+    [
+        ("compact", 2, 2),
+        ("standard", 2, 2),
+        ("full", 5, None),
+    ],
+)
+def test_candlestick_top_k_metadata_matches_detail_scope(
+    monkeypatch,
+    detail,
+    expected_rows,
+    expected_output_cap,
+):
+    rows = [
+        {
+            "pattern": f"Pattern {index}",
+            "confidence": 0.5 + index * 0.05,
+            "end_index": index,
+        }
+        for index in range(5)
+    ]
+    monkeypatch.setattr(
+        core_patterns,
+        "_detect_candlestick_patterns",
+        lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "mode": "candlestick",
+            "candles": 20,
+            "count": len(rows),
+            "data": rows,
+        },
+    )
+
+    result = patterns_detect(
+        symbol="EURUSD",
+        timeframe="H1",
+        mode="candlestick",
+        detail=detail,
+        top_k=2,
+    )
+
+    returned_rows = (
+        result["top_patterns"] if detail == "compact" else result["data"]
+    )
+    assert len(returned_rows) == expected_rows
+    assert result["top_k_contract"]["value"] == 2
+    assert result["top_k_contract"]["output_row_cap"] == expected_output_cap
+    assert "applied_top_k" not in result
+    assert "returned_cap" not in result["effective_window"]
+    if detail == "full":
+        assert "no global row cap" in result["top_k_contract"]["output_scope"]
+    else:
+        assert result["n_patterns" if detail == "compact" else "available_count"] == 5
+
+
 def test_patterns_detect_passes_date_range_to_candlestick(monkeypatch):
     captured = {}
 

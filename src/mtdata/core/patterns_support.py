@@ -755,6 +755,7 @@ def _compact_patterns_payload(  # noqa: C901
         "mode": payload.get("mode"),
         "n_patterns": total_i,
         "applied_last_n_bars": payload.get("applied_last_n_bars"),
+        "top_k_contract": payload.get("top_k_contract"),
         "effective_window": payload.get("effective_window"),
         "completion_filter": payload.get("completion_filter"),
         "adaptation": _compact_elliott_adaptation(payload.get("adaptation")),
