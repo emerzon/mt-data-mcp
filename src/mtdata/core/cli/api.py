@@ -594,7 +594,11 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
     verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
-    result = _select_output_fields(result, getattr(args, "output_fields", None))
+    result = _select_output_fields(
+        result,
+        getattr(args, "output_fields", None),
+        tool_name=cmd_name,
+    )
     output = _format_result_for_cli(
         result,
         fmt=_resolve_cli_formatter(args),

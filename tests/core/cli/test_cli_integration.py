@@ -2439,7 +2439,7 @@ class TestEdgeCases:
         assert "extras" in payload["error"]
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_all_unresolved_output_fields_preserve_tool_success(
+    def test_all_unresolved_output_fields_fail_with_structured_json(
         self, mock_discover, capsys
     ):
         def sample_tool(output_fields=None, **_kwargs):
@@ -2458,12 +2458,75 @@ class TestEdgeCases:
         ):
             status = main()
 
-        assert status == 0
+        assert status == 1
         assert mock_discover.called
         payload = json.loads(capsys.readouterr().out)
-        assert payload["success"] is True
+        assert payload["success"] is False
+        assert payload["error_code"] == "output_fields_unresolved"
+        assert payload["output_fields_status"] == "failed"
         assert payload["unresolved_output_fields"] == ["missing"]
         assert payload["valid_output_fields"] == ["value"]
+        assert "valid_output_fields" in payload["remediation"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_all_unresolved_output_fields_fail_in_toon(
+        self, mock_discover, capsys, monkeypatch
+    ):
+        def sample_tool(output_fields=None, **_kwargs):
+            return {"success": True, "value": 1}
+
+        mock_discover.return_value = {
+            "sample_tool": {
+                "func": sample_tool,
+                "meta": {"description": "Sample tool"},
+            }
+        }
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "toon")
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "sample_tool", "--output-fields", "missing"],
+        ):
+            status = main()
+
+        assert status == 1
+        output = capsys.readouterr().out
+        assert "success: false" in output
+        assert "error_code: output_fields_unresolved" in output
+        assert "output_fields_status: failed" in output
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_empty_trade_collection_accepts_declared_row_path(
+        self, mock_discover, capsys
+    ):
+        def trade_get_open(output_fields=None, **_kwargs):
+            return {"success": True, "count": 0, "items": [], "empty": True}
+
+        mock_discover.return_value = {
+            "trade_get_open": {
+                "func": trade_get_open,
+                "meta": {"description": "Open positions"},
+            }
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "trade_get_open",
+                "--output-fields",
+                "items.symbol",
+                "--json",
+            ],
+        ):
+            status = main()
+
+        assert status == 0
+        assert json.loads(capsys.readouterr().out) == {
+            "success": True,
+            "count": 0,
+            "items": [],
+        }
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_json_mode_formats_argparse_failures_as_json(self, mock_discover, capsys):

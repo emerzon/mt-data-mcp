@@ -17,7 +17,7 @@ def test_output_fields_supports_dotted_nested_paths() -> None:
     }
 
 
-def test_output_fields_total_miss_preserves_tool_success() -> None:
+def test_output_fields_partial_projection_is_explicit() -> None:
     payload = {"success": True, "symbol": "EURUSD", "details": {"digits": 5}}
 
     result = _select_output_fields(payload, "symbol,details.missing")
@@ -27,7 +27,59 @@ def test_output_fields_total_miss_preserves_tool_success() -> None:
         "symbol": "EURUSD",
         "unresolved_output_fields": ["details.missing"],
         "valid_output_fields": ["details"],
+        "output_fields_status": "partial",
     }
+
+
+def test_output_fields_total_miss_returns_structured_error() -> None:
+    payload = {"success": True, "value": 1}
+
+    result = _select_output_fields(payload, "missing")
+
+    assert result == {
+        "success": False,
+        "error": "None of the requested output fields are available in this response contract.",
+        "error_code": "output_fields_unresolved",
+        "unresolved_output_fields": ["missing"],
+        "valid_output_fields": ["value"],
+        "output_fields_status": "failed",
+        "remediation": (
+            "Choose one or more paths from valid_output_fields and retry "
+            "--output-fields."
+        ),
+    }
+
+
+def test_output_fields_resolves_declared_path_through_empty_collection() -> None:
+    payload = {
+        "success": True,
+        "count": 0,
+        "items": [],
+        "empty": True,
+    }
+
+    result = _select_output_fields(
+        payload,
+        "items.symbol",
+        tool_name="trade_get_open",
+    )
+
+    assert result == {"success": True, "count": 0, "items": []}
+
+
+def test_output_fields_rejects_unknown_path_through_empty_collection() -> None:
+    payload = {"success": True, "count": 0, "items": [], "empty": True}
+
+    result = _select_output_fields(
+        payload,
+        "items.symbl",
+        tool_name="trade_get_open",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "output_fields_unresolved"
+    assert result["unresolved_output_fields"] == ["items.symbl"]
+    assert "items.symbol" in result["valid_output_fields"]
 
 
 def test_output_fields_resolves_canonical_forecast_arrays_from_compact_rows() -> None:

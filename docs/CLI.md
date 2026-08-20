@@ -204,16 +204,20 @@ mtdata-cli symbols_describe EURUSD --output-fields symbol,details.digits,details
 
 Bare field names address top-level keys; dotted paths address nested keys.
 Misspelled or unavailable paths are reported in `unresolved_output_fields`.
-Projection does not turn an otherwise successful tool call into an error when
-all requested paths are unavailable; use `valid_output_fields` to retry with
-the returned shape.
+When some requested paths resolve, the usable values are retained and
+`output_fields_status=partial` makes the incomplete projection explicit. When
+none resolve, the response has `success=false`,
+`error_code=output_fields_unresolved`, and the CLI exits `1`. Use
+`valid_output_fields` to retry with the returned shape. Stable declared row
+paths, including the trade-read `items.*` fields, remain valid when their
+collection is empty.
 
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Command completed without a tool error |
-| `1` | Tool/provider failure, invalid tool payload, interrupted command, internal CLI error, or no command selected |
+| `1` | Tool/provider failure, unresolved output projection, invalid tool payload, interrupted command, internal CLI error, or no command selected |
 | `2` | Argument parsing or command-line usage error, including a missing required symbol |
 
 Scripts should parse JSON error fields when they need to distinguish provider,

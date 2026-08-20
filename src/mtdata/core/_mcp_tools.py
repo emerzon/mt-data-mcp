@@ -976,6 +976,92 @@ _ERROR_FIELD_SELECTION_META_KEYS = frozenset(
     }
 )
 
+# Empty collections cannot reveal their row shape at runtime. Keep the stable
+# public row paths for the trade-read tools here so field projection can still
+# distinguish a valid empty result from a misspelled path. Other tools continue
+# to resolve paths from their concrete payload until they publish a stable row
+# contract of their own.
+_DECLARED_OUTPUT_PATHS = {
+    "trade_get_open": frozenset(
+        f"items.{field}"
+        for field in (
+            "ticket",
+            "symbol",
+            "time",
+            "side",
+            "volume",
+            "entry_price",
+            "sl",
+            "tp",
+            "price_current",
+            "swap",
+            "profit",
+            "comment",
+            "magic",
+            "usable_for_live_trading",
+        )
+    ),
+    "trade_get_pending": frozenset(
+        f"items.{field}"
+        for field in (
+            "ticket",
+            "symbol",
+            "time",
+            "expiration",
+            "side",
+            "order_type",
+            "volume",
+            "trigger_price",
+            "stop_limit_price",
+            "sl",
+            "tp",
+            "price_current",
+            "comment",
+            "magic",
+        )
+    ),
+    "trade_history": frozenset(
+        f"items.{field}"
+        for field in (
+            "fill_time",
+            "placed_time",
+            "done_time",
+            "ticket",
+            "deal_ticket",
+            "order_ticket",
+            "position_ticket",
+            "symbol",
+            "magic",
+            "fill_side",
+            "deal_effect",
+            "position_side",
+            "position_action",
+            "order_type",
+            "state",
+            "volume",
+            "volume_initial",
+            "volume_current",
+            "price",
+            "price_open",
+            "price_stoplimit",
+            "price_current",
+            "sl",
+            "tp",
+            "profit",
+            "commission",
+            "swap",
+            "fee",
+            "comment",
+            "comment_truncated",
+            "exit_trigger",
+            "exit_trigger_price",
+            "timestamp_anomaly",
+            "original_fill_time",
+            "fill_time_future_seconds",
+        )
+    ),
+}
+
 
 def _normalize_output_fields(value: Any) -> tuple[str, ...]:
     if value in (None, False, ""):
@@ -1052,26 +1138,51 @@ def _filter_output_fields(
     return value, False
 
 
-def _filter_output_path(value: Any, path: tuple[str, ...]) -> tuple[Any, bool]:
+def _filter_output_path(
+    value: Any,
+    path: tuple[str, ...],
+    *,
+    declared_paths: frozenset[str] = frozenset(),
+    prefix: tuple[str, ...] = (),
+) -> tuple[Any, bool]:
     if not path:
         return value, True
     if isinstance(value, dict):
         key = path[0]
         if key not in value:
             return {}, False
-        filtered, matched = _filter_output_path(value[key], path[1:])
+        filtered, matched = _filter_output_path(
+            value[key],
+            path[1:],
+            declared_paths=declared_paths,
+            prefix=(*prefix, key),
+        )
         return ({key: filtered}, True) if matched else ({}, False)
     if isinstance(value, list):
+        if not value and ".".join((*prefix, *path)) in declared_paths:
+            return [], True
         items = []
         for item in value:
-            filtered, matched = _filter_output_path(item, path)
+            filtered, matched = _filter_output_path(
+                item,
+                path,
+                declared_paths=declared_paths,
+                prefix=prefix,
+            )
             if matched:
                 items.append(filtered)
         return items, bool(items)
     if isinstance(value, tuple):
+        if not value and ".".join((*prefix, *path)) in declared_paths:
+            return (), True
         items = []
         for item in value:
-            filtered, matched = _filter_output_path(item, path)
+            filtered, matched = _filter_output_path(
+                item,
+                path,
+                declared_paths=declared_paths,
+                prefix=prefix,
+            )
             if matched:
                 items.append(filtered)
         return tuple(items), bool(items)
@@ -1123,11 +1234,15 @@ def _row_collection_names(value: Dict[str, Any]) -> list[str]:
 def _project_row_collection_field(
     value: Dict[str, Any],
     field: str,
+    *,
+    declared_paths: frozenset[str] = frozenset(),
 ) -> tuple[Dict[str, Any], bool]:
     for name in _row_collection_names(value):
         rows = value.get(name)
         if not isinstance(rows, list):
             continue
+        if not rows and f"{name}.{field}" in declared_paths:
+            return {name: []}, True
         if not any(isinstance(row, dict) and field in row for row in rows):
             continue
         projected = []
@@ -1182,7 +1297,12 @@ def _project_forecast_alias_field(
     return ({field: projected}, True) if matched else ({}, False)
 
 
-def _select_output_fields(value: Any, fields: Any) -> Any:
+def _select_output_fields(
+    value: Any,
+    fields: Any,
+    *,
+    tool_name: str = "",
+) -> Any:
     requested = _normalize_output_fields(fields)
     if not requested or not isinstance(value, dict):
         return value
@@ -1194,12 +1314,18 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         for key, subvalue in value.items()
         if key in preserved_keys
     }
+    declared_paths = _DECLARED_OUTPUT_PATHS.get(
+        str(tool_name or "").strip().lower(),
+        frozenset(),
+    )
     unresolved: list[str] = []
+    resolved_count = 0
     for requested_field in requested:
         if "." in requested_field:
             filtered, matched = _filter_output_path(
                 value,
                 tuple(part for part in requested_field.split(".") if part),
+                declared_paths=declared_paths,
             )
         elif requested_field in value:
             filtered, matched = {requested_field: value[requested_field]}, True
@@ -1212,6 +1338,7 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
                 filtered, matched = _project_row_collection_field(
                     value,
                     requested_field,
+                    declared_paths=declared_paths,
                 )
             if not matched:
                 filtered, matched = {}, requested_field in {
@@ -1223,16 +1350,36 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         if not matched:
             unresolved.append(requested_field)
             continue
+        resolved_count += 1
         selected = _merge_output_field_selection(selected, filtered)
     # Optional error-envelope fields may be absent on success. Other missing
     # paths are surfaced so projection typos cannot silently discard data.
     if unresolved:
         selected["unresolved_output_fields"] = unresolved
         selected["valid_output_fields"] = sorted(
-            str(key)
-            for key in value
-            if key not in preserved_keys
+            {
+                *(str(key) for key in value if key not in preserved_keys),
+                *declared_paths,
+            }
         )
+        if resolved_count:
+            selected["output_fields_status"] = "partial"
+        elif value.get("success") is not False and not bool(value.get("error")):
+            selected.update(
+                {
+                    "success": False,
+                    "error": (
+                        "None of the requested output fields are available in "
+                        "this response contract."
+                    ),
+                    "error_code": "output_fields_unresolved",
+                    "output_fields_status": "failed",
+                    "remediation": (
+                        "Choose one or more paths from valid_output_fields and "
+                        "retry --output-fields."
+                    ),
+                }
+            )
     return selected
 
 
@@ -1334,7 +1481,11 @@ def _shape_public_tool_output(
         tool_name=tool_name,
         detail=contract_state.shape_detail,
     )
-    return _select_output_fields(public_out, output_fields)
+    return _select_output_fields(
+        public_out,
+        output_fields,
+        tool_name=tool_name,
+    )
 
 
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
