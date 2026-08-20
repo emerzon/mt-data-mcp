@@ -224,9 +224,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
     ("data_fetch_candles", "limit"): (
         "Maximum returned bars. Latest queries default to 20 most-recent bars. "
-        "On an explicit --start/--end range, omission returns the full matching "
-        "window up to a 100000-bar safety cap. Queries with --start retain the "
-        "earliest matching bars (first-N) when the cap binds; otherwise the latest "
+        "Explicit --start/--end ranges also default to a 20-bar page and return a "
+        "continuation cursor when more bars remain. Queries with --start retain the "
+        "earliest matching bars (first-N); otherwise the latest "
         "bars are retained. Indicator warmup bars are fetched in addition to returned rows."
     ),
     ("data_fetch_candles", "start"): (

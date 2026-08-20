@@ -1900,7 +1900,7 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "expected"),
         [
-            ("data_fetch_candles", "limit", "100000-bar safety cap"),
+            ("data_fetch_candles", "limit", "default to a 20-bar page"),
             ("data_fetch_ticks", "limit", "maximum 50000"),
             ("market_status", "symbol", "static major-equity-exchange calendar"),
             ("forecast_task_cancel_all", "status_filter", "all, pending, or running"),

@@ -905,8 +905,11 @@ def test_start_anchored_range_keeps_observed_forming_bar_disclosure():
     assert "include_incomplete" in str(result.get("hint") or "")
 
 
-def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
-    rows = [{"time": f"t{i}", "close": i} for i in range(25)]
+def test_run_data_fetch_candles_range_uses_compact_page_when_limit_omitted():
+    rows = [
+        {"time": f"2026-01-01T{i:02d}:00:00Z", "close": i}
+        for i in range(24)
+    ] + [{"time": "2026-01-02T00:00:00Z", "close": 24}]
     observed = {}
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -929,14 +932,15 @@ def test_run_data_fetch_candles_range_uses_safety_cap_when_limit_omitted():
         fetch_candles_impl=_fetch,
     )
 
-    assert observed["limit"] == 100_000
-    assert result["data"] == rows
-    assert result["count"] == 25
-    assert result.get("truncated") is not True
-    assert result["range_complete"] is True
-    assert result["default_limit"] == 100_000
+    assert observed["limit"] == 20
+    assert result["data"] == rows[:20]
+    assert result["count"] == 20
+    assert result["truncated"] is True
+    assert result["range_complete"] is False
+    assert result["default_limit"] == 20
     assert result["query_applied"]["limit_source"] == "default"
-    assert "pagination" not in result
+    assert result["pagination"]["has_more"] is True
+    assert result["pagination"]["next_cursor"]
     assert "requested_limit" not in result
 
 

@@ -336,9 +336,9 @@ instant are returned; completed OHLC values from an overlapping bar are never
 included early. Calendar-period ends retain their date/session-label behavior.
 When `--start` and `--limit` are combined, candles are returned in ascending
 order from the start bound (first-N). When `--limit` is omitted, range queries
-return the full matching window up to the 100,000-bar safety cap. Pass an
-explicit `--limit` for long, high-frequency ranges to keep responses bounded.
-Omit `--start` for latest-N retrieval.
+return a 20-bar page. Follow `pagination.next_cursor` with the original range
+arguments to continue, or pass an explicit larger `--limit` when one larger
+response is intentional. Omit `--start` for latest-N retrieval.
 
 ---
 

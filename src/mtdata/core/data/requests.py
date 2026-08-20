@@ -377,8 +377,9 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "latest bars (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
             "Any query with start selects the earliest bars at or after start. "
-            "Omitted limit on an explicit start/end range returns the full "
-            f"matching window up to {DATA_FETCH_CANDLES_MAX_LIMIT:,}. "
+            "Range queries also default to a 20-bar page and provide a continuation "
+            "cursor when more matching bars remain. Pass an explicit larger limit "
+            "to retrieve more of the range in one response. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),
