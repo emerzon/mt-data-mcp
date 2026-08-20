@@ -1169,6 +1169,7 @@ def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) 
             ]
         }
     )
+    gateway.symbol_info = lambda _symbol: SimpleNamespace(point=0.00001, digits=5)
     clock = FakeClock(started)
 
     result = run_wait_event(
@@ -1195,8 +1196,17 @@ def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) 
     assert closed_candle["low"] == 1.0
     assert closed_candle["close"] == 1.15
     assert closed_candle["volume"] == 42
+    assert closed_candle["volume_source"] == "tick_volume"
     assert closed_candle["tick_volume"] == 42
-    assert closed_candle["spread"] == 7
+    assert closed_candle["spread"] == 0.00007
+    assert closed_candle["spread_points"] == 7
+    assert closed_candle["units"] == {
+        "tick_volume": "broker_tick_count",
+        "real_volume": "traded_volume",
+        "volume": "broker_tick_count",
+        "spread_points": "broker_points",
+        "spread": "absolute_price",
+    }
     assert closed_candle["direction"] == "bullish"
     assert closed_candle["change"] == 0.05
     assert closed_candle["range"] == 0.2

@@ -1673,12 +1673,21 @@ def _boundary_closed_candle_for_symbol(
     )
     if row is None:
         return None
+    point = None
+    try:
+        info = gateway.symbol_info(symbol)
+        point_value = float(getattr(info, "point", 0.0) or 0.0)
+        if math.isfinite(point_value) and point_value > 0.0:
+            point = point_value
+    except Exception:
+        point = None
     return _format_boundary_closed_candle(
         row,
         symbol=symbol,
         timeframe=timeframe,
         close_at_utc=close_at_utc,
         seconds_per_bar=seconds_per_bar,
+        price_point=point,
     )
 
 
@@ -1761,6 +1770,7 @@ def _format_boundary_closed_candle(
     timeframe: str,
     close_at_utc: datetime,
     seconds_per_bar: float,
+    price_point: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     open_price = _row_float(row, "open")
     high_price = _row_float(row, "high")
@@ -1793,8 +1803,31 @@ def _format_boundary_closed_candle(
     volume = real_volume if real_volume not in (None, 0.0) else tick_volume
     if volume is not None:
         payload["volume"] = _volume_payload_value(volume)
+        payload["volume_source"] = (
+            "real_volume" if real_volume not in (None, 0.0) else "tick_volume"
+        )
     if spread is not None:
-        payload["spread"] = _volume_payload_value(spread)
+        payload["spread_points"] = _volume_payload_value(spread)
+        if price_point is not None:
+            payload["spread"] = _round_market_stat(float(spread) * price_point)
+
+    units: Dict[str, str] = {}
+    if tick_volume is not None:
+        units["tick_volume"] = "broker_tick_count"
+    if real_volume is not None:
+        units["real_volume"] = "traded_volume"
+    if volume is not None:
+        units["volume"] = (
+            "traded_volume"
+            if real_volume not in (None, 0.0)
+            else "broker_tick_count"
+        )
+    if spread is not None:
+        units["spread_points"] = "broker_points"
+        if price_point is not None:
+            units["spread"] = "absolute_price"
+    if units:
+        payload["units"] = units
 
     payload.update(
         _boundary_closed_candle_stats(
