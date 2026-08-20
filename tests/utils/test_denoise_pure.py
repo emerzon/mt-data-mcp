@@ -1183,6 +1183,15 @@ class TestButterworthFilter:
                                 causality="causal", padlen=None)
         _check_basic(y, N)
 
+    def test_causal_lowpass_initializes_at_price_level(self):
+        pytest.importorskip("scipy.signal")
+        prices = np.full(40, 1.16832)
+
+        y = _butterworth_filter(prices, cutoff=0.1, order=4, btype="low",
+                                causality="causal", padlen=None)
+
+        np.testing.assert_allclose(y, prices, rtol=0.0, atol=1e-10)
+
     def test_bandpass(self):
         pytest.importorskip("scipy.signal")
         y = _butterworth_filter(NOISY_SIGNAL, cutoff=[0.05, 0.2], order=2, btype="bandpass",

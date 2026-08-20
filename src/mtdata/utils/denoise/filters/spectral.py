@@ -9,8 +9,9 @@ try:
     from scipy.signal import butter as _butter
     from scipy.signal import filtfilt as _filtfilt
     from scipy.signal import lfilter as _lfilter
+    from scipy.signal import lfilter_zi as _lfilter_zi
 except Exception:
-    _butter = _filtfilt = _lfilter = None  # type: ignore
+    _butter = _filtfilt = _lfilter = _lfilter_zi = None  # type: ignore
 
 from ..base import _series_like, register_filter
 
@@ -70,7 +71,11 @@ def _butterworth_filter(
         return _filtfilt(b, a, x, padlen=int(padlen))
     if _lfilter is None:
         return x
-    return _lfilter(b, a, x)
+    if len(x) == 0 or _lfilter_zi is None:
+        return _lfilter(b, a, x)
+    initial_state = _lfilter_zi(b, a) * float(x[0])
+    filtered, _final_state = _lfilter(b, a, x, zi=initial_state)
+    return filtered
 
 
 def _supersmoother_1d(x: np.ndarray, period: float) -> np.ndarray:
