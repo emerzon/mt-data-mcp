@@ -409,6 +409,8 @@ def test_microstructure_compact_output_omits_research_events() -> None:
     assert result["summary"]["spread"]["regime"] == "near_window_median"
     assert result["summary"]["spread"]["basis"] == "historical_tick_window_distribution"
     assert result["summary"]["spread"]["source"] == "mt5.copy_ticks_range"
+    assert result["window"]["source"] == "minutes_back"
+    assert result["window"]["requested"] == {"minutes_back": 60}
     assert result["observed_window"]["start"].endswith("Z")
     assert result["observed_window"]["end"].endswith("Z")
     assert "liquidity_events" not in result
@@ -864,6 +866,12 @@ def test_execution_quality_empty_explicit_range_retains_analysis_window() -> Non
     assert result["window"]["source"] == "explicit_range"
     assert result["window"]["start"] == "2020-01-01T00:00:00Z"
     assert result["window"]["end"] == "2020-01-02T23:59:59.999999Z"
+    assert result["window"]["requested"] == {
+        "start": "2020-01-01",
+        "end": "2020-01-02",
+    }
+    assert "minutes_back_requested" not in result["window"]
+    assert "defaulted" not in result["window"]
     assert result["sample"]["sample_start"] is None
     assert result["sample"]["sample_end"] is None
 
@@ -1000,7 +1008,86 @@ def test_execution_quality_exact_symbol_postfilters_gateway_results() -> None:
         "match_mode": "exact",
     }
     assert {item["symbol"] for item in result["items"]} == {"EURUSD"}
-    assert result["data_quality"]["matched_symbols"] == ["EURUSD"]
+    assert result["data_quality"]["eligible_symbols"] == ["EURUSD"]
+    assert result["data_quality"]["analyzed_symbols"] == ["EURUSD"]
+
+
+def test_execution_quality_separates_eligible_and_analyzed_symbols() -> None:
+    gateway = FakeGateway()
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 1.1, "volume_initial": 1.0},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": fill_epoch * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "GBPUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.2001,
+            "time_msc": fill_epoch * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["data_quality"]["eligible_symbols"] == ["EURUSD", "GBPUSD"]
+    assert result["data_quality"]["analyzed_symbols"] == ["EURUSD"]
+    assert result["data_quality"]["skipped"]["unbenchmarked"] == 1
+
+
+def test_execution_quality_reports_magic_filter_without_precision_loss() -> None:
+    gateway = FakeGateway()
+    fill_epoch = _now() - 10
+    magic = (1 << 63) + 17
+    gateway.orders = [
+        {"ticket": 10, "price_open": 1.1, "volume_initial": 1.0},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": fill_epoch * 1000,
+            "magic": magic,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            magic=str(magic),
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["filters_applied"] == {
+        "magic": magic,
+        "magic_exact": str(magic),
+    }
+    assert result["summary"]["fills"] == 1
 
 
 def test_execution_quality_uses_continuous_calendar_for_crypto() -> None:
@@ -1187,8 +1274,69 @@ def test_execution_quality_compact_omits_expanded_breakdowns() -> None:
 
     assert result["summary"]["fills"] == 1
     assert "breakdowns" not in result
-    assert result["data_quality"]["session_calendars"] == ["fx"]
+    assert "session_calendars" not in result["data_quality"]
     assert "session_definition" not in result["data_quality"]
+    assert "timing_definition" not in result
+    assert "price_quality_definition" not in result
+    assert "units" not in result
+
+
+def test_execution_quality_reuses_symbol_time_quote_chunks() -> None:
+    gateway = FakeGateway()
+    chunk = math.floor((_now() - 600) / 300) * 300
+    start = chunk + 80
+    gateway.tick_rows = _ticks(100, start=start)
+    gateway.orders = [
+        {
+            "ticket": 10,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 9) * 1000,
+        },
+        {
+            "ticket": 11,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 19) * 1000,
+        },
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10009,
+            "time_msc": (start + 20) * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            markout_seconds=[1, 5],
+            detail="full",
+        ),
+        gateway,
+    )
+
+    quote_reads = result["data_quality"]["quote_reads"]
+    assert result["summary"]["fills"] == 2
+    assert quote_reads["broker_queries"] == 1
+    assert quote_reads["cache_hits"] == 3
+    assert quote_reads["strategy"] == "symbol_5_minute_chunk_cache"
 
 
 def test_execution_quality_excludes_future_dated_fills() -> None:
@@ -1589,6 +1737,7 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
         assert candidate["mean_return_t_stat"] == pytest.approx(
             candidate["sharpe"] * math.sqrt(candidate["trades"])
         )
+
     assert result["units"]["trades"] == "non_overlapping_positions"
     assert result["units"]["max_drawdown"] == "nonnegative_return_fraction"
     assert result["rankings"][0]["max_drawdown"] >= 0.0
@@ -1597,6 +1746,47 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     }
     for fold in result["rankings"][0]["folds"]:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
+
+
+@pytest.mark.parametrize(
+    ("request_type", "kwargs"),
+    [
+        (
+            MarketMicrostructureRequest,
+            {
+                "symbol": "EURUSD",
+                "start": "2026-08-12T10:00:00Z",
+                "end": "2026-08-12T11:00:00Z",
+                "minutes_back": 30,
+            },
+        ),
+        (
+            TradeExecutionQualityRequest,
+            {
+                "start": "2026-08-12T10:00:00Z",
+                "end": "2026-08-12T11:00:00Z",
+                "minutes_back": 30,
+            },
+        ),
+    ],
+)
+def test_analytics_requests_reject_conflicting_time_controls(
+    request_type,
+    kwargs,
+) -> None:
+    with pytest.raises(ValueError, match="cannot be combined"):
+        request_type(**kwargs)
+
+
+@pytest.mark.parametrize("magic", [-1, 1 << 64])
+def test_execution_quality_request_rejects_magic_outside_mt5_domain(magic) -> None:
+    with pytest.raises(ValueError):
+        TradeExecutionQualityRequest(magic=magic)
+
+
+def test_execution_quality_request_accepts_mt5_magic_boundaries() -> None:
+    assert TradeExecutionQualityRequest(magic=0).magic == 0
+    assert TradeExecutionQualityRequest(magic=(1 << 64) - 1).magic == (1 << 64) - 1
 
 
 def test_strategy_validation_explicit_range_is_not_tailed_to_lookback() -> None:

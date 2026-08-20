@@ -239,6 +239,49 @@ def _window(start: Optional[str], end: Optional[str], minutes_back: int) -> Tupl
     return from_dt, to_dt
 
 
+def _analysis_window_metadata(
+    request: Any,
+    start: datetime,
+    end: datetime,
+    *,
+    source_override: Optional[str] = None,
+) -> Dict[str, Any]:
+    explicit_fields = request.model_fields_set
+    requested = {
+        name: getattr(request, name)
+        for name in ("start", "end", "minutes_back")
+        if name in explicit_fields
+    }
+    if source_override is not None:
+        source = source_override
+    elif request.start is not None and request.end is not None:
+        source = "explicit_range"
+    elif request.start is not None:
+        source = "explicit_start_to_now"
+    elif request.end is not None:
+        source = "end_anchored_default_lookback"
+    elif "minutes_back" in explicit_fields:
+        source = "minutes_back"
+    else:
+        source = "default_lookback"
+    out: Dict[str, Any] = {
+        "start": format_datetime_utc(start, timespec="auto"),
+        "end": format_datetime_utc(end, timespec="auto"),
+        "timezone": "UTC",
+        "source": source,
+        "minutes_back_effective": round(
+            (end - start).total_seconds() / 60.0,
+            6,
+        ),
+        "requested": requested,
+    }
+    if "minutes_back" in explicit_fields:
+        out["minutes_back_requested"] = int(request.minutes_back)
+    elif request.start is None:
+        out["defaulted"] = {"minutes_back": int(request.minutes_back)}
+    return out
+
+
 def _finite(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
@@ -428,6 +471,92 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     return df.reset_index(drop=True), truncated
 
 
+class _ExecutionTickCache:
+    """Cache bounded quote chunks so nearby fills share broker reads."""
+
+    _CHUNK_SECONDS = 300
+
+    def __init__(self, gateway: Any) -> None:
+        self.gateway = gateway
+        self.frames: Dict[Tuple[str, int], pd.DataFrame] = {}
+        self.queries = 0
+        self.cache_hits = 0
+        self.truncated_chunks = 0
+
+    def get(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        first_chunk = (
+            int(math.floor(start.timestamp() / self._CHUNK_SECONDS))
+            * self._CHUNK_SECONDS
+        )
+        last_chunk = (
+            int(math.floor(end.timestamp() / self._CHUNK_SECONDS))
+            * self._CHUNK_SECONDS
+        )
+        frames: List[pd.DataFrame] = []
+        for chunk_start in range(
+            first_chunk,
+            last_chunk + self._CHUNK_SECONDS,
+            self._CHUNK_SECONDS,
+        ):
+            key = (symbol.casefold(), chunk_start)
+            frame = self.frames.get(key)
+            if frame is None:
+                chunk_start_dt = datetime.fromtimestamp(chunk_start, tz=timezone.utc)
+                chunk_end_dt = chunk_start_dt + timedelta(
+                    seconds=self._CHUNK_SECONDS
+                )
+                frame, truncated = _tick_frame(
+                    self.gateway,
+                    symbol,
+                    chunk_start_dt,
+                    chunk_end_dt,
+                    50_000,
+                )
+                self.frames[key] = frame
+                self.queries += 1
+                self.truncated_chunks += int(truncated)
+            else:
+                self.cache_hits += 1
+            frames.append(frame)
+        if not frames:
+            return pd.DataFrame()
+        combined = pd.concat(frames, ignore_index=True)
+        if combined.empty:
+            return combined
+        dedupe_columns = [
+            column
+            for column in (
+                "epoch",
+                "bid",
+                "ask",
+                "last",
+                "volume",
+                "volume_real",
+                "flags",
+            )
+            if column in combined.columns
+        ]
+        combined = combined.drop_duplicates(subset=dedupe_columns, keep="last")
+        return combined[
+            (combined["epoch"] >= start.timestamp())
+            & (combined["epoch"] <= end.timestamp())
+        ].sort_values("epoch", kind="stable")
+
+    def metadata(self) -> Dict[str, Any]:
+        return {
+            "strategy": "symbol_5_minute_chunk_cache",
+            "broker_queries": self.queries,
+            "chunks_loaded": len(self.frames),
+            "cache_hits": self.cache_hits,
+            "truncated_chunks": self.truncated_chunks,
+        }
+
+
 def _microstructure_latest_quote(
     gateway: Any,
     symbol: str,
@@ -540,10 +669,21 @@ def analyze_microstructure(  # noqa: C901
                         datetime.now(timezone.utc).timestamp() - last_epoch,
                     ),
                 )
+    window_metadata = _analysis_window_metadata(
+        request,
+        start,
+        end,
+        source_override=(
+            "latest_completed_session"
+            if completed_session_context is not None
+            else None
+        ),
+    )
     if len(df) < 20:
         last_tick_epoch = float(df["epoch"].iloc[-1]) if len(df) else None
         explicit_window = request.start is not None and request.end is not None
         window_details: Dict[str, Any] = {
+            "window": window_metadata,
             "requested_start": format_datetime_utc(start),
             "requested_end": format_datetime_utc(end),
             "window_mode": "explicit" if explicit_window else "relative",
@@ -875,6 +1015,7 @@ def analyze_microstructure(  # noqa: C901
         compact_result = {
             "success": True,
             "symbol": request.symbol,
+            "window": window_metadata,
             "summary": {
                 "feed_tier": tier,
                 "ticks": int(len(df)),
@@ -938,6 +1079,7 @@ def analyze_microstructure(  # noqa: C901
         "success": True,
         "symbol": request.symbol,
         "timezone": "UTC",
+        "window": window_metadata,
         "summary": summary,
         "liquidity_events": events,
         "liquidity_events_order": "spread_p95_desc_then_ticks_desc",
@@ -1084,28 +1226,7 @@ def analyze_execution_quality(  # noqa: C901
     if range_error is not None:
         return range_error
     start, end = _window(request.start, request.end, request.minutes_back)
-    window_source = (
-        "explicit_range"
-        if request.start and request.end
-        else "explicit_start_to_now"
-        if request.start
-        else "end_anchored_lookback"
-        if request.end
-        else "minutes_back"
-    )
-    analysis_window = {
-        "start": format_datetime_utc(start, timespec="auto"),
-        "end": format_datetime_utc(end, timespec="auto"),
-        "timezone": "UTC",
-        "source": window_source,
-        "minutes_back_requested": int(request.minutes_back),
-        "minutes_back_effective": round((end - start).total_seconds() / 60.0, 6),
-        "requested": {
-            "start": request.start,
-            "end": request.end,
-            "minutes_back": int(request.minutes_back),
-        },
-    }
+    analysis_window = _analysis_window_metadata(request, start, end)
     account_currency = None
     account_info = getattr(gateway, "account_info", None)
     if callable(account_info):
@@ -1213,6 +1334,7 @@ def analyze_execution_quality(  # noqa: C901
     }
     arrival_quote_observations = 0
     processed_candidates = 0
+    tick_cache = _ExecutionTickCache(gateway)
     observed_epoch = datetime.now(timezone.utc).timestamp()
     future_tolerance_seconds = 300.0
     for deal in eligible_deals:
@@ -1231,7 +1353,7 @@ def analyze_execution_quality(  # noqa: C901
         setup_epoch = time_setup_msc / 1000.0 if time_setup_msc else None
         qstart = datetime.fromtimestamp(fill_epoch - request.quote_window_seconds, tz=timezone.utc)
         qend = datetime.fromtimestamp(fill_epoch + max(request.markout_seconds) + 5, tz=timezone.utc)
-        ticks, _ = _tick_frame(gateway, symbol, qstart, qend, 50_000)
+        ticks = tick_cache.get(symbol, qstart, qend)
         before = ticks[(ticks["epoch"] <= fill_epoch) & np.isfinite(ticks["mid"])]
         fill_time_quote = None
         if len(before):
@@ -1263,9 +1385,7 @@ def analyze_execution_quality(  # noqa: C901
                 tz=timezone.utc,
             )
             arrival_end = datetime.fromtimestamp(setup_epoch, tz=timezone.utc)
-            arrival_ticks, _ = _tick_frame(
-                gateway, symbol, arrival_start, arrival_end, 50_000
-            )
+            arrival_ticks = tick_cache.get(symbol, arrival_start, arrival_end)
             arrival_before = arrival_ticks[
                 (arrival_ticks["epoch"] <= setup_epoch)
                 & np.isfinite(arrival_ticks["mid"])
@@ -1626,14 +1746,59 @@ def analyze_execution_quality(  # noqa: C901
         warnings.append(
             "One or more symbols have no reliable venue calendar; use by_hour_utc for those fills."
         )
-    matched_symbols = sorted(
+    if tick_cache.truncated_chunks:
+        warnings.append(
+            f"{tick_cache.truncated_chunks} cached quote chunk(s) exceeded 50000 "
+            "ticks; quote coverage within those chunks is incomplete."
+        )
+    eligible_symbols = sorted(
         {
             str(item.get("symbol"))
             for item in eligible_deals
             if item.get("symbol")
         }
     )
-    return {
+    analyzed_symbols = sorted(
+        {str(item.get("symbol")) for item in fills if item.get("symbol")}
+    )
+    filters_applied: Dict[str, Any] = {}
+    if request.side is not None:
+        filters_applied["side"] = request.side
+    if request.magic is not None:
+        filters_applied.update(
+            {
+                "magic": int(request.magic),
+                "magic_exact": str(request.magic),
+            }
+        )
+    fill_sample_quality = {
+        "status": "ok" if len(fills) >= request.min_sample else "insufficient",
+        "minimum": request.min_sample,
+        "observed": len(fills),
+        "scope": "matched_fills_for_fill_level_metrics",
+    }
+    sample = {
+        "selection_order": "latest_first",
+        "display_order": "chronological",
+        "total_eligible": len(eligible_deals),
+        "sample_start": sample_start,
+        "sample_end": sample_end,
+        "truncated": processed_candidates < len(eligible_deals),
+    }
+    benchmark_quality = {
+        "requested": request.benchmark,
+        "fallback_policy": request.benchmark_fallback,
+        "source_counts": benchmark_sources,
+        "fallback_count": fallback_count,
+        "arrival_quote_coverage": (
+            arrival_quote_observations / benchmark_attempts
+            if request.benchmark == "arrival_quote" and benchmark_attempts
+            else 0.0
+            if request.benchmark == "arrival_quote"
+            else None
+        ),
+    }
+    common = {
         "success": True,
         **(
             {
@@ -1648,54 +1813,75 @@ def analyze_execution_quality(  # noqa: C901
         ),
         **({"currency": account_currency} if account_currency else {}),
         "window": analysis_window,
+        "filters_applied": filters_applied,
+    }
+    if request.detail == "compact":
+        compact_summary_keys = (
+            "fills",
+            "orders",
+            "market_order_fills",
+            "non_market_order_fills",
+            "slippage_basis",
+            "slippage_bps",
+            "price_improvement_rate",
+            "partial_fill_rate",
+            "market_fill_latency_ms",
+            "pending_time_to_fill_ms",
+            "commission_fee_per_lot",
+            "markout_bps",
+        )
+        return {
+            **common,
+            "summary": {
+                key: summary[key]
+                for key in compact_summary_keys
+                if key in summary
+            },
+            "fill_sample_quality": fill_sample_quality,
+            "data_quality": {
+                "eligible_symbols": eligible_symbols,
+                "analyzed_symbols": analyzed_symbols,
+                "eligible_trade_deals": len(eligible_deals),
+                "processed_candidates": processed_candidates,
+                "matched_fills": len(fills),
+                "skipped": skipped,
+                "benchmark": benchmark_quality,
+                "quote_reads": tick_cache.metadata(),
+            },
+            "sample": {
+                "total_eligible": sample["total_eligible"],
+                "truncated": sample["truncated"],
+                "sample_start": sample["sample_start"],
+                "sample_end": sample["sample_end"],
+            },
+            "warnings": warnings,
+        }
+    return {
+        **common,
         "summary": summary,
-        **({"breakdowns": breakdowns} if request.detail != "compact" else {}),
+        "breakdowns": breakdowns,
         **({"items": fills} if request.detail == "full" else {}),
-        "fill_sample_quality": {
-            "status": "ok" if len(fills) >= request.min_sample else "insufficient",
-            "minimum": request.min_sample,
-            "observed": len(fills),
-            "scope": "matched_fills_for_fill_level_metrics",
-        },
+        "fill_sample_quality": fill_sample_quality,
         "data_quality": {
             "history_deals": len(deals),
             "history_orders": len(orders),
             "history_deals_before_exact_filter": len(raw_deals),
             "history_orders_before_exact_filter": len(raw_orders),
-            "matched_symbols": matched_symbols,
+            "eligible_symbols": eligible_symbols,
+            "analyzed_symbols": analyzed_symbols,
             "eligible_trade_deals": len(eligible_deals),
             "processed_candidates": processed_candidates,
             "matched_fills": len(fills),
             "skipped": skipped,
-            "benchmark": {
-                "requested": request.benchmark,
-                "fallback_policy": request.benchmark_fallback,
-                "source_counts": benchmark_sources,
-                "fallback_count": fallback_count,
-                "arrival_quote_coverage": (
-                    arrival_quote_observations / benchmark_attempts
-                    if request.benchmark == "arrival_quote" and benchmark_attempts
-                    else 0.0
-                    if request.benchmark == "arrival_quote"
-                    else None
-                ),
-            },
+            "benchmark": benchmark_quality,
+            "quote_reads": tick_cache.metadata(),
             **(
-                {"session_calendars": session_calendars}
-                if request.detail == "compact"
-                else {"session_definition": next(iter(session_definitions.values()))}
+                {"session_definition": next(iter(session_definitions.values()))}
                 if len(session_definitions) == 1
                 else {"session_definitions": session_definitions}
             ),
         },
-        "sample": {
-            "selection_order": "latest_first",
-            "display_order": "chronological",
-            "total_eligible": len(eligible_deals),
-            "sample_start": sample_start,
-            "sample_end": sample_end,
-            "truncated": processed_candidates < len(eligible_deals),
-        },
+        "sample": sample,
         "timing_definition": {
             "market_fill_latency_ms": "market_order_setup_to_fill_elapsed_time",
             "pending_time_to_fill_ms": "pending_order_setup_to_fill_wait_duration_not_execution_latency",

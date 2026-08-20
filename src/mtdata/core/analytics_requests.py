@@ -16,6 +16,8 @@ from ..shared.schema import (
 )
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 
+_MT5_UINT64_MAX = (1 << 64) - 1
+
 
 def _validate_ordered_utc_window(start: Optional[str], end: Optional[str]) -> None:
     validate_complete_time_window(start, end)
@@ -32,6 +34,17 @@ def _validate_ordered_utc_window(start: Optional[str], end: Optional[str]) -> No
         raise ValueError(
             "start must be earlier than end (UTC), for example "
             "start=2026-08-12T10:00:00Z end=2026-08-12T11:00:00Z"
+        )
+
+
+def _reject_conflicting_time_controls(request: BaseModel) -> None:
+    if "minutes_back" in request.model_fields_set and (
+        getattr(request, "start", None) is not None
+        or getattr(request, "end", None) is not None
+    ):
+        raise ValueError(
+            "minutes_back cannot be combined with start or end; use either an "
+            "explicit UTC window or a relative lookback"
         )
 
 
@@ -52,6 +65,7 @@ class MarketMicrostructureRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "MarketMicrostructureRequest":
         _validate_ordered_utc_window(self.start, self.end)
+        _reject_conflicting_time_controls(self)
         return self
 
 
@@ -65,7 +79,15 @@ class TradeExecutionQualityRequest(BaseModel):
     )
     symbol: Optional[str] = None
     side: Optional[Literal["buy", "sell"]] = None
-    magic: Optional[int] = None
+    magic: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=_MT5_UINT64_MAX,
+        description=(
+            "MT5 magic number filter in the unsigned 64-bit range "
+            "0..18446744073709551615; zero is valid."
+        ),
+    )
     limit: int = Field(
         200,
         ge=1,
@@ -95,6 +117,7 @@ class TradeExecutionQualityRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "TradeExecutionQualityRequest":
         _validate_ordered_utc_window(self.start, self.end)
+        _reject_conflicting_time_controls(self)
         return self
 
 

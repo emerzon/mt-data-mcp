@@ -53,7 +53,11 @@ directly comparable with each other or across different window lengths;
 
 `trade_execution_quality` joins MT5 deal history to order history and nearby
 ticks. It reports side-aware slippage, latency, partial fills, fees, and
-post-fill markouts.
+post-fill markouts. Choose either `--minutes-back` or an explicit `--start` /
+`--end` window; supplying both is rejected so the analyzed period is never
+ambiguous. Use `--magic` to isolate one strategy. Magic filters accept the MT5
+unsigned 64-bit range, including zero, and responses include `magic_exact` for
+clients that cannot represent large JSON integers exactly.
 
 ```bash
 mtdata-cli trade_execution_quality --symbol EURUSD --minutes-back 43200 \
@@ -65,7 +69,11 @@ the default arrival-quote policy, the headline slippage distribution contains
 market-order fills only. Pending fills are compared with their submitted order
 price, while setup-to-fill price movement is reported separately as arrival
 implementation shortfall. Unmatched or unbenchmarked fills are counted rather
-than silently discarded.
+than silently discarded. `data_quality.eligible_symbols` lists symbols that
+passed the history filters; `data_quality.analyzed_symbols` lists only symbols
+with fills that reached the reported statistics. Nearby fills share cached
+quote chunks, and full-detail diagnostics report the resulting broker query
+count under `quote_reads`.
 Commission and fee percentiles are non-negative cost magnitudes per broker lot;
 signed commission and fee fields remain available on full-detail fill rows.
 Each `summary.markout_bps.<seconds>` entry reports `observations`, `missing`,
@@ -73,6 +81,11 @@ Each `summary.markout_bps.<seconds>` entry reports `observations`, `missing`,
 Markout cohorts may differ by horizon because a future tick can be available for
 one horizon but not another. Root `fill_sample_quality` applies only to
 fill-level metrics, not to these horizon-specific distributions.
+
+Compact detail returns the headline distributions, sample counts, window
+provenance, data-quality counts, and warnings. Standard detail adds breakdowns,
+metric definitions, units, session definitions, and full history diagnostics;
+full detail also includes individual fill rows.
 
 ## Fixed-candidate chronological validation
 
