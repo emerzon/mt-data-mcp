@@ -579,12 +579,16 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Max symbols for the selected ranking; per leaderboard when rank_by=all."
     ),
     ("symbols_top_markets", "candidate_limit"): (
-        "Candidate partition size (1-250) for a large sorted group/category universe. "
-        "Merge each partition's top-N rows to obtain the global leaderboard."
+        "Advanced deterministic recovery partition size (1-250). Omit it for "
+        "the managed global scan."
     ),
     ("symbols_top_markets", "candidate_offset"): (
         "Zero-based offset into the deterministic sorted candidate universe. Increment "
         "by candidate_limit until candidate_page.has_more is false."
+    ),
+    ("symbols_top_markets", "scan_budget_seconds"): (
+        "Wall-clock budget for global candidate sampling (default 30 seconds). "
+        "Use 0 to wait for the exact full-universe leaderboard."
     ),
     ("trade_close", "close_all"): (
         "Select the whole account when ticket, symbol, and magic are omitted."

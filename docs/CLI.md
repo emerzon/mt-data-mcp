@@ -580,6 +580,10 @@ mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all \
   --category forex --json
 
+# Wait for one exact global stock leaderboard (large broker catalogs may take minutes)
+mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all \
+  --category stocks --scan-budget-seconds 0 --json
+
 # Scan visible majors for strong RSI and price above SMA
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
   --sma-period 20 --timeframe H1 --lookback 120 --json
@@ -620,9 +624,20 @@ distinct live window in `price_change_basis` and `price_change_period`.
 Describe responses also include the live `bid`, `ask`, `mid`, and spread metrics
 used by their freshness and execution-readiness fields.
 
-`symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
-exact ranking semantics and rejects a filtered candidate universe above 250
-symbols before activating hidden quotes; narrow it with `group` or `category`.
+`symbols_list` rejects non-positive limits. `symbols_top_markets` manages large
+filtered universes itself. Its default 30-second sampling budget returns useful
+rows with `ranking_scope=partial_global`, `ranking_complete=false`, and
+`candidate_progress` if the scan does not finish. Set
+`--scan-budget-seconds 0` to wait for an exact one-command global leaderboard;
+large stock catalogs can take many minutes because MT5 must activate hidden
+quotes serially. Candidate offset/limit controls remain available as advanced
+recovery partitions, and those results are labeled `candidate_partition`.
+
+Hidden-symbol activation is temporary. MTData serializes it with visible
+Market Watch snapshots across local processes, so concurrent
+`symbols_list --universe visible` and default rankings do not observe
+internally activated symbols. A visible-universe read may briefly wait for the
+current symbol sample to finish.
 
 ### Fetch Market Data
 ```bash

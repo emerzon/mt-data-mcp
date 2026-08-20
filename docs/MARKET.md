@@ -59,6 +59,10 @@ drop it unless you pass `--quote-usable-only false` to inspect it on purpose.
 # Rank the current watchlist by spread, volume, and recent change
 mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 
+# Exact global stock top-N; this can take many minutes on a large broker catalog
+mtdata-cli symbols_top_markets --rank-by spread --universe all --category stocks \
+  --limit 5 --scan-budget-seconds 0 --json
+
 # Scan visible majors: strong RSI and price above its average
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
   --sma-period 20 --timeframe H1 --lookback 120 --json
@@ -77,6 +81,17 @@ or `--rank-by abs_live_price_change_pct` for two-sided movers. Those live modes
 exclude quotes that are not usable for live trading by default. A mixed-session
 result omits a single `data_as_of` and exposes `data_as_of_range` plus
 `bar_time_alignment.comparable=false`.
+
+Large `symbols_top_markets --universe all` requests use a 30-second sampling
+budget by default. A budget-limited response is successful but explicitly
+partial: check `ranking_complete`, `ranking_scope`, and `candidate_progress`
+before acting on it. Pass `--scan-budget-seconds 0` for an exact global result
+in one invocation. Every response includes a sequential `sampling_window`;
+multi-symbol scans use `atomic=false` and `comparable=false` to disclose that
+quotes were not captured at one instant. Completed-bar rankings separately
+report whether their bar times align. Temporary hidden-symbol activation is
+coordinated across local MTData processes, so it does not leak into concurrent
+visible-universe listings.
 
 ---
 

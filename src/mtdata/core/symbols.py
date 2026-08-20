@@ -89,6 +89,7 @@ def _clean_broker_text(value: Any) -> Any:
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
 _TOP_MARKETS_MAX_CANDIDATES = 250
+_TOP_MARKETS_DEFAULT_SCAN_BUDGET_SECONDS = 30.0
 _MARKET_SCAN_MAX_CANDIDATES = _TOP_MARKETS_MAX_CANDIDATES
 _FOREX_SEARCH_PAIR_PRIORITY = {
     pair: idx
@@ -3706,6 +3707,16 @@ def symbols_top_markets(  # noqa: C901
     candidate_limit: Annotated[
         Optional[int], Field(ge=1, le=_TOP_MARKETS_MAX_CANDIDATES)
     ] = None,
+    scan_budget_seconds: Annotated[
+        float,
+        Field(
+            ge=0,
+            description=(
+                "Maximum wall-clock seconds for candidate sampling. Use 0 to "
+                "wait for an exact full-universe ranking."
+            ),
+        ),
+    ] = _TOP_MARKETS_DEFAULT_SCAN_BUDGET_SECONDS,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Quick MT5 market overview ranked by spread, tick volume, or price change.
@@ -3720,9 +3731,10 @@ def symbols_top_markets(  # noqa: C901
     and absolute price-change leaderboards. Volume and price-change rankings use
     the most recent completed bar on `timeframe`. Uses compact leaderboard rows by default. Set
     `detail="full"` for the expanded row shape and collection metadata. Use
-    `candidate_limit` and `candidate_offset` to scan a deterministic partition
-    of a category/group larger than 250 symbols; merge each partition's top-N
-    rows by the selected ranking value to obtain the global top-N. Use
+    Large universes are scanned globally within `scan_budget_seconds`; a result
+    that exhausts the budget is explicitly partial. Set the budget to 0 to wait
+    for the exact global top-N in one invocation. `candidate_limit` and
+    `candidate_offset` remain available for deterministic recovery partitions. Use
     `market_scan` instead when you need explicit symbol inputs, RSI/SMA filters,
     or a single flat scanner table. Locked or invalid quotes are marked unsafe
     and rank after valid two-sided quotes in spread leaderboards.
@@ -3738,6 +3750,12 @@ def symbols_top_markets(  # noqa: C901
                         return {"error": "limit must be a positive integer when provided."}
                 except (TypeError, ValueError):
                     return {"error": "limit must be a positive integer when provided."}
+            try:
+                scan_budget_value = float(scan_budget_seconds)
+            except (TypeError, ValueError):
+                return {"error": "scan_budget_seconds must be a non-negative number."}
+            if not math.isfinite(scan_budget_value) or scan_budget_value < 0.0:
+                return {"error": "scan_budget_seconds must be a finite number >= 0."}
             raw_rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
             if raw_rank_by_value == "volume":
                 return {
@@ -3891,34 +3909,16 @@ def symbols_top_markets(  # noqa: C901
             partition_requested = bool(
                 candidate_limit_value is not None or candidate_offset_value
             )
-            if candidate_total > _TOP_MARKETS_MAX_CANDIDATES and not partition_requested:
-                return {
-                    "error": (
-                        f"The filtered universe contains {candidate_total} candidates, "
-                        f"above the safe synchronous cap of {_TOP_MARKETS_MAX_CANDIDATES}. "
-                        f"Scan it deterministically with candidate_limit="
-                        f"{_TOP_MARKETS_MAX_CANDIDATES} and candidate_offset=0, then "
-                        "increment candidate_offset until candidate_page.has_more is false. "
-                        "Merge the partition top-N rows by the requested ranking value."
-                    ),
-                    "error_code": "candidate_universe_too_large",
-                    "candidate_count": candidate_total,
-                    "candidate_cap": _TOP_MARKETS_MAX_CANDIDATES,
-                    "filters": filters,
-                    "retry": {
-                        "candidate_limit": _TOP_MARKETS_MAX_CANDIDATES,
-                        "candidate_offset": 0,
-                    },
-                }
-
             if partition_requested:
                 page_size = candidate_limit_value or _TOP_MARKETS_MAX_CANDIDATES
                 selected_symbols = selected_symbols[
                     candidate_offset_value : candidate_offset_value + page_size
                 ]
 
+            ranking_universe_size = len(selected_symbols)
             limit_value = _normalize_limit(limit) or 10
             started_at = time.perf_counter()
+            scan_started_epoch = time.time()
 
             spread_rows: List[Dict[str, Any]] = []
             volume_rows: List[Dict[str, Any]] = []
@@ -3984,7 +3984,17 @@ def symbols_top_markets(  # noqa: C901
                         }:
                             price_change_rows.append(dict(combined_bar_row))
 
+            scanned_symbol_count = 0
+            scan_budget_exhausted = False
             for symbol in selected_symbols:
+                if (
+                    scanned_symbol_count > 0
+                    and scan_budget_value > 0.0
+                    and (time.perf_counter() - started_at) >= scan_budget_value
+                ):
+                    scan_budget_exhausted = True
+                    break
+                scanned_symbol_count += 1
                 symbol_name = str(getattr(symbol, "name", "") or "")
                 is_hidden = not bool(getattr(symbol, "visible", False))
                 if universe_value == "all" and is_hidden:
@@ -4004,6 +4014,9 @@ def symbols_top_markets(  # noqa: C901
                         _collect_for_symbol(symbol)
                     continue
                 _collect_for_symbol(symbol)
+
+            scan_finished_epoch = time.time()
+            scan_completed = scanned_symbol_count == ranking_universe_size
 
             spread_rows.sort(
                 key=lambda row: (
@@ -4080,7 +4093,7 @@ def symbols_top_markets(  # noqa: C901
                 returned_count = int(len(rows))
                 fields: Dict[str, Any] = {
                     "requested_limit": int(limit_value),
-                    "universe_size": int(len(selected_symbols)),
+                    "universe_size": int(ranking_universe_size),
                     "available_count": available_count,
                 }
                 if detail_mode == "full":
@@ -4101,7 +4114,56 @@ def symbols_top_markets(  # noqa: C901
                 "visible_count": sum(
                     1 for symbol in tradable_symbols if bool(getattr(symbol, "visible", False))
                 ),
+                "ranking_scope": (
+                    "candidate_partition"
+                    if partition_requested
+                    else "global"
+                    if scan_completed
+                    else "partial_global"
+                ),
+                "ranking_complete": bool(
+                    scan_completed
+                    and (
+                        not partition_requested
+                        or (
+                            candidate_offset_value == 0
+                            and ranking_universe_size == candidate_total
+                        )
+                    )
+                ),
+                "candidate_progress": build_pagination_meta(
+                    total=ranking_universe_size,
+                    returned=scanned_symbol_count,
+                    offset=0,
+                    limit=max(1, ranking_universe_size),
+                ),
+                "sampling_window": {
+                    "started_at": _format_time_explicit(scan_started_epoch),
+                    "ended_at": _format_time_explicit(scan_finished_epoch),
+                    "duration_seconds": round(
+                        max(0.0, scan_finished_epoch - scan_started_epoch),
+                        3,
+                    ),
+                    "basis": "sequential_per_symbol",
+                    "atomic": False,
+                    "comparable": scanned_symbol_count <= 1,
+                },
             }
+            if scan_budget_exhausted:
+                scan_meta.update(
+                    {
+                        "partial": True,
+                        "scan_status": "time_budget_exhausted",
+                        "warning": (
+                            "The scan reached its wall-clock budget before all "
+                            "candidates were sampled; returned ranks are partial."
+                        ),
+                        "remediation": (
+                            "Retry with a larger scan_budget_seconds value or set "
+                            "scan_budget_seconds=0 to wait for the exact global ranking."
+                        ),
+                    }
+                )
             if universe_value == "visible" and len(tradable_symbols) > len(selected_symbols):
                 scan_meta["note"] = (
                     f"Ranked visible Market Watch symbols only ({len(selected_symbols)} of "
@@ -4117,10 +4179,9 @@ def symbols_top_markets(  # noqa: C901
                     "retry with --universe all to include hidden symbols."
                 )
             if partition_requested:
-                scan_meta["ranking_scope"] = "candidate_partition"
                 scan_meta["candidate_page"] = build_pagination_meta(
                     total=candidate_total,
-                    returned=len(selected_symbols),
+                    returned=scanned_symbol_count,
                     offset=candidate_offset_value,
                     limit=candidate_limit_value or _TOP_MARKETS_MAX_CANDIDATES,
                 )
@@ -4144,7 +4205,8 @@ def symbols_top_markets(  # noqa: C901
                         "timeframe": timeframe_value if needs_bar_data else None,
                         "timeframe_requested": timeframe_value,
                         "timeframe_used": timeframe_value if needs_bar_data else None,
-                        "scanned_symbols": len(selected_symbols),
+                        "scanned_symbols": scanned_symbol_count,
+                        "scan_budget_seconds": scan_budget_value,
                         "query_latency_ms": round(
                             (time.perf_counter() - started_at) * 1000.0,
                             3,
@@ -4275,7 +4337,7 @@ def symbols_top_markets(  # noqa: C901
                 "abs_price_change_pct": "largest_abs_price_change_pct",
             }
             out["requested_limit"] = int(limit_value)
-            out["universe_size"] = int(len(selected_symbols))
+            out["universe_size"] = int(ranking_universe_size)
             out["returned_counts"] = {
                 "lowest_spread": len(spread_rows),
                 "highest_tick_volume": len(volume_rows),

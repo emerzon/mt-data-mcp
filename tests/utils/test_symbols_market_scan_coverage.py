@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from time import perf_counter
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1682,6 +1683,13 @@ class TestSymbolsTopMarkets:
         assert "error" in result
         assert "Invalid timeframe" in result["error"]
 
+    @pytest.mark.parametrize("value", [-1, float("nan"), float("inf")])
+    def test_invalid_scan_budget_is_rejected(self, value):
+        result = _get_symbols_top_markets()(scan_budget_seconds=value)
+
+        assert "error" in result
+        assert "scan_budget_seconds" in result["error"]
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -1710,29 +1718,104 @@ class TestSymbolsTopMarkets:
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "USDJPY"]
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=mock_symbols_get.return_value[1])
 
-    @patch("mtdata.core.symbols._symbol_ready_guard")
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
-    def test_all_universe_rejects_oversized_candidate_set_before_activation(
+    def test_all_universe_ranks_more_than_250_candidates_globally(
         self,
         mock_symbols_get,
-        mock_ready_guard,
+        mock_tick,
+        mock_group,
     ):
         mock_symbols_get.return_value = [
-            _make_symbol(f"SYM{index:04d}", visible=False)
+            _make_symbol(f"SYM{index:04d}", visible=True)
             for index in range(251)
         ]
+        mock_tick.return_value = _make_tick(bid=1.0, ask=1.1)
 
         result = _get_symbols_top_markets()(
             rank_by="spread",
             universe="all",
             limit=5,
+            scan_budget_seconds=0,
         )
 
-        assert result["error_code"] == "candidate_universe_too_large"
-        assert result["candidate_count"] == 251
-        assert result["candidate_cap"] == 250
-        assert result["retry"] == {"candidate_limit": 250, "candidate_offset": 0}
-        mock_ready_guard.assert_not_called()
+        assert result["success"] is True
+        assert result["ranking_scope"] == "global"
+        assert result["ranking_complete"] is True
+        assert result["candidate_progress"]["total"] == 251
+        assert result["candidate_progress"]["returned"] == 251
+        assert result["candidate_progress"]["has_more"] is False
+        assert result["sampling_window"]["atomic"] is False
+        assert result["sampling_window"]["comparable"] is False
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_global_stock_ranking_handles_6000_candidates_in_one_call(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(
+                f"STOCK{index:04d}",
+                path="Stocks\\Test",
+                visible=True,
+            )
+            for index in range(6001)
+        ]
+        mock_tick.return_value = _make_tick(bid=100.0, ask=100.1)
+
+        started_at = perf_counter()
+        result = _get_symbols_top_markets()(
+            rank_by="spread",
+            universe="all",
+            category="stocks",
+            limit=5,
+            scan_budget_seconds=0,
+        )
+        elapsed = perf_counter() - started_at
+
+        assert result["success"] is True
+        assert result["ranking_scope"] == "global"
+        assert result["ranking_complete"] is True
+        assert result["candidate_progress"]["returned"] == 6001
+        assert result["universe_size"] == 6001
+        assert len(result["data"]) == 5
+        assert elapsed < 15.0
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_global_ranking_reports_time_budget_partial_results(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(f"SYM{index:04d}")
+            for index in range(10)
+        ]
+        mock_tick.return_value = _make_tick(bid=1.0, ask=1.1)
+
+        result = _get_symbols_top_markets()(
+            rank_by="spread",
+            universe="all",
+            limit=5,
+            scan_budget_seconds=1e-12,
+        )
+
+        assert result["success"] is True
+        assert result["ranking_scope"] == "partial_global"
+        assert result["ranking_complete"] is False
+        assert result["partial"] is True
+        assert result["scan_status"] == "time_budget_exhausted"
+        assert result["candidate_progress"]["returned"] == 1
+        assert result["candidate_progress"]["has_more"] is True
+        assert "scan_budget_seconds=0" in result["remediation"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
