@@ -149,11 +149,11 @@ def _options_quote_metadata(
     return metadata
 
 
-def _options_chain_underlying_metadata(
+def _options_underlying_metadata(
     provider: str,
     quote: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Name underlying-quote freshness explicitly in an options-chain result."""
+    """Name underlying-quote freshness explicitly in an options result."""
     metadata = _options_quote_metadata(provider, quote)
     out: Dict[str, Any] = {
         key: metadata[key]
@@ -184,6 +184,16 @@ def _options_chain_underlying_metadata(
         if source_key in metadata:
             out[target_key] = metadata[source_key]
     return out
+
+
+def _options_catalog_metadata() -> Dict[str, Any]:
+    return {
+        "catalog_fetched_at": _dt.datetime.fromtimestamp(
+            float(_time.time()), tz=_dt.timezone.utc
+        ).isoformat().replace("+00:00", "Z"),
+        "catalog_cached": False,
+        "catalog_freshness": "fetched_now",
+    }
 
 
 def _finite_option_quote(value: Any) -> Optional[float]:
@@ -532,7 +542,8 @@ def _options_expirations_unavailable_payload(
             f"the {provider.title()} options provider."
         ),
         "error_code": "options_expirations_unavailable",
-        **_options_quote_metadata(provider, quote),
+        **_options_underlying_metadata(provider, quote),
+        **_options_catalog_metadata(),
         "symbol": symbol_norm,
         "underlying_price": underlying_price,
         "currency": quote.get("currency"),
@@ -1378,7 +1389,8 @@ def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
         )
     return {
         "success": True,
-        **_options_quote_metadata("tradier", quote),
+        **_options_underlying_metadata("tradier", quote),
+        **_options_catalog_metadata(),
         "symbol": symbol_norm,
         "underlying_price": _to_numeric(
             quote.get("last") or quote.get("close"),
@@ -1453,7 +1465,7 @@ def _get_tradier_options_chain(
     )
     return {
         "success": True,
-        **_options_chain_underlying_metadata("tradier", quote),
+        **_options_underlying_metadata("tradier", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry,
         "expiration_status": expiration_status,
@@ -1494,7 +1506,8 @@ def _get_yahoo_options_expirations(symbol: str) -> Dict[str, Any]:
         )
     return {
         "success": True,
-        **_options_quote_metadata("yahoo", quote),
+        **_options_underlying_metadata("yahoo", quote),
+        **_options_catalog_metadata(),
         "symbol": str(symbol).upper().strip(),
         "underlying_price": _to_numeric(
             quote.get("regularMarketPrice"),
@@ -1632,7 +1645,7 @@ def _get_yahoo_options_chain(
 
     return {
         "success": True,
-        **_options_chain_underlying_metadata("yahoo", quote),
+        **_options_underlying_metadata("yahoo", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry_ymd,
         "expiration_status": expiration_status,

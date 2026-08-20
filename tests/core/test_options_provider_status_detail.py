@@ -142,12 +142,17 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
             "configured_provider": "tradier",
             "provider_effective": "yahoo",
             "cached": False,
-            "data_age_seconds": None,
-            "data_stale": None,
-            "stale_after_seconds": 900.0,
-            "as_of": None,
-            "freshness": "unknown",
-            "freshness_reason": "provider_quote_timestamp_unavailable",
+            "catalog_fetched_at": "2026-04-01T12:00:00Z",
+            "catalog_cached": False,
+            "catalog_freshness": "fetched_now",
+            "underlying_data_age_seconds": None,
+            "underlying_data_stale": None,
+            "underlying_stale_after_seconds": 900.0,
+            "underlying_as_of": None,
+            "underlying_freshness": "unknown",
+            "underlying_freshness_reason": (
+                "provider_quote_timestamp_unavailable"
+            ),
             "underlying_price_source": "yahoo_regular_market_price",
             "underlying_price_session": "regular_market",
             "symbol": "AAPL",
@@ -165,10 +170,13 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
     assert out["provider"] == "yahoo"
     assert out["configured_provider"] == "tradier"
     assert out["provider_effective"] == "yahoo"
-    assert out["data_age_seconds"] is None
-    assert out["data_stale"] is None
-    assert out["stale_after_seconds"] == 900.0
-    assert out["freshness"] == "unknown"
+    assert out["catalog_fetched_at"] == "2026-04-01T12:00:00Z"
+    assert out["catalog_freshness"] == "fetched_now"
+    assert out["underlying_data_age_seconds"] is None
+    assert out["underlying_data_stale"] is None
+    assert out["underlying_stale_after_seconds"] == 900.0
+    assert out["underlying_freshness"] == "unknown"
+    assert "data_stale" not in out
     assert out["underlying_price_source"] == "yahoo_regular_market_price"
     assert out["underlying_price_session"] == "regular_market"
     assert out["warnings"] == [

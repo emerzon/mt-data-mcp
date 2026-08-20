@@ -113,10 +113,12 @@ row multiplier is known:
 cash premium = quoted premium × contract_multiplier
 ```
 
-Expiration results expose the provider's underlying quote time through
-`as_of`, age, and `data_stale`. Chain results name that scope explicitly with
-`underlying_as_of`, `underlying_data_age_seconds`, and
-`underlying_data_stale`; those fields do not qualify the option contracts.
+Expiration results report when the catalog was retrieved through
+`catalog_fetched_at`, `catalog_cached`, and `catalog_freshness`. They name the
+separate underlying quote scope explicitly with `underlying_as_of`,
+`underlying_data_age_seconds`, and `underlying_data_stale`. An old underlying
+quote does not make a newly fetched expiration catalog stale. Chain results use
+the same `underlying_*` names; those fields do not qualify the option contracts.
 
 Every option row separately reports `contract_as_of`, contract age and stale
 status, `quote_quality`, and `quote_usable_for_live_analysis`. The aggregate

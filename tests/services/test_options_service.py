@@ -141,8 +141,14 @@ def test_get_options_expirations_parses_payload(monkeypatch):
     assert out["underlying_price"] == 212.34
     assert out["expirations"] == ["2026-04-17", "2026-05-15"]
     assert out["expiration_count"] == 2
-    assert out["data_age_seconds"] == 120.0
-    assert out["as_of"] == "2023-11-14T22:13:20Z"
+    assert "data_age_seconds" not in out
+    assert "data_stale" not in out
+    assert out["underlying_data_age_seconds"] == 120.0
+    assert out["underlying_as_of"] == "2023-11-14T22:13:20Z"
+    assert out["underlying_data_stale"] is False
+    assert out["catalog_fetched_at"] == "2023-11-14T22:15:20Z"
+    assert out["catalog_cached"] is False
+    assert out["catalog_freshness"] == "fetched_now"
     assert out["underlying_price_session"] == "regular_market"
 
 
