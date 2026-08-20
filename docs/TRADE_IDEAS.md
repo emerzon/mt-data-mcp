@@ -71,10 +71,11 @@ forecast points.
 | Field | Meaning |
 |-------|---------|
 | `direction` | `long`, `short`, or `stand_down` |
-| `direction_basis` | `forecast_vs_last_price` for auto direction, or `requested` for an explicit side |
+| `direction_basis` | `forecast_vs_live_quote` when a calibrated interval and live quote are available, `forecast_vs_last_price` as the closed-bar fallback, or `requested` for an explicit side |
 | `suggested_direction` | Forecast-based hint; may differ from `direction` |
 | `forecast.calibration` | Auto mode's requested anchors, minimum usable residual sample, empirical coverage, and sufficiency status |
 | `forecast.forecast_vs_last_price.direction_interval_basis` | Exact comparison used by the auto direction gate |
+| `forecast.forecast_vs_live_quote` | Terminal calibrated interval compared conservatively with the current bid/ask; includes both price anchors |
 | `actionability` | Always `preview_only` or `research`. Never live. |
 | `idea_eligible` / `overall_gate_status` | Aggregate strategy and operational gate decision; only `true` / `pass` permits a preview-eligible idea |
 | `gates` | `pass` / `fail` / `skip` for quote, session, forecast, barriers, SL/TP, sizing, preview |

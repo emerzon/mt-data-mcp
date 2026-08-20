@@ -210,6 +210,78 @@ def test_trade_idea_compose_quick_preview_path() -> None:
     assert "not an order" in idea["narrative"]
 
 
+def test_trade_idea_auto_direction_uses_calibrated_interval_vs_live_quote() -> None:
+    forecast = _forecast()
+    forecast.update(
+        {
+            "interval_usage": "calibrated",
+            "calibration_sufficient": True,
+            "forecast": [
+                {"value": 1.1008, "lower": 1.1003, "upper": 1.1012},
+            ],
+        }
+    )
+
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD"),
+        call_section=_caller(
+            {
+                "session": _session(),
+                "forecast": forecast,
+                "volatility": _volatility(),
+                "barriers": _barriers(),
+                "sizing": _sizing(),
+                "preview": _preview(),
+            }
+        ),
+    )
+
+    assert idea["direction"] == "long"
+    assert idea["direction_basis"] == "forecast_vs_live_quote"
+    live_context = idea["forecast"]["forecast_vs_live_quote"]
+    assert live_context["direction"] == "bullish"
+    assert live_context["direction_actionable"] is True
+    assert live_context["direction_interval_excludes_live_quote"] is True
+    assert live_context["live_ask"] == 1.1002
+    assert live_context["horizon_lower_price"] == 1.1003
+
+
+def test_trade_idea_stands_down_when_live_quote_is_inside_forecast_interval() -> None:
+    forecast = _forecast()
+    forecast.update(
+        {
+            "interval_usage": "calibrated",
+            "calibration_sufficient": True,
+            "forecast": [
+                {"value": 1.1008, "lower": 1.0999, "upper": 1.1003},
+            ],
+        }
+    )
+
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD"),
+        call_section=_caller(
+            {
+                "session": _session(),
+                "forecast": forecast,
+                "volatility": _volatility(),
+            }
+        ),
+    )
+
+    assert idea["direction"] == "stand_down"
+    assert idea["direction_basis"] == "forecast_vs_live_quote"
+    assert "suggested_direction" not in idea
+    assert idea["forecast"]["last_price_source"] == "candle_close"
+    live_context = idea["forecast"]["forecast_vs_live_quote"]
+    assert live_context["direction"] == "neutral"
+    assert live_context["direction_actionable"] is False
+    assert live_context["direction_suppressed_reason"] == (
+        "horizon_interval_contains_live_quote"
+    )
+    assert idea["gates"]["alignment"]["status"] == "fail"
+
+
 @pytest.mark.parametrize(
     ("actionable", "expected_direction", "expect_downstream"),
     [(True, "long", True), (False, "stand_down", False)],

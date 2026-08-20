@@ -165,6 +165,78 @@ def _forecast_direction(payload: Any) -> tuple[Optional[str], str]:
     return None, "forecast direction is neutral or unconfirmed"
 
 
+def _forecast_direction_vs_live_quote(
+    payload: Any,
+    quote: Dict[str, Any],
+) -> tuple[Optional[str], str, Optional[Dict[str, Any]]]:
+    """Compare a calibrated terminal forecast interval with the live spread."""
+    if not isinstance(payload, dict) or quote.get("quote_not_live_ready") is True:
+        return None, "live forecast comparison is unavailable", None
+    interval_usage = str(payload.get("interval_usage") or "").strip().lower()
+    if (
+        interval_usage != "calibrated"
+        and payload.get("calibration_sufficient") is not True
+    ):
+        return None, "calibrated forecast interval is unavailable", None
+    points = _forecast_points(payload)
+    terminal = points[-1] if points else {}
+    lower = _as_float(terminal.get("lower"))
+    upper = _as_float(terminal.get("upper"))
+    if lower is None:
+        lower_values = payload.get("lower_price")
+        if isinstance(lower_values, list) and lower_values:
+            lower = _as_float(lower_values[-1])
+    if upper is None:
+        upper_values = payload.get("upper_price")
+        if isinstance(upper_values, list) and upper_values:
+            upper = _as_float(upper_values[-1])
+    if lower is None or upper is None or lower > upper:
+        return None, "calibrated forecast interval is unavailable", None
+
+    bid = _as_float(quote.get("bid"))
+    ask = _as_float(quote.get("ask"))
+    mid = _as_float(quote.get("mid"))
+    bullish_reference = ask if ask is not None else mid
+    bearish_reference = bid if bid is not None else mid
+    if bullish_reference is None or bearish_reference is None:
+        return None, "live bid/ask comparison is unavailable", None
+
+    direction = "neutral"
+    suggested_direction: Optional[str] = None
+    suppressed_reason: Optional[str] = "horizon_interval_contains_live_quote"
+    if lower > bullish_reference:
+        direction = "bullish"
+        suggested_direction = "long"
+        suppressed_reason = None
+    elif upper < bearish_reference:
+        direction = "bearish"
+        suggested_direction = "short"
+        suppressed_reason = None
+
+    context: Dict[str, Any] = {
+        "direction": direction,
+        "direction_basis": "horizon_interval_vs_live_bid_ask",
+        "direction_actionable": suggested_direction is not None,
+        "direction_status": (
+            "interval_confirmed" if suggested_direction is not None else "neutral"
+        ),
+        "direction_interval_excludes_live_quote": suggested_direction is not None,
+        "horizon_lower_price": lower,
+        "horizon_upper_price": upper,
+    }
+    for key, value in (("live_bid", bid), ("live_ask", ask), ("live_mid", mid)):
+        if value is not None:
+            context[key] = value
+    if suppressed_reason is not None:
+        context["direction_suppressed_reason"] = suppressed_reason
+        return (
+            None,
+            "horizon forecast interval contains the current live bid/ask",
+            context,
+        )
+    return suggested_direction, "", context
+
+
 def _gate(status: str, reason: Optional[str] = None) -> Dict[str, Any]:
     payload: Dict[str, Any] = {"status": status}
     if reason:
@@ -548,6 +620,7 @@ def _compact_forecast(
     trend: Optional[str],
     *,
     include_points: bool = False,
+    live_direction_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     compact: Dict[str, Any] = {}
     if isinstance(payload, dict):
@@ -620,6 +693,8 @@ def _compact_forecast(
         }
         if direction_context:
             compact["forecast_vs_last_price"] = direction_context
+    if live_direction_context:
+        compact["forecast_vs_live_quote"] = dict(live_direction_context)
     if include_points:
         points = _forecast_points(payload)
         if points:
@@ -993,6 +1068,16 @@ def run_trade_idea_compose(  # noqa: C901
     suggested_direction, forecast_direction_reason = _forecast_direction(
         forecast_payload
     )
+    live_direction_context: Optional[Dict[str, Any]] = None
+    if not historical:
+        (
+            live_suggested_direction,
+            live_direction_reason,
+            live_direction_context,
+        ) = _forecast_direction_vs_live_quote(forecast_payload, quote)
+        if live_direction_context is not None:
+            suggested_direction = live_suggested_direction
+            forecast_direction_reason = live_direction_reason
 
     stand_down_reasons: List[str] = []
     gates: Dict[str, Dict[str, Any]] = {
@@ -1028,7 +1113,11 @@ def run_trade_idea_compose(  # noqa: C901
             stand_down_reasons.append("market is not accepting new positions")
 
     direction = "stand_down"
-    direction_basis = "forecast_vs_last_price"
+    direction_basis = (
+        "forecast_vs_live_quote"
+        if live_direction_context is not None
+        else "forecast_vs_last_price"
+    )
     if requested_direction in {"long", "short"}:
         direction = requested_direction
         direction_basis = "requested"
@@ -1332,6 +1421,7 @@ def run_trade_idea_compose(  # noqa: C901
         forecast_values,
         trend,
         include_points=request.detail == "full",
+        live_direction_context=live_direction_context,
     )
     if forecast_compact:
         idea["forecast"] = forecast_compact
