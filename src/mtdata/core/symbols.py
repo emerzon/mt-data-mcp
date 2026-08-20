@@ -33,6 +33,7 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
     _symbol_ready_guard,
+    _symbol_visibility_snapshot_guard,
     account_currency_from_gateway,
     ensure_mt5_connection_or_raise,
     mt5,
@@ -1113,7 +1114,8 @@ def symbols_list(  # noqa: C901
 
             matched_symbols = []
             search_universe: List[Any] = []
-            all_symbols = mt5_gateway.symbols_get()
+            with _symbol_visibility_snapshot_guard():
+                all_symbols = mt5_gateway.symbols_get()
             if all_symbols is None:
                 return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             all_symbols_list = list(all_symbols)
@@ -1460,7 +1462,8 @@ def _list_symbol_groups(
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
         # Get all symbols first
-        all_symbols = gateway.symbols_get()
+        with _symbol_visibility_snapshot_guard():
+            all_symbols = gateway.symbols_get()
         if all_symbols is None:
             return {"error": f"Failed to get symbols: {gateway.last_error()}"}
         
@@ -3802,7 +3805,8 @@ def symbols_top_markets(  # noqa: C901
                 else None
             )
 
-            raw_symbols = mt5_gateway.symbols_get()
+            with _symbol_visibility_snapshot_guard():
+                raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
                 return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
             all_symbols = list(raw_symbols)
@@ -4770,7 +4774,8 @@ def market_scan(  # noqa: C901
             mt5_gateway.ensure_connection()
             spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
-            raw_symbols = mt5_gateway.symbols_get()
+            with _symbol_visibility_snapshot_guard():
+                raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
                 return _attach_market_scan_source(
                     _market_scan_error(

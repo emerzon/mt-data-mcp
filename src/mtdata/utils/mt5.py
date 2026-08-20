@@ -8,6 +8,8 @@ from the live tick and normalizes requests and returned epochs at the boundary.
 import importlib
 import logging
 import math
+import os
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -33,6 +35,8 @@ _MT5_TIMESTAMP_MODE_CLOSED_MARKET_MAX_AGE_SECONDS = 4 * 24 * 60 * 60.0
 _MT5_TIMESTAMP_MODE_PROBE_LIMIT = 64
 _mt5_timestamp_mode_cache: Dict[str, Tuple[str, float, int]] = {}
 _mt5_terminal_timestamp_mode: Optional[Tuple[str, float, int]] = None
+_SYMBOL_VISIBILITY_LOCK_ENV = "MTDATA_SYMBOL_VISIBILITY_LOCK"
+_symbol_visibility_thread_lock = threading.RLock()
 
 
 class MT5ConnectionError(RuntimeError):
@@ -74,6 +78,56 @@ def _load_mt5_module() -> Any:
 # asyncio.to_thread workers (MCP tool dispatch) cannot deadlock the
 # single-threaded COM apartment used by the MetaTrader5 library.
 _mt5_lock = threading.RLock()
+
+
+def _symbol_visibility_lock_path() -> str:
+    configured = str(os.getenv(_SYMBOL_VISIBILITY_LOCK_ENV, "") or "").strip()
+    if configured:
+        return os.path.abspath(os.path.expanduser(configured))
+    return os.path.join(tempfile.gettempdir(), "mtdata-symbol-visibility.lock")
+
+
+@contextmanager
+def _symbol_visibility_snapshot_guard() -> Iterator[None]:
+    """Serialize temporary symbol selection with visible-universe snapshots.
+
+    MT5 Market Watch visibility is terminal-wide and is observable from other
+    Python processes. The file lock supplies the missing process boundary; the
+    reentrant thread lock also keeps local callers ordered.
+    """
+    with _symbol_visibility_thread_lock:
+        lock_path = _symbol_visibility_lock_path()
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        lock_file = open(lock_path, "a+b")  # noqa: SIM115 - lifetime spans yield
+        try:
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                while True:
+                    try:
+                        msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        time.sleep(0.05)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        finally:
+            lock_file.close()
 
 
 class MT5Adapter:
@@ -1556,17 +1610,18 @@ def _symbol_ready_guard(
     info_before: Optional[Any] = None,
 ) -> Iterator[Tuple[Optional[str], Optional[Any]]]:
     """Ensure symbol readiness and restore original visibility on exit."""
-    info = info_before if info_before is not None else mt5.symbol_info(symbol)
-    was_visible = bool(info.visible) if info is not None else None
-    err = _ensure_symbol_ready(symbol)
-    try:
-        yield err, info
-    finally:
-        if was_visible is False:
-            try:
-                mt5.symbol_select(symbol, False)
-            except Exception:
-                pass
+    with _symbol_visibility_snapshot_guard():
+        info = info_before if info_before is not None else mt5.symbol_info(symbol)
+        was_visible = bool(info.visible) if info is not None else None
+        err = _ensure_symbol_ready(symbol)
+        try:
+            yield err, info
+        finally:
+            if was_visible is False:
+                try:
+                    mt5.symbol_select(symbol, False)
+                except Exception:
+                    pass
 
 
 def inspect_mt5_time_alignment(
