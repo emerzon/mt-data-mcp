@@ -1321,31 +1321,6 @@ def strategy_backtest(  # noqa: C901
             return {
                 "error": "--spread-bps is only valid with --cost-model fixed"
             }
-        fixed_spread_source = "explicit"
-        resolved_spread_bps = spread_bps
-        if cost_model_value == "fixed" and resolved_spread_bps is None:
-            resolved_spread_bps = _current_spread_bps_suggestion(symbol)
-            fixed_spread_source = "current_bid_ask_snapshot"
-            if resolved_spread_bps is None:
-                return {
-                    "success": False,
-                    "error_code": "cost_model_unavailable",
-                    "error": (
-                        "The default fixed cost model could not resolve a current "
-                        "positive two-sided spread."
-                    ),
-                    "cost_model": {
-                        "requested_type": "fixed",
-                        "source": "current_bid_ask_snapshot",
-                        "complete": False,
-                    },
-                    "remediation": (
-                        "Pass --spread-bps with a defensible round-trip assumption, "
-                        "or retry when a two-sided quote is available."
-                    ),
-                }
-        fixed_spread_bps = float(resolved_spread_bps or 0.0)
-
         if strategy_value in {"sma_cross", "ema_cross"}:
             warmup_bars = max(int(slow_period), 5)
         else:
@@ -1434,6 +1409,31 @@ def strategy_backtest(  # noqa: C901
         )
         if len(df) < min_required:
             return {"error": "Not enough closed bars for strategy backtest"}
+
+        fixed_spread_source = "explicit"
+        resolved_spread_bps = spread_bps
+        if cost_model_value == "fixed" and resolved_spread_bps is None:
+            resolved_spread_bps = _current_spread_bps_suggestion(symbol)
+            fixed_spread_source = "current_bid_ask_snapshot"
+            if resolved_spread_bps is None:
+                return {
+                    "success": False,
+                    "error_code": "cost_model_unavailable",
+                    "error": (
+                        "The default fixed cost model could not resolve a current "
+                        "positive two-sided spread."
+                    ),
+                    "cost_model": {
+                        "requested_type": "fixed",
+                        "source": "current_bid_ask_snapshot",
+                        "complete": False,
+                    },
+                    "remediation": (
+                        "Pass --spread-bps with a defensible round-trip assumption, "
+                        "or retry when a two-sided quote is available."
+                    ),
+                }
+        fixed_spread_bps = float(resolved_spread_bps or 0.0)
 
         historical_spread_prices: Optional[np.ndarray] = None
         historical_spread_coverage = 0.0

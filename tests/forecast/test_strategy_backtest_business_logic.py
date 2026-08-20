@@ -212,6 +212,28 @@ def test_strategy_backtest_default_requires_two_sided_spread_or_explicit_cost(
     assert "--spread-bps" in out["remediation"]
 
 
+def test_strategy_backtest_validates_symbol_before_default_spread(monkeypatch):
+    def missing_symbol(*_args, **_kwargs):
+        raise RuntimeError("Symbol 'NO_SUCH_SYMBOL' was not found in MT5.")
+
+    tick_lookup = pytest.fail
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", missing_symbol)
+    monkeypatch.setattr(
+        forecast_backtest.mt5,
+        "symbol_info_tick",
+        lambda _symbol: tick_lookup("spread lookup must not run first"),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="NO_SUCH_SYMBOL",
+        lookback=8,
+        fast_period=2,
+        slow_period=3,
+    )
+
+    assert out == {"error": "Symbol 'NO_SUCH_SYMBOL' was not found in MT5."}
+
+
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,
