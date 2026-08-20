@@ -356,6 +356,11 @@ Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
 `previous`, `category`, `reference`, and `referenceDate` when present. The
 `finviz_calendar` tool presents these as normalized keys, including `symbol`
 for Finviz `ticker` and `reference_date` for `referenceDate`.
+Economic events are unique by the provider `calendar_id` before pagination.
+Rows without an ID use a composite of scheduled time, event, symbol, category,
+reference, country, and currency. If duplicate provider variants disagree on a
+non-empty field, the merged field is `null` and `provider_conflicts` preserves
+the alternatives; root counters and a warning disclose the merge.
 Root output includes `start`, `end`, and `calendar_timezone` so defaulted
 calendar ranges remain explicit. Event timestamps use the separate root
 `timezone` field. Economic rows also include `country_attribution` (`provider`,

@@ -808,6 +808,84 @@ class TestFinvizService:
         assert len(result_high["items"]) == 1
 
     @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
+    def test_economic_calendar_merges_stable_ids_before_pagination(
+        self,
+        mock_fetch_items,
+    ):
+        from mtdata.services.finviz import get_economic_calendar
+
+        common = {
+            "calendarId": 396598,
+            "ticker": "USOILRIGS",
+            "event": "Baker Hughes Oil Rig Count",
+            "category": "Energy",
+            "date": "2026-08-21T13:00:00",
+            "reference": "08/22",
+            "previous": "455",
+            "importance": 2,
+        }
+        mock_fetch_items.return_value = [
+            {**common, "isHigherPositive": 1},
+            {**common, "isHigherPositive": 0},
+            {
+                **common,
+                "calendarId": 396599,
+                "event": "Baker Hughes Total Rig Count",
+            },
+        ]
+
+        first_page = get_economic_calendar(
+            limit=1,
+            page=1,
+            date_from="2026-08-21",
+            date_to="2026-08-21",
+        )
+        second_page = get_economic_calendar(
+            limit=1,
+            page=2,
+            date_from="2026-08-21",
+            date_to="2026-08-21",
+        )
+
+        assert first_page["total"] == 2
+        assert first_page["count"] == 1
+        assert first_page["duplicateVariantsMerged"] == 1
+        assert first_page["providerConflictEvents"] == 1
+        assert first_page["items"][0]["calendarId"] == 396598
+        assert first_page["items"][0]["isHigherPositive"] is None
+        assert first_page["items"][0]["providerConflicts"] == {
+            "isHigherPositive": [0, 1]
+        }
+        assert second_page["items"][0]["calendarId"] == 396599
+        assert "Merged 1 duplicate" in first_page["warnings"][0]
+
+    def test_calendar_conflict_keys_are_normalized_for_public_rows(self):
+        from mtdata.core.finviz import _normalize_finviz_calendar_payload
+
+        result = _normalize_finviz_calendar_payload(
+            {
+                "success": True,
+                "total": 1,
+                "items": [
+                    {
+                        "calendarId": 396598,
+                        "ticker": "USOILRIGS",
+                        "event": "Baker Hughes Oil Rig Count",
+                        "date": "2026-08-21T13:00:00",
+                        "providerConflicts": {"isHigherPositive": [1, 0]},
+                    }
+                ],
+            },
+            detail="full",
+            calendar_type="economic",
+        )
+
+        assert result["items"][0]["calendar_id"] == 396598
+        assert result["items"][0]["provider_conflicts"] == {
+            "is_higher_positive": [1, 0]
+        }
+
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_invalid_impact(self, mock_fetch_items):
         """Test economic calendar with invalid impact filter."""
         from mtdata.services.finviz import get_economic_calendar

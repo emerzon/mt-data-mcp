@@ -2097,6 +2097,7 @@ _FINVIZ_EARNINGS_SESSION_TIMES = {
     (16, 30, 0): "after_market",
 }
 _FINVIZ_CALENDAR_COMPACT_FIELDS = (
+    "calendar_id",
     "symbol",
     "country",
     "country_code",
@@ -2135,6 +2136,7 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "special_amount",
     "yield_pct",
     "impact",
+    "provider_conflicts",
 )
 
 _FINVIZ_CALENDAR_IMPORTANCE_LABELS = {
@@ -2333,7 +2335,16 @@ def _add_finviz_52w_quality_flags(
 def _normalize_finviz_output_row(row: Any) -> Any:
     if not isinstance(row, dict):
         return row
-    return {_normalize_finviz_output_key(key): value for key, value in row.items()}
+    normalized = {
+        _normalize_finviz_output_key(key): value for key, value in row.items()
+    }
+    conflicts = normalized.get("provider_conflicts")
+    if isinstance(conflicts, dict):
+        normalized["provider_conflicts"] = {
+            _normalize_finviz_output_key(key): value
+            for key, value in conflicts.items()
+        }
+    return normalized
 
 
 def _normalize_finviz_output_rows(rows: Any) -> Any:

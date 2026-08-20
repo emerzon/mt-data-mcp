@@ -1184,6 +1184,92 @@ def get_earnings_calendar(
         return _finviz_error_payload(e, endpoint="earnings_period")
 
 
+def _calendar_event_identity(event: Dict[str, Any]) -> tuple[Any, ...]:
+    calendar_id = event.get("calendarId", event.get("calendar_id"))
+    if calendar_id not in (None, ""):
+        return ("calendar_id", str(calendar_id).strip())
+
+    fields = (
+        "date",
+        "event",
+        "ticker",
+        "symbol",
+        "category",
+        "reference",
+        "country",
+        "currency",
+    )
+    composite = tuple(str(event.get(field) or "").strip().casefold() for field in fields)
+    if any(composite):
+        return ("composite", *composite)
+    return ("raw", json.dumps(event, sort_keys=True, default=str))
+
+
+def _calendar_value_key(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _calendar_value_is_empty(value: Any) -> bool:
+    return value is None or value == "" or value == [] or value == {}
+
+
+def _merge_calendar_event_variants(
+    retained: Dict[str, Any],
+    variant: Dict[str, Any],
+) -> tuple[Dict[str, Any], bool]:
+    merged = dict(retained)
+    conflicts = dict(merged.get("providerConflicts") or {})
+    for field, value in variant.items():
+        if field == "providerConflicts":
+            continue
+        if field in conflicts:
+            values = list(conflicts[field])
+            known = {_calendar_value_key(item) for item in values}
+            if not _calendar_value_is_empty(value) and _calendar_value_key(value) not in known:
+                values.append(value)
+            conflicts[field] = sorted(values, key=_calendar_value_key)
+            merged[field] = None
+            continue
+        if field not in merged or _calendar_value_is_empty(merged.get(field)):
+            merged[field] = value
+            continue
+        if _calendar_value_is_empty(value):
+            continue
+        if _calendar_value_key(merged[field]) == _calendar_value_key(value):
+            continue
+        conflicts[field] = sorted(
+            [merged[field], value],
+            key=_calendar_value_key,
+        )
+        merged[field] = None
+    if conflicts:
+        merged["providerConflicts"] = conflicts
+    return merged, bool(conflicts)
+
+
+def _deduplicate_calendar_events(
+    events: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], int, int]:
+    by_identity: Dict[tuple[Any, ...], Dict[str, Any]] = {}
+    duplicate_variants = 0
+    for event in events:
+        identity = _calendar_event_identity(event)
+        retained = by_identity.get(identity)
+        if retained is None:
+            by_identity[identity] = dict(event)
+            continue
+        duplicate_variants += 1
+        by_identity[identity], _has_conflict = _merge_calendar_event_variants(
+            retained,
+            event,
+        )
+    deduplicated = list(by_identity.values())
+    conflict_events = sum(
+        1 for event in deduplicated if event.get("providerConflicts")
+    )
+    return deduplicated, duplicate_variants, conflict_events
+
+
 def get_economic_calendar(
     limit: int = 100,
     page: int = 1,
@@ -1217,7 +1303,6 @@ def get_economic_calendar(
         range_start = datetime.date.fromisoformat(date_from)
         range_end = datetime.date.fromisoformat(date_to)
         events = []
-        seen = set()
         cursor = range_start
         while cursor <= range_end:
             window_end = min(range_end, cursor + datetime.timedelta(days=6))
@@ -1229,12 +1314,12 @@ def get_economic_calendar(
                 date_from=api_date_from,
                 date_to=window_end.isoformat(),
             ):
-                identity = json.dumps(event, sort_keys=True, default=str)
-                if identity not in seen:
-                    seen.add(identity)
-                    events.append(event)
+                events.append(event)
             cursor = window_end + datetime.timedelta(days=1)
         events = _filter_calendar_events_by_date(events, date_from=date_from, date_to=date_to)
+        events, duplicate_variants, conflict_events = _deduplicate_calendar_events(
+            events
+        )
 
         if impact_norm is not None:
             impact_value = {"low": 1, "medium": 2, "high": 3}[impact_norm]
@@ -1244,7 +1329,13 @@ def get_economic_calendar(
                 if _calendar_importance_value(e.get("importance")) == impact_value
             ]
 
-        events.sort(key=lambda e: str(e.get("date", "")))
+        events.sort(
+            key=lambda event: (
+                str(event.get("date", "")),
+                str(event.get("calendarId", event.get("calendar_id", ""))),
+                str(event.get("event", "")),
+            )
+        )
 
         total = len(events)
         start_idx = (safe_page - 1) * safe_limit
@@ -1255,7 +1346,7 @@ def get_economic_calendar(
         if impact_norm and total == 0:
             message = "No economic releases matched impact='{impact}'".format(impact=impact_norm)
 
-        return {
+        result: Dict[str, Any] = {
             "success": True,
             "source": "finviz_api",
             "impact": impact_norm,
@@ -1268,7 +1359,20 @@ def get_economic_calendar(
             "pages": (total + safe_limit - 1) // safe_limit if total else 0,
             "items": items_list,
             "message": message,
+            "duplicateVariantsMerged": duplicate_variants,
+            "providerConflictEvents": conflict_events,
+            "eventIdentity": (
+                "calendarId when present; otherwise date, event, ticker/symbol, "
+                "category, reference, country, and currency"
+            ),
         }
+        if duplicate_variants:
+            result["warnings"] = [
+                f"Merged {duplicate_variants} duplicate provider event variant(s) "
+                "before impact filtering and pagination. Conflicting non-empty fields "
+                "are null with alternatives in providerConflicts."
+            ]
+        return result
     except ValueError as e:
         return {"error": str(e)}
     except Exception as e:
