@@ -79,7 +79,10 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
 
     assert out["items"][0]["title"] == "Apple launches new chips"
     assert out["items"][0]["source"] == "Reuters"
-    assert out["items"][0]["published_at"] == "2026-04-18T04:00:00+00:00"
+    assert "published_at" not in out["items"][0]
+    assert out["items"][0]["publication_date"] == "2026-04-18"
+    assert out["items"][0]["timestamp_precision"] == "date"
+    assert out["items"][0]["source_timezone"] == "America/New_York"
     assert out["items"][0]["kind"] == "provider_associated"
     assert out["items"][0]["content_type"] == "news"
     assert out["provider_context_symbol"] == "AAPL"
@@ -257,6 +260,28 @@ def test_finviz_market_news_normalizes_items() -> None:
     assert "tool_scope" not in out
     assert "output_shape" not in out
     assert "timezone" not in out
+
+
+def test_finviz_market_news_preserves_yearless_date_precision() -> None:
+    item = core_finviz._normalize_finviz_news_item(
+        {"Title": "Date-only headline", "Date": "Aug-19"},
+        now=datetime(2026, 8, 20, 4, 10, tzinfo=timezone.utc),
+    )
+
+    assert item["publication_date"] == "2026-08-19"
+    assert item["timestamp_precision"] == "date"
+    assert item["source_timezone"] == "America/New_York"
+    assert "published_at" not in item
+    assert "relative_time" not in item
+
+
+def test_finviz_yearless_publication_date_uses_most_recent_year() -> None:
+    item = core_finviz._normalize_finviz_news_item(
+        {"Title": "Year boundary", "Date": "Dec-31"},
+        now=datetime(2026, 1, 1, 15, 0, tzinfo=timezone.utc),
+    )
+
+    assert item["publication_date"] == "2025-12-31"
 
 
 def test_finviz_market_news_repairs_double_encoded_titles() -> None:

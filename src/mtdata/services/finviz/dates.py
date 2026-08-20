@@ -1,5 +1,6 @@
 """Date normalization utilities for Finviz service."""
 import datetime
+import re
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -58,6 +59,42 @@ def normalize_finviz_date_string(value: Any) -> Any:
     except ValueError:
         pass
     return value
+
+
+def parse_finviz_publication_date(
+    value: Any,
+    *,
+    now: Optional[datetime.datetime] = None,
+) -> Optional[datetime.date]:
+    """Parse provider values that contain a date but no publication time.
+
+    Yearless values resolve to their most recent occurrence in the Finviz
+    market timezone. They remain dates and must not be promoted to midnight
+    timestamps by callers.
+    """
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        try:
+            return datetime.date.fromisoformat(text)
+        except ValueError:
+            return None
+    reference = _finviz_market_date(now)
+    for separator, fmt in (("-", "%b-%d-%Y"), (" ", "%b %d %Y")):
+        try:
+            candidate = datetime.datetime.strptime(
+                f"{text}{separator}{reference.year}",
+                fmt,
+            ).date()
+        except ValueError:
+            continue
+        if candidate > reference:
+            candidate = candidate.replace(year=candidate.year - 1)
+        return candidate
+    return None
 
 
 def normalize_finviz_dates_in_rows(
@@ -208,6 +245,7 @@ __all__ = [
     "parse_iso_date_input",
     "normalize_finviz_date_string",
     "normalize_finviz_dates_in_rows",
+    "parse_finviz_publication_date",
     "finviz_earnings_period_window",
     "parse_finviz_earnings_date",
     "strip_string_fields_in_rows",

@@ -831,6 +831,42 @@ def test_finviz_naive_datetimes_use_new_york_dst_offsets() -> None:
     )
 
 
+def test_finviz_general_news_preserves_yearless_date_precision(monkeypatch) -> None:
+    parse_publication_date = svc.parse_finviz_publication_date
+    monkeypatch.setattr(
+        svc,
+        "parse_finviz_publication_date",
+        lambda value: parse_publication_date(
+            value,
+            now=datetime(2026, 8, 20, 4, 10, tzinfo=timezone.utc),
+        ),
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda **_kwargs: {
+            "success": True,
+            "items": [
+                {
+                    "Title": "Date-only headline",
+                    "Source": "Reuters",
+                    "Date": "Aug-19",
+                }
+            ],
+        },
+    )
+
+    item = svc.FinvizNewsSource().fetch_general_candidates(limit=1)[0]
+    payload = item.to_dict()
+
+    assert item.published_at is None
+    assert payload["publication_date"] == "2026-08-19"
+    assert payload["timestamp_precision"] == "date"
+    assert payload["source_timezone"] == "America/New_York"
+    assert "published_at" not in payload
+    assert svc._general_news_recency_boost(item.published_at) == 0.0
+
+
 def test_finviz_economic_candidates_normalize_new_york_wall_time(monkeypatch) -> None:
     monkeypatch.setattr(
         svc,

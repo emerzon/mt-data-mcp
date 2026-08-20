@@ -36,8 +36,10 @@ from ..services.finviz import (
     screen_stocks,
 )
 from ..services.finviz.dates import (
+    FINVIZ_CALENDAR_TIMEZONE,
     finviz_earnings_period_window,
     parse_finviz_earnings_date,
+    parse_finviz_publication_date,
 )
 from ..services.finviz.symbols import (
     looks_like_non_equity_symbol,
@@ -1574,6 +1576,12 @@ def _normalize_finviz_news_item(
             continue
         if target_key == "published_at":
             raw_published_at = value
+            publication_date = parse_finviz_publication_date(value, now=now)
+            if publication_date is not None:
+                out["publication_date"] = publication_date.isoformat()
+                out["timestamp_precision"] = "date"
+                out["source_timezone"] = FINVIZ_CALENDAR_TIMEZONE
+                continue
             value = _normalize_finviz_published_at(value, now=now)
         if target_key == "url" and isinstance(value, str):
             resolved = urljoin("https://finviz.com/", value)
@@ -1719,6 +1727,9 @@ def _normalize_finviz_news_payload(
             "title",
             "source",
             "published_at",
+            "publication_date",
+            "timestamp_precision",
+            "source_timezone",
             "relative_time",
             "url",
             "kind",

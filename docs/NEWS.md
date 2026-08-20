@@ -48,9 +48,13 @@ With a symbol, the result is split so you can scan quickly:
 | `upcoming_events` | **Future** calendar releases tied to this instrument — the “what is still ahead” list. |
 | `recent_events` | **Already published** calendar prints — useful for “what just came out.” |
 
-Headline rows use `published_at`. Economic-calendar rows use `scheduled_at`,
-including rows in both event buckets, so a future release time cannot be
-mistaken for an article publication time.
+Headline rows with a provider-observed instant use `published_at`. Some Finviz
+market headlines expose only a date; those rows use `publication_date`,
+`timestamp_precision=date`, and `source_timezone=America/New_York` instead of
+an invented midnight timestamp. Provider order breaks ties among these
+date-only rows. Economic-calendar rows use `scheduled_at`, including rows in
+both event buckets, so a future release time cannot be mistaken for an article
+publication time.
 
 Broad compact output returns a global page of at most 10 rows, reserves the
 next upcoming event (or a recent release when no future event remains), and

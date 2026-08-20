@@ -34,6 +34,7 @@ from .finviz import (
     get_general_news,
     get_stock_news,
 )
+from .finviz.dates import FINVIZ_CALENDAR_TIMEZONE, parse_finviz_publication_date
 from .finviz.symbols import normalize_finviz_equity_symbol
 from .finviz.utils import finviz_percent_value
 from .news_embeddings import get_news_embedding_service
@@ -365,6 +366,9 @@ class NewsItem:
     source: str
     kind: str = "headline"
     published_at: Optional[datetime] = None
+    publication_date: Optional[str] = None
+    timestamp_precision: Optional[str] = None
+    source_timezone: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     url: Optional[str] = None
     summary: Optional[str] = None
@@ -422,6 +426,12 @@ class NewsItem:
         }
         if self.published_at is not None:
             payload["published_at"] = self.published_at.isoformat()
+        if self.publication_date is not None:
+            payload["publication_date"] = self.publication_date
+        if self.timestamp_precision is not None:
+            payload["timestamp_precision"] = self.timestamp_precision
+        if self.source_timezone is not None:
+            payload["source_timezone"] = self.source_timezone
         if self.scheduled_at is not None:
             payload["scheduled_at"] = self.scheduled_at.isoformat()
         if self.metadata:
@@ -1533,13 +1543,31 @@ class FinvizNewsSource:
             items = result.get("items", [])
             out: List[NewsItem] = []
             for rank, item in enumerate(items):
+                publication_date = parse_finviz_publication_date(item.get("Date"))
                 out.append(
                     NewsItem(
                         title=_safe_text(item.get("Title")),
                         provider=self.name,
                         source=_safe_text(item.get("Source")) or "Finviz",
                         kind="headline",
-                        published_at=_maybe_parse_finviz_datetime(item.get("Date")),
+                        published_at=(
+                            None
+                            if publication_date is not None
+                            else _maybe_parse_finviz_datetime(item.get("Date"))
+                        ),
+                        publication_date=(
+                            publication_date.isoformat()
+                            if publication_date is not None
+                            else None
+                        ),
+                        timestamp_precision=(
+                            "date" if publication_date is not None else None
+                        ),
+                        source_timezone=(
+                            FINVIZ_CALENDAR_TIMEZONE
+                            if publication_date is not None
+                            else None
+                        ),
                         url=_safe_text(item.get("Link")) or None,
                         category="market_news",
                         priority=NewsPriority.MEDIUM,
