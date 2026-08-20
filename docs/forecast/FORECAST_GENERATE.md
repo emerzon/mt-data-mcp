@@ -29,6 +29,13 @@ interval has elapsed. With `--as-of`, these states and `last_bar_complete` are
 evaluated at the replay timestamp rather than the current wall clock. This is
 independent of the closed-bars-only input policy.
 
+For intraday symbols with an unambiguous NYSE/Nasdaq suffix, the horizon counts
+available exchange-session bars rather than elapsed wall-clock intervals. The
+projector learns recurring broker bar-open slots from the fetched history and
+applies New York holidays, early closes, and daylight-saving transitions. If
+the history is too short to learn those slots, it uses the regular 09:30–16:00
+exchange grid and identifies that fallback in `calendar_treatment`.
+
 For price and return forecasts, `last_price_source=candle_close` identifies the
 forecast anchor and `price_basis=mt5_bid_ohlc` identifies the MT5 candle-price
 basis. This is a historical candle close, not a live executable bid or ask.
@@ -65,7 +72,7 @@ non-empty `--params` mapping.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--timeframe` | `H1` | Candle timeframe |
-| `--horizon` | 12 | Bars to forecast |
+| `--horizon` | 12 | Available bars to forecast; closed equity-session intervals do not count |
 | `--lookback` | auto | Historical bars to use |
 | `--as-of` | now | Reference time (for backtesting) |
 

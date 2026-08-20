@@ -352,6 +352,55 @@ def test_forecast_engine_as_of_uses_replay_time_for_target_bar_states():
     assert result["bar_state_reference_time"] == "2026-08-13T21:30:00Z"
 
 
+def test_equity_intraday_forecast_targets_next_observed_session_bars() -> None:
+    observed = [
+        pd.Timestamp(f"2026-08-{day} {hour:02d}:00", tz="America/New_York").timestamp()
+        for day in (17, 18, 19)
+        for hour in range(9, 16)
+    ]
+    frame = pd.DataFrame(
+        {
+            "time": observed,
+            "close": np.linspace(320.0, 330.0, len(observed)),
+        }
+    )
+
+    with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+        result = fe._format_forecast_output(
+            forecast_values=np.array([331.0, 332.0, 333.0]),
+            last_epoch=observed[-1],
+            tf_secs=3600,
+            horizon=3,
+            base_col="close",
+            df=frame,
+            ci_alpha=None,
+            ci_values=None,
+            method="theta",
+            quantity="price",
+            denoise_used=False,
+            symbol="TSLA.NAS",
+            timeframe="H1",
+            now_epoch=pd.Timestamp("2026-08-19T20:30:00Z").timestamp(),
+        )
+
+    assert [
+        pd.Timestamp(value, unit="s", tz="UTC").isoformat()
+        for value in result["forecast_epoch"]
+    ] == [
+        "2026-08-20T13:00:00+00:00",
+        "2026-08-20T14:00:00+00:00",
+        "2026-08-20T15:00:00+00:00",
+    ]
+    assert result["forecast_bar_states"] == ["future", "future", "future"]
+    assert result["horizon_includes_forming_bar"] is False
+    assert result["forecast_start_gap_bars"] == 1.0
+    assert result["forecast_step_seconds"] is None
+    assert result["forecast_nominal_step_seconds"] == 3600
+    assert result["calendar_treatment"] == (
+        "xnys_observed_broker_slots_holidays_and_early_closes_applied"
+    )
+
+
 def test_prepare_feature_context_surfaces_univariate_fallback(monkeypatch, caplog):
     def _fail(*args, **kwargs):
         raise ValueError("missing requested column")

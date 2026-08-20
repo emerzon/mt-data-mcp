@@ -46,6 +46,7 @@ from .common import (
     describe_forecast_calendar_treatment,
     is_standard_weekend_closed_epoch,
     next_times_from_last,
+    uses_exchange_intraday_projection,
     uses_standard_weekend_projection,
 )
 from .common import (
@@ -600,6 +601,7 @@ def _prepare_feature_context(
             skip_weekends=uses_standard_weekend_projection(symbol, int(tf_secs)),
             timeframe=timeframe,
             symbol=symbol,
+            observed_times=df.get("time"),
         )
         try:
             X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
@@ -1598,6 +1600,23 @@ def _forecast_bar_state_reference_epoch(
     return float(parsed.timestamp())
 
 
+def _forecast_session_projection_metadata(
+    enabled: bool,
+    *,
+    horizon: int,
+    tf_secs: int,
+) -> Dict[str, Any]:
+    if not enabled:
+        return {}
+    return {
+        "forecast_nominal_step_seconds": int(tf_secs),
+        "horizon_note": (
+            f"{horizon} exchange-session bars forecast; overnight, weekend, "
+            "holiday, and shortened-session closures do not count toward the horizon."
+        ),
+    }
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -1622,6 +1641,12 @@ def _format_forecast_output(
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
+    observed_times = df.get("time")
+    session_projection = uses_exchange_intraday_projection(
+        symbol,
+        tf_secs,
+        observed_times=observed_times,
+    )
     future_epochs = next_times_from_last(
         last_epoch,
         tf_secs,
@@ -1629,6 +1654,7 @@ def _format_forecast_output(
         skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
         timeframe=timeframe,
         symbol=symbol,
+        observed_times=observed_times,
     )
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None
@@ -1645,7 +1671,7 @@ def _format_forecast_output(
     )
     last_observation_time = fmt_time(float(last_epoch))
     calendar_timeframe = str(timeframe or "").upper() in {"D1", "W1", "MN1"}
-    if calendar_timeframe:
+    if calendar_timeframe or session_projection:
         calendar_gaps, skipped_bars = [], 0
     else:
         calendar_gaps, skipped_bars = _forecast_calendar_gap_rows(
@@ -1669,7 +1695,7 @@ def _format_forecast_output(
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
     forecast_start_gap_bars = (
         1.0
-        if calendar_timeframe and forecast_start_epoch is not None
+        if (calendar_timeframe or session_projection) and forecast_start_epoch is not None
         else float(forecast_start_epoch - float(last_epoch)) / float(tf_secs)
         if forecast_start_epoch is not None and tf_secs
         else None
@@ -1705,7 +1731,9 @@ def _format_forecast_output(
             "1.0 means the next timeframe bar."
         ),
         "forecast_anchor": "next_timeframe_bar_after_last_observation",
-        "forecast_step_seconds": None if calendar_timeframe else int(tf_secs),
+        "forecast_step_seconds": (
+            None if calendar_timeframe or session_projection else int(tf_secs)
+        ),
         "forecast_epoch": future_epochs,
         "forecast_time": forecast_times,
         "forecast_bar_states": forecast_bar_states,
@@ -1727,8 +1755,16 @@ def _format_forecast_output(
             symbol,
             tf_secs,
             calendar_timeframe=calendar_timeframe,
+            observed_times=observed_times,
         ),
     }
+    result.update(
+        _forecast_session_projection_metadata(
+            session_projection,
+            horizon=horizon,
+            tf_secs=tf_secs,
+        )
+    )
     if calendar_gaps:
         result["forecast_calendar_gaps"] = calendar_gaps
         result["horizon_note"] = (

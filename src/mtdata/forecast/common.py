@@ -5,6 +5,7 @@ import os
 import re
 import threading
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -452,6 +453,175 @@ def _forecast_exchange_calendar(symbol: Optional[str]) -> Optional[str]:
     return None
 
 
+@lru_cache(maxsize=32)
+def _exchange_holidays(calendar: str, year: int) -> holidays.HolidayBase:
+    return holidays.financial_holidays(calendar, years=[int(year)])
+
+
+def _is_exchange_session_holiday(calendar: str, session_date: Any) -> bool:
+    return session_date in _exchange_holidays(calendar, int(session_date.year))
+
+
+def _is_xnys_early_close_session(session_date: Any) -> bool:
+    """Mirror the repository's NYSE/Nasdaq shortened-session rules."""
+    calendar = "XNYS"
+    if _is_exchange_session_holiday(calendar, session_date):
+        return False
+    adjacent = _exchange_holidays(
+        calendar,
+        int(session_date.year),
+    )
+    yesterday_name = str(adjacent.get(session_date - timedelta(days=1)) or "")
+    if "thanksgiving" in yesterday_name.lower():
+        return True
+    tomorrow_name = str(adjacent.get(session_date + timedelta(days=1)) or "")
+    return any(
+        name in tomorrow_name.lower()
+        for name in ("independence day", "christmas day")
+    )
+
+
+def _observed_intraday_session_slots(
+    observed_times: Any,
+    *,
+    calendar: str,
+) -> Optional[List[int]]:
+    """Infer recurring exchange-local bar-open slots from broker observations."""
+    if observed_times is None:
+        return None
+    try:
+        values = list(observed_times)
+    except TypeError:
+        return None
+    if not values:
+        return None
+
+    exchange_tz = ZoneInfo("America/New_York")
+    slots_by_date: Dict[Any, set[int]] = {}
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        try:
+            epoch = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(epoch):
+            continue
+        local = datetime.fromtimestamp(epoch, tz=timezone.utc).astimezone(exchange_tz)
+        session_date = local.date()
+        if session_date.weekday() >= 5:
+            continue
+        if _is_exchange_session_holiday(calendar, session_date):
+            continue
+        slot = local.hour * 3600 + local.minute * 60 + local.second
+        slots_by_date.setdefault(session_date, set()).add(slot)
+
+    if len(slots_by_date) < 2:
+        return None
+    counts: Dict[int, int] = {}
+    for slots in slots_by_date.values():
+        for slot in slots:
+            counts[slot] = counts.get(slot, 0) + 1
+    if not counts:
+        return None
+    max_count = max(counts.values())
+    threshold = max(2, int(math.ceil(max_count * 0.8)))
+    recurring = sorted(slot for slot, count in counts.items() if count >= threshold)
+    return recurring or None
+
+
+def _regular_exchange_intraday_slots(tf_secs: int, *, calendar: str) -> List[int]:
+    if calendar != "XNYS" or int(tf_secs) <= 0:
+        return []
+    session_open = 9 * 3600 + 30 * 60
+    session_close = 16 * 3600
+    return list(range(session_open, session_close, int(tf_secs)))
+
+
+def _exchange_intraday_schedule(
+    symbol: Optional[str],
+    tf_secs: int,
+    observed_times: Any = None,
+) -> Optional[Tuple[List[int], str, str]]:
+    calendar = _forecast_exchange_calendar(symbol)
+    if calendar is None or int(tf_secs) <= 0 or int(tf_secs) >= 86400:
+        return None
+    observed_slots = _observed_intraday_session_slots(
+        observed_times,
+        calendar=calendar,
+    )
+    if observed_slots:
+        return observed_slots, "observed_broker_slots", calendar
+    regular_slots = _regular_exchange_intraday_slots(tf_secs, calendar=calendar)
+    if regular_slots:
+        return regular_slots, "exchange_regular_session_fallback", calendar
+    return None
+
+
+def uses_exchange_intraday_projection(
+    symbol: Optional[str],
+    tf_secs: int,
+    *,
+    observed_times: Any = None,
+) -> bool:
+    return _exchange_intraday_schedule(
+        symbol,
+        tf_secs,
+        observed_times,
+    ) is not None
+
+
+def _next_exchange_intraday_times(
+    last_epoch: float,
+    horizon: int,
+    *,
+    slots: List[int],
+    calendar: str,
+) -> List[float]:
+    if int(horizon) <= 0:
+        return []
+    exchange_tz = ZoneInfo("America/New_York")
+    base = float(last_epoch)
+    local_base = datetime.fromtimestamp(base, tz=timezone.utc).astimezone(exchange_tz)
+    session_date = local_base.date()
+    out: List[float] = []
+    guard = 0
+    max_days = max(370, int(horizon) * 4)
+    while len(out) < int(horizon) and guard < max_days:
+        if (
+            session_date.weekday() < 5
+            and not _is_exchange_session_holiday(calendar, session_date)
+        ):
+            close_slot = (
+                13 * 3600
+                if calendar == "XNYS" and _is_xnys_early_close_session(session_date)
+                else None
+            )
+            for slot in slots:
+                if close_slot is not None and slot >= close_slot:
+                    continue
+                hour, remainder = divmod(int(slot), 3600)
+                minute, second = divmod(remainder, 60)
+                candidate_local = datetime(
+                    session_date.year,
+                    session_date.month,
+                    session_date.day,
+                    hour,
+                    minute,
+                    second,
+                    tzinfo=exchange_tz,
+                )
+                candidate = float(candidate_local.astimezone(timezone.utc).timestamp())
+                if candidate <= base + 1e-6:
+                    continue
+                out.append(candidate)
+                if len(out) >= int(horizon):
+                    return out
+        session_date += timedelta(days=1)
+        guard += 1
+    return out
+
+
 def _is_exchange_holiday_epoch(symbol: Optional[str], epoch: float) -> bool:
     calendar = _forecast_exchange_calendar(symbol)
     if calendar is None:
@@ -462,11 +632,7 @@ def _is_exchange_holiday_epoch(symbol: Optional[str], epoch: float) -> bool:
         ZoneInfo("America/New_York")
     )
     session_date = (local_open + timedelta(days=1)).date()
-    exchange_holidays = holidays.financial_holidays(
-        calendar,
-        years=[session_date.year],
-    )
-    return session_date in exchange_holidays
+    return _is_exchange_session_holiday(calendar, session_date)
 
 
 def describe_forecast_calendar_treatment(
@@ -474,6 +640,7 @@ def describe_forecast_calendar_treatment(
     tf_secs: int,
     *,
     calendar_timeframe: bool,
+    observed_times: Any = None,
 ) -> str:
     """Return the forecast calendar-treatment label for a symbol and step."""
     exchange_calendar = _forecast_exchange_calendar(symbol)
@@ -493,6 +660,17 @@ def describe_forecast_calendar_treatment(
         return "broker_calendar_boundaries_continuous_crypto"
     if calendar_timeframe:
         return "calendar_estimate_session_schedule_unknown"
+    exchange_schedule = _exchange_intraday_schedule(
+        symbol,
+        tf_secs,
+        observed_times,
+    )
+    if exchange_schedule is not None:
+        _slots, schedule_source, calendar = exchange_schedule
+        return (
+            f"{calendar.lower()}_{schedule_source}_holidays_and_"
+            "early_closes_applied"
+        )
     if uses_standard_weekend_projection(symbol, tf_secs):
         if is_probably_forex_symbol(
             symbol,
@@ -519,6 +697,7 @@ def next_times_from_last(
     skip_weekends: bool = False,
     timeframe: Optional[str] = None,
     symbol: Optional[str] = None,
+    observed_times: Any = None,
 ) -> List[float]:
     base = float(last_epoch)
     step = float(tf_secs)
@@ -544,6 +723,19 @@ def next_times_from_last(
                 break
             out.append(current)
         return out
+    exchange_schedule = _exchange_intraday_schedule(
+        symbol,
+        tf_secs,
+        observed_times,
+    )
+    if exchange_schedule is not None:
+        slots, _schedule_source, calendar = exchange_schedule
+        return _next_exchange_intraday_times(
+            base,
+            horizon,
+            slots=slots,
+            calendar=calendar,
+        )
     if not skip_weekends:
         return [base + step * (i + 1) for i in range(int(horizon))]
     out: List[float] = []

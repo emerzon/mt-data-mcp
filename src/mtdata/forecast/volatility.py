@@ -33,6 +33,7 @@ from .common import (
     describe_forecast_calendar_treatment,
     future_as_of_error,
     next_times_from_last,
+    uses_exchange_intraday_projection,
     uses_standard_weekend_projection,
 )
 from .common import (
@@ -619,6 +620,14 @@ def _volatility_input_context(
         if forecast_grid_anchor_epoch is not None
         else last_epoch
     )
+    observed_times = (
+        df.get("time") if observation_timeframe == str(timeframe) else None
+    )
+    session_projection = uses_exchange_intraday_projection(
+        symbol,
+        tf_secs,
+        observed_times=observed_times,
+    )
     forecast_epochs = (
         _next_volatility_times_on_grid(
             last_epoch,
@@ -627,6 +636,7 @@ def _volatility_input_context(
             max(1, int(horizon)),
             symbol=symbol,
             timeframe=timeframe,
+            observed_times=observed_times,
         )
         if tf_secs > 0
         else []
@@ -640,10 +650,13 @@ def _volatility_input_context(
             "start": _format_time_minimal(start_epoch),
             "end": _format_time_minimal(end_epoch),
             "bars": int(len(forecast_epochs)),
-            "step_seconds": None if calendar_timeframe else tf_secs,
+            "step_seconds": (
+                None if calendar_timeframe or session_projection else tf_secs
+            ),
+            "nominal_step_seconds": tf_secs if session_projection else None,
             "forecast_start_gap_bars": round(
                 1.0
-                if calendar_timeframe
+                if calendar_timeframe or session_projection
                 else (start_epoch - last_epoch) / float(tf_secs),
                 4,
             ),
@@ -651,8 +664,11 @@ def _volatility_input_context(
                 symbol,
                 tf_secs,
                 calendar_timeframe=calendar_timeframe,
+                observed_times=observed_times,
             ),
         }
+        if not session_projection:
+            out["forecast_window"].pop("nominal_step_seconds", None)
         if observation_timeframe != str(timeframe):
             out["forecast_window"]["timeframe"] = str(timeframe)
             out["forecast_window"]["input_data_as_of"] = _format_time_minimal(
@@ -691,10 +707,25 @@ def _next_volatility_times_on_grid(
     *,
     symbol: str,
     timeframe: str,
+    observed_times: Any = None,
 ) -> List[float]:
     """Project targets from a requested-timeframe grid, not the input cadence."""
     skip_weekends = uses_standard_weekend_projection(symbol, tf_secs)
     normalized_timeframe = str(timeframe).upper()
+    if uses_exchange_intraday_projection(
+        symbol,
+        tf_secs,
+        observed_times=observed_times,
+    ):
+        return next_times_from_last(
+            last_observation_epoch,
+            tf_secs,
+            horizon,
+            skip_weekends=skip_weekends,
+            timeframe=timeframe,
+            symbol=symbol,
+            observed_times=observed_times,
+        )
     if normalized_timeframe not in {"D1", "W1", "MN1"}:
         steps_after_anchor = math.floor(
             (float(last_observation_epoch) - float(grid_anchor_epoch))
@@ -711,6 +742,7 @@ def _next_volatility_times_on_grid(
             skip_weekends=skip_weekends,
             timeframe=timeframe,
             symbol=symbol,
+            observed_times=observed_times,
         )
 
     candidate_count = max(int(horizon) + 8, 16)
@@ -723,6 +755,7 @@ def _next_volatility_times_on_grid(
             skip_weekends=skip_weekends,
             timeframe=timeframe,
             symbol=symbol,
+            observed_times=observed_times,
         )
         future = [
             value for value in candidates

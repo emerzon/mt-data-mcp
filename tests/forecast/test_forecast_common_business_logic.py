@@ -63,6 +63,99 @@ def test_describe_forecast_calendar_treatment_labels_fx_crypto_and_unknown():
     assert fc.describe_forecast_calendar_treatment(
         "AAPL.NAS", day, calendar_timeframe=True
     ) == "broker_calendar_boundaries_and_xnys_holidays_skipped"
+    assert fc.describe_forecast_calendar_treatment(
+        "AAPL.NAS", hour, calendar_timeframe=False
+    ) == "xnys_exchange_regular_session_fallback_holidays_and_early_closes_applied"
+
+
+def _xnys_hourly_observations(*session_dates: str) -> list[float]:
+    return [
+        pd.Timestamp(f"{session_date} {hour:02d}:00", tz="America/New_York").timestamp()
+        for session_date in session_dates
+        for hour in range(9, 16)
+    ]
+
+
+def test_equity_intraday_projection_uses_observed_broker_session_slots() -> None:
+    observed = _xnys_hourly_observations("2026-08-17", "2026-08-18", "2026-08-19")
+
+    result = fc.next_times_from_last(
+        observed[-1],
+        3600,
+        3,
+        skip_weekends=True,
+        timeframe="H1",
+        symbol="TSLA.NAS",
+        observed_times=observed,
+    )
+
+    assert [pd.Timestamp(value, unit="s", tz="UTC").isoformat() for value in result] == [
+        "2026-08-20T13:00:00+00:00",
+        "2026-08-20T14:00:00+00:00",
+        "2026-08-20T15:00:00+00:00",
+    ]
+    assert fc.describe_forecast_calendar_treatment(
+        "TSLA.NAS",
+        3600,
+        calendar_timeframe=False,
+        observed_times=observed,
+    ) == "xnys_observed_broker_slots_holidays_and_early_closes_applied"
+
+
+def test_equity_intraday_projection_applies_holidays_and_early_closes() -> None:
+    july_observed = _xnys_hourly_observations("2026-06-30", "2026-07-01", "2026-07-02")
+    after_independence_day = fc.next_times_from_last(
+        july_observed[-1],
+        3600,
+        1,
+        timeframe="H1",
+        symbol="AAPL.NAS",
+        observed_times=july_observed,
+    )
+    assert pd.Timestamp(after_independence_day[0], unit="s", tz="UTC").isoformat() == (
+        "2026-07-06T13:00:00+00:00"
+    )
+
+    november_observed = _xnys_hourly_observations(
+        "2026-11-23",
+        "2026-11-24",
+        "2026-11-25",
+    )
+    after_thanksgiving = fc.next_times_from_last(
+        november_observed[-1],
+        3600,
+        5,
+        timeframe="H1",
+        symbol="AAPL.NAS",
+        observed_times=november_observed,
+    )
+    assert [
+        pd.Timestamp(value, unit="s", tz="America/New_York").strftime("%Y-%m-%d %H:%M")
+        for value in after_thanksgiving
+    ] == [
+        "2026-11-27 09:00",
+        "2026-11-27 10:00",
+        "2026-11-27 11:00",
+        "2026-11-27 12:00",
+        "2026-11-30 09:00",
+    ]
+
+
+def test_equity_intraday_projection_converts_dst_in_exchange_timezone() -> None:
+    observed = _xnys_hourly_observations("2026-03-04", "2026-03-05", "2026-03-06")
+
+    result = fc.next_times_from_last(
+        observed[-1],
+        3600,
+        1,
+        timeframe="H1",
+        symbol="AAPL.NAS",
+        observed_times=observed,
+    )
+
+    assert pd.Timestamp(result[0], unit="s", tz="UTC").isoformat() == (
+        "2026-03-09T13:00:00+00:00"
+    )
 
 
 def test_future_as_of_is_rejected_against_wall_clock():
