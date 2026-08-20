@@ -374,21 +374,12 @@ def pivot_compute_points(  # noqa: C901
                     return {"error": err}
                 system_now_dt = datetime.now(timezone.utc)
                 system_now_ts = system_now_dt.timestamp()
-                server_now_dt = system_now_dt
-                server_now_ts = system_now_ts
-                _tick = mt5.symbol_info_tick(symbol)
-                if _tick is not None and getattr(_tick, "time", None):
-                    t_utc = float(_tick.time)
-                    freshness_limit = float(max(tf_secs, 300))
-                    if abs(system_now_ts - t_utc) <= freshness_limit:
-                        server_now_ts = t_utc
-                        server_now_dt = datetime.fromtimestamp(server_now_ts, tz=timezone.utc)
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, system_now_dt, 5)
 
             if rates is None or len(rates) == 0:
                 return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
-            now_ts = server_now_ts
+            now_ts = system_now_ts
             latest = rates[-1]
             if bar_close_epoch(latest["time"], timeframe) <= now_ts:
                 src = latest
@@ -788,8 +779,6 @@ def confluence_levels(  # noqa: C901
                     return {"error": err}
                 system_now_dt = datetime.now(timezone.utc)
                 system_now_ts = system_now_dt.timestamp()
-                server_now_dt = system_now_dt
-                server_now_ts = system_now_ts
                 tick = mt5.symbol_info_tick(symbol)
                 tick, live_reference_price, reference_quote_context = (
                     _resolve_reference_quote(
@@ -799,13 +788,7 @@ def confluence_levels(  # noqa: C901
                         now_epoch=system_now_ts,
                     )
                 )
-                if tick is not None and getattr(tick, "time", None):
-                    tick_time = float(tick.time)
-                    freshness_limit = float(max(tf_secs, 300))
-                    if abs(system_now_ts - tick_time) <= freshness_limit:
-                        server_now_ts = tick_time
-                        server_now_dt = datetime.fromtimestamp(server_now_ts, tz=timezone.utc)
-                pivot_cutoff_dt = historical_cutoff or server_now_dt
+                pivot_cutoff_dt = historical_cutoff or system_now_dt
                 rates = _mt5_copy_rates_from(symbol, mt5_tf, pivot_cutoff_dt, 5)
 
             if rates is None or len(rates) == 0:
@@ -814,7 +797,7 @@ def confluence_levels(  # noqa: C901
             pivot_cutoff_ts = (
                 historical_cutoff.replace(tzinfo=timezone.utc).timestamp()
                 if historical_cutoff is not None
-                else server_now_ts
+                else system_now_ts
             )
             source_bar = next(
                 (
