@@ -1273,7 +1273,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    cost_model: Literal["historical_bar_spread", "fixed"] = "fixed",
+    cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread",
     spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
@@ -1312,7 +1312,7 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
-        cost_model_value = str(cost_model or "fixed").strip().lower()
+        cost_model_value = str(cost_model or "historical_bar_spread").strip().lower()
         if cost_model_value not in {"historical_bar_spread", "fixed"}:
             return {
                 "error": "cost_model must be 'historical_bar_spread' or 'fixed'"
@@ -1320,6 +1320,21 @@ def strategy_backtest(  # noqa: C901
         if cost_model_value == "historical_bar_spread" and spread_bps is not None:
             return {
                 "error": "--spread-bps is only valid with --cost-model fixed"
+            }
+        if cost_model_value == "fixed" and spread_bps is None:
+            return {
+                "success": False,
+                "error_code": "invalid_cost_model",
+                "error": "--spread-bps is required with --cost-model fixed",
+                "cost_model": {
+                    "requested_type": "fixed",
+                    "source": "missing_explicit_spread",
+                    "complete": False,
+                },
+                "remediation": (
+                    "Pass --cost-model fixed --spread-bps <round-trip-bps>, "
+                    "or use --cost-model historical_bar_spread."
+                ),
             }
         if strategy_value in {"sma_cross", "ema_cross"}:
             warmup_bars = max(int(slow_period), 5)
@@ -1411,29 +1426,7 @@ def strategy_backtest(  # noqa: C901
             return {"error": "Not enough closed bars for strategy backtest"}
 
         fixed_spread_source = "explicit"
-        resolved_spread_bps = spread_bps
-        if cost_model_value == "fixed" and resolved_spread_bps is None:
-            resolved_spread_bps = _current_spread_bps_suggestion(symbol)
-            fixed_spread_source = "current_bid_ask_snapshot"
-            if resolved_spread_bps is None:
-                return {
-                    "success": False,
-                    "error_code": "cost_model_unavailable",
-                    "error": (
-                        "The default fixed cost model could not resolve a current "
-                        "positive two-sided spread."
-                    ),
-                    "cost_model": {
-                        "requested_type": "fixed",
-                        "source": "current_bid_ask_snapshot",
-                        "complete": False,
-                    },
-                    "remediation": (
-                        "Pass --spread-bps with a defensible round-trip assumption, "
-                        "or retry when a two-sided quote is available."
-                    ),
-                }
-        fixed_spread_bps = float(resolved_spread_bps or 0.0)
+        fixed_spread_bps = float(spread_bps or 0.0)
 
         historical_spread_prices: Optional[np.ndarray] = None
         historical_spread_coverage = 0.0

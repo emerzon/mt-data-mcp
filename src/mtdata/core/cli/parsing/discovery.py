@@ -840,12 +840,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Minimum complete cycles required for a candidate seasonal period."
     ),
     ("strategy_backtest", "cost_model"): (
-        "Spread source: fixed uses spread_bps or the current two-sided quote; "
-        "historical_bar_spread requires complete completed-bar coverage."
+        "Spread source: historical_bar_spread is the fail-closed default and "
+        "requires complete completed-bar coverage; fixed requires spread_bps."
     ),
     ("strategy_backtest", "spread_bps"): (
-        "Optional fixed round-trip spread cost in basis points; when omitted, "
-        "the fixed model uses the current two-sided quote."
+        "Fixed round-trip spread cost in basis points; required when "
+        "cost_model=fixed and invalid with historical_bar_spread."
     ),
     ("strategy_validate", "strategy"): (
         "Single built-in strategy shortcut. Use candidates for parameterized or "
