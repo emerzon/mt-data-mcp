@@ -52,10 +52,17 @@ Auto mode is therefore materially slower than `--direction long` or
 `--direction short`: it fits 50 rolling backtest forecasts before the current
 forecast. Explicit directions use the point forecast only, while all other
 quote, barrier, sizing, and preview safety gates remain in force.
+A failed forecast-alignment or barrier gate makes the overall idea ineligible,
+keeps suggested volume at zero, and skips the order preview even when the side
+was explicitly requested.
 
 `--as-of` makes the idea historical and **research-only**: no live session or
 quote, no live sizing, and no dry-run preview. Historical geometry uses the
 barrier analysis's cutoff-bound reference price.
+The response keeps the raw cutoff in `requested_as_of`; `as_of` and
+`data_as_of` identify the resolved last observation. Component `lineage`
+records source windows and price anchors, and full detail includes timestamped
+forecast points.
 
 ---
 
@@ -69,8 +76,11 @@ barrier analysis's cutoff-bound reference price.
 | `forecast.calibration` | Auto mode's requested anchors, minimum usable residual sample, empirical coverage, and sufficiency status |
 | `forecast.forecast_vs_last_price.direction_interval_basis` | Exact comparison used by the auto direction gate |
 | `actionability` | Always `preview_only` or `research`. Never live. |
+| `idea_eligible` / `overall_gate_status` | Aggregate strategy and operational gate decision; only `true` / `pass` permits a preview-eligible idea |
 | `gates` | `pass` / `fail` / `skip` for quote, session, forecast, barriers, SL/TP, sizing, preview |
-| `preview.preview_ok` | Local dry-run eligibility. Still not a broker fill. |
+| `preview.preview_ok` | Local dry-run order validation. It is false whenever the aggregate idea is ineligible and is never a broker fill. |
+| `requested_as_of` / `data_as_of` | Requested historical cutoff and the resolved market-data observation used by the components |
+| `lineage` | Per-component source cutoff, data window, price anchor, and forecast target window |
 | `partial_failure` | Some sections failed; do not infer the missing ones |
 
 Reports (`report_generate`) remain research packages. This command is the **decision artifact** that adds size, gates, and a dry-run preview.

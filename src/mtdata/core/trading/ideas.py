@@ -58,12 +58,16 @@ _COMPACT_KEYS = (
     "horizon",
     "template",
     "as_of",
+    "requested_as_of",
+    "data_as_of",
     "assembled_at",
     "timezone",
     "direction",
     "direction_basis",
     "suggested_direction",
     "actionability",
+    "idea_eligible",
+    "overall_gate_status",
     "narrative",
     "quote",
     "structure",
@@ -77,6 +81,7 @@ _COMPACT_KEYS = (
     "partial_failure",
     "failed_sections",
     "section_errors",
+    "lineage",
     "warnings",
     "error",
     "error_code",
@@ -369,7 +374,181 @@ def _snap_exit(
     }
 
 
-def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -> Dict[str, Any]:
+def _forecast_points(payload: Any) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    raw_points = payload.get("forecast")
+    if isinstance(raw_points, list) and any(
+        isinstance(item, dict) for item in raw_points
+    ):
+        points: List[Dict[str, Any]] = []
+        for item in raw_points:
+            if not isinstance(item, dict):
+                continue
+            point = {
+                key: item[key]
+                for key in (
+                    "time",
+                    "time_epoch",
+                    "bar_state",
+                    "value",
+                    "forecast_price",
+                    "forecast_return",
+                    "lower",
+                    "upper",
+                )
+                if item.get(key) not in (None, "")
+            }
+            if point:
+                points.append(point)
+        if points:
+            return points
+
+    times = payload.get("forecast_time")
+    if not isinstance(times, list):
+        return []
+    value_key = next(
+        (
+            key
+            for key in ("forecast_price", "forecast_return", "forecast_series")
+            if isinstance(payload.get(key), list)
+        ),
+        None,
+    )
+    if value_key is None:
+        return []
+    values = payload[value_key]
+    states = payload.get("forecast_bar_states")
+    points = []
+    for index, (point_time, value) in enumerate(zip(times, values)):
+        point: Dict[str, Any] = {
+            "time": point_time,
+            "value": value,
+            "value_semantics": value_key,
+        }
+        if isinstance(states, list) and index < len(states):
+            point["bar_state"] = states[index]
+        points.append(point)
+    return points
+
+
+def _lineage_timestamp(value: Any) -> Any:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            return format_datetime_utc(datetime.fromtimestamp(float(value), timezone.utc))
+        except (OSError, OverflowError, TypeError, ValueError):
+            return value
+    return value
+
+
+def _component_lineage(
+    payload: Any,
+    *,
+    include_forecast_target: bool = False,
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    window = payload.get("data_window")
+    window_out = (
+        {
+            key: value
+            for key, value in window.items()
+            if key
+            in {
+                "start",
+                "end",
+                "last_observation",
+                "history_start",
+                "history_end",
+                "bars_used",
+                "returns_used",
+                "input_bar_policy",
+                "observed_timeframe",
+            }
+            and value not in (None, "", [], {})
+        }
+        if isinstance(window, dict)
+        else {}
+    )
+    data_as_of = next(
+        (
+            payload.get(key)
+            for key in (
+                "last_observation_time",
+                "last_observation_epoch",
+                "data_as_of",
+                "data_as_of_epoch",
+                "last_bar_time",
+                "analysis_as_of",
+                "reference_price_as_of",
+            )
+            if payload.get(key) not in (None, "")
+        ),
+        None,
+    )
+    if data_as_of in (None, ""):
+        data_as_of = next(
+            (
+                window_out.get(key)
+                for key in ("last_observation", "end", "history_end")
+                if window_out.get(key) not in (None, "")
+            ),
+            None,
+        )
+    lineage: Dict[str, Any] = {}
+    if data_as_of not in (None, ""):
+        lineage["data_as_of"] = _lineage_timestamp(data_as_of)
+    if window_out:
+        lineage["data_window"] = window_out
+    anchor = next(
+        (
+            payload.get(key)
+            for key in ("last_price", "reference_price")
+            if payload.get(key) not in (None, "")
+        ),
+        None,
+    )
+    anchor_source = next(
+        (
+            payload.get(key)
+            for key in ("last_price_source", "reference_price_source")
+            if payload.get(key) not in (None, "")
+        ),
+        None,
+    )
+    if anchor not in (None, "") or anchor_source not in (None, ""):
+        lineage["price_anchor"] = {
+            key: value
+            for key, value in (
+                ("value", anchor),
+                ("source", anchor_source),
+            )
+            if value not in (None, "")
+        }
+    if include_forecast_target:
+        points = _forecast_points(payload)
+        timed_points = [point for point in points if point.get("time") not in (None, "")]
+        if timed_points:
+            lineage["target_window"] = {
+                "start": timed_points[0]["time"],
+                "end": timed_points[-1]["time"],
+                "bars": len(points),
+                "time_semantics": payload.get("forecast_time_semantics", "bar_time"),
+                "value_semantics": payload.get(
+                    "forecast_value_semantics",
+                    timed_points[0].get("value_semantics", "forecast_value"),
+                ),
+            }
+    return lineage
+
+
+def _compact_forecast(
+    payload: Any,
+    values: List[float],
+    trend: Optional[str],
+    *,
+    include_points: bool = False,
+) -> Dict[str, Any]:
     compact: Dict[str, Any] = {}
     if isinstance(payload, dict):
         for key in (
@@ -405,6 +584,15 @@ def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -
             }
             if calibration:
                 compact["calibration"] = calibration
+        for key in (
+            "last_observation_time",
+            "last_observation_epoch",
+            "last_price",
+            "last_price_source",
+            "price_basis",
+        ):
+            if payload.get(key) not in (None, ""):
+                compact[key] = payload[key]
     if values:
         compact["first"] = values[0]
         compact["last"] = values[-1]
@@ -432,6 +620,12 @@ def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -
         }
         if direction_context:
             compact["forecast_vs_last_price"] = direction_context
+    if include_points:
+        points = _forecast_points(payload)
+        if points:
+            compact["points"] = points
+        if isinstance(payload, dict) and isinstance(payload.get("data_window"), dict):
+            compact["data_window"] = dict(payload["data_window"])
     return compact
 
 
@@ -446,6 +640,8 @@ def _compact_volatility(payload: Any) -> Dict[str, Any]:
         "volatility_horizon",
         "volatility_annualized",
         "volatility_unit",
+        "data_as_of",
+        "data_window",
     ):
         if payload.get(key) not in (None, ""):
             compact[key] = payload[key]
@@ -467,6 +663,10 @@ def _compact_barriers(payload: Any, *, take_profit: Optional[float], stop_loss: 
             "tp_pct",
             "sl_pct",
             "reference_price",
+            "data_as_of",
+            "data_window",
+            "last_price",
+            "last_price_source",
         ):
             if payload.get(key) not in (None, ""):
                 compact[key] = payload[key]
@@ -900,9 +1100,8 @@ def run_trade_idea_compose(  # noqa: C901
             sl_prob = _as_float(barriers_payload.get("prob_sl_first")) if isinstance(barriers_payload, dict) else None
             if tp_prob is not None and sl_prob is not None and sl_prob > tp_prob:
                 gates["barriers"] = _gate("fail", "stop is more likely to hit first")
+                stand_down_reasons.append("barriers disagree with the forecast path")
                 if requested_direction == "auto":
-                    direction = "stand_down"
-                    stand_down_reasons.append("barriers disagree with the forecast path")
                     gates["alignment"] = _gate("fail", "forecast and barriers disagree")
             else:
                 gates["barriers"] = _gate("pass")
@@ -934,7 +1133,14 @@ def run_trade_idea_compose(  # noqa: C901
 
     safety_blocked = any(
         gates[name]["status"] == "fail"
-        for name in ("quote_fresh", "session", "sl_tp")
+        for name in (
+            "quote_fresh",
+            "session",
+            "forecast",
+            "barriers",
+            "sl_tp",
+            "alignment",
+        )
     )
     if safety_blocked and direction != "stand_down":
         direction = "stand_down"
@@ -942,6 +1148,12 @@ def run_trade_idea_compose(  # noqa: C901
             stand_down_reasons.append("quote is not live-ready")
         if gates["session"]["status"] == "fail":
             stand_down_reasons.append("session is not tradable")
+        if gates["forecast"]["status"] == "fail":
+            stand_down_reasons.append("forecast is unavailable")
+        if gates["barriers"]["status"] == "fail":
+            stand_down_reasons.append("barrier gate failed")
+        if gates["alignment"]["status"] == "fail":
+            stand_down_reasons.append("forecast alignment gate failed")
 
     suggested_volume = 0.0
     sizing_payload: Any = None
@@ -976,6 +1188,8 @@ def run_trade_idea_compose(  # noqa: C901
         else:
             gates["sizing"] = _gate("fail", "no valid suggested volume")
             suggested_volume = 0.0
+            direction = "stand_down"
+            stand_down_reasons.append("sizing gate failed")
     elif historical:
         gates["sizing"] = _gate("skip", "historical ideas do not size against the live account")
         gates["preview"] = _gate("skip", "historical ideas are research-only")
@@ -1014,6 +1228,9 @@ def run_trade_idea_compose(  # noqa: C901
             gates["preview"] = _gate("pass")
         else:
             gates["preview"] = _gate("fail", "dry-run preview is not eligible")
+            suggested_volume = 0.0
+            direction = "stand_down"
+            stand_down_reasons.append("dry-run preview is not eligible")
             blockers = preview_compact.get("blockers")
             if isinstance(blockers, list) and blockers:
                 stand_down_reasons.append("preview blockers: " + ", ".join(str(item) for item in blockers))
@@ -1026,7 +1243,50 @@ def run_trade_idea_compose(  # noqa: C901
     )
     if snaps:
         barriers_compact["snapped_to_structure"] = snaps
-    actionability = "research" if historical or direction == "stand_down" else "preview_only"
+    lineage = {
+        name: component
+        for name, payload, include_forecast_target in (
+            ("forecast", forecast_payload, True),
+            ("volatility", sections.get("volatility"), False),
+            ("barriers", barriers_payload, False),
+            ("structure", sections.get("confluence"), False),
+        )
+        if (
+            component := _component_lineage(
+                payload,
+                include_forecast_target=include_forecast_target,
+            )
+        )
+    }
+    data_as_of = next(
+        (
+            component.get("data_as_of")
+            for component in lineage.values()
+            if component.get("data_as_of") not in (None, "")
+        ),
+        None,
+    )
+    idea_eligible = bool(
+        not historical
+        and direction in {"long", "short"}
+        and gates["sizing"]["status"] == "pass"
+        and gates["preview"]["status"] == "pass"
+        and not any(
+            gates[name]["status"] == "fail"
+            for name in (
+                "quote_fresh",
+                "session",
+                "forecast",
+                "barriers",
+                "sl_tp",
+                "alignment",
+            )
+        )
+    )
+    overall_gate_status = (
+        "pass" if idea_eligible else "research_only" if historical else "fail"
+    )
+    actionability = "preview_only" if idea_eligible else "research"
     unique_reasons: List[str] = []
     for reason in stand_down_reasons:
         if reason not in unique_reasons:
@@ -1038,12 +1298,14 @@ def run_trade_idea_compose(  # noqa: C901
         "timeframe": request.timeframe,
         "horizon": int(request.horizon),
         "template": request.template,
-        "as_of": assembled_at if not historical else request.as_of,
+        "as_of": data_as_of or (request.as_of if historical else assembled_at),
         "assembled_at": assembled_at,
         "timezone": "UTC",
         "direction": direction,
         "direction_basis": direction_basis,
         "actionability": actionability,
+        "idea_eligible": idea_eligible,
+        "overall_gate_status": overall_gate_status,
         "narrative": _build_narrative(
             symbol=symbol,
             direction=direction,
@@ -1053,13 +1315,24 @@ def run_trade_idea_compose(  # noqa: C901
         ),
         "gates": gates,
     }
+    if historical:
+        idea["requested_as_of"] = request.as_of
+    if data_as_of not in (None, ""):
+        idea["data_as_of"] = data_as_of
+    if lineage:
+        idea["lineage"] = lineage
     if suggested_direction:
         idea["suggested_direction"] = suggested_direction
     if quote:
         idea["quote"] = quote
     if structure:
         idea["structure"] = {"levels": structure}
-    forecast_compact = _compact_forecast(forecast_payload, forecast_values, trend)
+    forecast_compact = _compact_forecast(
+        forecast_payload,
+        forecast_values,
+        trend,
+        include_points=request.detail == "full",
+    )
     if forecast_compact:
         idea["forecast"] = forecast_compact
     vol_compact = _compact_volatility(sections.get("volatility"))
@@ -1087,17 +1360,22 @@ def run_trade_idea_compose(  # noqa: C901
     if preview_compact:
         preview_compact.setdefault("dry_run", True)
         preview_compact.setdefault("would_send_order", False)
+        if not idea_eligible:
+            preview_compact["preview_ok"] = False
+            preview_compact["live_submission_eligible"] = False
         idea["preview"] = preview_compact
     elif actionability == "preview_only":
         idea["preview"] = {
             "dry_run": True,
             "preview_ok": False,
+            "live_submission_eligible": False,
             "would_send_order": False,
         }
     else:
         idea["preview"] = {
             "dry_run": True,
             "preview_ok": False,
+            "live_submission_eligible": False,
             "would_send_order": False,
             "skipped": True,
         }

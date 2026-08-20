@@ -41,6 +41,21 @@ def _forecast(*, trend: str = "up") -> Dict[str, Any]:
         "quantity": "price",
         "horizon": 12,
         "forecast_price": values,
+        "forecast_time": [
+            "2026-08-01T21:00:00Z",
+            "2026-08-02T21:00:00Z",
+            "2026-08-03T21:00:00Z",
+        ],
+        "forecast_bar_states": ["future", "future", "future"],
+        "last_observation_time": "2026-07-31T20:00:00Z",
+        "last_price": 1.1001,
+        "last_price_source": "candle_close",
+        "data_window": {
+            "start": "2026-06-01T20:00:00Z",
+            "end": "2026-07-31T20:00:00Z",
+            "bars_used": 1000,
+            "input_bar_policy": "closed_bars_only",
+        },
         "trend": trend,
         "forecast_vs_last_price": {
             "direction": direction,
@@ -58,6 +73,12 @@ def _volatility() -> Dict[str, Any]:
         "horizon": 12,
         "volatility_per_bar": 0.0006,
         "volatility_horizon": 0.0021,
+        "data_as_of": "2026-07-31T20:00:00Z",
+        "data_window": {
+            "start": "2026-06-01T20:00:00Z",
+            "end": "2026-07-31T20:00:00Z",
+            "bars_used": 1000,
+        },
     }
 
 
@@ -68,6 +89,14 @@ def _barriers(*, tp_first: float = 0.42, sl_first: float = 0.31) -> Dict[str, An
         "direction": "long",
         "horizon": 12,
         "reference_price": 1.1002,
+        "last_price": 1.1002,
+        "last_price_source": "candle_close",
+        "data_as_of": "2026-07-31T20:00:00Z",
+        "data_window": {
+            "start": "2026-06-01T20:00:00Z",
+            "end": "2026-07-31T20:00:00Z",
+            "bars_used": 1000,
+        },
         "tp_pct": 0.40,
         "sl_pct": 0.60,
         "tp_price": 1.104602,
@@ -82,6 +111,13 @@ def _barriers(*, tp_first: float = 0.42, sl_first: float = 0.31) -> Dict[str, An
 def _confluence() -> Dict[str, Any]:
     return {
         "success": True,
+        "analysis_as_of": "2026-07-31T20:00:00Z",
+        "reference_price": 1.1001,
+        "reference_price_source": "historical_window_close",
+        "data_window": {
+            "start": "2026-06-01T20:00:00Z",
+            "end": "2026-07-31T20:00:00Z",
+        },
         "levels": [
             {
                 "type": "resistance",
@@ -167,6 +203,9 @@ def test_trade_idea_compose_quick_preview_path() -> None:
     assert idea["geometry"]["take_profit"] == pytest.approx(1.104602)
     assert idea["geometry"]["stop_loss"] == pytest.approx(1.0935988)
     assert idea["gates"]["preview"]["status"] == "pass"
+    assert idea["idea_eligible"] is True
+    assert idea["overall_gate_status"] == "pass"
+    assert idea["data_as_of"] == "2026-07-31T20:00:00Z"
     assert "source_tool_calls" not in idea
     assert "not an order" in idea["narrative"]
 
@@ -304,25 +343,65 @@ def test_trade_idea_compose_auto_stands_down_when_barriers_disagree() -> None:
     assert idea["sizing"]["suggested_volume"] == 0.0
 
 
-def test_trade_idea_compose_explicit_direction_keeps_side_when_barriers_are_weak() -> None:
+@pytest.mark.parametrize(("direction", "trend"), [("long", "up"), ("short", "down")])
+def test_trade_idea_compose_explicit_direction_fails_closed_when_barriers_are_weak(
+    direction: str,
+    trend: str,
+) -> None:
+    barriers = _barriers(tp_first=0.20, sl_first=0.55)
+    if direction == "short":
+        barriers.update(
+            {
+                "direction": "short",
+                "tp_price": 1.0957992,
+                "sl_price": 1.1068012,
+            }
+        )
     idea = run_trade_idea_compose(
-        TradeIdeaComposeRequest(symbol="EURUSD", direction="long"),
+        TradeIdeaComposeRequest(symbol="EURUSD", direction=direction),
         call_section=_caller(
             {
                 "session": _session(),
-                "forecast": _forecast(trend="up"),
+                "forecast": _forecast(trend=trend),
                 "volatility": _volatility(),
-                "barriers": _barriers(tp_first=0.20, sl_first=0.55),
+                "barriers": barriers,
                 "sizing": _sizing(),
                 "preview": _preview(),
             }
         ),
     )
 
-    assert idea["direction"] == "long"
+    assert idea["direction"] == "stand_down"
     assert idea["gates"]["barriers"]["status"] == "fail"
-    assert idea["actionability"] == "preview_only"
-    assert idea["preview"]["preview_ok"] is True
+    assert idea["actionability"] == "research"
+    assert idea["idea_eligible"] is False
+    assert idea["overall_gate_status"] == "fail"
+    assert idea["sizing"]["suggested_volume"] == 0.0
+    assert idea["preview"]["preview_ok"] is False
+    assert idea["preview"]["live_submission_eligible"] is False
+
+
+def test_trade_idea_compose_explicit_direction_fails_closed_on_alignment_gate() -> None:
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD", direction="long"),
+        call_section=_caller(
+            {
+                "session": _session(),
+                "forecast": _forecast(trend="flat"),
+                "volatility": _volatility(),
+                "barriers": _barriers(),
+                "sizing": _sizing(),
+                "preview": _preview(),
+            }
+        ),
+    )
+
+    assert idea["direction"] == "stand_down"
+    assert idea["gates"]["alignment"]["status"] == "fail"
+    assert idea["gates"]["barriers"]["status"] == "pass"
+    assert idea["idea_eligible"] is False
+    assert idea["sizing"]["suggested_volume"] == 0.0
+    assert idea["preview"]["preview_ok"] is False
 
 
 def test_trade_idea_compose_historical_skips_preview() -> None:
@@ -338,7 +417,11 @@ def test_trade_idea_compose_historical_skips_preview() -> None:
         }[name]
 
     idea = run_trade_idea_compose(
-        TradeIdeaComposeRequest(symbol="EURUSD", as_of="2026-01-15"),
+        TradeIdeaComposeRequest(
+            symbol="EURUSD",
+            as_of="2026-08-01",
+            detail="full",
+        ),
         call_section=_tracking,
     )
 
@@ -349,6 +432,43 @@ def test_trade_idea_compose_historical_skips_preview() -> None:
     assert idea["actionability"] == "research"
     assert idea["preview"]["skipped"] is True
     assert idea["gates"]["preview"]["status"] == "skip"
+    assert idea["requested_as_of"] == "2026-08-01"
+    assert idea["as_of"] == "2026-07-31T20:00:00Z"
+    assert idea["data_as_of"] == "2026-07-31T20:00:00Z"
+    assert idea["idea_eligible"] is False
+    assert idea["overall_gate_status"] == "research_only"
+    assert idea["forecast"]["points"][-1]["time"] == "2026-08-03T21:00:00Z"
+
+
+def test_historical_standard_idea_keeps_structure_lineage() -> None:
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(
+            symbol="EURUSD",
+            template="standard",
+            as_of="2026-08-01",
+            detail="full",
+        ),
+        call_section=_caller(
+            {
+                "confluence": _confluence(),
+                "forecast": _forecast(),
+                "volatility": _volatility(),
+                "barriers": _barriers(),
+            }
+        ),
+    )
+
+    assert idea["lineage"]["structure"] == {
+        "data_as_of": "2026-07-31T20:00:00Z",
+        "data_window": {
+            "start": "2026-06-01T20:00:00Z",
+            "end": "2026-07-31T20:00:00Z",
+        },
+        "price_anchor": {
+            "value": 1.1001,
+            "source": "historical_window_close",
+        },
+    }
 
 
 def test_trade_idea_compose_stands_down_on_unconfirmed_direction() -> None:
@@ -466,6 +586,29 @@ def test_trade_idea_compose_full_detail_keeps_source_calls() -> None:
 
     names = [row["name"] for row in idea["source_tool_calls"]]
     assert names == ["session", "forecast", "volatility", "barriers", "sizing", "preview"]
+    assert idea["forecast"]["last_observation_time"] == "2026-07-31T20:00:00Z"
+    assert idea["forecast"]["last_price"] == 1.1001
+    assert idea["forecast"]["last_price_source"] == "candle_close"
+    assert idea["forecast"]["points"][0] == {
+        "time": "2026-08-01T21:00:00Z",
+        "value": 1.1001,
+        "value_semantics": "forecast_price",
+        "bar_state": "future",
+    }
+    assert idea["lineage"]["forecast"]["target_window"] == {
+        "start": "2026-08-01T21:00:00Z",
+        "end": "2026-08-03T21:00:00Z",
+        "bars": 3,
+        "time_semantics": "bar_time",
+        "value_semantics": "forecast_price",
+    }
+    assert idea["lineage"]["volatility"]["data_as_of"] == (
+        "2026-07-31T20:00:00Z"
+    )
+    assert idea["lineage"]["barriers"]["price_anchor"] == {
+        "value": 1.1002,
+        "source": "candle_close",
+    }
 
 
 def test_trade_idea_compose_partial_failure_when_volatility_fails() -> None:
