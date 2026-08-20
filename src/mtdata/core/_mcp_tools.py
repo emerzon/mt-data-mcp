@@ -1445,6 +1445,7 @@ def _prepare_public_tool_call(
         if not _update_supplied_request_model_field(func, kwargs, "detail", detail_value):
             kwargs["detail"] = detail_value
     _coerce_kwargs_for_callable(func, kwargs)
+    _normalize_public_symbol_inputs(kwargs)
     contract_source: Any = kwargs
     for value in kwargs.values():
         if isinstance(value, BaseModel) and hasattr(value, "detail"):
@@ -1454,6 +1455,27 @@ def _prepare_public_tool_call(
     if explicit_detail is not _REGISTRY_UNSET:
         contract_kwargs["detail"] = explicit_detail
     return resolve_output_contract(contract_source, **contract_kwargs)
+
+
+def _normalize_public_symbol_inputs(kwargs: Dict[str, Any]) -> None:
+    """Apply the shared case/whitespace policy at every public tool boundary."""
+
+    symbol = kwargs.get("symbol")
+    if isinstance(symbol, str):
+        kwargs["symbol"] = symbol.strip().upper()
+
+    for name, value in list(kwargs.items()):
+        if not isinstance(value, BaseModel):
+            continue
+        model_fields = getattr(type(value), "model_fields", {})
+        if "symbol" not in model_fields:
+            continue
+        nested_symbol = getattr(value, "symbol", None)
+        if not isinstance(nested_symbol, str):
+            continue
+        kwargs[name] = value.model_copy(
+            update={"symbol": nested_symbol.strip().upper()}
+        )
 
 
 def _shape_public_tool_output(

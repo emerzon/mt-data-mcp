@@ -18,6 +18,7 @@ from ..shared.schema import (
     DimensionalityReductionSpec,
     ForecastLibraryLiteral,
     TimeframeLiteral,
+    normalize_required_symbol,
     reject_removed_field,
     validate_as_of_time_window,
 )
@@ -53,6 +54,11 @@ def _normalize_methods_value(value: Any) -> Any:
 
 class _PublicForecastRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("symbol", mode="before", check_fields=False)
+    @classmethod
+    def _normalize_symbol(cls, value: Any) -> str:
+        return normalize_required_symbol(value)
 
     @property
     def dimred_method(self) -> Optional[str]:
