@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from ....utils.coercion import split_top_level_csv
+from ....utils.coercion import coerce_cli_scalar, split_top_level_csv
 from ...error_envelope import build_error_payload
 from ..catalog import display_program_name
 
@@ -81,35 +81,6 @@ def normalize_cli_list_value(value: Any) -> Any:  # noqa: C901
                 out.append(item)
         return out
     return value
-
-
-def coerce_cli_scalar(v: str) -> Any:
-    s = v.strip()
-    if not s:
-        return s
-    sl = s.lower()
-    if sl == "true":
-        return True
-    if sl == "false":
-        return False
-    if sl in ("null", "none"):
-        return None
-    if s[0] in ("{", "[", '"') or sl in ("true", "false", "null") or s.replace(".", "", 1).isdigit():
-        try:
-            return json.loads(s)
-        except Exception:
-            pass
-        if s[0] in ("{", "["):
-            try:
-                return ast.literal_eval(s)
-            except Exception:
-                pass
-    try:
-        if "." in s:
-            return float(s)
-        return int(s)
-    except Exception:
-        return s
 
 
 def parse_set_overrides(

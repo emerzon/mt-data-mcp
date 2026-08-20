@@ -254,7 +254,11 @@ mtdata-cli forecast_volatility_estimate EURUSD --method ewma --params "lambda_=0
 mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"
 ```
 
-Format: `key=value key2=value2` (space-separated), `key=value,key2=value2` (comma-separated), or JSON `{"key": value}` — all three are accepted.
+Format: `key=value key2=value2` (space-separated), `key=value,key2=value2`
+(comma-separated), or JSON `{"key": value}` — all three are accepted. Compact
+values use JSON-like scalar types: `true`/`false`, `null`, finite numbers, arrays,
+and objects become native values. Quote a numeric-looking value, such as
+`code="001"`, when it must remain a string.
 
 ### Reduce Large Outputs (Simplify)
 Use `--simplify` to downsample returned rows for charting or large exports.

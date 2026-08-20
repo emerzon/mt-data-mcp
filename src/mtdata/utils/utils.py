@@ -9,6 +9,7 @@ import dateparser
 import numpy as np
 import pandas as pd
 
+from .coercion import coerce_cli_scalar
 from .coercion import coerce_scalar as coerce_scalar
 from .formatting import (
     format_float,
@@ -177,7 +178,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
             # Avoid Windows drive paths like "C:\foo".
             if len(k) == 1 and v.startswith(("\\", "/")):
                 continue
-            out[k] = v
+            out[k] = coerce_cli_scalar(v)
         if out:
             return out
 
@@ -191,7 +192,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
                 continue
             if '=' in tok:
                 k, v = tok.split('=', 1)
-                out[k.strip()] = v.strip().strip(',')
+                out[k.strip()] = coerce_cli_scalar(v.strip().strip(','))
                 i += 1
                 continue
             # Support "k:v" tokens (avoid Windows drive paths like "C:\\foo")
@@ -200,7 +201,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
                 if len(k) == 1 and v.startswith(("\\", "/")):
                     i += 1
                     continue
-                out[k.strip()] = v.strip().strip(',')
+                out[k.strip()] = coerce_cli_scalar(v.strip().strip(','))
                 i += 1
                 continue
             if tok.endswith(':'):
@@ -211,7 +212,7 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
                     i += 2
                 else:
                     i += 1
-                out[key] = val
+                out[key] = coerce_cli_scalar(val)
                 continue
             i += 1
         return out
