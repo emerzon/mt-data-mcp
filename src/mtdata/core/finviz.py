@@ -3080,10 +3080,16 @@ def _coerce_finviz_number(value: Any) -> float:
         return 0.0
 
 
-def _summarize_insider_activity_tickers(rows: List[Any]) -> List[Dict[str, Any]]:
+def _summarize_insider_activity_tickers(
+    rows: List[Any],
+    *,
+    transaction_class: str,
+) -> List[Dict[str, Any]]:
     by_ticker: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
+            continue
+        if _insider_transaction_class(row) != transaction_class:
             continue
         symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
         if not symbol:
@@ -3347,7 +3353,22 @@ def _compact_finviz_insider_activity_payload(
     out["count"] = len(compact_rows)
     out["summary"] = {
         **_insider_transaction_counts(normalized_rows),
-        "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
+        "top_executed_sales": _summarize_insider_activity_tickers(
+            normalized_rows,
+            transaction_class="executed_sale",
+        ),
+        "top_proposed_sales": _summarize_insider_activity_tickers(
+            normalized_rows,
+            transaction_class="proposed_sale",
+        ),
+        "top_purchases": _summarize_insider_activity_tickers(
+            normalized_rows,
+            transaction_class="purchase",
+        ),
+        "aggregation_note": (
+            "Executed sales, proposed sales, and purchases are aggregated "
+            "separately; filing lifecycle records are not combined."
+        ),
     }
     out["hint"] = "Market-wide insider activity; use finviz_insider SYMBOL for one ticker."
     if str(result.get("option") or "").startswith("latest"):
@@ -4231,7 +4252,8 @@ def finviz_insider_activity(
         Page number for pagination (default 1)
     detail : {"compact", "full"}
         Response detail level. Compact normalizes every row in the requested
-        page and adds a summary; full keeps all fields including SEC links.
+        page and adds separate executed-sale, proposed-sale, and purchase
+        summaries; full keeps all fields including SEC links.
     
     Returns
     -------

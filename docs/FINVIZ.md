@@ -187,7 +187,10 @@ mtdata-cli finviz_insider_activity --option "latest buys" --json
 The `latest*` feeds preserve provider filing-recency order and report
 `ordering=filed_at_descending`. Compact rows distinguish `transaction_date`
 from timezone-qualified `filed_at`; exact repeated filing transactions are
-removed before pagination and aggregation.
+removed before pagination and aggregation. Compact summaries keep
+`top_executed_sales`, `top_proposed_sales`, and `top_purchases` separate.
+A Form 144 proposed sale is filing activity, not a completed disposition, and
+is never added to the executed-sales leaderboard.
 
 ---
 

@@ -837,12 +837,20 @@ class TestFinvizInsiderActivityOutputContract:
         assert "shares_total" not in result["items"][0]
         assert result["summary"]["buy_transactions"] == 2
         assert result["summary"]["sell_transactions"] == 3
-        assert result["summary"]["top_symbols"][0] == {
+        assert result["summary"]["top_executed_sales"][0] == {
             "symbol": "AAPL",
-            "transactions": 2,
-            "shares": 15.0,
-            "value_usd": 1600.0,
+            "transactions": 1,
+            "shares": 10.0,
+            "value_usd": 1000.0,
         }
+        assert result["summary"]["top_purchases"][0] == {
+            "symbol": "AAPL",
+            "transactions": 1,
+            "shares": 5.0,
+            "value_usd": 600.0,
+        }
+        assert result["summary"]["top_proposed_sales"] == []
+        assert "top_symbols" not in result["summary"]
         assert result["pagination"]["returned"] == 6
         assert result["pagination"]["more_available"] == 0
         assert result["ordering"] == "filed_at_descending"
@@ -871,7 +879,54 @@ class TestFinvizInsiderActivityOutputContract:
         assert result["count"] == 1
         assert result["duplicates_removed"] == 1
         assert result["summary"]["buy_transactions"] == 1
-        assert result["summary"]["top_symbols"][0]["transactions"] == 1
+        assert result["summary"]["top_purchases"][0]["transactions"] == 1
+
+    @pytest.mark.parametrize("option", ["latest sales", "top week sales"])
+    @patch("mtdata.core.finviz.get_insider_activity")
+    def test_sales_summary_separates_proposals_from_executions(
+        self,
+        mock_get,
+        option,
+    ):
+        mock_get.return_value = {
+            "success": True,
+            "option": option,
+            "insider_trades": [
+                {
+                    "Ticker": "CVX",
+                    "Transaction": "Sale",
+                    "#Shares": "317100",
+                    "Value ($)": "63566861",
+                },
+                {
+                    "Ticker": "CVX",
+                    "Transaction": "Proposed Sale",
+                    "#Shares": "317100",
+                    "Value ($)": "63566849",
+                },
+            ],
+        }
+
+        result = _unwrap(finviz_insider_activity)(option=option, detail="compact")
+
+        assert result["summary"]["sell_transactions"] == 1
+        assert result["summary"]["proposed_sale_transactions"] == 1
+        assert result["summary"]["top_executed_sales"] == [
+            {
+                "symbol": "CVX",
+                "transactions": 1,
+                "shares": 317100.0,
+                "value_usd": 63566861.0,
+            }
+        ]
+        assert result["summary"]["top_proposed_sales"] == [
+            {
+                "symbol": "CVX",
+                "transactions": 1,
+                "shares": 317100.0,
+                "value_usd": 63566849.0,
+            }
+        ]
 
     @patch("mtdata.core.finviz.get_insider_activity")
     def test_full_keeps_all_normalized_rows_including_urls(self, mock_get):
