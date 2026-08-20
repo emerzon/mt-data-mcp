@@ -198,6 +198,19 @@ class ForecastTaskWaitRequest(BaseModel):
 
 class ForecastModelsDeleteRequest(BaseModel):
     model_id: str = Field(..., description="Model ID in format method/data_scope/params_hash.")
+    dry_run: bool = Field(
+        True,
+        description=(
+            "Preview the exact model without deleting it. Set false only after "
+            "reviewing the preview."
+        ),
+    )
+    confirm_model_id: Optional[str] = Field(
+        None,
+        description=(
+            "Exact model ID confirmation required together with dry_run=false."
+        ),
+    )
 
 
 class ForecastModelsCleanupRequest(BaseModel):
@@ -456,6 +469,26 @@ def _model_store_state_payload(
         if info.get("ttl_seconds") is not None:
             payload["model_store_ttl_days"] = _days(info.get("ttl_seconds"))
     return payload
+
+
+def _model_deletion_preview(handle: Any, store: Any) -> Dict[str, Any]:
+    info = store.describe_model(handle)
+    created_at = info.get("created_at", getattr(handle, "created_at", None))
+    last_used = info.get("last_used")
+    return {
+        "model_id": handle.model_id,
+        "method": handle.method,
+        "adapter_method": _adapter_method(handle.method),
+        "data_scope": handle.data_scope,
+        "params_hash": handle.params_hash,
+        "created_at": format_epoch_utc(created_at) or created_at,
+        "last_used": format_epoch_utc(last_used) or last_used,
+        "age_days": _days(info.get("age_seconds")),
+        "idle_days": _days(info.get("idle_seconds")),
+        "size_bytes": int(info.get("size_bytes") or 0),
+        "file_count": int(info.get("file_count") or 0),
+        "expired": bool(info.get("expired")),
+    }
 
 
 def _recent_completed_model_tasks(
@@ -1342,15 +1375,83 @@ def forecast_models_list(
 
 @mcp.tool()
 def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, Any]:
-    """Delete a stored trained forecast model by model_id."""
+    """Preview or permanently delete one stored trained forecast model."""
     def _execute() -> Dict[str, Any]:
         store = _get_model_store()
+        handle = next(
+            (
+                candidate
+                for candidate in store.list_models(include_expired=True)
+                if str(getattr(candidate, "model_id", "")) == request.model_id
+            ),
+            None,
+        )
+        if handle is None:
+            out = build_error_payload(
+                f"Model '{request.model_id}' not found.",
+                code="forecast_model_not_found",
+                operation="forecast_models_delete",
+            )
+            out["model_id"] = request.model_id
+            out["dry_run"] = bool(request.dry_run)
+            out["deleted"] = False
+            return out
+
+        preview = _model_deletion_preview(handle, store)
+        if request.dry_run:
+            return {
+                "success": True,
+                "model_id": request.model_id,
+                "dry_run": True,
+                "deleted": False,
+                "model": preview,
+                "confirmation_required": True,
+                "confirmation_field": "confirm_model_id",
+                "irreversible": True,
+                "message": (
+                    "Preview only; no model was deleted. Re-run with dry_run=false "
+                    "and confirm_model_id set to this exact model_id."
+                ),
+            }
+
+        confirmed_id = str(request.confirm_model_id or "")
+        if confirmed_id != request.model_id:
+            code = (
+                "forecast_model_confirmation_required"
+                if not confirmed_id
+                else "forecast_model_confirmation_mismatch"
+            )
+            out = build_error_payload(
+                (
+                    "Permanent model deletion requires confirm_model_id to match "
+                    "model_id exactly."
+                ),
+                code=code,
+                operation="forecast_models_delete",
+                details={
+                    "model_id": request.model_id,
+                    "confirm_model_id": request.confirm_model_id,
+                },
+                remediation=(
+                    "Review the model preview, then set dry_run=false and pass the "
+                    "same full model ID in confirm_model_id."
+                ),
+            )
+            out["model_id"] = request.model_id
+            out["dry_run"] = False
+            out["deleted"] = False
+            out["model"] = preview
+            return out
+
         deleted = store.delete(request.model_id)
         if deleted:
             return {
                 "success": True,
                 "model_id": request.model_id,
+                "dry_run": False,
                 "deleted": True,
+                "model": preview,
+                "irreversible": True,
                 "message": f"Model '{request.model_id}' deleted.",
             }
         out = build_error_payload(
@@ -1359,6 +1460,7 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
             operation="forecast_models_delete",
         )
         out["model_id"] = request.model_id
+        out["dry_run"] = False
         out["deleted"] = False
         return out
 
@@ -1367,6 +1469,7 @@ def forecast_models_delete(request: ForecastModelsDeleteRequest) -> Dict[str, An
         operation="forecast_models_delete",
         func=_execute,
         model_id=request.model_id,
+        dry_run=request.dry_run,
     )
 
 

@@ -200,6 +200,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Maximum models to return on this page. Omitted compact output uses "
         "20; omitted full output is unbounded."
     ),
+    ("forecast_models_delete", "dry_run"): (
+        "Preview the exact model and its metadata without deleting it; defaults to true."
+    ),
+    ("forecast_models_delete", "confirm_model_id"): (
+        "Exact full model ID required with --dry-run false for permanent deletion."
+    ),
     ("correlation_matrix", "method"): "Correlation coefficient: pearson or spearman.",
     ("correlation_matrix", "transform"): (
         "Price transform: log_return, pct, diff, level, or log_level."

@@ -1294,6 +1294,11 @@ class TestResolveParamKwargs:
         ("command", "parameter", "expected"),
         [
             ("forecast_list_library_models", "limit", "compact output uses 20"),
+            (
+                "forecast_models_delete",
+                "confirm_model_id",
+                "required with --dry-run false",
+            ),
             ("volatility_term_structure", "horizons", "horizons in bars"),
             ("market_relative_strength", "weights", "matching --horizons"),
             ("market_relative_strength", "limit", "ranked symbols"),

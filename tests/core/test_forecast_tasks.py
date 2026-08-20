@@ -883,34 +883,129 @@ class TestForecastModels:
         assert result["suggested_offsets"] == {"first": 0, "last": 2}
         assert "forecast_train" not in result.get("hint", "")
 
-    def test_delete_existing(self):
+    def test_delete_existing_defaults_to_metadata_preview(self):
         from src.mtdata.core.forecast_tasks import forecast_models_delete
 
+        handle = TrainedModelHandle(
+            "nhits/EURUSD_H1/abc",
+            "nhits",
+            "EURUSD_H1",
+            "abc",
+            1_700_000_000.0,
+        )
         mock_store = MagicMock()
+        mock_store.list_models.return_value = [handle]
+        mock_store.describe_model.return_value = {
+            "created_at": 1_700_000_000.0,
+            "last_used": 1_700_086_400.0,
+            "age_seconds": 4 * 86_400.0,
+            "idle_seconds": 3 * 86_400.0,
+            "size_bytes": 12_345,
+            "file_count": 3,
+            "expired": False,
+        }
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_delete)(
+                ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/abc")
+            )
+
+        assert result["success"] is True
+        assert result["dry_run"] is True
+        assert result["deleted"] is False
+        assert result["confirmation_required"] is True
+        assert result["model"] == {
+            "model_id": "nhits/EURUSD_H1/abc",
+            "method": "nhits",
+            "adapter_method": "nhits",
+            "data_scope": "EURUSD_H1",
+            "params_hash": "abc",
+            "created_at": "2023-11-14T22:13:20Z",
+            "last_used": "2023-11-15T22:13:20Z",
+            "age_days": 4.0,
+            "idle_days": 3.0,
+            "size_bytes": 12_345,
+            "file_count": 3,
+            "expired": False,
+        }
+        mock_store.delete.assert_not_called()
+
+    def test_delete_existing_requires_exact_confirmation(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_delete
+
+        handle = TrainedModelHandle(
+            "nhits/EURUSD_H1/abc",
+            "nhits",
+            "EURUSD_H1",
+            "abc",
+            1_700_000_000.0,
+        )
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = [handle]
+        mock_store.describe_model.return_value = {}
         mock_store.delete.return_value = True
 
         with patch(_PATCH_STORE, return_value=mock_store):
-            result = _unwrap(forecast_models_delete)(ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/abc"))
+            mismatch = _unwrap(forecast_models_delete)(
+                ForecastModelsDeleteRequest(
+                    model_id=handle.model_id,
+                    dry_run=False,
+                    confirm_model_id="nhits/EURUSD_H1/different",
+                )
+            )
+            confirmed = _unwrap(forecast_models_delete)(
+                ForecastModelsDeleteRequest(
+                    model_id=handle.model_id,
+                    dry_run=False,
+                    confirm_model_id=handle.model_id,
+                )
+            )
 
-        assert result["success"] is True
-        assert result["deleted"] is True
+        assert mismatch["success"] is False
+        assert mismatch["error_code"] == "forecast_model_confirmation_mismatch"
+        assert mismatch["deleted"] is False
+        assert confirmed["success"] is True
+        assert confirmed["dry_run"] is False
+        assert confirmed["deleted"] is True
+        mock_store.delete.assert_called_once_with(handle.model_id)
+
+    def test_delete_existing_rejects_apply_without_confirmation(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_delete
+
+        handle = TrainedModelHandle("m/S/h", "m", "S", "h", 1_700_000_000.0)
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = [handle]
+        mock_store.describe_model.return_value = {}
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_delete)(
+                ForecastModelsDeleteRequest(model_id=handle.model_id, dry_run=False)
+            )
+
+        assert result["success"] is False
+        assert result["error_code"] == "forecast_model_confirmation_required"
+        mock_store.delete.assert_not_called()
 
     def test_delete_missing_marks_failure(self):
         from src.mtdata.core.forecast_tasks import forecast_models_delete
 
         mock_store = MagicMock()
-        mock_store.delete.return_value = False
+        mock_store.list_models.return_value = []
 
         with patch(_PATCH_STORE, return_value=mock_store):
-            result = _unwrap(forecast_models_delete)(ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/missing"))
+            result = _unwrap(forecast_models_delete)(
+                ForecastModelsDeleteRequest(model_id="nhits/EURUSD_H1/missing")
+            )
 
         assert result["success"] is False
         assert result["deleted"] is False
+        assert result["dry_run"] is True
         assert result["error"] == "Model 'nhits/EURUSD_H1/missing' not found."
         assert result["error_code"] == "forecast_model_not_found"
         assert result["operation"] == "forecast_models_delete"
         assert isinstance(result.get("request_id"), str)
         assert "message" not in result
+        mock_store.delete.assert_not_called()
 
 
 class TestForecastTrain:

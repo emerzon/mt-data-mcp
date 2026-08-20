@@ -423,9 +423,18 @@ formats remain responsible for their own compatibility checks.
 ```bash
 mtdata-cli forecast_models_list --json
 mtdata-cli forecast_models_list --limit 50 --json  # Larger explicit page
-mtdata-cli forecast_models_delete "nhits/EURUSD_H1/abc123"
+mtdata-cli forecast_models_delete "nhits/EURUSD_H1/abc123"  # preview only
+mtdata-cli forecast_models_delete "nhits/EURUSD_H1/abc123" \
+  --dry-run false --confirm-model-id "nhits/EURUSD_H1/abc123"
 mtdata-cli forecast_models_cleanup --json          # preview stale/expired
 ```
+
+Single-model deletion is also preview-first. The default command reports the
+method, symbol/timeframe data scope, creation and last-use times, age, and disk
+size without changing the store. Permanent deletion requires both
+`--dry-run false` and the same complete ID in `--confirm-model-id`; a missing or
+mismatched confirmation fails without mutation. Confirmed deletion removes the
+artifact permanently, so it cannot be recovered from the model store.
 
 Cleanup is deterministic and batch-safe: `--limit` caps both the preview and
 the apply scope, while `--offset` selects the same model-ID page in either

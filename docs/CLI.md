@@ -384,7 +384,7 @@ response is intentional. Omit `--start` for latest-N retrieval.
 | `forecast_task_cancel_all` | Cancel all active training tasks |
 | `forecast_task_list` | List active and recent training tasks |
 | `forecast_models_list` | List trained models cached on disk |
-| `forecast_models_delete` | Delete a stored model by `model_id` |
+| `forecast_models_delete` | Preview one stored model; confirmed apply permanently deletes it |
 | `forecast_models_cleanup` | Preview or delete stale/expired stored models |
 
 Trained models are written under `~/.mtdata/models/` by default and reused by
