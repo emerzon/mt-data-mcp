@@ -123,6 +123,81 @@ def test_market_radar_reports_missing_names() -> None:
     assert result["missing"] == ["NOPE"]
 
 
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_market_radar_preserves_scan_bar_comparability(detail: str) -> None:
+    scan = _scan_rows("EURUSD", "AAPL.NAS")
+    scan.update(
+        {
+            "freshness": "mixed, 1/2 stale",
+            "stale_rows": 1,
+            "freshness_basis": "conservative_quote_or_bar",
+            "stale_bar_rows": 1,
+            "unsafe_quote_rows": 1,
+            "stale_symbols": ["AAPL.NAS"],
+            "bar_time_alignment": {
+                "status": "mixed",
+                "comparable": False,
+                "distinct_timestamps": 2,
+                "basis": "latest_completed_bar_open_per_symbol",
+            },
+            "bar_rank_comparable": False,
+            "price_change_comparable": False,
+            "data_as_of_range": {
+                "oldest": "2026-08-19T19:00:00Z",
+                "newest": "2026-08-20T03:00:00Z",
+            },
+            "comparison_warning": "Completed-bar ranks are not clock-aligned.",
+        }
+    )
+
+    result = run_market_radar(
+        MarketRadarRequest(
+            symbols="EURUSD,AAPL.NAS",
+            rank_by="price_change_pct",
+            detail=detail,
+        ),
+        call_section=lambda _name, _kwargs: scan,
+    )
+
+    assert result["freshness"] == "mixed, 1/2 stale"
+    assert result["stale_rows"] == 1
+    assert result["stale_bar_rows"] == 1
+    assert result["bar_time_alignment"]["comparable"] is False
+    assert result["bar_rank_comparable"] is False
+    assert result["price_change_comparable"] is False
+    assert result["data_as_of_range"] == scan["data_as_of_range"]
+    assert result["comparison_warning"] == scan["comparison_warning"]
+
+
+def test_market_radar_preserves_aligned_scan_without_false_warning() -> None:
+    scan = _scan_rows("EURUSD", "GBPUSD")
+    scan.update(
+        {
+            "freshness": "fresh",
+            "stale_rows": 0,
+            "stale_bar_rows": 0,
+            "bar_time_alignment": {
+                "status": "aligned",
+                "comparable": True,
+                "distinct_timestamps": 1,
+            },
+            "bar_rank_comparable": True,
+            "price_change_comparable": True,
+            "data_as_of": "2026-08-20T03:00:00Z",
+        }
+    )
+
+    result = run_market_radar(
+        MarketRadarRequest(symbols="EURUSD,GBPUSD"),
+        call_section=lambda _name, _kwargs: scan,
+    )
+
+    assert result["bar_time_alignment"]["comparable"] is True
+    assert result["bar_rank_comparable"] is True
+    assert result["data_as_of"] == "2026-08-20T03:00:00Z"
+    assert "comparison_warning" not in result
+
+
 def test_market_radar_seeds_from_top_markets_when_majors_missing() -> None:
     calls: list[str] = []
 

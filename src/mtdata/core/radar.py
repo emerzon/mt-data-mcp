@@ -248,6 +248,23 @@ def assemble_radar_payload(
             "broker_symbol_count",
             "visible_count",
             "note",
+            "freshness",
+            "stale_rows",
+            "freshness_basis",
+            "stale_bar_rows",
+            "unsafe_quote_rows",
+            "stale_symbols",
+            "bar_time_alignment",
+            "bar_rank_comparable",
+            "price_change_comparable",
+            "data_as_of",
+            "bar_as_of",
+            "data_as_of_basis",
+            "data_as_of_range",
+            "bar_as_of_range",
+            "comparison_warning",
+            "quote_as_of",
+            "session_status",
         ):
             if scan.get(key) is not None:
                 payload[key] = scan[key]
