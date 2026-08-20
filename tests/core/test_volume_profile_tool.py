@@ -833,6 +833,64 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_lookback(
     assert captured["end"] == "2026-01-02T00:00:00Z"
 
 
+def test_profile_bar_window_resolves_before_symbol_guard(monkeypatch):
+    events = []
+
+    class TrackingGuard:
+        def __enter__(self):
+            events.append("guard_enter")
+            return None, SimpleNamespace(point=0.0001, digits=5)
+
+        def __exit__(self, *args):
+            events.append("guard_exit")
+            return False
+
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(vp, "_symbol_ready_guard", lambda _symbol: TrackingGuard())
+
+    def fake_fetch_candles(**_kwargs):
+        events.append("bar_window_fetch")
+        return _completed_hour_bars(vp.datetime(2026, 1, 1), 24)
+
+    def fake_fetch_ticks(**_kwargs):
+        events.append("profile_fetch")
+        return {
+            "data": [
+                {
+                    "bid": 1.0999,
+                    "ask": 1.1001,
+                    "mid": 1.1000,
+                    "tick_volume": 1,
+                    "real_volume": 0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(vp, "fetch_candles", fake_fetch_candles)
+    monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        end="2026-01-02 00:00:00",
+        timeframe="H1",
+        lookback=24,
+        source="ticks",
+        bucket_size=0.0001,
+    )
+
+    assert result["success"] is True
+    assert events == [
+        "bar_window_fetch",
+        "guard_enter",
+        "guard_exit",
+        "profile_fetch",
+    ]
+
+
 def test_m1_profile_downgrades_quote_side_to_ohlc_proxy(monkeypatch):
     monkeypatch.setattr(
         vp,

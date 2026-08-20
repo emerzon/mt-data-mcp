@@ -37,6 +37,7 @@ _mt5_timestamp_mode_cache: Dict[str, Tuple[str, float, int]] = {}
 _mt5_terminal_timestamp_mode: Optional[Tuple[str, float, int]] = None
 _SYMBOL_VISIBILITY_LOCK_ENV = "MTDATA_SYMBOL_VISIBILITY_LOCK"
 _symbol_visibility_thread_lock = threading.RLock()
+_symbol_visibility_lock_state = threading.local()
 
 
 class MT5ConnectionError(RuntimeError):
@@ -96,9 +97,18 @@ def _symbol_visibility_snapshot_guard() -> Iterator[None]:
     reentrant thread lock also keeps local callers ordered.
     """
     with _symbol_visibility_thread_lock:
+        depth = int(getattr(_symbol_visibility_lock_state, "depth", 0) or 0)
+        if depth > 0:
+            _symbol_visibility_lock_state.depth = depth + 1
+            try:
+                yield
+            finally:
+                _symbol_visibility_lock_state.depth = depth
+            return
         lock_path = _symbol_visibility_lock_path()
         os.makedirs(os.path.dirname(lock_path), exist_ok=True)
         lock_file = open(lock_path, "a+b")  # noqa: SIM115 - lifetime spans yield
+        _symbol_visibility_lock_state.depth = 1
         try:
             lock_file.seek(0, os.SEEK_END)
             if lock_file.tell() == 0:
@@ -127,6 +137,7 @@ def _symbol_visibility_snapshot_guard() -> Iterator[None]:
                 else:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
         finally:
+            _symbol_visibility_lock_state.depth = 0
             lock_file.close()
 
 

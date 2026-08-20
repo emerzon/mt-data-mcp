@@ -231,13 +231,19 @@ def attach_optional_report_sections(
     if report_section_enabled(params, "volume_profile"):
         from ..volume_profile import volume_profile_levels
 
+        profile_window = (
+            {"start": start, "end": end}
+            if start is not None
+            else {
+                "end": end,
+                "timeframe": timeframe,
+                "lookback": int(params.get("volume_profile_lookback", 200)),
+            }
+        )
         profile = call(
             volume_profile_levels,
             symbol=symbol,
-            timeframe=timeframe,
-            lookback=int(params.get("volume_profile_lookback", 200)),
-            start=start,
-            end=end,
+            **profile_window,
             detail="compact",
         )
         if "error" in profile:

@@ -887,12 +887,18 @@ def confluence_levels(  # noqa: C901
             if str(volume_profile_source).lower() == "off":
                 volume_profile_payload = None
             else:
+                volume_window = (
+                    {"start": start, "end": end}
+                    if start is not None
+                    else {
+                        "end": end,
+                        "timeframe": vp_timeframe,
+                        "lookback": int(lookback),
+                    }
+                )
                 volume_profile_payload = compute_volume_profile_payload(
                     symbol=symbol,
-                    start=start,
-                    end=end,
-                    timeframe=vp_timeframe,
-                    lookback=int(lookback),
+                    **volume_window,
                     source=volume_profile_source,
                     price_source="mid",
                     volume_source="auto",

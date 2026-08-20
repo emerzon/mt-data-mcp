@@ -971,25 +971,28 @@ def compute_volume_profile_payload(
         ensure_connection_impl=ensure_mt5_connection_or_raise
     )
     mt5_gateway.ensure_connection()
+    requested_bars = window.get("requested_bars")
+    if requested_bars is not None and timeframe is not None:
+        # fetch_candles owns its symbol-readiness guard. Resolve the requested
+        # bar window before taking this function's guard so the Windows file
+        # lock is never recursively acquired through a second file handle.
+        resolved_bar_window = _resolve_profile_bar_window(
+            symbol=symbol,
+            timeframe=str(timeframe),
+            bars=int(requested_bars),
+            end=resolved_end,
+        )
+        if resolved_bar_window.get("error"):
+            return resolved_bar_window
+        resolved_start = resolved_bar_window.get("start")
+        resolved_end = resolved_bar_window.get("end")
+        if isinstance(resolved_bar_window.get("bar_window"), dict):
+            bar_window = dict(resolved_bar_window["bar_window"])
     with _symbol_ready_guard(symbol) as (err, info):
         if err:
             return {"error": err}
         price_digits = _positive_int_attr(info, "digits")
         price_point = _positive_float_attr(info, "point", "trade_tick_size")
-        requested_bars = window.get("requested_bars")
-        if requested_bars is not None and timeframe is not None:
-            resolved_bar_window = _resolve_profile_bar_window(
-                symbol=symbol,
-                timeframe=str(timeframe),
-                bars=int(requested_bars),
-                end=resolved_end,
-            )
-            if resolved_bar_window.get("error"):
-                return resolved_bar_window
-            resolved_start = resolved_bar_window.get("start")
-            resolved_end = resolved_bar_window.get("end")
-            if isinstance(resolved_bar_window.get("bar_window"), dict):
-                bar_window = dict(resolved_bar_window["bar_window"])
     selected = _select_profile_rows(
         symbol=symbol,
         start=resolved_start,

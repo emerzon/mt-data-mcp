@@ -270,6 +270,57 @@ def test_confluence_historical_window_uses_one_as_of_anchor():
     assert result["analysis_as_of"] == "2026-07-03T20:00:00Z"
 
 
+def test_confluence_bounded_volume_profile_uses_only_explicit_window():
+    fn = _get_confluence_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    rates = np.array(
+        [
+            _make_rate(time_=datetime(2026, 7, 1, tzinfo=timezone.utc).timestamp()),
+            _make_rate(time_=datetime(2026, 7, 2, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    sr_payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "current_price": 1.075,
+        "structure_as_of": "2026-07-03T20:00:00Z",
+        "levels": [],
+        "fibonacci": {"levels": []},
+    }
+
+    with (
+        patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway),
+        patch("mtdata.core.pivot.TIMEFRAME_MAP", {"D1": 1}),
+        patch("mtdata.core.pivot.TIMEFRAME_SECONDS", {"D1": 86400}),
+        _mock_symbol_guard(),
+        patch("mtdata.core.pivot.mt5.symbol_info_tick", return_value=_make_tick()),
+        patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates),
+        patch(
+            "mtdata.core.pivot.compute_volume_profile_payload",
+            return_value={"success": True, "source": "m1_bars", "levels": []},
+        ) as profile,
+        patch(
+            "mtdata.core.pivot.compute_support_resistance_payload",
+            return_value=sr_payload,
+        ),
+    ):
+        result = fn(
+            "EURUSD",
+            pivot_timeframe="D1",
+            sr_timeframe="H1",
+            start="2026-07-01",
+            end="2026-07-03",
+            volume_profile_source="auto",
+        )
+
+    assert profile.call_args.kwargs["start"] == "2026-07-01"
+    assert profile.call_args.kwargs["end"] == "2026-07-03"
+    assert "timeframe" not in profile.call_args.kwargs
+    assert "lookback" not in profile.call_args.kwargs
+    assert result["volume_profile_status"]["status"] == "available"
+
+
 def test_confluence_volume_profile_tick_window_matches_standalone_default():
     fn = _get_confluence_fn()
 
@@ -348,6 +399,8 @@ def test_confluence_honors_explicit_volume_profile_m1_cap():
         )
 
     assert profile.call_args.kwargs["max_m1_bars"] == 5_000
+    assert profile.call_args.kwargs["timeframe"] == "D1"
+    assert profile.call_args.kwargs["lookback"] == 200
     assert result["volume_profile_status"]["effective_max_m1_bars"] == 5_000
     assert result["volume_profile_status"]["status"] == "available"
 

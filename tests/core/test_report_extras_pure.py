@@ -1,4 +1,5 @@
 from mtdata.core.report.extras import (
+    attach_optional_report_sections,
     compact_report_pattern_row,
     extract_report_pattern_rows,
     summarize_confluence_payload,
@@ -73,3 +74,63 @@ def test_summarize_volume_profile_and_news_payloads() -> None:
     assert profile == {"poc": 1.101, "vah": 1.105, "val": 1.098}
     assert news["upcoming_events"] == [{"title": "CPI", "when": "tomorrow"}]
     assert news["related_news"] == [{"headline": "Fed speak"}]
+
+
+def test_bounded_report_volume_profile_uses_only_explicit_window() -> None:
+    calls = []
+
+    def _call(_tool, **kwargs):
+        calls.append(kwargs)
+        return {"poc": 1.101, "vah": 1.105, "val": 1.098}
+
+    report = {"sections": {}}
+    attach_optional_report_sections(
+        report,
+        call=_call,
+        symbol="EURUSD",
+        timeframe="H4",
+        params={"_report_execution_sections": ["volume_profile"]},
+        start="2026-07-01",
+        end="2026-08-01",
+    )
+
+    assert calls == [
+        {
+            "symbol": "EURUSD",
+            "start": "2026-07-01",
+            "end": "2026-08-01",
+            "detail": "compact",
+        }
+    ]
+    assert report["sections"]["volume_profile"]["poc"] == 1.101
+
+
+def test_unbounded_report_volume_profile_uses_bar_window() -> None:
+    calls = []
+
+    def _call(_tool, **kwargs):
+        calls.append(kwargs)
+        return {"poc": 1.101, "vah": 1.105, "val": 1.098}
+
+    attach_optional_report_sections(
+        {"sections": {}},
+        call=_call,
+        symbol="EURUSD",
+        timeframe="H4",
+        params={
+            "_report_execution_sections": ["volume_profile"],
+            "volume_profile_lookback": 24,
+        },
+        start=None,
+        end=None,
+    )
+
+    assert calls == [
+        {
+            "symbol": "EURUSD",
+            "end": None,
+            "timeframe": "H4",
+            "lookback": 24,
+            "detail": "compact",
+        }
+    ]
