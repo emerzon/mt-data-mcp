@@ -724,6 +724,7 @@ class TestFinvizCalendarOutputContract:
 
         assert result["items"] == [
             {
+                "calendar_id": 419986,
                 "country": "United States",
                 "country_code": "US",
                 "country_attribution": "inferred",
