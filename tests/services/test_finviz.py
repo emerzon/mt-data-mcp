@@ -1082,7 +1082,14 @@ class TestFinvizTools:
         assert "pairs" not in result
         assert result["detail"] == "compact"
         assert result["data_limitations"] == {
-            "performance_periods": ["day", "week", "month", "quarter", "year"],
+            "performance_periods": [
+                "5_minutes",
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year",
+            ],
             "price": "delayed_web_quote_not_executable",
         }
         assert result["price_currency_basis"] == "quote_currency"
@@ -1107,6 +1114,7 @@ class TestFinvizTools:
                 "data_delayed": True,
                 "delay_minutes_min": 15,
                 "delay_minutes_max": 20,
+                "perf_5min_pct": 0.1,
                 "perf_day_pct": 0.2,
                 "perf_week_pct": -0.3,
                 "perf_month_pct": 0.4,
@@ -2046,6 +2054,8 @@ class TestFinvizTools:
                 "Sales": "451.44B",
                 "EPS this Y": "17.26%",
                 "EPS next Y": "9.62",
+                "EPS Y/Y TTM": "-32.57%",
+                "Sales Y/Y TTM": "0%",
             },
         }
 
@@ -2060,11 +2070,16 @@ class TestFinvizTools:
         assert fundamentals["sales"] == 451_440_000_000
         assert fundamentals["sales_formatted"] == "451.44B"
         assert fundamentals["eps_this_year_growth_pct"] == 17.26
-        assert fundamentals["eps_next_y"] == 9.62
+        assert fundamentals["eps_next_year_growth_pct"] == 9.62
+        assert fundamentals["eps_yoy_ttm_growth_pct"] == -32.57
+        assert fundamentals["sales_yoy_ttm_growth_pct"] == 0.0
         assert "eps_this_y" not in fundamentals
+        assert "eps_next_y" not in fundamentals
         assert result["units"] == {
             "eps_this_year_growth_pct": "percent (1.0 = 1%)",
-            "eps_next_y": "listing_currency_per_share",
+            "eps_next_year_growth_pct": "percent (1.0 = 1%)",
+            "eps_yoy_ttm_growth_pct": "percent (1.0 = 1%)",
+            "sales_yoy_ttm_growth_pct": "percent (1.0 = 1%)",
         }
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -2087,16 +2102,16 @@ class TestFinvizTools:
         result = raw(
             "AAPL",
             detail="full",
-            fields="oper_margin,eps_next_5_y",
+            fields="operating_margin,eps_next_5y_growth_pct",
         )
 
         assert result["fundamentals"] == {
             "operating_margin": 33.17,
-            "eps_next_5_y": 12.35,
+            "eps_next_5y_growth_pct": 12.35,
         }
         assert result["units"] == {
             "operating_margin": "percent (1.0 = 1%)",
-            "eps_next_5_y": "percent (1.0 = 1%)",
+            "eps_next_5y_growth_pct": "percent (1.0 = 1%)",
         }
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
@@ -2174,6 +2189,13 @@ class TestFinvizTools:
         assert row["price_target_previous"] == 615.0
         assert row["price_target_new"] == 625.0
         assert row["price_target_change_pct"] == 1.63
+        assert result["currency"] == "USD"
+        assert result["currency_basis"] == "US_equity_listing_currency"
+        assert result["units"] == {
+            "price_target_change_pct": "percent (1.0 = 1%)",
+            "price_target_previous": "USD_per_share",
+            "price_target_new": "USD_per_share",
+        }
         assert "price" not in row
         assert "price_target_display" not in row
 

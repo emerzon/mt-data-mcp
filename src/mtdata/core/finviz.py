@@ -325,18 +325,26 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "delay_minutes_min",
     "delay_minutes_max",
     "group",
+    "perf_5min_pct",
+    "perf_hour_pct",
     "perf_day_pct",
     "perf_week_pct",
     "perf_month_pct",
     "perf_quart_pct",
+    "perf_half_pct",
     "perf_year_pct",
+    "perf_ytd_pct",
 )
 _FINVIZ_MARKET_PERFORMANCE_PERIOD_FIELDS = (
+    ("5_minutes", "perf_5min_pct"),
+    ("hour", "perf_hour_pct"),
     ("day", "perf_day_pct"),
     ("week", "perf_week_pct"),
     ("month", "perf_month_pct"),
     ("quarter", "perf_quart_pct"),
+    ("half_year", "perf_half_pct"),
     ("year", "perf_year_pct"),
+    ("year_to_date", "perf_ytd_pct"),
 )
 _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
     "overview": (
@@ -436,7 +444,7 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "dividend_yield",
         "payout",
         "eps_this_year_growth_pct",
-        "eps_next_5_y",
+        "eps_next_5y_growth_pct",
     }
 )
 _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozenset(
@@ -448,6 +456,10 @@ _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozens
         "perf_month_pct",
         "perf_quart_pct",
         "perf_year_pct",
+        "perf_5min_pct",
+        "perf_hour_pct",
+        "perf_half_pct",
+        "perf_ytd_pct",
     }
 )
 _FINVIZ_DETAIL_ERROR = (
@@ -677,7 +689,7 @@ def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
     units = {
         key: "percent (1.0 = 1%)"
         for key in seen_fields
-        if key in _FINVIZ_SCREEN_PERCENT_FIELDS
+        if key in _FINVIZ_SCREEN_PERCENT_FIELDS or key.endswith("_pct")
     }
     if "short_ratio" in seen_fields:
         units["short_ratio"] = "days_to_cover"
@@ -887,7 +899,10 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
     change_pct = _finviz_percent_value(out.get("change_pct"))
     if change_pct is not None:
         out["change_pct"] = change_pct
-    for field in _FINVIZ_SCREEN_PERCENT_FIELDS:
+    percent_fields = _FINVIZ_SCREEN_PERCENT_FIELDS | {
+        field for field in out if field.endswith("_pct")
+    }
+    for field in percent_fields:
         if field not in out:
             continue
         pct_value = _finviz_percent_value(
@@ -1805,7 +1820,12 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Sales past 3/5Y": "sales_past_3_5_y",
     "EPS (ttm)": "eps_ttm",
     "EPS this Y": "eps_this_year_growth_pct",
-    "EPS next Y": "eps_next_y",
+    "EPS next Y": "eps_next_year_growth_pct",
+    "EPS next 5 Y": "eps_next_5y_growth_pct",
+    "EPS Y/Y TTM": "eps_yoy_ttm_growth_pct",
+    "EPS Q/Q": "eps_qoq_growth_pct",
+    "Sales Y/Y TTM": "sales_yoy_ttm_growth_pct",
+    "Sales Q/Q": "sales_qoq_growth_pct",
     "EPS next Q": "eps_next_q",
     "52W High": "high_52w",
     "52W Low": "low_52w",
@@ -1847,11 +1867,21 @@ _FINVIZ_OUTPUT_KEY_MAP = {
     "Dividend Est.": "dividend_est",
     "Dividend TTM": "dividend_ttm",
     "Dividend Ex-Date": "dividend_ex_date",
-    "Dividend Gr. 3Y": "dividend_growth_3y",
-    "Dividend Gr. 5Y": "dividend_growth_5y",
+    "Dividend Gr. 3Y": "dividend_growth_3y_cagr_pct",
+    "Dividend Gr. 5Y": "dividend_growth_5y_cagr_pct",
     "Dividend Gr. 3/5Y": "dividend_growth_3_5_y",
 }
 _FINVIZ_OUTPUT_KEY_ALIASES = {
+    "dividend_growth_3y": "dividend_growth_3y_cagr_pct",
+    "dividend_growth_5y": "dividend_growth_5y_cagr_pct",
+    "eps_next_5_y": "eps_next_5y_growth_pct",
+    "eps_next_5y": "eps_next_5y_growth_pct",
+    "eps_next_y": "eps_next_year_growth_pct",
+    "eps_past_5_y": "eps_past_5y_cagr_pct",
+    "eps_past_5y": "eps_past_5y_cagr_pct",
+    "eps_q_q": "eps_qoq_growth_pct",
+    "eps_this_y": "eps_this_year_growth_pct",
+    "eps_y_y_ttm": "eps_yoy_ttm_growth_pct",
     "oper_margin": "operating_margin",
     "perf_quart": "performance_quarter",
     "perf_quart_pct": "performance_quarter",
@@ -1859,6 +1889,10 @@ _FINVIZ_OUTPUT_KEY_ALIASES = {
     "perf_half_pct": "performance_half_year",
     "change_from_open": "change_from_open_pct",
     "gap": "gap_pct",
+    "sales_past_5_y": "sales_past_5y_cagr_pct",
+    "sales_past_5y": "sales_past_5y_cagr_pct",
+    "sales_q_q": "sales_qoq_growth_pct",
+    "sales_y_y_ttm": "sales_yoy_ttm_growth_pct",
     "date_from": "start",
     "date_to": "end",
 }
@@ -1902,9 +1936,15 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "price_to_free_cash_flow",
         "eps_ttm",
         "eps_this_year_growth_pct",
-        "eps_next_y",
+        "eps_next_year_growth_pct",
         "eps_next_q",
-        "eps_next_5_y",
+        "eps_next_5y_growth_pct",
+        "eps_past_5y_cagr_pct",
+        "eps_qoq_growth_pct",
+        "eps_yoy_ttm_growth_pct",
+        "sales_past_5y_cagr_pct",
+        "sales_qoq_growth_pct",
+        "sales_yoy_ttm_growth_pct",
         "rsi_14",
         "sma20_distance_pct",
         "sma50_distance_pct",
@@ -1942,12 +1982,8 @@ _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS = frozenset(
         "dividend_yield",
         "dividend_est",
         "dividend_ttm",
-        "dividend_growth_3y",
-        "dividend_growth_5y",
         "eps_past_3y_cagr_pct",
-        "eps_past_5y_cagr_pct",
         "sales_past_3y_cagr_pct",
-        "sales_past_5y_cagr_pct",
         "dividend_growth_3y_cagr_pct",
         "dividend_growth_5y_cagr_pct",
         "payout",
@@ -1988,7 +2024,15 @@ _FINVIZ_PERCENT_FUNDAMENTAL_KEYS = frozenset(
         "gross_margin",
         "operating_margin",
         "profit_margin",
-        "eps_next_5_y",
+        "eps_next_5y_growth_pct",
+        "eps_next_year_growth_pct",
+        "eps_past_5y_cagr_pct",
+        "eps_qoq_growth_pct",
+        "eps_this_year_growth_pct",
+        "eps_yoy_ttm_growth_pct",
+        "sales_past_5y_cagr_pct",
+        "sales_qoq_growth_pct",
+        "sales_yoy_ttm_growth_pct",
         "performance_week",
         "performance_month",
         "performance_quarter",
@@ -2010,7 +2054,6 @@ _FINVIZ_PERCENT_FUNDAMENTAL_KEYS = frozenset(
 _FINVIZ_CURRENCY_PER_SHARE_FUNDAMENTAL_KEYS = frozenset(
     {
         "eps_ttm",
-        "eps_next_y",
         "eps_next_q",
     }
 )
@@ -2080,8 +2123,11 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "eps_estimate",
     "eps_actual",
     "eps_surprise",
+    "eps_reported_surprise",
     "sales_estimate",
     "sales_actual",
+    "sales_surprise",
+    "one_day_price_reaction",
     "dividend",
     "amount",
     "dividend_amount",
@@ -2169,7 +2215,7 @@ def _finviz_compound_output_keys(key: str) -> tuple[str, ...]:
 
 
 def _normalize_finviz_fundamental_value(key: str, value: Any) -> Any:
-    if key not in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS:
+    if key not in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS and not key.endswith("_pct"):
         return value
     parsed = _parse_finviz_numeric_value(value)
     if parsed is None:
@@ -2320,6 +2366,14 @@ def _normalize_finviz_earnings_rows(
             continue
         row = _canonicalize_finviz_market_row(row)
         normalized[index] = row
+        if row.get("dividend") not in (None, ""):
+            dividend_yield = _finviz_percent_value(
+                row.get("dividend"),
+                fraction_input=True,
+            )
+            if dividend_yield is not None:
+                row["dividend_yield"] = dividend_yield
+            row.pop("dividend", None)
         if row.get("change_pct") not in (None, ""):
             row["price_change_pct"] = row.pop("change_pct")
             row["price_change_basis"] = "daily_market_move"
@@ -2769,6 +2823,24 @@ def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _normalize_finviz_earnings_percentages(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    normalized = dict(item)
+    for field in (
+        "eps_surprise",
+        "eps_reported_surprise",
+        "sales_surprise",
+        "one_day_price_reaction",
+    ):
+        if field not in normalized:
+            continue
+        value = _finviz_percent_value(normalized.get(field), fraction_input=False)
+        if value is not None:
+            normalized[field] = value
+    return normalized
+
+
 def _finviz_calendar_excluded_event(item: Dict[str, Any]) -> Dict[str, Any]:
     source_id = item.get("source_id") or item.get("symbol")
     return {
@@ -2909,6 +2981,10 @@ def _normalize_finviz_calendar_payload(
                 _normalize_finviz_earnings_amounts(item)
                 for item in normalized_items
             ]
+            normalized_items = [
+                _normalize_finviz_earnings_percentages(item)
+                for item in normalized_items
+            ]
         if country_code_filter:
             unclassified_items = [
                 item
@@ -3001,6 +3077,10 @@ def _normalize_finviz_calendar_payload(
             "sales_actual": "listing_currency_base_units",
             "eps_estimate": "listing_currency_per_share",
             "eps_actual": "listing_currency_per_share",
+            "eps_surprise": "percent (1.0 = 1%)",
+            "eps_reported_surprise": "percent (1.0 = 1%)",
+            "sales_surprise": "percent (1.0 = 1%)",
+            "one_day_price_reaction": "percent (1.0 = 1%)",
         }
     page_value = int(page if source_is_unpaged else result.get("page") or page or 1)
     if source_is_unpaged:
@@ -3429,6 +3509,24 @@ def _compact_finviz_ratings_payload(
         limit=max(1, limit_value),
     )
     out["detail"] = detail_mode
+    rating_fields = {
+        key
+        for row in limited_rows
+        if isinstance(row, dict)
+        for key, value in row.items()
+        if value not in (None, "")
+    }
+    units: Dict[str, str] = {}
+    if "price_target_change_pct" in rating_fields:
+        units["price_target_change_pct"] = "percent (1.0 = 1%)"
+    for field in ("price_target_previous", "price_target_new"):
+        if field in rating_fields:
+            units[field] = "USD_per_share"
+    if units:
+        out["units"] = units
+    if {"price_target_previous", "price_target_new"} & rating_fields:
+        out["currency"] = "USD"
+        out["currency_basis"] = "US_equity_listing_currency"
     if detail_mode == "full":
         if omitted:
             out["show_all_hint"] = (

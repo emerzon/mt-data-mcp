@@ -158,6 +158,9 @@ def test_market_rows_keep_canonical_price_and_performance_fields_in_full_detail(
                 "Perf Day": "0.14%",
                 "Perf Week": "0.73%",
                 "Perf 5Min": "0.02%",
+                "Perf Hour": "-0.04%",
+                "Perf Half": "1.25%",
+                "Perf YTD": "0.00%",
             }
         ],
     }
@@ -181,10 +184,65 @@ def test_market_rows_keep_canonical_price_and_performance_fields_in_full_detail(
     assert compact["items"][0]["perf_day_pct"] == full["items"][0]["perf_day_pct"] == 0.14
     assert compact["items"][0]["perf_week_pct"] == full["items"][0]["perf_week_pct"] == 0.73
     assert full["items"][0]["perf_5min_pct"] == 0.02
+    assert full["items"][0]["perf_hour_pct"] == -0.04
+    assert full["items"][0]["perf_half_pct"] == 1.25
+    assert full["items"][0]["perf_ytd_pct"] == 0.0
     assert "delayed_price" not in compact["items"][0]
     assert "perf_day" not in full["items"][0]
     assert full["performance_format"] == "percent"
     assert full["units"]["perf_day_pct"] == "percent (1.0 = 1%)"
+    assert full["units"]["perf_5min_pct"] == "percent (1.0 = 1%)"
+    assert full["units"]["perf_hour_pct"] == "percent (1.0 = 1%)"
+    assert full["units"]["perf_half_pct"] == "percent (1.0 = 1%)"
+    assert full["units"]["perf_ytd_pct"] == "percent (1.0 = 1%)"
+    assert full["data_limitations"]["performance_periods"] == [
+        "5_minutes",
+        "hour",
+        "day",
+        "week",
+        "half_year",
+        "year_to_date",
+    ]
+
+
+def test_screen_percentage_growth_fields_share_numeric_point_scale():
+    result = _normalize_finviz_market_payload(
+        {
+            "success": True,
+            "stocks": [
+                {
+                    "Ticker": "AAPL",
+                    "EPS next Y": -2.5,
+                    "EPS this Y": "0.00%",
+                    "EPS past 5Y": "18.46%",
+                    "EPS next 5 Y": 0.1257,
+                    "EPS Y/Y TTM": "32.57%",
+                    "Sales Y/Y TTM": "-14.24%",
+                }
+            ],
+        },
+        rows_key="stocks",
+        tool="finviz_screen",
+        request={"view": "valuation"},
+        detail="full",
+    )
+
+    item = result["items"][0]
+    assert item["eps_next_year_growth_pct"] == -2.5
+    assert item["eps_this_year_growth_pct"] == 0.0
+    assert item["eps_past_5y_cagr_pct"] == 18.46
+    assert item["eps_next_5y_growth_pct"] == 12.57
+    assert item["eps_yoy_ttm_growth_pct"] == 32.57
+    assert item["sales_yoy_ttm_growth_pct"] == -14.24
+    for field in (
+        "eps_next_year_growth_pct",
+        "eps_this_year_growth_pct",
+        "eps_past_5y_cagr_pct",
+        "eps_next_5y_growth_pct",
+        "eps_yoy_ttm_growth_pct",
+        "sales_yoy_ttm_growth_pct",
+    ):
+        assert result["units"][field] == "percent (1.0 = 1%)"
 
 
 class TestFinvizEarningsOutputContract:
@@ -229,6 +287,20 @@ class TestFinvizEarningsOutputContract:
         assert "summary" not in result
         assert "meta" not in result
         assert "earnings" not in result
+
+    @patch("mtdata.core.finviz.get_earnings_calendar")
+    def test_full_normalizes_dividend_yield_ratio(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "period": "This Month",
+            "earnings": [{"Ticker": "ALX", "Dividend": 0.0658}],
+        }
+
+        result = self._unwrapped()(period="this-month", detail="full")
+
+        assert result["items"][0]["dividend_yield"] == 6.58
+        assert "dividend" not in result["items"][0]
+        assert result["units"]["dividend_yield"] == "percent (1.0 = 1%)"
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_full_includes_metadata(self, mock_get):
@@ -432,6 +504,8 @@ class TestFinvizCalendarOutputContract:
                     "epssurprise": 2.23,
                     "salesestimate": 12900,
                     "salesactual": 13100,
+                    "salessurprise": "-1.50%",
+                    "oneDayPriceReaction": 0,
                 }
             ],
         }
@@ -456,6 +530,8 @@ class TestFinvizCalendarOutputContract:
                 "eps_surprise": 2.23,
                 "sales_estimate": 12_900_000_000.0,
                 "sales_actual": 13_100_000_000.0,
+                "sales_surprise": -1.5,
+                "one_day_price_reaction": 0.0,
             }
         ]
         assert result["currency_basis"] == "listing_currency"
@@ -464,6 +540,11 @@ class TestFinvizCalendarOutputContract:
         )
         assert result["units"]["sales_estimate"] == (
             "listing_currency_base_units"
+        )
+        assert result["units"]["eps_surprise"] == "percent (1.0 = 1%)"
+        assert result["units"]["sales_surprise"] == "percent (1.0 = 1%)"
+        assert result["units"]["one_day_price_reaction"] == (
+            "percent (1.0 = 1%)"
         )
 
     @pytest.mark.parametrize(

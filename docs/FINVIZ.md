@@ -62,7 +62,9 @@ mtdata-cli finviz_fundamentals AAPL --category all --detail full --json
 diagnostics and values inside the selected category, while `--category all` is
 the explicit way to return every available metric family. Percentage metrics
 are JSON numbers on the documented `1.0 = 1%` scale and carry entries in
-`units`.
+`units`. Growth fields use explicit names such as
+`eps_next_year_growth_pct`, `eps_next_5y_growth_pct`, and
+`sales_yoy_ttm_growth_pct`; the ambiguous `eps_next_y` field is not emitted.
 
 Use `--fields` for an explicit comma-separated projection. If none of the names
 resolve, the command fails with `finviz_fundamentals_fields_invalid` and returns
@@ -95,7 +97,10 @@ Get analyst ratings history.
 mtdata-cli finviz_ratings GOOGL --json
 ```
 
-**Returns:** Date, analyst firm, rating action (upgrade/downgrade/initiate), rating, and price target.
+**Returns:** Date, analyst firm, rating action (upgrade/downgrade/initiate),
+rating, and price target. Numeric old/new targets are USD per share and
+`price_target_change_pct` uses percentage points; the response declares both
+in `currency` and `units`.
 
 ---
 
@@ -235,7 +240,8 @@ mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order=-marketcap
 
 All screener percentage fields are numeric percentage points (`1.0 = 1%`).
 This includes performance horizons, volatility, gap, and change from open;
-their entries in `units` use the same scale.
+their entries in `units` use the same scale. EPS and sales growth columns use
+the same canonical `*_growth_pct`/`*_cagr_pct` names as fundamentals.
 
 **Filter formats:** JSON uses exact Finviz names, for example `{"Exchange":"NASDAQ"}`. Key-value pairs use compact keys and values such as `country=USA,marketcap=mega`; discrete comparison aliases such as `pe_under=15` and `beta_under=1` map to Finviz's available "Under/Over" filter options. Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`; invalid tokens are reported in the error details.
 
@@ -270,6 +276,13 @@ level: `price` is a delayed reference price, and `perf_*_pct` values are
 percent (`1.0 = 1%`). Full detail may add source fields, but it does
 not rename or re-unit those canonical values. Check the response `units` and
 `performance_format` fields when consuming rows programmatically.
+The `performance_periods` metadata lists every returned horizon, including
+intraday, half-year, and year-to-date periods when present.
+
+The period earnings view names the provider's ratio-scaled dividend column
+`dividend_yield` and converts it to percentage points. Detailed earnings
+calendar surprise and one-day reaction fields use that same percentage-point
+unit.
 
 ### `finviz_forex`
 
