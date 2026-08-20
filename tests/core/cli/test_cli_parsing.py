@@ -1307,6 +1307,8 @@ class TestResolveParamKwargs:
             ("outliers_detect", "limit", "anomalous bars"),
             ("temporal_analyze", "limit", "time buckets"),
             ("temporal_analyze", "session_calendar", "auto, fx, or equity"),
+            ("temporal_analyze", "time_range", "in --timezone"),
+            ("temporal_analyze", "return_basis", "overnight/session gaps"),
             ("options_heston_calibrate", "valuation_date", "chain snapshot date"),
             ("seasonality_detect", "max_period", "period in bars"),
         ],

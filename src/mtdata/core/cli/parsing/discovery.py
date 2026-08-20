@@ -361,6 +361,18 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Max grouped time buckets to return; pagination only, not the analysis window."
     ),
     ("temporal_analyze", "session_calendar"): "Session calendar: auto, fx, or equity.",
+    ("temporal_analyze", "time_range"): (
+        "Half-open clock filter HH:MM-HH:MM in --timezone; defaults to CLIENT_TZ, "
+        "then UTC, and wraps midnight."
+    ),
+    ("temporal_analyze", "timezone"): (
+        "IANA timezone for hour/session grouping and --time-range (for example, "
+        "Europe/London). Defaults to CLIENT_TZ, then UTC."
+    ),
+    ("temporal_analyze", "return_basis"): (
+        "Return basis: previous_close includes overnight/session gaps in the current "
+        "bar; bar_open measures same-bar open-to-close movement."
+    ),
     ("seasonality_detect", "max_period"): (
         "Maximum candidate seasonal period in bars; defaults from available samples and "
         "--min-cycles."

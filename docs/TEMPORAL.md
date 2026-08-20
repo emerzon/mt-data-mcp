@@ -37,7 +37,9 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 | `--day-of-week` | (optional) | Filter to a specific day (0–6 or name, e.g., `Mon`, `Friday`) |
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
 | `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |
+| `--timezone` | `CLIENT_TZ`, then `UTC` | IANA clock used by `--time-range` and hour/session grouping, such as `Europe/London` |
 | `--return-mode` | `pct` | Return calculation: `pct` (percentage) or `log` (logarithmic) |
+| `--return-basis` | `previous_close` | `previous_close` measures from the prior available close; `bar_open` measures each candle from its own open |
 | `--min-bars` | auto for DOW | Exclude grouped rows below this sample count. Explicit values apply to every breakdown under `--group-by all`; automatic filtering applies to its DOW breakdown. |
 
 `auto` uses both symbol syntax and the broker symbol path. Currency pairs,
@@ -79,13 +81,17 @@ mtdata-cli temporal_analyze EURUSD --group-by hour --lookback 5000 --json
 Use `--time-range` to focus on a specific session:
 ```bash
 # London session hours
-mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --json
+mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --timezone Europe/London --json
 
-# Asian session (wraps midnight)
-mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "22:00-07:00" --json
+# New York session (DST-aware)
+mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "09:30-16:00" --timezone America/New_York --json
 ```
 
-`--time-range` is applied to candle open times. The start time is included and the end time is excluded, so `08:00-16:00` keeps bars stamped `08:00` through `15:59...` and excludes a bar stamped exactly `16:00`.
+`--time-range` is applied to candle open times in `--timezone`. The start time
+is included and the end time is excluded, so `08:00-16:00` keeps bars stamped
+`08:00` through `15:59...` and excludes a bar stamped exactly `16:00`. Supplying
+the IANA timezone on the command makes the same window reproducible across
+machines and follows daylight-saving changes automatically.
 
 ### Calendar Month (`--group-by month`)
 
@@ -94,6 +100,11 @@ Shows seasonal effects across months. Best with daily data and a long history.
 ```bash
 mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 2000 --json
 ```
+
+Daily, weekly, and monthly bars use the broker trading-session date for equity
+weekday and month labels. The timestamp still identifies the bar-open instant,
+but changing the display timezone cannot move a daily equity session into the
+prior weekday or month.
 
 ### All Grouping Dimensions (`--group-by all`)
 
@@ -134,6 +145,11 @@ At `standard` and `full` detail, the top-level response also includes `overall`
 `tick_volume` was used). Compact detail focuses on grouped rows and omits the
 `overall` block.
 
+Every detail mode states `return_basis`, `return_definition`, and
+`session_gap_policy`. The default `previous_close` basis assigns an overnight
+or market-closure gap to the destination bar. Use `--return-basis bar_open` for
+an opening-hours study that should measure only the movement inside each bar.
+
 ---
 
 ## Filtering
@@ -148,7 +164,7 @@ mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon --json
 mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by dow --month Jan --lookback 2000 --json
 
 # London session hours, grouped by day of week
-mtdata-cli temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --json
+mtdata-cli temporal_analyze EURUSD --group-by dow --time-range "08:00-16:00" --timezone Europe/London --json
 ```
 
 ---
@@ -185,7 +201,7 @@ mtdata-cli temporal_analyze SPX500 --timeframe D1 --group-by month --lookback 30
 | All grouping dimensions | `mtdata-cli temporal_analyze EURUSD --group-by all` |
 | Sample-wide summary | `mtdata-cli temporal_analyze EURUSD --group-by all --detail standard` (read `overall`) |
 | Filter to Mondays | `mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon` |
-| London session only | `mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00"` |
+| London session only | `mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00" --timezone Europe/London` |
 
 ---
 

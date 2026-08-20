@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -187,3 +187,148 @@ def test_temporal_fx_weekday_assigns_sunday_open_to_monday() -> None:
     assert {row["group_label"] for row in result["groups"]} == {"Mon", "Tue"}
     monday = next(row for row in result["groups"] if row["group_label"] == "Mon")
     assert monday["bars"] == 3
+
+
+def test_explicit_timezone_overrides_client_clock_for_time_filter() -> None:
+    rates = _make_rates_from_epochs(
+        [
+            int(datetime(2026, 7, 15, 14, 30, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 15, 15, 0, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 15, 15, 30, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    with patch(_P + "_fetch_rates", return_value=(rates, None)), patch(
+        _P + "_symbol_ready_guard", new=_guard_stub
+    ), patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None), patch(
+        _P + "get_symbol_info_cached", new=_info_stub
+    ), patch(_P + "_resolve_client_tz", return_value=ZoneInfo("America/New_York")):
+        result = _raw_temporal_analyze(
+            symbol="EURUSD",
+            timeframe="M30",
+            lookback=100,
+            group_by="hour",
+            time_range="16:00-17:00",
+            timezone="Europe/London",
+            min_bars=0,
+            detail="full",
+        )
+
+    assert result["success"] is True
+    assert result["timezone"] == "Europe/London"
+    assert result["timezone_source"] == "request"
+    assert result["filters"]["time_range"]["timezone"] == "Europe/London"
+    assert [row["group"] for row in result["groups"]] == [16]
+
+
+def test_invalid_explicit_timezone_is_actionable() -> None:
+    with patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None):
+        result = _raw_temporal_analyze(
+            symbol="EURUSD",
+            timezone="London-ish",
+        )
+
+    assert result["success"] is False
+    assert result["stage"] == "validate"
+    assert "IANA timezone" in result["error"]
+    assert result["details"] == {"timezone": "London-ish"}
+
+
+def test_daily_equity_groups_use_broker_session_weekday_and_month() -> None:
+    rates = _make_rates_from_epochs(
+        [
+            int(datetime(2026, 6, 28, 21, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 6, 29, 21, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 6, 30, 21, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 1, 21, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    common_patches = (
+        patch(_P + "_fetch_rates", return_value=(rates, None)),
+        patch(_P + "_symbol_ready_guard", new=_guard_stub),
+        patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None),
+        patch(
+            _P + "get_symbol_info_cached",
+            return_value=SimpleNamespace(path="Stocks\\NASDAQ"),
+        ),
+        patch(
+            _P + "_broker_calendar_timezone",
+            return_value=timezone(timedelta(hours=3)),
+        ),
+    )
+    for active_patch in common_patches:
+        active_patch.start()
+    try:
+        dow_result = _raw_temporal_analyze(
+            symbol="TSLA.NAS",
+            timeframe="D1",
+            lookback=100,
+            group_by="dow",
+            min_bars=0,
+            timezone="America/Los_Angeles",
+            detail="full",
+        )
+        month_result = _raw_temporal_analyze(
+            symbol="TSLA.NAS",
+            timeframe="D1",
+            lookback=100,
+            group_by="month",
+            min_bars=0,
+            timezone="America/Los_Angeles",
+            detail="full",
+        )
+    finally:
+        for active_patch in reversed(common_patches):
+            active_patch.stop()
+
+    assert dow_result["weekday_calendar"] == "broker_session_date"
+    assert [row["group_label"] for row in dow_result["groups"]] == [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+    ]
+    assert month_result["month_calendar"] == "broker_session_date"
+    assert {row["group_label"]: row["bars"] for row in month_result["groups"]} == {
+        "Jun": 2,
+        "Jul": 2,
+    }
+
+
+def test_return_basis_can_exclude_overnight_gap() -> None:
+    rates = _make_rates_from_epochs(
+        [
+            int(datetime(2026, 1, 5, 20, 45, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 1, 6, 14, 30, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 1, 6, 20, 45, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 1, 7, 14, 30, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    rates["close"] = [100.0, 110.0, 110.0, 108.9]
+    rates["open"] = [100.0, 110.0 / 0.98, 110.0, 108.9 / 0.98]
+
+    def analyze(return_basis: str) -> dict:
+        with patch(_P + "_fetch_rates", return_value=(rates, None)), patch(
+            _P + "_symbol_ready_guard", new=_guard_stub
+        ), patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None), patch(
+            _P + "get_symbol_info_cached",
+            return_value=SimpleNamespace(path="Stocks\\NASDAQ"),
+        ):
+            return _raw_temporal_analyze(
+                symbol="TSLA.NAS",
+                timeframe="M15",
+                lookback=100,
+                group_by="hour",
+                time_range="09:00-10:00",
+                timezone="America/New_York",
+                return_basis=return_basis,
+                min_bars=0,
+                detail="full",
+            )
+
+    previous_close = analyze("previous_close")
+    bar_open = analyze("bar_open")
+
+    assert previous_close["groups"][0]["avg_return_pct"] > 0
+    assert bar_open["groups"][0]["avg_return_pct"] < 0
+    assert previous_close["session_gap_policy"] == "included_in_the_destination_bar_return"
+    assert bar_open["session_gap_policy"] == "excluded_from_same_bar_open_to_close_returns"

@@ -634,7 +634,6 @@ def _apply_analyze_patches(func):
     All others use ``new=`` so they don't add extra args.
     """
     func = patch(_P + "_resolve_client_tz", new=_tz_stub)(func)
-    func = patch(_P + "_format_time_minimal", new=_fmt_stub)(func)
     func = patch("mtdata.utils.mt5._mt5_epoch_to_utc", new=_epoch_identity)(func)
     func = patch(_P + "_symbol_ready_guard", new=_guard_stub)(func)
     func = patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None)(func)

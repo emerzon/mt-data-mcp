@@ -1,5 +1,6 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -32,8 +33,8 @@ from ..utils.sessions import (
     session_definition_for_clock as _session_definition_for_clock,
 )
 from ..utils.time import (
-    _format_time_minimal,
-    _format_time_minimal_local,
+    _broker_calendar_timezone,
+    _format_datetime_minute_explicit,
     _resolve_client_tz,
     bar_close_epoch,
 )
@@ -157,6 +158,18 @@ def _timezone_label(value: Any, *, default: str = "UTC") -> str:
         return default
     text = str(label or "").strip()
     return text or default
+
+
+def _format_epoch_in_timezone(epoch_seconds: float, analysis_tz: Any) -> str:
+    value = datetime.fromtimestamp(epoch_seconds, tz=dt_timezone.utc).astimezone(
+        analysis_tz
+    )
+    return _format_datetime_minute_explicit(value)
+
+
+def _broker_session_date(epoch_seconds: Any) -> date:
+    opened_at = datetime.fromtimestamp(float(epoch_seconds), tz=dt_timezone.utc)
+    return opened_at.astimezone(_broker_calendar_timezone(opened_at)).date()
 
 
 def _parse_mapped_value(
@@ -543,8 +556,12 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "timeframe",
             "group_by",
             "return_mode",
+            "return_basis",
+            "return_definition",
+            "session_gap_policy",
             "units",
             "timezone",
+            "timezone_source",
             "timing_convention",
             "hour_span",
             "session_calendar",
@@ -552,6 +569,8 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "session_definition",
             "weekday_calendar",
             "weekday_definition",
+            "month_calendar",
+            "month_definition",
             "lookback",
             "lookback_source",
             "lookback_note",
@@ -658,8 +677,12 @@ def _summary_temporal_payload(
             "timeframe",
             "group_by",
             "return_mode",
+            "return_basis",
+            "return_definition",
+            "session_gap_policy",
             "units",
             "timezone",
+            "timezone_source",
             "timing_convention",
             "hour_span",
             "lookback",
@@ -842,9 +865,9 @@ def _fetch_rates(
     tick = mt5_gateway.symbol_info_tick(symbol)
     if tick is not None and getattr(tick, "time", None):
         t_utc = float(tick.time)
-        to_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc).replace(tzinfo=None)
+        to_dt = datetime.fromtimestamp(t_utc, tz=dt_timezone.utc).replace(tzinfo=None)
     else:
-        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+        to_dt = datetime.now(dt_timezone.utc).replace(tzinfo=None)
     rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(limit))
     return rates, None
 
@@ -861,7 +884,9 @@ def temporal_analyze(  # noqa: C901
     day_of_week: Optional[str] = None,
     month: Optional[str] = None,
     time_range: Optional[str] = None,
+    timezone: Optional[str] = None,
     return_mode: Literal["pct", "log"] = "pct",  # type: ignore
+    return_basis: Literal["previous_close", "bar_open"] = "previous_close",
     min_bars: Optional[int] = None,
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -875,8 +900,12 @@ def temporal_analyze(  # noqa: C901
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
     - month: 1-12 or names like Jan, September
-    - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; analysis
-      timezone if configured via client timezone, wraps midnight like 22:00-02:00)
+    - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; uses
+      `timezone`, then CLIENT_TZ, then UTC; wraps midnight like 22:00-02:00)
+    - timezone: IANA clock for hour/session grouping and time_range, such as
+      Europe/London or America/New_York
+    - return_basis: previous_close includes gaps in the destination bar;
+      bar_open measures only each candle's open-to-close move
     - min_bars: exclude grouped rows below this sample size. When omitted for
       day-of-week analysis, sparse weekend groups are auto-filtered.
     - session_calendar: with auto/fx, day-of-week uses the FX trading day that
@@ -901,6 +930,8 @@ def temporal_analyze(  # noqa: C901
             "group_by": group_by,
             "session_calendar": session_calendar,
             "return_mode": return_mode,
+            "return_basis": return_basis,
+            "timezone": timezone,
             "lookback": lookback,
             "start": start,
             "end": end,
@@ -938,6 +969,43 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
+            requested_timezone = str(timezone or "").strip()
+            if requested_timezone:
+                try:
+                    analysis_tz = ZoneInfo(requested_timezone)
+                except Exception:
+                    return _error_response(
+                        f"Invalid timezone '{requested_timezone}'. Use an IANA timezone "
+                        "such as Europe/London, America/New_York, or UTC.",
+                        stage="validate",
+                        context=context,
+                        details={"timezone": requested_timezone},
+                    )
+                timezone_source = "request"
+            else:
+                client_tz = _resolve_client_tz()
+                analysis_tz = client_tz or dt_timezone.utc
+                timezone_source = (
+                    "client_config" if client_tz is not None else "default_utc"
+                )
+            tz_name = _timezone_label(analysis_tz)
+            context["timezone"] = tz_name
+            context["timezone_source"] = timezone_source
+            return_mode_value = str(return_mode or "").strip().lower()
+            if return_mode_value not in {"pct", "log"}:
+                return _error_response(
+                    "Invalid return_mode. Use: pct or log.",
+                    stage="validate",
+                    context=context,
+                )
+            return_basis_value = str(return_basis or "").strip().lower()
+            if return_basis_value not in {"previous_close", "bar_open"}:
+                return _error_response(
+                    "Invalid return_basis. Use: previous_close or bar_open.",
+                    stage="validate",
+                    context=context,
+                )
+            context["return_basis"] = return_basis_value
             info_before = get_symbol_info_cached(symbol)
             session_calendar_value = str(session_calendar or "auto").strip().lower()
             if session_calendar_value not in {"auto", "fx", "equity"}:
@@ -1075,6 +1143,7 @@ def temporal_analyze(  # noqa: C901
                     "end": _time_label(tr_end),
                     "end_exclusive": True,
                     "wraps_midnight": bool(tr_start > tr_end),
+                    "timezone": tz_name,
                 }
 
             with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
@@ -1110,7 +1179,7 @@ def temporal_analyze(  # noqa: C901
                 return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
             if timeframe in TIMEFRAME_SECONDS:
-                now_ts = datetime.now(timezone.utc).timestamp()
+                now_ts = datetime.now(dt_timezone.utc).timestamp()
                 last_epoch = float(df["__epoch"].iloc[-1])
                 if (
                     last_epoch <= now_ts < bar_close_epoch(last_epoch, timeframe)
@@ -1126,12 +1195,22 @@ def temporal_analyze(  # noqa: C901
                     bars=len(df),
                 )
 
-            client_tz = _resolve_client_tz()
-            use_client_tz = client_tz is not None
-            analysis_tz = client_tz if use_client_tz else timezone.utc
             dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
-            dt = dt_utc.dt.tz_convert(client_tz) if use_client_tz else dt_utc
+            dt = dt_utc.dt.tz_convert(analysis_tz)
             df["__dt"] = dt
+            uses_broker_session_date = timeframe in {"D1", "W1", "MN1"}
+            if uses_broker_session_date:
+                df["__session_date"] = df["__epoch"].map(_broker_session_date)
+                df["__month"] = df["__session_date"].map(lambda value: value.month)
+                month_calendar = "broker_session_date"
+                month_definition = (
+                    "calendar month of the broker trading-session date, independent "
+                    "of the display timezone"
+                )
+            else:
+                df["__month"] = dt.dt.month
+                month_calendar = "civil_analysis_timezone"
+                month_definition = f"civil month in {tz_name}"
             if resolved_session_calendar == "fx":
                 df["__dow"] = dt_utc.map(_fx_trading_weekday)
                 weekday_calendar = "fx_trading_day"
@@ -1140,9 +1219,17 @@ def temporal_analyze(  # noqa: C901
                     "belongs to Monday"
                 )
             else:
-                df["__dow"] = dt.dt.weekday
-                weekday_calendar = "civil_analysis_timezone"
-                weekday_definition = f"civil weekday in {analysis_tz}"
+                if uses_broker_session_date:
+                    df["__dow"] = df["__session_date"].map(lambda value: value.weekday())
+                    weekday_calendar = "broker_session_date"
+                    weekday_definition = (
+                        "weekday of the broker trading-session date, independent of "
+                        "the display timezone"
+                    )
+                else:
+                    df["__dow"] = dt.dt.weekday
+                    weekday_calendar = "civil_analysis_timezone"
+                    weekday_definition = f"civil weekday in {tz_name}"
             session_boundary_cache: Dict[date, Dict[str, datetime]] = {}
             df["__session"] = dt.map(
                 lambda value: _market_session_label(
@@ -1161,11 +1248,28 @@ def temporal_analyze(  # noqa: C901
                 )
 
             close = pd.to_numeric(df["close"], errors="coerce").astype(float)
-            if return_mode == "log":
-                close_safe = close.where(close > 0)
-                ret = np.log(close_safe / close_safe.shift(1)) * 100.0
+            if return_basis_value == "bar_open":
+                if "open" not in df.columns:
+                    return _error_response(
+                        "Rates data missing open prices required by return_basis=bar_open.",
+                        stage="process",
+                        context=context,
+                    )
+                denominator = pd.to_numeric(
+                    df["open"], errors="coerce"
+                ).astype(float)
+                return_definition = "same-bar close divided by same-bar open"
+                session_gap_policy = "excluded_from_same_bar_open_to_close_returns"
             else:
-                ret = close.pct_change() * 100.0
+                denominator = close.shift(1)
+                return_definition = "current close divided by previous available close"
+                session_gap_policy = "included_in_the_destination_bar_return"
+            if return_mode_value == "log":
+                numerator_safe = close.where(close > 0)
+                denominator_safe = denominator.where(denominator > 0)
+                ret = np.log(numerator_safe / denominator_safe) * 100.0
+            else:
+                ret = ((close / denominator) - 1.0) * 100.0
             df["__return"] = ret
 
             if "high" in df.columns and "low" in df.columns:
@@ -1187,7 +1291,7 @@ def temporal_analyze(  # noqa: C901
             if dow_val is not None:
                 df = df[df["__dow"] == dow_val]
             if month_val is not None:
-                df = df[df["__dt"].dt.month == month_val]
+                df = df[df["__month"] == month_val]
             if tr_start is not None and tr_end is not None:
                 mins = df["__dt"].dt.hour * 60 + df["__dt"].dt.minute
                 if tr_start < tr_end:
@@ -1210,7 +1314,7 @@ def temporal_analyze(  # noqa: C901
                 if dimension == "dow":
                     grouped["__group"] = grouped["__dow"]
                 elif dimension == "month":
-                    grouped["__group"] = grouped["__dt"].dt.month
+                    grouped["__group"] = grouped["__month"]
                 elif dimension == "hour":
                     grouped["__group"] = grouped["__dt"].dt.hour
                 elif dimension == "session":
@@ -1260,7 +1364,7 @@ def temporal_analyze(  # noqa: C901
                     if group_norm == "dow":
                         df["__group"] = df["__dow"]
                     elif group_norm == "month":
-                        df["__group"] = df["__dt"].dt.month
+                        df["__group"] = df["__month"]
                     elif group_norm == "hour":
                         df["__group"] = df["__dt"].dt.hour
                     else:
@@ -1421,17 +1525,18 @@ def temporal_analyze(  # noqa: C901
             window_df = df if no_qualifying_groups else analysis_df
             start_epoch = float(window_df["__epoch"].iloc[0])
             end_epoch = float(window_df["__epoch"].iloc[-1])
-            start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
-            end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
-
-            tz_name = _timezone_label(analysis_tz)
+            start_str = _format_epoch_in_timezone(start_epoch, analysis_tz)
+            end_str = _format_epoch_in_timezone(end_epoch, analysis_tz)
 
             payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "group_by": group_norm,
-                "return_mode": return_mode,
+                "return_mode": return_mode_value,
+                "return_basis": return_basis_value,
+                "return_definition": return_definition,
+                "session_gap_policy": session_gap_policy,
                 "units": {
                     "avg_return_pct": _PERCENT_UNIT,
                     "median_return_pct": _PERCENT_UNIT,
@@ -1442,6 +1547,7 @@ def temporal_analyze(  # noqa: C901
                     "volatility_pct": "percentage_point_return_stddev_per_bar",
                 },
                 "timezone": tz_name,
+                "timezone_source": timezone_source,
                 "lookback": effective_lookback,
                 "lookback_source": "auto" if lookback_defaulted else "request",
                 "bars": int(len(analysis_df)),
@@ -1459,6 +1565,9 @@ def temporal_analyze(  # noqa: C901
             if group_norm in {"dow", "all"}:
                 payload["weekday_calendar"] = weekday_calendar
                 payload["weekday_definition"] = weekday_definition
+            if group_norm in {"month", "all"}:
+                payload["month_calendar"] = month_calendar
+                payload["month_definition"] = month_definition
             if no_qualifying_groups:
                 payload["analysis_status"] = "insufficient_group_samples"
                 payload["message"] = (
