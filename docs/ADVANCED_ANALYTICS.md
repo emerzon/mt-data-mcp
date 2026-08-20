@@ -57,7 +57,9 @@ post-fill markouts. Choose either `--minutes-back` or an explicit `--start` /
 `--end` window; supplying both is rejected so the analyzed period is never
 ambiguous. Use `--magic` to isolate one strategy. Magic filters accept the MT5
 unsigned 64-bit range, including zero, and responses include `magic_exact` for
-clients that cannot represent large JSON integers exactly.
+clients that cannot represent large JSON integers exactly. When no window is
+provided, the command analyzes the latest seven days; use an explicit longer
+window for monthly reviews.
 
 ```bash
 mtdata-cli trade_execution_quality --symbol EURUSD --minutes-back 43200 \

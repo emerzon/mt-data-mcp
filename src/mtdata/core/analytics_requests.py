@@ -73,9 +73,9 @@ class TradeExecutionQualityRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     minutes_back: int = Field(
-        43_200,
+        10_080,
         gt=0,
-        description="Execution-history lookback in minutes (default 43200 = 30 days).",
+        description="Execution-history lookback in minutes (default 10080 = 7 days).",
     )
     symbol: Optional[str] = None
     side: Optional[Literal["buy", "sell"]] = None

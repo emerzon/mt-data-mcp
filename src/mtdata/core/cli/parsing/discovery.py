@@ -699,7 +699,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "statistics always analyze all realized exit deals in the resolved window."
     ),
     ("trade_execution_quality", "minutes_back"): (
-        "Execution-history lookback in minutes (default 43200 = 30 days)."
+        "Execution-history lookback in minutes (default 10080 = 7 days)."
     ),
     ("trade_execution_quality", "limit"): (
         "Maximum eligible fills to analyze (default 200)."

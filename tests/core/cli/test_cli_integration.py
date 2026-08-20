@@ -113,7 +113,7 @@ class TestMain:
                     "--end",
                     "2026-08-19T15:00:00Z",
                 ],
-                43_200,
+                10_080,
             ),
         ],
     )
@@ -167,7 +167,7 @@ class TestMain:
                 "trade_execution_quality",
                 TradeExecutionQualityRequest,
                 ["cli.py", "trade_execution_quality"],
-                43_200,
+                10_080,
             ),
         ],
     )

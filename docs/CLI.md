@@ -846,7 +846,9 @@ mtdata-cli trade_history --history-kind deals --side buy --minutes-back 1440 --j
 mtdata-cli trade_journal_analyze --magic 3001 --minutes-back 43200 --json
 ```
 
-`trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
+`trade_history`, `trade_journal_analyze`, and `trade_execution_quality` default
+to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window
+explicitly.
 `trade_history` returns at most 20 rows by default. Set `--limit` for another
 page size. When `pagination.has_more` is true, reuse
 `pagination.next_cursor` as `--cursor` with the same history kind, filters,
