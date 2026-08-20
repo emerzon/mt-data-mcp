@@ -1824,16 +1824,24 @@ def forecast_barrier_optimize(  # noqa: C901
                 )
             }
 
+        pip_to_pct = (
+            float(cost_pip_size) / last_price * 100.0
+            if cost_pip_size and last_price > 0
+            else 0.0
+        )
+        effective_spread_pct = spread_pct_val + spread_pips_val * pip_to_pct
+        effective_slippage_pct = slippage_pct_val + slippage_pips_val * pip_to_pct
+        effective_commission_pct = commission_pct_val
+
+        def _pct_to_pips(value: float) -> Optional[float]:
+            if cost_pip_size is None or last_price <= 0.0:
+                return None
+            return float(value) / 100.0 * last_price / float(cost_pip_size)
+
         if mode_val == 'pct':
-            # Conventional FX pips → pct points.
-            pip_to_pct = (
-                float(cost_pip_size) / last_price * 100.0
-                if cost_pip_size and last_price > 0
-                else 0.0
-            )
-            cost_spread = spread_pct_val + spread_pips_val * pip_to_pct
-            cost_slippage = slippage_pct_val + slippage_pips_val * pip_to_pct
-            cost_commission = commission_pct_val
+            cost_spread = effective_spread_pct
+            cost_slippage = effective_slippage_pct
+            cost_commission = effective_commission_pct
         else:
             # Convert all costs to the tick units used by barrier metrics.
             pct_to_ticks = (last_price / float(tick_size) / 100.0) if (tick_size and tick_size > 0 and last_price > 0) else 0.0
@@ -1864,20 +1872,32 @@ def forecast_barrier_optimize(  # noqa: C901
             "cost_per_trade": _safe_float(cost_per_trade),
             "cost_unit": mode_val,
             "spread_source": spread_source,
-            "spread_pips": _safe_float(spread_pips_val),
-            "spread_bps": _safe_float(spread_bps_val),
-            "spread_pct": _safe_float(spread_pct_val),
+            "spread_values_basis": "effective_normalized_total",
+            "spread_pips": _safe_float(_pct_to_pips(effective_spread_pct)),
+            "spread_bps": _safe_float(effective_spread_pct * 100.0),
+            "spread_pct": _safe_float(effective_spread_pct),
             "commission_source": (
                 "explicit_params" if commission_supplied else "missing"
             ),
-            "commission_bps": _safe_float(commission_bps_val),
-            "commission_pct": _safe_float(commission_pct_val),
+            "commission_values_basis": "effective_normalized_total",
+            "commission_bps": _safe_float(effective_commission_pct * 100.0),
+            "commission_pct": _safe_float(effective_commission_pct),
             "slippage_source": (
                 "explicit_params" if slippage_supplied else "missing"
             ),
-            "slippage_pips": _safe_float(slippage_pips_val),
-            "slippage_bps": _safe_float(slippage_bps_val),
-            "slippage_pct": _safe_float(slippage_pct_val),
+            "slippage_values_basis": "effective_normalized_total",
+            "slippage_pips": _safe_float(_pct_to_pips(effective_slippage_pct)),
+            "slippage_bps": _safe_float(effective_slippage_pct * 100.0),
+            "slippage_pct": _safe_float(effective_slippage_pct),
+            "explicit_inputs": {
+                key: _safe_float(params_dict.get(key))
+                for key in (
+                    *spread_cost_keys,
+                    *commission_cost_keys,
+                    *slippage_cost_keys,
+                )
+                if key in params_dict and params_dict.get(key) is not None
+            },
         }
 
         # Minimum barrier constraints

@@ -1199,6 +1199,11 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 - On a live request, the optimizer automatically applies a valid current bid/ask spread when no spread parameter is supplied.
 - Supply commission and slippage assumptions explicitly, including `0` when that is intentional. Historical requests also require an explicit spread assumption.
 - The `trading_costs.complete` and `missing_assumptions` fields describe the effective model. An incomplete model can support research output, but cannot pass the trade gate.
+- `spread_pct`, `spread_bps`, and `spread_pips` are equivalent representations
+  of the effective normalized spread; non-FX instruments report pips as null.
+  The same rule applies to commission and slippage fields. Original user values
+  remain under `trading_costs.explicit_inputs`, while live bid/ask fallback is
+  identified by `spread_source=live_bid_ask`.
 - `tp_ticks` / `sl_ticks` are `trade_tick_size` distances only. They do **not** subtract spread.
 
 ```bash

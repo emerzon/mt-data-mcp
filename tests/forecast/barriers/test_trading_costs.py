@@ -83,10 +83,55 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         costs = result["trading_costs"]
         self.assertEqual(costs["spread_source"], "live_bid_ask")
         self.assertAlmostEqual(costs["spread_pct"], 0.01)
+        self.assertAlmostEqual(costs["spread_bps"], 1.0)
+        self.assertAlmostEqual(costs["spread_pips"], 1.0)
+        self.assertEqual(costs["spread_values_basis"], "effective_normalized_total")
+        self.assertEqual(costs["explicit_inputs"], {})
         self.assertAlmostEqual(costs["cost_per_trade"], 0.01)
         self.assertEqual(costs["missing_assumptions"], ["commission", "slippage"])
         self.assertLess(float(result["best"]["ev_net"]), 0.0)
         self.assertFalse(result["trade_gate_passed"])
+
+    def test_live_quote_spread_omits_pips_for_non_fx_symbol(self):
+        paths = np.full((100, 1), 40_000.0)
+        with patch(
+            f"{_BARRIER_OPT_ROOT}._get_live_reference_price",
+            return_value=(40_000.0, "live_tick_ask"),
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._live_reference_time_context",
+            return_value={
+                "reference_usable_for_live": True,
+                "reference_spread_pct": 0.005,
+            },
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._get_symbol_point",
+            return_value=None,
+        ), patch(
+            f"{_BARRIER_OPT_ROOT}._simulate_gbm_mc",
+            return_value={"price_paths": paths},
+        ):
+            result = forecast_barrier_optimize(
+                symbol="US30",
+                timeframe="H1",
+                horizon=1,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                params={"min_barrier_multiplier": 0.0},
+                viable_only=False,
+            )
+
+        costs = result["trading_costs"]
+        self.assertEqual(costs["spread_source"], "live_bid_ask")
+        self.assertAlmostEqual(costs["spread_pct"], 0.005)
+        self.assertAlmostEqual(costs["spread_bps"], 0.5)
+        self.assertIsNone(costs["spread_pips"])
 
     def test_optimize_with_spread_pct_produces_trading_costs(self):
         result = forecast_barrier_optimize(
@@ -137,6 +182,10 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         self.assertAlmostEqual(tc["spread_pct"], 0.02)
         self.assertAlmostEqual(tc["slippage_pct"], 0.005)
         self.assertAlmostEqual(tc["cost_per_trade"], 0.025)
+        self.assertEqual(
+            tc["explicit_inputs"],
+            {"spread_bps": 2.0, "slippage_bps": 0.5},
+        )
 
     def test_optimize_with_spread_pips_produces_trading_costs(self):
         result = forecast_barrier_optimize(
