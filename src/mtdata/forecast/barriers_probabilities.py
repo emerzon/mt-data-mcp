@@ -364,7 +364,12 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     block_size=bs,
                 )
             elif method_key == 'heston':
-                heston_bars_per_year, _ = _annualization_context(timeframe, symbol)
+                heston_bars_per_year, _ = _annualization_context(
+                    timeframe,
+                    symbol,
+                    observed_times=df.get("time"),
+                    observed_timeframe=timeframe,
+                )
                 sim = _simulate_heston_mc(
                     prices,
                     horizon=horizon_val,
@@ -713,6 +718,8 @@ def forecast_barrier_closed_form(  # noqa: C901
         bars_per_year_value, annualization_basis = _annualization_context(
             timeframe,
             symbol,
+            observed_times=df.get("time"),
+            observed_timeframe=timeframe,
         )
         if not np.isfinite(bars_per_year_value) or bars_per_year_value <= 0:
             return {"error": unsupported_timeframe_seconds_error(timeframe)}

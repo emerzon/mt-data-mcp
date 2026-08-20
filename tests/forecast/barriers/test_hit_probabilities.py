@@ -506,6 +506,80 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(result["bars_per_year"], 6240.0)
         self.assertEqual(result["annualization_basis"], "260_fx_weekdays_24h")
 
+    def test_equity_closed_form_uses_observed_session_annualization(self):
+        times = [
+            timestamp
+            for day in pd.date_range("2026-08-10", periods=5, freq="D")
+            for timestamp in pd.date_range(
+                day + pd.Timedelta(hours=13),
+                periods=7,
+                freq="h",
+            )
+        ]
+        frame = pd.DataFrame(
+            {
+                "time": times,
+                "close": np.linspace(340.0, 350.0, len(times)),
+            }
+        )
+        self._set_barrier_history(frame)
+
+        result = forecast_barrier_closed_form(
+            symbol="TSLA.NAS",
+            timeframe="H1",
+            horizon=8,
+            direction="long",
+            barrier=360.0,
+            mu=0.0,
+            sigma=0.4,
+            as_of="2026-08-14T20:30:00Z",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["bars_per_year"], 1764.0)
+        self.assertEqual(
+            result["annualization_basis"],
+            "252_trading_days_observed_session",
+        )
+
+    def test_equity_heston_uses_observed_session_annualization(self):
+        times = [
+            timestamp
+            for day in pd.date_range("2026-08-10", periods=5, freq="D")
+            for timestamp in pd.date_range(
+                day + pd.Timedelta(hours=13),
+                periods=7,
+                freq="h",
+            )
+        ]
+        frame = pd.DataFrame(
+            {
+                "time": times,
+                "close": np.linspace(340.0, 350.0, len(times)),
+            }
+        )
+        self._set_barrier_history(frame)
+
+        with patch(
+            f"{_BARRIER_PROB_ROOT}._simulate_heston_mc",
+            return_value={
+                "price_paths": np.array([[351.0], [349.0]]),
+            },
+        ) as simulate:
+            result = forecast_barrier_hit_probabilities(
+                symbol="TSLA.NAS",
+                timeframe="H1",
+                horizon=1,
+                method="heston",
+                direction="long",
+                tp_pct=1.0,
+                sl_pct=1.0,
+                as_of="2026-08-14T20:30:00Z",
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(simulate.call_args.kwargs["bars_per_year"], 1764.0)
+
     def test_closed_form_historical_anchor_does_not_query_live_tick(self):
         with patch(
             f'{_BARRIER_PROB_ROOT}._get_live_reference_price'
