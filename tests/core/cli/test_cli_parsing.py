@@ -805,6 +805,37 @@ class TestAddDynamicArguments:
         assert args.simplify == "lttb"
         assert args.simplify_params == "points=100"
 
+    def test_required_mapping_option_requires_value(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "barrier", "type": Dict[str, Any], "required": True, "default": None},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="forecast_barrier_prob")
+
+        help_text = _strip_ansi(parser.format_help())
+        assert "--barrier BARRIER" in help_text
+        with pytest.raises(SystemExit):
+            parser.parse_args(["EURUSD", "--barrier"])
+        parsed = parser.parse_args(["EURUSD", "--barrier", "kind=tp_sl"])
+        assert parsed.barrier == "kind=tp_sl"
+
+    def test_required_symbols_option_consumes_space_separated_values(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbols", "type": str, "required": True, "default": None},
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="cross_correlation")
+
+        parsed = parser.parse_args(["--symbols", "EURUSD", "GBPUSD"])
+        assert parsed._cli_option_symbols == ["EURUSD", "GBPUSD"]
+
     def test_mapping_param_adds_set_override(self):
         parser = argparse.ArgumentParser()
         func_info = {

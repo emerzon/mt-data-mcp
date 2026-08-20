@@ -369,6 +369,38 @@ class TestMain:
         mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_cross_correlation_accepts_space_separated_symbols_option(
+        self, mock_discover
+    ):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "cross_correlation"
+        mock_fn.__doc__ = "Cross correlation."
+
+        def cross_correlation(symbols: str):
+            """Cross correlation."""
+            pass
+
+        info = get_function_info(cross_correlation)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "cross_correlation": {
+                "func": mock_fn,
+                "meta": {"description": "Cross correlation"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "cross_correlation", "--symbols", "EURUSD", "GBPUSD"],
+        ):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_market_relative_strength_accepts_positional_symbols(
         self, mock_discover
     ):

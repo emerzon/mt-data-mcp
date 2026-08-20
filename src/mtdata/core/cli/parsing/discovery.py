@@ -1456,6 +1456,11 @@ def add_dynamic_arguments(  # noqa: C901
             option_kwargs.setdefault("metavar", str(param["name"]).upper())
             option_kwargs["default"] = argparse.SUPPRESS
             option_kwargs["required"] = False
+            if (
+                str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
+                and str(param["name"]) == "symbols"
+            ):
+                option_kwargs["nargs"] = "+"
             if option_flags:
                 parser.add_argument(*option_flags, **option_kwargs)
             if hidden_option_flags:
@@ -1540,8 +1545,9 @@ def add_dynamic_arguments(  # noqa: C901
                     parser.add_argument(*no_hidden_flags, **hidden_no_kwargs)
             elif is_mapping_type:
                 local_kwargs = dict(kwargs)
-                local_kwargs["nargs"] = "?"
-                local_kwargs["const"] = "__PRESENT__"
+                if not is_required_option:
+                    local_kwargs["nargs"] = "?"
+                    local_kwargs["const"] = "__PRESENT__"
                 if option_flags:
                     parser.add_argument(*option_flags, **local_kwargs)
                 if hidden_option_flags:
