@@ -63,8 +63,8 @@ def test_history_available_on_versioned_route() -> None:
     payload = {
         "success": True,
         "data": [
-            {"time": 1735689600.0, "close": 1.1},
-            {"time": 1735693200.0, "close": 1.2},
+            {"time": "2025-01-01T00:00Z", "close": 1.1},
+            {"time": "2025-01-01T01:00Z", "close": 1.2},
         ],
         "has_forming_candle": False,
         "forming_candle_status": "none",
@@ -88,6 +88,9 @@ def test_history_available_on_versioned_route() -> None:
         "count": 2,
         "forming_candle_status": "none",
         "timestamp_format": "iso",
+        "timestamp_mode": "utc",
+        "public_timestamp_mode": "utc",
+        "timestamp_timezone": "UTC",
         "server_utc_offset_seconds": 7200,
         "server_timezone": "Europe/Nicosia",
         "source": {
