@@ -1507,7 +1507,7 @@ def _place_market_order(  # noqa: C901
                 return guardrail_block
             request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
                 comment,
-                default="MCP order",
+                default="mtdata order",
             )
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -1906,7 +1906,7 @@ def _place_pending_order(  # noqa: C901
 
             request_comment, comment_sanitization, comment_truncation = _build_order_comment_payload(
                 comment,
-                default="MCP pending order",
+                default="mtdata pending order",
             )
             request = {
                 "action": mt5.TRADE_ACTION_PENDING,

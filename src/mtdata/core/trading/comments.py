@@ -29,7 +29,7 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
     """Return an MT5-safe comment string."""
     base = _sanitize_trade_comment_text(comment)
     if not base:
-        base = _sanitize_trade_comment_text(default) or "MCP"
+        base = _sanitize_trade_comment_text(default) or "mtdata"
 
     suffix_text = _sanitize_trade_comment_text(suffix)
     full = f"{base}{suffix_text}" if suffix_text else base
@@ -48,11 +48,11 @@ def _normalize_trade_comment(comment: Optional[str], *, default: str, suffix: st
             else:
                 full = base[:_MT5_COMMENT_MAX_LENGTH]
     except Exception:
-        full = (_sanitize_trade_comment_text(default) or "MCP")[:_MT5_COMMENT_MAX_LENGTH]
+        full = (_sanitize_trade_comment_text(default) or "mtdata")[:_MT5_COMMENT_MAX_LENGTH]
     return full.strip()
 
 
-def _normalize_close_trade_comment(comment: Optional[str], *, default: str = "MCP close") -> str:
+def _normalize_close_trade_comment(comment: Optional[str], *, default: str = "mtdata close") -> str:
     """Return a close-deal-safe comment string."""
     close_comment = _normalize_trade_comment(comment, default=default)
     return close_comment[:_MT5_CLOSE_COMMENT_MAX_LENGTH].strip()
@@ -244,7 +244,7 @@ def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tupl
         return result, None, last_error
 
     fallback_requests = []
-    minimal_comment = _normalize_trade_comment("MCP", default="MCP")
+    minimal_comment = _normalize_trade_comment("mtdata", default="mtdata")
     if request.get("comment") != minimal_comment:
         req_short = dict(request)
         req_short["comment"] = minimal_comment

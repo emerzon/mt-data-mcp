@@ -282,6 +282,18 @@ def test_run_trade_close_passes_magic_filter_to_all_exposure_legs():
     assert cancel_pending.call_args.kwargs["magic"] == 987
 
 
+def test_run_trade_close_preview_uses_transport_neutral_comment():
+    result = run_trade_close(
+        TradeCloseRequest(symbol="EURUSD", dry_run=True),
+        close_positions=lambda **_kwargs: {"success": True, "matched_count": 1},
+        cancel_pending=MagicMock(),
+    )
+
+    assert result["success"] is True
+    assert result["comment"] == "mtdata close"
+    assert result["applied_comment"] == "mtdata close"
+
+
 def test_normalize_trade_comment_applies_default_and_suffix_length_caps():
     comment = _normalize_trade_comment(None, default="DefaultComment", suffix="-MKT")
     assert comment == "DefaultComment-MKT"
@@ -545,6 +557,8 @@ def test_run_trade_place_dry_run_includes_quote_preview_when_available():
     assert result["estimated_fill_price"] == 1.1001
     assert result["margin_required"] == 110.0
     assert result["sl_tp_valid"] is True
+    assert result["magic"] == 234000
+    assert result["comment"] == "mtdata order"
     preview_builder.assert_called_once_with(
         symbol="EURUSD",
         volume=0.1,

@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from ...bootstrap.settings import trade_guardrails_config
+from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from ...services.data_service import _is_last_bar_forming
 from ...shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
 from ...shared.market_units import price_delta_ticks
@@ -2062,12 +2062,15 @@ def run_trade_place(  # noqa: C901
                 preview["requested_price"] = request.price
                 if request.stop_limit_price is not None:
                     preview["requested_stop_limit_price"] = request.stop_limit_price
-            if request.magic is not None:
-                preview["magic"] = request.magic
+            preview["magic"] = (
+                request.magic
+                if request.magic is not None
+                else int(mt5_config.order_magic)
+            )
             preview = comments._attach_comment_preview_metadata(
                 preview,
                 request.comment,
-                default="MCP pending order" if pending else "MCP order",
+                default="mtdata pending order" if pending else "mtdata order",
             )
             if request.stop_loss not in (None, 0):
                 preview["stop_loss"] = request.stop_loss
@@ -2755,9 +2758,9 @@ def run_trade_modify(
                     result,
                     request.comment,
                     default=(
-                        "MCP modify pending order"
+                        "mtdata modify pending order"
                         if pending
-                        else "MCP modify position"
+                        else "mtdata modify position"
                     ),
                 )
         if correlation_id and str(result.get("error") or "").strip():
@@ -2972,13 +2975,13 @@ def _run_trade_close_once(  # noqa: C901
                         "positions": comments._attach_comment_preview_metadata(
                             {},
                             request.comment,
-                            default="MCP close",
+                            default="mtdata close",
                             close=True,
                         ),
                         "pending_orders": comments._attach_comment_preview_metadata(
                             {},
                             request.comment,
-                            default="MCP cancel pending order",
+                            default="mtdata cancel pending order",
                         ),
                     },
                 )
@@ -2988,9 +2991,9 @@ def _run_trade_close_once(  # noqa: C901
                     result,
                     request.comment,
                     default=(
-                        "MCP cancel pending order"
+                        "mtdata cancel pending order"
                         if request.target == "pending"
-                        else "MCP close"
+                        else "mtdata close"
                     ),
                     close=request.target != "pending",
                 )

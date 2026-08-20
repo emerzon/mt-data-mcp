@@ -106,9 +106,9 @@ class TestNormalizeTradeComment:
         result = _normalize_trade_comment(base, default="x", suffix="XX")
         assert len(result) <= 31
 
-    def test_empty_default_falls_back_to_mcp(self):
+    def test_empty_default_falls_back_to_mtdata(self):
         result = _normalize_trade_comment(None, default="")
-        assert result == "MCP"
+        assert result == "mtdata"
 
 
 class TestNormalizeCloseTradeComment:

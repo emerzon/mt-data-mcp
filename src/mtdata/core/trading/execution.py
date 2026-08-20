@@ -341,7 +341,7 @@ def _build_position_modify_request(
         "tp": take_profit,
         "comment": comments._normalize_trade_comment(
             comment,
-            default="MCP modify position",
+            default="mtdata modify position",
         ),
     }
     request_magic = validation._safe_int_magic(getattr(position, "magic", None))
@@ -616,7 +616,7 @@ def _modify_position(  # noqa: C901
                         ],
                     },
                     comment,
-                    default="MCP modify position",
+                    default="mtdata modify position",
                 )
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
@@ -1028,7 +1028,7 @@ def _modify_pending_order(  # noqa: C901
                 "price": float(normalized_price),
                 "sl": request_sl,
                 "tp": request_tp,
-                "comment": comments._normalize_trade_comment(comment, default="MCP modify pending order"),
+                "comment": comments._normalize_trade_comment(comment, default="mtdata modify pending order"),
             }
             if is_stop_limit and normalized_stop_limit is not None:
                 request["stoplimit"] = float(normalized_stop_limit)
@@ -1099,7 +1099,7 @@ def _modify_pending_order(  # noqa: C901
                 return comments._attach_comment_preview_metadata(
                     preview,
                     comment,
-                    default="MCP modify pending order",
+                    default="mtdata modify pending order",
                 )
 
             send_tick = mt5.symbol_info_tick(order.symbol)
@@ -1415,7 +1415,7 @@ def _execute_single_close(  # noqa: C901
                 else validation._safe_float_attr(tick, "ask")
             )
             close_type = close_type_sell if is_buy_position else close_type_buy
-            close_comment = comments._normalize_close_trade_comment(comment, default="MCP close")
+            close_comment = comments._normalize_close_trade_comment(comment, default="mtdata close")
 
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -1791,7 +1791,7 @@ def _close_positions_dry_run_preview(
     return comments._attach_comment_preview_metadata(
         preview,
         comment,
-        default="MCP close",
+        default="mtdata close",
         close=True,
     )
 
@@ -1842,7 +1842,7 @@ def _cancel_pending_dry_run_preview(
     return comments._attach_comment_preview_metadata(
         preview,
         comment,
-        default="MCP cancel pending order",
+        default="mtdata cancel pending order",
     )
 
 
@@ -2495,7 +2495,7 @@ def _cancel_pending(  # noqa: C901
                 request = {
                     "action": mt5.TRADE_ACTION_REMOVE,
                     "order": order.ticket,
-                    "comment": comments._normalize_trade_comment(comment, default="MCP cancel pending order"),
+                    "comment": comments._normalize_trade_comment(comment, default="mtdata cancel pending order"),
                 }
                 request_magic = validation._safe_int_magic(getattr(order, "magic", None))
                 if request_magic is not None:
