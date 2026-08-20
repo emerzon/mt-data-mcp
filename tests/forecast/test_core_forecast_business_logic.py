@@ -896,8 +896,8 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
     )
 
     expected_training_period = {
-        "start": "2026-01-01 00:00",
-        "end": "2026-01-10 00:00",
+        "start": "2026-01-01T00:00Z",
+        "end": "2026-01-10T00:00Z",
         "history_bars_used": 200,
         "target_points_used": 199,
         "lookback_bars_requested": 250,
@@ -915,8 +915,8 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
     )
     assert "training_period" not in out
     assert "diagnostics" not in out
-    assert out["data_window"]["history_start"] == "2026-01-01 00:00"
-    assert out["data_window"]["history_end"] == "2026-01-10 00:00"
+    assert out["data_window"]["history_start"] == "2026-01-01T00:00Z"
+    assert out["data_window"]["history_end"] == "2026-01-10T00:00Z"
     assert out["data_window"]["history_bars_used"] == 200
 
     standard = raw(
@@ -3544,6 +3544,36 @@ def test_conformal_interval_availability_uses_calibration_threshold(
     assert result["ci_status"] == expected_status
     assert result["ci_available"] is expected_available
     assert result["conformal"]["min_calibration_points"] == sample_size
+
+
+def test_forecast_time_normalization_recurses_through_nested_payloads() -> None:
+    payload = forecast_use_cases._normalize_forecast_time_fields(
+        {
+            "timezone": "America/New_York",
+            "last_observation_time": "2026-07-15T16:00:00-04:00",
+            "forecast_from": {
+                "time": "2026-07-15T16:00:00-04:00",
+                "anchor": "last_observation",
+            },
+            "forecast_time": ["2026-07-15T17:00:00-04:00"],
+            "diagnostics": {
+                "timezone": "America/New_York",
+                "history_start_time": "2026-01-15T09:30:00-05:00",
+                "history_end_time": "2026-07-15T16:00:00-04:00",
+            },
+        }
+    )
+
+    assert payload["timezone"] == "UTC"
+    assert payload["last_observation_time"] == "2026-07-15T20:00Z"
+    assert payload["forecast_from"]["time"] == "2026-07-15T20:00Z"
+    assert payload["forecast_from"]["anchor"] == "last_observation"
+    assert payload["forecast_time"] == ["2026-07-15T21:00Z"]
+    assert payload["diagnostics"] == {
+        "timezone": "UTC",
+        "history_start_time": "2026-01-15T14:30Z",
+        "history_end_time": "2026-07-15T20:00Z",
+    }
 
 
 def test_conformal_intervals_expose_actionable_direction_gate():

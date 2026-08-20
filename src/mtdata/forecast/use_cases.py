@@ -95,6 +95,8 @@ def _format_forecast_time_utc(value: Any) -> Any:
     text = str(value).strip()
     if not text:
         return value
+    if "T" not in text and " " not in text:
+        return value
     parse_text = text.replace("Z", "+00:00")
     if "T" not in parse_text and " " in parse_text:
         parse_text = parse_text.replace(" ", "T", 1)
@@ -113,21 +115,25 @@ def _format_forecast_time_utc(value: Any) -> Any:
 
 
 def _normalize_forecast_time_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(payload)
-    for key in (
-        "last_observation_time",
-        "forecast_from",
-        "forecast_start_time",
-    ):
-        if key in out:
-            out[key] = _format_forecast_time_utc(out.get(key))
-    value = out.get("forecast_time")
-    if isinstance(value, list):
-        out["forecast_time"] = [_format_forecast_time_utc(item) for item in value]
-    elif value not in (None, ""):
-        out["forecast_time"] = _format_forecast_time_utc(value)
+    """Normalize every serialized forecast datetime to one UTC representation."""
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, dict):
+            normalized = {key: normalize(item) for key, item in value.items()}
+            if "timezone" in normalized:
+                normalized["timezone"] = "UTC"
+            return normalized
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(normalize(item) for item in value)
+        if isinstance(value, str):
+            return _format_forecast_time_utc(value)
+        return value
+
+    out = normalize(payload)
     if any(key in out for key in ("last_observation_time", "forecast_time")):
-        out.setdefault("timezone", "UTC")
+        out["timezone"] = "UTC"
     return out
 
 

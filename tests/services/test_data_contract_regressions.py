@@ -59,16 +59,32 @@ def test_calendar_month_and_year_phrases_expand_to_periods(
 
 
 @pytest.mark.parametrize(
-    ("timestamp_format", "time_value", "expected"),
+    ("timestamp_format", "time_value", "timezone_name", "expected", "mode"),
     [
-        ("epoch", 1_787_098_197.256, "epoch_seconds"),
-        ("iso", "2026-08-19T00:00:00Z", "iso_utc"),
+        ("epoch", 1_787_098_197.256, "America/New_York", "epoch_seconds", "utc"),
+        ("iso", "2026-08-19T00:00:00Z", "UTC", "iso_utc", "utc"),
+        (
+            "iso",
+            "2026-01-15T09:30:00-05:00",
+            "America/New_York",
+            "iso_offset",
+            "client_timezone",
+        ),
+        (
+            "iso",
+            "2026-07-15T09:30:00-04:00",
+            "America/New_York",
+            "iso_offset",
+            "client_timezone",
+        ),
     ],
 )
 def test_tick_results_publish_timestamp_format(
     timestamp_format: str,
     time_value: float | str,
+    timezone_name: str,
     expected: str,
+    mode: str,
 ) -> None:
     request = DataFetchTicksRequest(
         symbol="EURUSD",
@@ -83,11 +99,45 @@ def test_tick_results_publish_timestamp_format(
             "success": True,
             "count": 1,
             "tick_count": 1,
+            "timezone": timezone_name,
             "data": [{"time": time_value, "bid": 1.1, "ask": 1.2}],
         },
     )
 
     assert result["timestamp_format"] == expected
+    assert result["timestamp_mode"] == mode
+    assert result["public_timestamp_mode"] == mode
+    assert result["timestamp_timezone"] == (
+        "UTC" if mode == "utc" else "America/New_York"
+    )
+    if timestamp_format == "epoch":
+        assert result["timezone"] == "UTC"
+
+
+@pytest.mark.parametrize(
+    "time_value",
+    ["2026-01-15T09:30:00-05:00", "2026-07-15T09:30:00-04:00"],
+)
+def test_candle_metadata_labels_client_offset_representation(time_value: str) -> None:
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="AAPL.NAS", limit=1, detail="full"),
+        gateway=_gateway(),
+        fetch_candles_impl=lambda **_: {
+            "success": True,
+            "candles": 1,
+            "time_basis": "utc",
+            "timestamp_mode": "server_clock",
+            "timezone": "America/New_York",
+            "data": [{"time": time_value, "close": 200.0}],
+        },
+    )
+
+    assert result["time_basis"] == "utc"
+    assert result["timestamp_format"] == "iso_offset"
+    assert result["timestamp_mode"] == "client_timezone"
+    assert result["public_timestamp_mode"] == "client_timezone"
+    assert result["timestamp_timezone"] == "America/New_York"
+    assert result["raw_timestamp_mode"] == "server_clock"
 
 
 def test_compact_candles_omit_operator_diagnostics() -> None:

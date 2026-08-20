@@ -91,8 +91,12 @@ MT5_SERVER_TZ=Europe/Athens
 
 ## Time metadata
 
-Compact candle responses retain the thin public time contract (`time_basis`,
-`timestamp_mode=utc`, and `public_timestamp_mode=utc`). Latest-N queries expose `limit_satisfied`; historical
+Compact candle responses retain a thin public time contract. `time_basis=utc`
+describes normalized instant provenance, while `timestamp_format`,
+`timestamp_mode`, `public_timestamp_mode`, and `timestamp_timezone` describe
+the serialized row values. UTC strings use `iso_utc` / `utc`; client-local
+strings with an explicit offset use `iso_offset` / `client_timezone`; numeric
+values use `epoch_seconds` / `utc`. Latest-N queries expose `limit_satisfied`; historical
 ranges expose `range_complete`, `limit_reached`, and a `query_applied` block
 that states whether the limit was anchored at the start or end. An omitted
 range limit returns a 20-bar page and is reported as `default_limit`, not as a
@@ -111,11 +115,13 @@ With no configured broker offset, full payloads report
 `time_normalization=mt5_utc_native`. A detected server-clock terminal instead
 reports `raw_time_basis=mt5_server_clock_epoch`,
 `raw_timestamp_mode=server_clock`, and
-`time_normalization=server_clock_to_utc`. Public candle payloads use
-`timestamp_mode=utc`; compact server-clock payloads retain
+`time_normalization=server_clock_to_utc`. Compact server-clock payloads retain
 `time_normalization=server_clock_to_utc` without exposing the raw mode as the
-public timestamp axis.
-The public timestamp values are UTC in both cases.
+public timestamp axis. Public ISO values use the configured display timezone
+and always include `Z` or an explicit numeric offset; epoch values are UTC Unix
+seconds. Full detail keeps the source clock as `raw_timestamp_mode`.
+Forecast generation and conformal-interval payloads normalize all displayed
+datetimes, including nested diagnostics and training windows, to UTC.
 Trade-history payloads expose the same `raw_time_basis`, `time_basis`,
 `raw_timestamp_mode`, and `time_normalization` fields, including when no symbol
 filter was supplied.

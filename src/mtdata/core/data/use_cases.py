@@ -1193,14 +1193,43 @@ def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
         timestamp_value = row.get("time")
         if isinstance(timestamp_value, bool):
             continue
-        if isinstance(timestamp_value, (int, float)) and np.isfinite(float(timestamp_value)):
-            payload["timestamp_format"] = "epoch_seconds"
+        representation = _timestamp_representation(timestamp_value)
+        if representation is not None:
+            timestamp_format, timestamp_mode, timestamp_timezone = representation
+            payload["timestamp_format"] = timestamp_format
+            payload["timestamp_mode"] = timestamp_mode
+            payload["public_timestamp_mode"] = timestamp_mode
+            if timestamp_timezone == "client_timezone":
+                timestamp_timezone = str(payload.get("timezone") or "").strip()
+            if timestamp_timezone:
+                payload["timestamp_timezone"] = timestamp_timezone
+            else:
+                payload.pop("timestamp_timezone", None)
+            if timestamp_format == "epoch_seconds":
+                payload["timezone"] = "UTC"
             payload.pop("timestamp_format_hint", None)
             return
-        if isinstance(timestamp_value, str) and timestamp_value.strip():
-            payload["timestamp_format"] = "iso_utc"
-            payload.pop("timestamp_format_hint", None)
-            return
+
+
+def _timestamp_representation(value: Any) -> Optional[tuple[str, str, str]]:
+    """Describe the serialized timestamp, separately from its MT5 provenance."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and np.isfinite(float(value)):
+        return "epoch_seconds", "utc", "UTC"
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return "iso_text", "unspecified", ""
+    offset = parsed.utcoffset() if parsed.tzinfo is not None else None
+    if offset is None:
+        return "iso_without_offset", "unspecified", ""
+    if offset == timedelta(0):
+        return "iso_utc", "utc", "UTC"
+    return "iso_offset", "client_timezone", "client_timezone"
 
 
 def _normalize_public_candle_timestamp_mode(
@@ -1210,15 +1239,17 @@ def _normalize_public_candle_timestamp_mode(
 ) -> None:
     """Name the clock used by emitted timestamps, not the raw MT5 epoch axis."""
     raw_mode = str(payload.get("timestamp_mode") or "").strip()
-    time_basis = str(payload.get("time_basis") or "").strip().lower()
-    if not raw_mode or time_basis != "utc":
-        return
-    payload["timestamp_mode"] = "utc"
-    payload["public_timestamp_mode"] = "utc"
-    if include_raw:
+    if include_raw and raw_mode:
         payload["raw_timestamp_mode"] = raw_mode
     else:
         payload.pop("raw_timestamp_mode", None)
+    _attach_candle_timestamp_metadata(payload)
+    if payload.get("public_timestamp_mode") is not None:
+        return
+    time_basis = str(payload.get("time_basis") or "").strip().lower()
+    if raw_mode and time_basis == "utc":
+        payload["timestamp_mode"] = "utc"
+        payload["public_timestamp_mode"] = "utc"
 
 
 def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
@@ -1838,10 +1869,9 @@ def _run_data_fetch_ticks_impl(
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
     if isinstance(result, dict) and not result.get("error"):
-        result["timestamp_format"] = (
-            "iso_utc"
-            if str(request.timestamp_format).strip().lower() == "iso"
-            else "epoch_seconds"
+        _attach_tick_timestamp_metadata(
+            result,
+            requested_format=str(request.timestamp_format),
         )
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(
@@ -1853,6 +1883,47 @@ def _run_data_fetch_ticks_impl(
         page_offset=page_offset,
     )
     return attach_mt5_source(result, gateway=gateway)
+
+
+def _attach_tick_timestamp_metadata(
+    payload: Dict[str, Any],
+    *,
+    requested_format: str,
+) -> None:
+    rows = payload.get("data")
+    timestamp_value: Any = None
+    if isinstance(rows, list):
+        timestamp_value = next(
+            (
+                row.get("time")
+                for row in rows
+                if isinstance(row, dict) and row.get("time") not in (None, "")
+            ),
+            None,
+        )
+    representation = _timestamp_representation(timestamp_value)
+    if representation is None:
+        if str(requested_format).strip().lower() == "iso":
+            timezone_label = str(payload.get("timezone") or "UTC").strip()
+            representation = (
+                ("iso_utc", "utc", "UTC")
+                if timezone_label.upper() == "UTC"
+                else ("iso_offset", "client_timezone", "client_timezone")
+            )
+        else:
+            representation = ("epoch_seconds", "utc", "UTC")
+    timestamp_format, timestamp_mode, timestamp_timezone = representation
+    payload["timestamp_format"] = timestamp_format
+    payload["timestamp_mode"] = timestamp_mode
+    payload["public_timestamp_mode"] = timestamp_mode
+    if timestamp_timezone == "client_timezone":
+        timestamp_timezone = str(payload.get("timezone") or "").strip()
+    if timestamp_timezone:
+        payload["timestamp_timezone"] = timestamp_timezone
+    else:
+        payload.pop("timestamp_timezone", None)
+    if timestamp_format == "epoch_seconds":
+        payload["timezone"] = "UTC"
 
 
 def _normalize_tick_query_error(

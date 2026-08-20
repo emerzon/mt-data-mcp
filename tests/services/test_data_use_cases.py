@@ -1679,7 +1679,7 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
             "timezone": "UTC",
             "data": [
                 {
-                    "time": "2026-05-14 11:00",
+                    "time": "2026-05-14T11:00Z",
                     "open": 1.0,
                     "high": 1.2,
                     "low": 0.9,
@@ -1687,7 +1687,7 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
                     "tick_volume": 10,
                 },
                 {
-                    "time": "2026-05-14 12:00",
+                    "time": "2026-05-14T12:00Z",
                     "open": 1.1,
                     "high": 1.3,
                     "low": 1.0,
@@ -1726,7 +1726,7 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert result["data_stale"] is False
     assert "data" not in result
     assert result["latest_candle"] == {
-        "time": "2026-05-14 12:00",
+        "time": "2026-05-14T12:00Z",
         "open": 1.1,
         "high": 1.3,
         "low": 1.0,
@@ -2434,7 +2434,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "tick_count": 2,
             "data": [
                 {
-                    "time": "2026-05-29 20:56",
+                    "time": "2026-05-29T20:56Z",
                     "bid": 1.1659,
                     "ask": 1.16596,
                     "volume": 3.0,
@@ -2445,7 +2445,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                     "spread_valid": False,
                 },
                 {
-                    "time": "2026-05-29 20:57",
+                    "time": "2026-05-29T20:57Z",
                     "bid": 1.16591,
                     "ask": 1.16599,
                     "volume": 4.0,
@@ -2496,7 +2496,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "count": 2,
         "data": [
             {
-                "time": "2026-05-29 20:56",
+                "time": "2026-05-29T20:56Z",
                 "bid": 1.1659,
                 "ask": 1.16596,
                 "spread_valid": True,
@@ -2507,7 +2507,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "quote_update_type": "bid_only_update",
             },
             {
-                "time": "2026-05-29 20:57",
+                "time": "2026-05-29T20:57Z",
                 "bid": 1.16591,
                 "ask": 1.16599,
                 "spread_valid": True,
@@ -2526,6 +2526,9 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "data_age_metric": "last_tick_age_seconds",
             "data_stale": True,
             "timestamp_format": "iso_utc",
+            "timestamp_mode": "utc",
+            "public_timestamp_mode": "utc",
+            "timestamp_timezone": "UTC",
             "units": {
             "bid": "absolute_price",
             "ask": "absolute_price",
