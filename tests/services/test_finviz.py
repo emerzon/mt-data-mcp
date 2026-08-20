@@ -1697,9 +1697,11 @@ class TestFinvizTools:
         assert "freshness_basis" not in result
         assert result["data_fetched_at"].endswith("Z")
         assert result["observation_time_status"] == "provider_timestamp_unavailable"
-        assert result["estimated_observation_window"]["basis"] == (
-            "fetch_time_minus_assumed_provider_delay"
-        )
+        assert result["nominal_provider_delay_minutes"] == {
+            "minimum": 15,
+            "maximum": 20,
+        }
+        assert "estimated_observation_window" not in result
         assert "transport time" in result["observation_time_note"]
         assert result["fundamentals"]["price_source"] == "finviz_delayed"
         assert result["fundamentals"]["data_delayed"] is True

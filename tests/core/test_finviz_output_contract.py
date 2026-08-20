@@ -86,6 +86,40 @@ def test_filters_list_defaults_to_index_and_supports_exact_lookup():
     ]
 
 
+def test_filters_list_rejects_unknown_exact_filter_with_suggestions():
+    import sys
+    from types import ModuleType
+
+    finvizfinance = ModuleType("finvizfinance")
+    screener = ModuleType("finvizfinance.screener")
+    base = ModuleType("finvizfinance.screener.base")
+    base.filter_dict = {
+        "Exchange": {
+            "prefix": "exch",
+            "option": {"NASDAQ": "nasd", "NYSE": "nyse"},
+        },
+    }
+    screener.base = base
+    finvizfinance.screener = screener
+
+    with patch.dict(
+        sys.modules,
+        {
+            "finvizfinance": finvizfinance,
+            "finvizfinance.screener": screener,
+            "finvizfinance.screener.base": base,
+        },
+    ):
+        result = _unwrap(finviz_filters_list)(filter_name="Exchnage")
+
+    assert result["success"] is False
+    assert result["error_code"] == "finviz_filters_list_filter_not_found"
+    assert result["operation"] == "finviz_filters_list"
+    assert result["details"]["suggestions"] == [
+        {"filter": "Exchange", "prefix": "exch"}
+    ]
+
+
 def test_screen_pagination_uses_unknown_total_lower_bound() -> None:
     result = _normalize_finviz_market_payload(
         {
@@ -491,7 +525,7 @@ class TestFinvizCalendarOutputContract:
             "success": True,
             "items": [
                 {"symbol": symbol, "event": symbol, "date": "2099-01-02T08:30:00"}
-                for symbol in ("CPIYOY", "RSTAMOM", "CONCCONF")
+                for symbol in ("CPIYOY", "RSTAMOM", "CONCCONF", "FDTR")
             ],
         }
 
@@ -501,12 +535,12 @@ class TestFinvizCalendarOutputContract:
             limit=10,
         )
 
-        assert result["count"] == 3
+        assert result["count"] == 4
         assert {item["country_code"] for item in result["items"]} == {"US"}
         assert {item["country_attribution"] for item in result["items"]} == {
             "inferred"
         }
-        assert result["pagination"]["total"] == 3
+        assert result["pagination"]["total"] == 4
 
     @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_default_limit_selects_nearest_upcoming_events(self, mock_get):

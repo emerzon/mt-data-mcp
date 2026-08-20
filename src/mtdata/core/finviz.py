@@ -5,6 +5,7 @@ Exposes finvizfinance library functionality as MCP tools.
 Note: Data is delayed 15-20 minutes; US stocks only.
 """
 
+import difflib
 import json
 import logging
 import re
@@ -265,20 +266,16 @@ def _attach_finviz_fetch_timestamp(payload: Dict[str, Any]) -> Dict[str, Any]:
     if delayed_values:
         out.setdefault("observation_time_status", "provider_timestamp_unavailable")
         out.setdefault(
-            "estimated_observation_window",
+            "nominal_provider_delay_minutes",
             {
-                "earliest": format_datetime_utc(
-                    fetched_at - timedelta(minutes=_FINVIZ_DELAY_MINUTES_MAX)
-                ),
-                "latest": format_datetime_utc(
-                    fetched_at - timedelta(minutes=_FINVIZ_DELAY_MINUTES_MIN)
-                ),
-                "basis": "fetch_time_minus_assumed_provider_delay",
+                "minimum": _FINVIZ_DELAY_MINUTES_MIN,
+                "maximum": _FINVIZ_DELAY_MINUTES_MAX,
             },
         )
         out.setdefault(
             "observation_time_note",
-            "data_fetched_at is transport time, not the provider observation time.",
+            "data_fetched_at is transport time. Finviz does not provide the "
+            "observation timestamp, so no observation instant or window is inferred.",
         )
     return out
 
@@ -1347,6 +1344,34 @@ def finviz_filters_list(
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
     query = str(search or "").strip().lower()
     filter_query = str(filter_name or "").strip().lower()
+    known_filters = {
+        str(name).strip().lower(): (str(name), str(spec.get("prefix") or "").strip())
+        for name, spec in filter_dict.items()
+    }
+    known_prefixes = {
+        prefix.lower(): (name, prefix)
+        for name, prefix in known_filters.values()
+        if prefix
+    }
+    if filter_query and filter_query not in known_filters and filter_query not in known_prefixes:
+        choices = list(known_filters) + list(known_prefixes)
+        matches = difflib.get_close_matches(filter_query, choices, n=5, cutoff=0.45)
+        suggestions = []
+        for match in matches:
+            display_name, prefix = known_filters.get(match) or known_prefixes[match]
+            suggestion = {"filter": display_name, "prefix": prefix}
+            if suggestion not in suggestions:
+                suggestions.append(suggestion)
+        return _finviz_error_payload(
+            f"Unknown Finviz filter '{filter_name}'.",
+            code="finviz_filters_list_filter_not_found",
+            operation="finviz_filters_list",
+            details={
+                "filter_name": filter_name,
+                "suggestions": suggestions,
+                "hint": "Use search to discover filters or omit filter_name to list them.",
+            },
+        )
     rows: List[Dict[str, Any]] = []
     for display_name, spec in filter_dict.items():
         prefix = str(spec.get("prefix") or "").strip()
@@ -2591,6 +2616,7 @@ _FINVIZ_CALENDAR_SOURCE_ID_COUNTRIES = {
     "CPIYOY": ("United States", "US"),
     "RSTAMOM": ("United States", "US"),
     "CONCCONF": ("United States", "US"),
+    "FDTR": ("United States", "US"),
 }
 _FINVIZ_CALENDAR_CURRENCY_TO_COUNTRY_CODE = {
     "USD": "US",
