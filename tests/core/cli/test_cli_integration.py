@@ -16,7 +16,10 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from mtdata.core.analytics_requests import TradeExecutionQualityRequest
+from mtdata.core.analytics_requests import (
+    MarketMicrostructureRequest,
+    TradeExecutionQualityRequest,
+)
 from mtdata.core.data.requests import DataFetchCandlesRequest
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
@@ -81,6 +84,128 @@ class TestMain:
         assert payload["error"] == "Missing required argument(s): name."
         assert payload["details"] == {"missing_arguments": ["name"]}
         assert payload["remediation"] == "Provide: name."
+
+    @pytest.mark.parametrize(
+        ("command_name", "request_model", "argv", "expected_minutes"),
+        [
+            (
+                "market_microstructure_analyze",
+                MarketMicrostructureRequest,
+                [
+                    "cli.py",
+                    "market_microstructure_analyze",
+                    "EURUSD",
+                    "--start",
+                    "2026-08-20T14:00:00Z",
+                    "--end",
+                    "2026-08-20T14:05:00Z",
+                ],
+                60,
+            ),
+            (
+                "trade_execution_quality",
+                TradeExecutionQualityRequest,
+                [
+                    "cli.py",
+                    "trade_execution_quality",
+                    "--start",
+                    "2026-08-19T14:00:00Z",
+                    "--end",
+                    "2026-08-19T15:00:00Z",
+                ],
+                43_200,
+            ),
+        ],
+    )
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_explicit_analytics_windows_preserve_lookback_omission(
+        self,
+        mock_discover,
+        command_name,
+        request_model,
+        argv,
+        expected_minutes,
+    ):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = command_name
+        mock_fn.__doc__ = "Analyze an explicit historical window."
+
+        def command(request):
+            pass
+
+        command.__annotations__ = {"request": request_model}
+        info = get_function_info(command)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            command_name: {
+                "func": mock_fn,
+                "meta": {"description": "Analyze an explicit historical window"},
+                "_cli_func_info": info,
+            }
+        }
+
+        with patch("sys.argv", argv):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args.kwargs["request"]
+        assert request.minutes_back == expected_minutes
+        assert "minutes_back" not in request.model_fields_set
+        assert {"start", "end"}.issubset(request.model_fields_set)
+
+    @pytest.mark.parametrize(
+        ("command_name", "request_model", "argv", "expected_minutes"),
+        [
+            (
+                "market_microstructure_analyze",
+                MarketMicrostructureRequest,
+                ["cli.py", "market_microstructure_analyze", "EURUSD"],
+                60,
+            ),
+            (
+                "trade_execution_quality",
+                TradeExecutionQualityRequest,
+                ["cli.py", "trade_execution_quality"],
+                43_200,
+            ),
+        ],
+    )
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_analytics_commands_apply_omitted_lookback_default(
+        self,
+        mock_discover,
+        command_name,
+        request_model,
+        argv,
+        expected_minutes,
+    ):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = command_name
+        mock_fn.__doc__ = "Analyze a default relative window."
+
+        def command(request):
+            pass
+
+        command.__annotations__ = {"request": request_model}
+        info = get_function_info(command)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            command_name: {
+                "func": mock_fn,
+                "meta": {"description": "Analyze a default relative window"},
+                "_cli_func_info": info,
+            }
+        }
+
+        with patch("sys.argv", argv):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args.kwargs["request"]
+        assert request.minutes_back == expected_minutes
+        assert "minutes_back" not in request.model_fields_set
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_version_flag_exits_without_tool_discovery(self, mock_discover, capsys):

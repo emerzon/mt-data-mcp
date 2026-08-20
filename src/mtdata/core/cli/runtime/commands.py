@@ -397,13 +397,10 @@ def create_command_function(  # noqa: C901
                     cmd_name=cmd_name,
                 )
                 return 2
-            if (
-                cmd_name in {"data_fetch_candles", "data_fetch_ticks"}
-                and param_name == "limit"
-                and not hasattr(args, param_name)
-            ):
-                # Preserve omission so the request model can distinguish a ranged
-                # query from a count-based query and select its ranged default.
+            if not positional_supplied and not option_supplied:
+                # argparse.SUPPRESS is used for omission-sensitive defaults. Do
+                # not reconstruct those values here: request validators rely on
+                # model_fields_set to distinguish omission from an explicit flag.
                 continue
             arg_value = (
                 getattr(args, option_alias_name)
