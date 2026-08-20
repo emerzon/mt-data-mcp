@@ -12,6 +12,7 @@ Provides tools for:
 """
 
 import logging
+import re
 import time
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
@@ -31,6 +32,7 @@ from .output_contract import build_pagination_meta
 logger = logging.getLogger(__name__)
 
 DetailLevel = DetailLiteral
+_PUBLIC_TASK_ERROR_LIMIT = 1_000
 
 
 def _attach_time_field(
@@ -529,6 +531,43 @@ def _attach_task_failure_guidance(payload: Dict[str, Any], error: Any) -> None:
     payload["related_tools"] = ["forecast_train", "forecast_task_wait"]
 
 
+def _public_task_error(value: Any) -> str:
+    """Project current and legacy task diagnostics to a concise public summary."""
+    text = str(value or "Forecast training failed.").strip()
+    for marker in ("\nWorker traceback:", "\nTraceback", "\nWorker diagnostic tail:"):
+        text = text.split(marker, 1)[0]
+    text = " ".join(text.split())
+    text = re.sub(r"(?i)\b[A-Z]:[\\/][^\s'\"]+", "<local-path>", text)
+    text = re.sub(r"(?<!\w)/(?:[^\s/'\"]+/)+[^\s'\"]+", "<local-path>", text)
+    if len(text) > _PUBLIC_TASK_ERROR_LIMIT:
+        text = text[: _PUBLIC_TASK_ERROR_LIMIT - 3].rstrip() + "..."
+    return text
+
+
+def _task_error_type(value: Any) -> Optional[str]:
+    match = re.match(r"^([A-Za-z_][A-Za-z0-9_.]*):\s", str(value or ""))
+    return match.group(1) if match else None
+
+
+def _mark_terminal_task_failure(payload: Dict[str, Any], task: Any) -> None:
+    if task.status == "failed":
+        payload.update(
+            {
+                "success": False,
+                "error_code": "forecast_training_failed",
+                "error": _public_task_error(getattr(task, "error", None)),
+            }
+        )
+    elif task.status == "cancelled":
+        payload.update(
+            {
+                "success": False,
+                "error_code": "forecast_training_cancelled",
+                "error": "Forecast training was cancelled.",
+            }
+        )
+
+
 def _task_status_payload(
     task: Any,
     *,
@@ -577,8 +616,17 @@ def _task_status_payload(
             payload["result"] = _serialize_model_handle(task.result, detail="full")
 
     if task.status == "failed" and task.error:
-        payload["task_error"] = task.error
-        _attach_task_failure_guidance(payload, task.error)
+        public_error = _public_task_error(task.error)
+        payload["task_error"] = public_error
+        payload["task_error_code"] = "forecast_training_failed"
+        error_type = _task_error_type(public_error)
+        if error_type:
+            payload["task_error_type"] = error_type
+        payload.setdefault(
+            "remediation",
+            "Correct the reported training parameters or dependency issue, then resubmit the task.",
+        )
+        _attach_task_failure_guidance(payload, public_error)
 
     if detail == "full":
         if runtime:
@@ -634,8 +682,9 @@ def _task_list_item_payload(
         if detail == "full":
             payload["produced_model_ids"] = [task.result.model_id]
     if task.error:
-        payload["error"] = task.error
-        _attach_task_failure_guidance(payload, task.error)
+        public_error = _public_task_error(task.error)
+        payload["error"] = public_error
+        _attach_task_failure_guidance(payload, public_error)
 
     if detail == "full":
         _attach_time_field(payload, "completed_at", completed_at, detail=detail)
@@ -746,14 +795,7 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
             payload["requested_method"] = request.method
         if request.wait:
             payload["foreground_wait"] = True
-            if task.status == "failed":
-                payload["success"] = False
-                payload["error_code"] = "forecast_training_failed"
-                payload["error"] = str(task.error or "Forecast training failed.")
-            elif task.status == "cancelled":
-                payload["success"] = False
-                payload["error_code"] = "forecast_training_cancelled"
-                payload["error"] = "Forecast training was cancelled."
+            _mark_terminal_task_failure(payload, task)
             return payload
         payload["message"] = (
             "Training task queued. Poll forecast_task_status or use forecast_task_wait "
@@ -1004,6 +1046,8 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
                 f"Wait timed out after {request.timeout_seconds} seconds while task "
                 f"remains {task.status}."
             )
+        else:
+            _mark_terminal_task_failure(payload, task)
         return payload
 
     return run_logged_operation(

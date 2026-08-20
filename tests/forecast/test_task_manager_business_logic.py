@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from mtdata.forecast.interface import TrainingProgress
 from mtdata.forecast.job_store import JobStore
 from mtdata.forecast.model_store import ModelStore
 from mtdata.forecast.task_manager import (
@@ -79,44 +80,77 @@ class TestTaskManagerHeavyRuntime(_TaskManagerBusinessLogicCase):
         expected = "Windows status" if os.name == "nt" else "SIGKILL"
         self.assertIn(expected, output)
 
-    def test_dead_worker_includes_persisted_diagnostic_tail(self):
+    def test_dead_worker_logs_diagnostic_tail_without_persisting_it(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         self.tm._mutate_task(task.task_id, status="running")
         diagnostic_path = os.path.join(self._tmpdir, "worker.log")
         with open(diagnostic_path, "w", encoding="utf-8") as stream:
             stream.write("native fault in model kernel")
 
-        self.tm._finalize_dead_process(
-            task.task_id,
-            SimpleNamespace(pid=4321, exitcode=-11),
-            diagnostic_path=diagnostic_path,
-        )
+        with self.assertLogs("mtdata.forecast.task_manager", level="ERROR") as logs:
+            self.tm._finalize_dead_process(
+                task.task_id,
+                SimpleNamespace(pid=4321, exitcode=-11),
+                diagnostic_path=diagnostic_path,
+            )
 
         status = self.tm.get_status(task.task_id)
         self.assertIsNotNone(status)
-        self.assertIn("Worker diagnostic tail", status.error)
-        self.assertIn("native fault in model kernel", status.error)
+        self.assertNotIn("Worker diagnostic tail", status.error)
+        self.assertNotIn("native fault in model kernel", status.error)
+        self.assertIn("native fault in model kernel", "\n".join(logs.output))
 
-    def test_failed_worker_event_persists_bounded_traceback(self):
+    def test_failed_worker_event_logs_traceback_and_persists_public_summary(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         self.tm._mutate_task(task.task_id, status="running")
+
+        with self.assertLogs("mtdata.forecast.task_manager", level="ERROR") as logs:
+            terminal = self.tm._handle_process_event(
+                task.task_id,
+                _make_spec(),
+                {
+                    "type": "failed",
+                    "error": "bad scale",
+                    "exception_type": "ValueError",
+                    "traceback": "Traceback: model.py line 42",
+                },
+            )
+
+        status = self.tm.get_status(task.task_id)
+        self.assertTrue(terminal)
+        self.assertIsNotNone(status)
+        self.assertEqual(status.error, "ValueError: bad scale")
+        self.assertNotIn("model.py line 42", status.error)
+        self.assertIn("model.py line 42", "\n".join(logs.output))
+
+    def test_completed_event_normalizes_missing_terminal_progress(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(
+            task.task_id,
+            status="running",
+            progress=TrainingProgress(
+                step=1,
+                total_steps=3,
+                message="Fitting model",
+            ),
+        )
 
         terminal = self.tm._handle_process_event(
             task.task_id,
             _make_spec(),
             {
-                "type": "failed",
-                "error": "bad scale",
-                "exception_type": "ValueError",
-                "traceback": "Traceback: model.py line 42",
+                "type": "completed",
+                "result": {"model_id": "heavy/EURUSD_H1/hash-1"},
             },
         )
 
         status = self.tm.get_status(task.task_id)
         self.assertTrue(terminal)
-        self.assertIsNotNone(status)
-        self.assertIn("ValueError: bad scale", status.error)
-        self.assertIn("model.py line 42", status.error)
+        self.assertEqual(status.status, "completed")
+        self.assertEqual(status.progress.step, 3)
+        self.assertEqual(status.progress.total_steps, 3)
+        self.assertEqual(status.progress.fraction, 1.0)
+        self.assertEqual(status.progress.message, "Training complete.")
 
     def test_worker_exit_format_explains_posix_signals_and_windows_status(self):
         self.assertIn("SIGKILL", _format_worker_exit(-9, platform_name="posix"))

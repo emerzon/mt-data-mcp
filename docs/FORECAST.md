@@ -379,6 +379,9 @@ MCP, and Web API calls remain background submissions by default.
 persistent processes. A `forecast_task_wait` deadline returns
 `success: false`, `status: "timeout"`, and preserves the live task state in
 `task_status` so automation does not treat an unfinished model as usable.
+Failed and cancelled terminal tasks also make `forecast_task_wait` unsuccessful,
+with `forecast_training_failed` or `forecast_training_cancelled` as the stable
+error code. Successfully completed tasks always report terminal progress `1.0`.
 `--as-of` cannot be combined with `--start`/`--end`. The submitted window is
 returned as `training_window` and stored with the completed model alongside the
 observed training context.
@@ -443,11 +446,13 @@ a bounded child traceback and captured stdout/stderr tails. These diagnostics
 are kept in server logs rather than returned to API callers, because they can
 contain local paths or dependency details.
 
-Heavy background workers retain Python tracebacks and captured stderr/fault
-output in the failed task's bounded `error` field. Signal exits are translated
-to names on POSIX and native status codes on Windows. `SIGKILL` can indicate an
-OOM kill or an explicit forced termination, so system/container logs remain the
-authoritative way to distinguish those causes.
+Heavy background workers return a bounded exception type and message in task
+payloads. Python tracebacks and captured stderr/fault output stay in operator
+logs, where local paths and dependency internals do not leak into compact API or
+CLI responses. Signal exits are translated to names on POSIX and native status
+codes on Windows. `SIGKILL` can indicate an OOM kill or an explicit forced
+termination, so system/container logs remain the authoritative way to
+distinguish those causes.
 
 ---
 

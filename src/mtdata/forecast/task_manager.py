@@ -9,6 +9,7 @@ import logging
 import multiprocessing as mp
 import os
 import queue
+import re
 import signal
 import sqlite3
 import threading
@@ -49,6 +50,7 @@ _MAX_WORKERS_DEFAULT = 4
 _HEAVY_WORKERS_DEFAULT = 1
 _TASK_TTL_DEFAULT = 86400.0
 _TRAINING_DIAGNOSTIC_LIMIT = 16_000
+_PUBLIC_TRAINING_ERROR_LIMIT = 1_000
 _SWEEPER_INTERVAL_DEFAULT = 60.0
 _HEARTBEAT_INTERVAL_DEFAULT = 2.0
 _ORPHAN_STALE_SECONDS_DEFAULT = 30.0
@@ -129,6 +131,41 @@ def _bounded_training_diagnostic(value: Any) -> str:
     marker = "\n... training diagnostic truncated ...\n"
     keep = _TRAINING_DIAGNOSTIC_LIMIT - len(marker)
     return marker + text[-keep:]
+
+
+def _public_training_error(message: Any, *, exception_type: Any = None) -> str:
+    """Return a bounded one-line worker error without local filesystem paths."""
+    text = " ".join(str(message or "Training failed").split())
+    text = re.sub(r"(?i)\b[A-Z]:[\\/][^\s'\"]+", "<local-path>", text)
+    text = re.sub(r"(?<!\w)/(?:[^\s/'\"]+/)+[^\s'\"]+", "<local-path>", text)
+    error_type = str(exception_type or "").strip()
+    if error_type and not text.startswith(f"{error_type}:"):
+        text = f"{error_type}: {text}"
+    if len(text) > _PUBLIC_TRAINING_ERROR_LIMIT:
+        text = text[: _PUBLIC_TRAINING_ERROR_LIMIT - 3].rstrip() + "..."
+    return text
+
+
+def _completed_training_progress(
+    progress: Optional[TrainingProgress],
+) -> TrainingProgress:
+    """Normalize a successful task to a coherent terminal progress snapshot."""
+    if progress is None:
+        return TrainingProgress(step=1, total_steps=1, message="Training complete.")
+    total_steps = max(1, int(progress.total_steps), int(progress.step))
+    message = (
+        progress.message
+        if progress.fraction >= 1.0 and progress.message
+        else "Training complete."
+    )
+    return TrainingProgress(
+        step=total_steps,
+        total_steps=total_steps,
+        loss=progress.loss,
+        metrics=dict(progress.metrics) if progress.metrics is not None else None,
+        eta_seconds=0.0,
+        message=message,
+    )
 
 
 def _format_worker_exit(exitcode: Optional[int], *, platform_name: Optional[str] = None) -> str:
@@ -366,13 +403,16 @@ def _task_to_job_record(task: TrainingTask) -> JobRecord:
 
 
 def _job_record_to_task(record: JobRecord) -> TrainingTask:
+    progress = _deserialize_progress(record.progress_payload)
+    if record.status == "completed":
+        progress = _completed_training_progress(progress)
     return TrainingTask(
         task_id=record.task_id,
         method=record.method,
         data_scope=record.data_scope,
         params_hash=record.params_hash,
         status=record.status,
-        progress=_deserialize_progress(record.progress_payload),
+        progress=progress,
         result=_deserialize_result(
             record.result_payload,
             method=record.method,
@@ -632,6 +672,10 @@ class TaskManager:
             task = self._tasks.get(task_id)
             if task is None:
                 return None
+            if changes.get("status") == "completed":
+                changes["progress"] = _completed_training_progress(
+                    changes.get("progress", task.progress)
+                )
             for key, value in changes.items():
                 setattr(task, key, value)
             self._cache_task(task)
@@ -752,11 +796,14 @@ class TaskManager:
             return
         if error_text is None:
             error_text = _format_worker_exit(getattr(process, "exitcode", None))
+        public_error = _public_training_error(error_text)
         if diagnostic_path is not None:
             diagnostic_tail = _read_training_diagnostic_tail(diagnostic_path)
             if diagnostic_tail:
-                error_text = _bounded_training_diagnostic(
-                    f"{error_text}\nWorker diagnostic tail:\n{diagnostic_tail}"
+                logger.error(
+                    "event=forecast_training_worker_diagnostic task_id=%s diagnostic=\n%s",
+                    task_id,
+                    diagnostic_tail,
                 )
         with self._lock:
             task = self._tasks.get(task_id)
@@ -770,12 +817,12 @@ class TaskManager:
             data_scope,
             getattr(process, "pid", None),
             getattr(process, "exitcode", None),
-            " ".join(str(error_text).split())[:500],
+            " ".join(public_error.split())[:500],
         )
         self._mutate_task(
             task_id,
             status="failed",
-            error=error_text,
+            error=public_error,
             completed_at=now,
             heartbeat_at=now,
         )
@@ -1117,7 +1164,10 @@ class TaskManager:
                 self._mutate_task(
                     task_id,
                     status="failed",
-                    error=str(exc),
+                    error=_public_training_error(
+                        exc,
+                        exception_type=type(exc).__name__,
+                    ),
                     completed_at=time.time(),
                     heartbeat_at=time.time(),
                 )
@@ -1224,10 +1274,18 @@ class TaskManager:
             message = str(event.get("error") or "Training failed")
             exception_type = str(event.get("exception_type") or "").strip()
             traceback_text = _bounded_training_diagnostic(event.get("traceback"))
-            error_text = f"{exception_type}: {message}" if exception_type else message
+            error_text = _public_training_error(
+                message,
+                exception_type=exception_type,
+            )
             if traceback_text:
-                error_text = _bounded_training_diagnostic(
-                    f"{error_text}\nWorker traceback:\n{traceback_text}"
+                logger.error(
+                    "event=forecast_training_worker_traceback task_id=%s method=%s "
+                    "data_scope=%s diagnostic=\n%s",
+                    task_id,
+                    spec.method_name,
+                    spec.data_scope,
+                    traceback_text,
                 )
             logger.error(
                 "event=forecast_training_failed worker=heavy task_id=%s "

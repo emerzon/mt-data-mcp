@@ -184,6 +184,33 @@ class TestForecastTaskStatus:
         assert result["result"]["metadata"] == {"epochs": 12}
         assert result["cancel_requested"] is True
 
+    def test_failed_task_redacts_legacy_worker_traceback(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_status
+
+        mock_tm = MagicMock()
+        mock_tm.get_status.return_value = _make_task(
+            status="failed",
+            error=(
+                "InvalidParameterError: max_depth must be an integer\n"
+                "Worker traceback:\nTraceback (most recent call last):\n"
+                '  File "C:\\private\\worker.py", line 42'
+            ),
+        )
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_status)(
+                ForecastTaskStatusRequest(task_id="task-abc")
+            )
+
+        assert result["success"] is True
+        assert result["task_error"] == (
+            "InvalidParameterError: max_depth must be an integer"
+        )
+        assert result["task_error_code"] == "forecast_training_failed"
+        assert result["task_error_type"] == "InvalidParameterError"
+        assert "Traceback" not in result["task_error"]
+        assert "C:\\private" not in result["task_error"]
+
     def test_missing_task_uses_error_envelope(self):
         from src.mtdata.core.forecast_tasks import forecast_task_status
 
@@ -368,6 +395,32 @@ class TestForecastTaskWait:
         assert result["timeout"] is True
         assert result["error_code"] == "forecast_task_wait_timeout"
         assert "remains pending" in result["error"]
+
+    @pytest.mark.parametrize(
+        ("status", "error_code"),
+        [
+            ("failed", "forecast_training_failed"),
+            ("cancelled", "forecast_training_cancelled"),
+        ],
+    )
+    def test_wait_terminal_failure_is_unsuccessful(self, status, error_code):
+        from src.mtdata.core.forecast_tasks import forecast_task_wait
+
+        mock_tm = MagicMock()
+        mock_tm.wait_for_status.return_value = _make_task(
+            status=status,
+            error="ValueError: invalid depth" if status == "failed" else None,
+        )
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_wait)(
+                ForecastTaskWaitRequest(task_id="task-abc", timeout_seconds=10.0)
+            )
+
+        assert result["success"] is False
+        assert result["status"] == status
+        assert result["error_code"] == error_code
+        assert result["wait_timeout_seconds"] == 10.0
 
 
 class TestForecastTaskList:

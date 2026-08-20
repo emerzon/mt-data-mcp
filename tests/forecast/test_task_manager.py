@@ -717,7 +717,7 @@ class TestLightRuntimeFailures(_TaskManagerTestCase):
         status = self.tm.get_status(task.task_id)
         self.assertIsNotNone(status)
         self.assertEqual(status.status, "failed")
-        self.assertEqual(status.error, "simulated")
+        self.assertEqual(status.error, "KeyboardInterrupt: simulated")
 
 
 class TestTaskManagerShutdown(unittest.TestCase):
