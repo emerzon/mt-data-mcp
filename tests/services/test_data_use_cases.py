@@ -1056,6 +1056,47 @@ def test_range_with_only_excluded_forming_bar_is_not_complete():
     assert "data_stale" not in result
 
 
+def test_range_ending_at_latest_closed_bar_ignores_out_of_range_forming_bar():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="M1",
+        start="2026-08-20T04:06:00Z",
+        end="2026-08-20T04:07:00Z",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "M1",
+            "data": [
+                {
+                    "time": "2026-08-20T04:06:00Z",
+                    "close": 1.1,
+                    "bar_state": "closed",
+                }
+            ],
+            "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "incomplete_candles_skipped": 1,
+            "data_window": {"latest_bar_complete": True},
+            "query_applied": {
+                "mode": "range",
+                "timeframe": "M1",
+                "end_filter": "bar_close",
+                "resolved_end": "2026-08-20T04:07:00Z",
+            },
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+        },
+    )
+
+    assert result["range_complete"] is True
+    assert "range_incomplete_reason" not in result
+    assert result["data_window"]["latest_bar_complete"] is True
+
+
 def test_live_calendar_range_separates_bar_age_from_query_end_gap():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
@@ -2497,6 +2538,31 @@ def test_run_data_fetch_ticks_names_future_window_in_error_message() -> None:
 
     assert result["error_code"] == "data_fetch_ticks_future_date_range"
     assert "in the future" in result["error"]
+
+
+@pytest.mark.parametrize("start", ["2026-01-01T00:00:00Z", None])
+def test_run_data_fetch_ticks_rejects_future_end_before_provider_call(start) -> None:
+    called = False
+
+    def fetch_ticks_impl(**_kwargs):
+        nonlocal called
+        called = True
+        return {"success": True, "data": []}
+
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(
+            symbol="EURUSD",
+            start=start,
+            end="2099-01-01T01:00:00Z",
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=fetch_ticks_impl,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "data_fetch_ticks_future_date_range"
+    assert "end datetime" in result["error"]
+    assert called is False
 
 
 def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warnings():

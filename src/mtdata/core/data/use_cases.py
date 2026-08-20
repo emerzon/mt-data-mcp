@@ -31,6 +31,7 @@ from ...utils.symbol import (
     find_live_extended_session_symbols,
     symbol_suggestions_from_gateway,
 )
+from ...utils.time import bar_close_epoch
 from ...utils.utils import _iana_timezone_datetime_issue
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
@@ -705,6 +706,53 @@ def _reconcile_returned_window_completeness(result: Dict[str, Any]) -> None:
         data_window["latest_bar_complete"] = True
 
 
+def _forming_bar_exclusion_affects_range(
+    result: Dict[str, Any],
+    *,
+    end: Optional[str],
+) -> bool:
+    """Return whether a skipped forming bar belonged to the requested range."""
+    if end in (None, ""):
+        return True
+    query_applied = result.get("query_applied")
+    if not isinstance(query_applied, dict):
+        return True
+    if query_applied.get("end_filter") != "bar_close":
+        return True
+    resolved_end = query_applied.get("resolved_end") or end
+    data = result.get("data")
+    if not isinstance(data, list) or not data:
+        return True
+    latest = data[-1]
+    if not isinstance(latest, dict) or latest.get("time") in (None, ""):
+        return True
+    try:
+        end_dt = datetime.fromisoformat(
+            str(resolved_end).strip().replace("Z", "+00:00")
+        )
+        if end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+        latest_value = latest["time"]
+        if isinstance(latest_value, (int, float)) and not isinstance(
+            latest_value, bool
+        ):
+            latest_open_epoch = float(latest_value)
+        else:
+            latest_dt = datetime.fromisoformat(
+                str(latest_value).strip().replace("Z", "+00:00")
+            )
+            if latest_dt.tzinfo is None:
+                latest_dt = latest_dt.replace(tzinfo=timezone.utc)
+            latest_open_epoch = latest_dt.astimezone(timezone.utc).timestamp()
+        timeframe = str(
+            result.get("timeframe") or query_applied.get("timeframe") or ""
+        )
+        latest_close_epoch = bar_close_epoch(latest_open_epoch, timeframe)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return True
+    return latest_close_epoch < end_dt.astimezone(timezone.utc).timestamp() - 1e-6
+
+
 def _apply_range_limit_cap(
     result: Dict[str, Any],
     *,
@@ -749,6 +797,7 @@ def _apply_range_limit_cap(
                 result.get("has_forming_candle") is True
                 or int(result.get("incomplete_candles_skipped") or 0) > 0
             )
+            and _forming_bar_exclusion_affects_range(result, end=end)
         )
         result["range_complete"] = not spacing_mismatch and not forming_bar_excluded
         if forming_bar_excluded:
@@ -1578,6 +1627,24 @@ def _run_data_fetch_ticks_impl(
     fetch_ticks_impl: Any,
     effective_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
+    future_bound = _future_tick_bound(request)
+    if future_bound is not None:
+        field, value = future_bound
+        details: Dict[str, Any] = {
+            "symbol": request.symbol,
+            "timezone": "UTC",
+        }
+        if request.start is not None:
+            details["start"] = str(request.start)
+        if request.end is not None:
+            details["end"] = str(request.end)
+        return build_error_payload(
+            f"{field} datetime {value} is in the future; historical tick ranges must have elapsed.",
+            code="data_fetch_ticks_future_date_range",
+            operation="data_fetch_ticks",
+            details=details,
+            remediation="Use start and end timestamps at or before the current time.",
+        )
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
         return connection_error
@@ -1758,17 +1825,29 @@ def _normalize_tick_query_error(
     )
 
 
+def _future_tick_bound(
+    request: DataFetchTicksRequest,
+) -> Optional[tuple[str, str]]:
+    now_utc = datetime.now(timezone.utc)
+    for field in ("start", "end"):
+        value = getattr(request, field, None)
+        if value in (None, ""):
+            continue
+        try:
+            parsed = datetime.fromisoformat(
+                str(value).strip().replace("Z", "+00:00")
+            )
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        if parsed.astimezone(timezone.utc) > now_utc:
+            return field, str(value)
+    return None
+
+
 def _tick_request_is_future_only(request: DataFetchTicksRequest) -> bool:
-    value = request.start or request.end
-    if value in (None, ""):
-        return False
-    try:
-        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc) > datetime.now(timezone.utc)
-    except (TypeError, ValueError):
-        return False
+    return _future_tick_bound(request) is not None
 
 
 def _attach_tick_pagination(
