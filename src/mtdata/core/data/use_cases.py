@@ -24,12 +24,13 @@ from ...utils.market_metadata import (
 )
 from ...utils.quote import (
     canonical_quote_midpoint,
-    enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
-    tick_value,
 )
-from ...utils.symbol import symbol_suggestions_from_gateway
+from ...utils.symbol import (
+    find_live_extended_session_symbols,
+    symbol_suggestions_from_gateway,
+)
 from ...utils.utils import _iana_timezone_datetime_issue
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
@@ -536,7 +537,7 @@ def _normalize_candle_query_error(
             request.symbol,
         )
     elif error_code == "data_fetch_candles_stale_data":
-        related_live_symbols = _find_live_extended_session_symbols(
+        related_live_symbols = find_live_extended_session_symbols(
             gateway,
             request.symbol,
         )
@@ -565,75 +566,6 @@ def _normalize_candle_query_error(
         if key in result:
             payload[key] = result[key]
     return payload
-
-
-def _find_live_extended_session_symbols(
-    gateway: Any,
-    requested_symbol: str,
-    *,
-    limit: int = 3,
-) -> List[Dict[str, str]]:
-    """Find visible, executable extended-session siblings for a stale symbol."""
-    requested = str(requested_symbol or "").strip()
-    if not requested or gateway is None:
-        return []
-    try:
-        symbol_infos = list(gateway.symbols_get() or [])
-    except Exception:
-        return []
-
-    requested_upper = requested.upper()
-    now_epoch = time.time()
-    matches: List[Dict[str, str]] = []
-    for info in symbol_infos:
-        name = str(getattr(info, "name", "") or "").strip()
-        if not name or name.casefold() == requested.casefold():
-            continue
-        name_upper = name.upper()
-        descriptor = " ".join(
-            str(getattr(info, field, "") or "").upper()
-            for field in ("name", "description", "path")
-        )
-        is_related = name_upper.startswith(requested_upper)
-        is_extended = any(
-            marker in descriptor for marker in ("-24", "24HR", "24/5", "24H")
-        )
-        if not is_related or not is_extended:
-            continue
-        if getattr(info, "visible", True) is False:
-            continue
-        try:
-            resolved_tick, quote_meta = resolve_quote_tick(
-                gateway,
-                name,
-                now_epoch=now_epoch,
-            )
-            freshness = build_tick_freshness_context(
-                name,
-                tick_epoch=tick_epoch(resolved_tick),
-                now_epoch=now_epoch,
-                item="tick",
-            )
-            enforce_quote_execution_readiness(
-                freshness,
-                bid=tick_value(resolved_tick, "bid"),
-                ask=tick_value(resolved_tick, "ask"),
-                quote_source_conflict=quote_meta.get("quote_source_conflict"),
-            )
-        except Exception:
-            continue
-        if freshness.get("usable_for_live_trading") is not True:
-            continue
-        matches.append(
-            {
-                "symbol": name,
-                "session_type": "extended_24h",
-                "quote_tool": "market_ticker",
-            }
-        )
-        if len(matches) >= max(1, int(limit)):
-            break
-    return matches
 
 
 def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:

@@ -15,6 +15,7 @@ from mtdata.core.data.use_cases import (
     run_data_fetch_candles,
     run_data_fetch_ticks,
 )
+from mtdata.utils import symbol as symbol_utils
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -276,7 +277,7 @@ def test_stale_candle_error_names_live_extended_session_sibling(monkeypatch) -> 
         symbols_get=lambda: candidates,
     )
     monkeypatch.setattr(
-        data_use_cases,
+        symbol_utils,
         "resolve_quote_tick",
         lambda *_args, **_kwargs: (
             SimpleNamespace(
@@ -326,7 +327,7 @@ def test_stale_candle_error_omits_stale_extended_session_sibling(monkeypatch) ->
         ],
     )
     monkeypatch.setattr(
-        data_use_cases,
+        symbol_utils,
         "resolve_quote_tick",
         lambda *_args, **_kwargs: (
             SimpleNamespace(

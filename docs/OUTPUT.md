@@ -242,6 +242,13 @@ For `symbol_not_found`, market-data tools consistently include
 empty array when no candidate matches, so callers do not need to parse names
 from the human-readable error string.
 
+When a regular-session symbol has no current quote or candles but the broker
+offers a live extended-session sibling, `market_ticker` and
+`data_fetch_candles` include the same `details.related_live_symbols` array.
+Each entry names the exact broker `symbol`, its `session_type`, and the
+recommended `quote_tool`, so callers can retry without parsing remediation
+text.
+
 ---
 
 ## Freshness and execution readiness

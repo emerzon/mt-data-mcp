@@ -35,7 +35,10 @@ from ..utils.quote import (
     tick_epoch,
     tick_value,
 )
-from ..utils.symbol import symbol_suggestions_from_gateway
+from ..utils.symbol import (
+    find_live_extended_session_symbols,
+    symbol_suggestions_from_gateway,
+)
 from ..utils.time import (
     _format_time_second_explicit,
     _format_time_second_explicit_local,
@@ -293,6 +296,23 @@ def _market_ticker_symbol_suggestions(
     limit: int = 5,
 ) -> list[Dict[str, str]]:
     return symbol_suggestions_from_gateway(mt5_gateway, query, limit=limit)
+
+
+def _market_ticker_live_symbol_recovery(
+    mt5_gateway: Any,
+    symbol: str,
+    *,
+    default_remediation: str,
+) -> tuple[str, Optional[Dict[str, Any]]]:
+    related_live_symbols = find_live_extended_session_symbols(mt5_gateway, symbol)
+    if not related_live_symbols:
+        return default_remediation, None
+    live_symbol = related_live_symbols[0]["symbol"]
+    return (
+        f"A live extended-session contract is available: call market_ticker for "
+        f"{live_symbol}, then use that exact symbol for current quotes.",
+        {"symbol": symbol, "related_live_symbols": related_live_symbols},
+    )
 
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
@@ -751,14 +771,20 @@ def market_ticker(  # noqa: C901
 
             tick = mt5_gateway.symbol_info_tick(resolved_symbol)
             if tick is None:
+                remediation, details = _market_ticker_live_symbol_recovery(
+                    mt5_gateway,
+                    resolved_symbol,
+                    default_remediation=(
+                        "Ensure the symbol is visible in Market Watch and that the market is open "
+                        "or recent ticks are available from the broker."
+                    ),
+                )
                 return _finalize(
                     _market_ticker_error(
                         f"Failed to get tick data for {resolved_symbol}",
                         code="market_ticker_tick_unavailable",
-                        remediation=(
-                            "Ensure the symbol is visible in Market Watch and that the market is open "
-                            "or recent ticks are available from the broker."
-                        ),
+                        remediation=remediation,
+                        details=details,
                     )
                 )
 
@@ -790,6 +816,14 @@ def market_ticker(  # noqa: C901
             last = float(last_raw) if last_raw else None
             tick_time = tick_epoch(tick)
             if bid is None and ask is None and last is None and tick_time is None:
+                remediation, details = _market_ticker_live_symbol_recovery(
+                    mt5_gateway,
+                    resolved_symbol,
+                    default_remediation=(
+                        "Verify the broker symbol name and ensure the symbol has a recent tick "
+                        "in Market Watch."
+                    ),
+                )
                 return _finalize(
                     _market_ticker_error(
                         (
@@ -797,10 +831,8 @@ def market_ticker(  # noqa: C901
                             f"Use symbols_list(search_term='{symbol}') to find broker-specific names and suffixes."
                         ),
                         code="market_ticker_quote_unavailable",
-                        remediation=(
-                            "Verify the broker symbol name and ensure the symbol has a recent tick "
-                            "in Market Watch."
-                        ),
+                        remediation=remediation,
+                        details=details,
                     )
                 )
             tick_volume = tick_value(tick, "volume")

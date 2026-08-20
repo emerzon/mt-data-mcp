@@ -1,5 +1,14 @@
 import re
+import time
 from typing import Any, Callable, Optional, Sequence
+
+from .market_metadata import build_tick_freshness_context
+from .quote import (
+    enforce_quote_execution_readiness,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 
 _COMMON_CRYPTO_SHORTHANDS = frozenset(
     {"BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "BCH"}
@@ -151,3 +160,72 @@ def symbol_suggestions_from_gateway(
             suggestion["group"] = group
         suggestions.append(suggestion)
     return suggestions
+
+
+def find_live_extended_session_symbols(
+    gateway: Any,
+    requested_symbol: str,
+    *,
+    limit: int = 3,
+) -> list[dict[str, str]]:
+    """Find visible, executable extended-session siblings for a symbol."""
+    requested = str(requested_symbol or "").strip()
+    if not requested or gateway is None:
+        return []
+    try:
+        symbol_infos = list(gateway.symbols_get() or [])
+    except Exception:
+        return []
+
+    requested_upper = requested.upper()
+    now_epoch = time.time()
+    matches: list[dict[str, str]] = []
+    for info in symbol_infos:
+        name = str(getattr(info, "name", "") or "").strip()
+        if not name or name.casefold() == requested.casefold():
+            continue
+        name_upper = name.upper()
+        descriptor = " ".join(
+            str(getattr(info, field, "") or "").upper()
+            for field in ("name", "description", "path")
+        )
+        is_related = name_upper.startswith(requested_upper)
+        is_extended = any(
+            marker in descriptor for marker in ("-24", "24HR", "24/5", "24H")
+        )
+        if not is_related or not is_extended:
+            continue
+        if getattr(info, "visible", True) is False:
+            continue
+        try:
+            resolved_tick, quote_meta = resolve_quote_tick(
+                gateway,
+                name,
+                now_epoch=now_epoch,
+            )
+            freshness = build_tick_freshness_context(
+                name,
+                tick_epoch=tick_epoch(resolved_tick),
+                now_epoch=now_epoch,
+                item="tick",
+            )
+            enforce_quote_execution_readiness(
+                freshness,
+                bid=tick_value(resolved_tick, "bid"),
+                ask=tick_value(resolved_tick, "ask"),
+                quote_source_conflict=quote_meta.get("quote_source_conflict"),
+            )
+        except Exception:
+            continue
+        if freshness.get("usable_for_live_trading") is not True:
+            continue
+        matches.append(
+            {
+                "symbol": name,
+                "session_type": "extended_24h",
+                "quote_tool": "market_ticker",
+            }
+        )
+        if len(matches) >= max(1, int(limit)):
+            break
+    return matches

@@ -1306,3 +1306,43 @@ def test_market_ticker_rejects_empty_quote_snapshot() -> None:
     assert "No usable quote data for AAPL" in out["error"]
     assert "symbols_list(search_term='AAPL')" in out["error"]
     assert out["operation"] == "market_ticker"
+
+
+def test_market_ticker_suggests_live_extended_session_sibling() -> None:
+    tick = SimpleNamespace(bid=0.0, ask=0.0, last=0.0, volume=0, time=0)
+    related_live_symbols = [
+        {
+            "symbol": "AAPL-24",
+            "session_type": "extended_24h",
+            "quote_tool": "market_ticker",
+        }
+    ]
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch(
+            "mtdata.core.market_depth.find_live_extended_session_symbols",
+            return_value=related_live_symbols,
+        ),
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_ticker("AAPL")
+
+    assert out["success"] is False
+    assert out["error_code"] == "market_ticker_quote_unavailable"
+    assert out["details"] == {
+        "symbol": "AAPL",
+        "related_live_symbols": related_live_symbols,
+    }
+    assert out["remediation"] == (
+        "A live extended-session contract is available: call market_ticker for "
+        "AAPL-24, then use that exact symbol for current quotes."
+    )
