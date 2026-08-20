@@ -2570,6 +2570,19 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert result["rank_quality"] == "illustrative_small_universe"
     assert result["score_definition"]["weights"] == [0.4, 0.6]
     assert all("rank_percentile" not in row for row in result["leaders"])
+    first_row = [*result["leaders"], *result["laggards"]][0]
+    expected_spread_pct = (1.1001 - 1.0999) / 1.1 * 100.0
+    assert first_row["spread_pct"] == pytest.approx(expected_spread_pct)
+    assert result["units"]["spread_pct"] == "percent (1.0 = 1%)"
+    assert result["units"]["breadth.positive_by_horizon"] == (
+        "fraction_0_to_1"
+    )
+    assert result["units"]["breadth.advance_decline_balance"] == (
+        "signed_fraction_-1_to_1"
+    )
+    assert result["units"]["breadth.dispersion"] == "composite_score_stddev"
+    assert result["units"]["breadth.above_sma20"] == "fraction_0_to_1"
+    assert result["units"]["breadth.above_sma50"] == "fraction_0_to_1"
 
 
 def test_relative_strength_uses_reconciled_quote_for_spread_filter() -> None:
@@ -3044,6 +3057,26 @@ def test_relative_strength_requires_two_available_explicit_candidates() -> None:
     assert result["missing_symbols"] == ["NOTREAL"]
 
 
+def test_relative_strength_reports_all_candidates_with_insufficient_history() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows["EURUSD"] = _bars(20)
+    gateway.bar_rows["GBPUSD"] = _bars(20, drift=0.0001)
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD",
+            horizons=[5],
+            weights=[1.0],
+        ),
+        gateway,
+    )
+
+    assert result["error_code"] == "insufficient_data"
+    assert result["empty_reason"] == "insufficient_history"
+    assert result["empty_reason_counts"] == {"insufficient_history": 2}
+    assert "quote/volume" not in result["message"]
+
+
 def test_relative_strength_omits_unavailable_candidate_from_valid_basket() -> None:
     result = rank_relative_strength(
         MarketRelativeStrengthRequest(
@@ -3101,3 +3134,60 @@ def test_relative_strength_reports_empty_filtered_result_without_warnings() -> N
     assert result["status"] == "no_matches"
     assert result["returned_count"] == 0
     assert result["breadth"]["positive_by_horizon"] == {"5": None}
+    assert result["empty_reason"] == "tick_volume_filter"
+    assert result["empty_reason_counts"] == {"tick_volume_filter": 3}
+    assert result["message"] == "No symbols passed --min-tick-volume."
+
+
+def test_relative_strength_reports_empty_spread_filter_result() -> None:
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            horizons=[5],
+            weights=[1.0],
+            max_spread_pct=0.0,
+        ),
+        FakeGateway(),
+    )
+
+    assert result["status"] == "no_matches"
+    assert result["empty_reason"] == "spread_filter"
+    assert result["empty_reason_counts"] == {"spread_filter": 3}
+    assert result["message"] == "No symbols passed --max-spread-pct."
+
+
+def test_relative_strength_reports_factor_alignment_empty_reason() -> None:
+    gateway = FakeGateway()
+    eurusd = _bars(100)
+    gbpusd = [dict(row) for row in eurusd]
+    for index, row in enumerate(gbpusd):
+        row["close"] *= 1.0 + index * 0.00001
+        if index < 72:
+            row["time"] -= 7 * 86_400
+    gateway.bar_rows["EURUSD"] = eurusd
+    gateway.bar_rows["GBPUSD"] = gbpusd
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD",
+            horizons=[5, 20],
+            weights=[0.5, 0.5],
+            volatility_lookback=60,
+            limit=2,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["status"] == "no_matches"
+    assert result["empty_reason"] == "insufficient_factor_alignment"
+    assert result["empty_reason_counts"] == {
+        "insufficient_factor_alignment": 2
+    }
+    assert result["empty_reason_details"] == {
+        "maximum_aligned_observations": 28,
+        "required_aligned_observations": 60,
+    }
+    assert "28 aligned observations" in result["message"]
+    assert "60 are required" in result["message"]
+    assert "quote/volume" not in result["message"]
+    assert "--volatility-lookback" in result["remediation"]

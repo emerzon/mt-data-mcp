@@ -172,6 +172,10 @@ quote is retained as quality metadata unless an explicit spread filter cannot
 be evaluated. If candidate latest-bar endpoints exceed one timeframe of
 separation, the tool returns `status=incomparable` and withholds ranks and
 breadth instead of publishing a misleading cross-section.
+The `units` map declares live `spread_pct` as percentage points (`1.0 = 1%`).
+Breadth paths are fractions from 0 to 1, except
+`breadth.advance_decline_balance`, which is signed from -1 to 1, and
+`breadth.dispersion`, which is a composite-score standard deviation.
 
 ```bash
 mtdata-cli market_relative_strength --group "Forex\\Majors" --timeframe H1 \
@@ -196,6 +200,10 @@ Inspect `data_window.endpoint_alignment` before comparing mixed-session
 instruments. Per-symbol windows are available in full-detail data-quality
 diagnostics; compact and summary ranked rows expose concise quote/history status
 fields when the endpoints are comparable.
+When no symbols can be scored, `empty_reason` and `empty_reason_counts` identify
+the actual exclusions. Alignment failures report available versus required
+observations; spread and tick-volume messages name their filter only when that
+filter was applied.
 
 ## Data caveats
 

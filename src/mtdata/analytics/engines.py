@@ -3048,6 +3048,104 @@ def _relative_strength_quote_status(quote_quality: Dict[str, Any]) -> str:
     )
 
 
+_RELATIVE_STRENGTH_SKIP_REASON_CODES = {
+    "history coverage below 90%": "insufficient_history",
+    "spread unavailable": "spread_unavailable",
+    "spread filter": "spread_filter",
+    "tick-volume filter": "tick_volume_filter",
+    "outside dominant endpoint-aligned cohort": "endpoint_mismatch",
+    "factor alignment below minimum": "insufficient_factor_alignment",
+}
+_RELATIVE_STRENGTH_EMPTY_REASON_PRIORITY = (
+    "insufficient_factor_alignment",
+    "insufficient_history",
+    "endpoint_mismatch",
+    "spread_unavailable",
+    "spread_filter",
+    "tick_volume_filter",
+)
+
+
+def _relative_strength_empty_diagnostics(
+    skipped: List[Dict[str, Any]],
+    request: MarketRelativeStrengthRequest,
+) -> Dict[str, Any]:
+    counts: Dict[str, int] = {}
+    for item in skipped:
+        reason = str(item.get("reason") or "").strip()
+        code = _RELATIVE_STRENGTH_SKIP_REASON_CODES.get(
+            reason,
+            "other_exclusion",
+        )
+        counts[code] = counts.get(code, 0) + 1
+    if not counts:
+        return {
+            "empty_reason": "no_eligible_candidates",
+            "empty_reason_counts": {},
+            "message": "No eligible symbols remained for relative-strength scoring.",
+        }
+    highest_count = max(counts.values())
+    dominant = next(
+        (
+            reason
+            for reason in _RELATIVE_STRENGTH_EMPTY_REASON_PRIORITY
+            if counts.get(reason) == highest_count
+        ),
+        "other_exclusion",
+    )
+    out: Dict[str, Any] = {
+        "empty_reason": dominant,
+        "empty_reason_counts": counts,
+    }
+    if dominant == "insufficient_factor_alignment":
+        aligned_counts = [
+            int(item.get("data_window", {}).get("aligned_observations"))
+            for item in skipped
+            if str(item.get("reason") or "") == "factor alignment below minimum"
+            and item.get("data_window", {}).get("aligned_observations") is not None
+        ]
+        maximum = max(aligned_counts) if aligned_counts else 0
+        required = int(request.volatility_lookback)
+        out["empty_reason_details"] = {
+            "maximum_aligned_observations": maximum,
+            "required_aligned_observations": required,
+        }
+        out["message"] = (
+            "No symbols met the factor-alignment requirement: at most "
+            f"{maximum} aligned observations were available; {required} are required."
+        )
+        out["remediation"] = (
+            "Use symbols with overlapping trading sessions, choose a compatible "
+            "timeframe, or reduce --volatility-lookback while retaining enough data."
+        )
+    elif dominant == "insufficient_history":
+        out["message"] = "No symbols had sufficient completed-bar history."
+        out["remediation"] = (
+            "Use symbols with more broker history or choose a shorter supported "
+            "horizon and volatility lookback."
+        )
+    elif dominant == "tick_volume_filter":
+        out["message"] = "No symbols passed --min-tick-volume."
+        out["remediation"] = "Lower --min-tick-volume or omit that filter."
+    elif dominant == "spread_filter":
+        out["message"] = "No symbols passed --max-spread-pct."
+        out["remediation"] = "Raise --max-spread-pct or omit that filter."
+    elif dominant == "spread_unavailable":
+        out["message"] = "No symbols had a usable spread for --max-spread-pct."
+        out["remediation"] = (
+            "Retry when live two-sided quotes are available or omit "
+            "--max-spread-pct for a historical-only ranking."
+        )
+    elif dominant == "endpoint_mismatch":
+        out["message"] = "No symbols remained in a comparable latest-bar cohort."
+        out["remediation"] = (
+            "Use symbols with aligned trading sessions or an explicit homogeneous group."
+        )
+    else:
+        out["message"] = "No eligible symbols remained for relative-strength scoring."
+    return out
+
+
 def _project_relative_strength_row(
     row: Dict[str, Any],
     *,
@@ -3229,6 +3327,11 @@ def rank_relative_strength(  # noqa: C901
             "remediation": (
                 "Provide at least two available candidates, or provide one "
                 "candidate with an external benchmark."
+            ),
+            **(
+                _relative_strength_empty_diagnostics(skipped, request)
+                if skipped
+                else {}
             ),
         }
     quote_excluded_symbols: List[str] = []
@@ -3686,7 +3789,24 @@ def rank_relative_strength(  # noqa: C901
                 else {}
             ),
         },
-        "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "volatility_scaled_residual_momentum" if pairwise_mode else "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
+        "units": {
+            "raw_momentum": "log_return_fraction",
+            "residual_momentum": "log_return_fraction",
+            "volatility": "per_bar_log_return_stddev",
+            "score": (
+                "volatility_scaled_residual_momentum"
+                if pairwise_mode
+                else "robust_z_composite"
+            ),
+            "rank_stability": "fraction_0_to_1",
+            "tick_volume": "broker_tick_count",
+            "spread_pct": "percent (1.0 = 1%)",
+            "breadth.positive_by_horizon": "fraction_0_to_1",
+            "breadth.advance_decline_balance": "signed_fraction_-1_to_1",
+            "breadth.dispersion": "composite_score_stddev",
+            "breadth.above_sma20": "fraction_0_to_1",
+            "breadth.above_sma50": "fraction_0_to_1",
+        },
         **({"rankings": published_rankings} if request.detail == "full" else {}),
     }
     result_warnings: List[str] = []
@@ -3722,5 +3842,5 @@ def rank_relative_strength(  # noqa: C901
     if result_warnings:
         result["warnings"] = result_warnings
     if not ordered:
-        result["message"] = "No symbols matched the requested quote/volume filters."
+        result.update(_relative_strength_empty_diagnostics(skipped, request))
     return result
