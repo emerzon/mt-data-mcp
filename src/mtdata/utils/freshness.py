@@ -5,7 +5,9 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
+from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol
+from .time import bar_close_epoch, format_epoch_utc
 
 # Keep market-data readiness aligned with the pre-trade validator so the same
 # quote age is not rejected by one public surface and accepted by another.
@@ -13,6 +15,27 @@ QUOTE_LIVE_SECONDS = 30
 QUOTE_RECENT_SECONDS = 60
 QUOTE_STALE_SECONDS = 300
 _NEW_YORK = ZoneInfo("America/New_York")
+
+COMPLETED_BAR_FRESHNESS_KEYS = (
+    "data_as_of",
+    "data_as_of_epoch",
+    "data_age_seconds",
+    "data_stale",
+    "stale_after_seconds",
+    "freshness_basis",
+    "freshness_age_metric",
+    "history_policy_ok",
+    "freshness",
+    "market_status",
+    "market_status_reason",
+    "market_status_source",
+    "freshness_policy_relaxed",
+    "assumed_closure_start",
+    "assumed_closure_end",
+    "assumed_closure_seconds",
+    "note",
+    "stale_warning",
+)
 
 
 def standard_weekend_window(now_utc: datetime) -> Optional[tuple[datetime, datetime]]:
@@ -162,3 +185,73 @@ def format_freshness_label(
         item_label = str(item or "data").strip() or "data"
         return f"{label}, {item_label} {age} ago"
     return label
+
+
+def completed_bar_freshness_fields(
+    symbol: Any,
+    timeframe: Any,
+    last_bar_epoch: Any,
+    *,
+    now_epoch: Any = None,
+    item: str = "bar",
+    tolerance_bars: Any = SANITY_BARS_TOLERANCE,
+) -> dict[str, Any]:
+    """Build the shared latest-completed-bar freshness contract."""
+    timeframe_value = str(timeframe or "").strip().upper()
+    try:
+        opened_at = float(last_bar_epoch)
+        step_seconds = int(TIMEFRAME_SECONDS[timeframe_value])
+        observed_at = (
+            datetime.now(timezone.utc).timestamp()
+            if now_epoch is None
+            else float(now_epoch)
+        )
+        if not all(math.isfinite(value) for value in (opened_at, observed_at)):
+            return {}
+        completed_at = bar_close_epoch(opened_at, timeframe_value)
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return {}
+
+    age_seconds = max(0, int(round(observed_at - completed_at)))
+    try:
+        policy_bars = max(1, int(tolerance_bars))
+    except (TypeError, ValueError, OverflowError):
+        policy_bars = max(1, int(SANITY_BARS_TOLERANCE))
+    stale_after = int(step_seconds * policy_bars)
+    data_stale = age_seconds > stale_after
+    out: dict[str, Any] = {
+        "data_as_of": format_epoch_utc(completed_at),
+        "data_as_of_epoch": completed_at,
+        "data_age_seconds": age_seconds,
+        "data_stale": data_stale,
+        "stale_after_seconds": stale_after,
+        "freshness_basis": "last_completed_bar_close",
+        "freshness_age_metric": "latest_completed_bar_close_age_seconds",
+    }
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=observed_at,
+        item=item,
+        data_age_seconds=age_seconds,
+    )
+    if closed_session:
+        out.update(closed_session)
+    out["history_policy_ok"] = not data_stale and not bool(closed_session)
+    policy_relaxed = out.get("freshness_policy_relaxed") is not False
+    label = format_freshness_label(
+        data_stale=data_stale,
+        market_status=out.get("market_status") if policy_relaxed else None,
+        market_status_reason=(
+            out.get("market_status_reason") if policy_relaxed else None
+        ),
+        age_seconds=age_seconds,
+        item=item,
+    )
+    if label:
+        out["freshness"] = label
+    if data_stale:
+        out["stale_warning"] = (
+            "Latest completed bar is outside the freshness policy window; "
+            "market may be closed or broker data may be stale."
+        )
+    return out

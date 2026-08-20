@@ -14,6 +14,7 @@ from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ...utils.denoise import resolve_denoise_base_col
+from ...utils.freshness import completed_bar_freshness_fields
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.regime_heuristics import infer_market_regime
 from ...utils.time import _format_time_minimal
@@ -1622,6 +1623,7 @@ def regime_detect(  # noqa: C901
     started_at = time.perf_counter()
     global_warnings: List[str] = []
     analysis_window_meta: Dict[str, Any] = {}
+    freshness_meta: Dict[str, Any] = {}
     log_operation_start(
         logger,
         operation="regime_detect",
@@ -1638,6 +1640,8 @@ def regime_detect(  # noqa: C901
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(result, dict) and "error" not in result:
             result = attach_completed_bar_input_policy(result)
+            for key, value in freshness_meta.items():
+                result.setdefault(key, value)
             if requested_method != method:
                 result.setdefault("requested_method", requested_method)
                 result.setdefault("method_effective", method)
@@ -1830,6 +1834,16 @@ def regime_detect(  # noqa: C901
         if start or end:
             history_kwargs.update({"start": start, "end": end})
         df = _fetch_history(symbol, timeframe, effective_fetch_limit, **history_kwargs)
+        if not start and not end and len(df) and "time" in df:
+            freshness_meta = completed_bar_freshness_fields(
+                symbol,
+                timeframe,
+                df["time"].iloc[-1],
+                item="bar",
+            )
+            stale_warning = freshness_meta.get("stale_warning")
+            if stale_warning and stale_warning not in global_warnings:
+                global_warnings.append(str(stale_warning))
         fetched_range_bars = len(df)
         if (start or end) and not full_explicit_range and len(df) > effective_fetch_limit:
             df = df.iloc[-effective_fetch_limit:].reset_index(drop=True)

@@ -1,6 +1,7 @@
 import copy
 import logging
 import warnings
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -33,6 +34,10 @@ from ..shared.validators import invalid_timeframe_error
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.denoise import apply_denoise as apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
+from ..utils.freshness import (
+    COMPLETED_BAR_FRESHNESS_KEYS,
+    completed_bar_freshness_fields,
+)
 from ..utils.mt5 import (
     _mt5_copy_rates_from,
     _mt5_copy_rates_range,
@@ -1411,6 +1416,60 @@ def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
     )
 
 
+def _attach_pattern_freshness_contract(
+    result: Dict[str, Any],
+    freshness_by_timeframe: Dict[str, Dict[str, Any]],
+) -> None:
+    available = {
+        str(timeframe): dict(freshness)
+        for timeframe, freshness in freshness_by_timeframe.items()
+        if isinstance(freshness, dict) and freshness
+    }
+    if not available:
+        return
+    if len(available) == 1:
+        result.update(next(iter(available.values())))
+        return
+
+    result["freshness_by_timeframe"] = available
+    stale_count = sum(
+        1 for freshness in available.values() if freshness.get("data_stale") is True
+    )
+    ages = [
+        int(freshness["data_age_seconds"])
+        for freshness in available.values()
+        if freshness.get("data_age_seconds") is not None
+    ]
+    as_of_values = [
+        (float(freshness["data_as_of_epoch"]), freshness.get("data_as_of"))
+        for freshness in available.values()
+        if freshness.get("data_as_of_epoch") is not None
+    ]
+    result["data_stale"] = stale_count > 0
+    result["history_policy_ok"] = all(
+        freshness.get("history_policy_ok") is True
+        for freshness in available.values()
+    )
+    result["freshness_basis"] = "per_timeframe_last_completed_bar_close"
+    if ages:
+        result["data_age_seconds"] = max(ages)
+    if as_of_values:
+        _, result["data_as_of"] = min(as_of_values, key=lambda item: item[0])
+        result["data_as_of_basis"] = "oldest_analyzed_timeframe_close"
+    if stale_count:
+        result["freshness"] = (
+            f"stale, {stale_count}/{len(available)} analyzed timeframes outside policy"
+        )
+        result["stale_warning"] = (
+            "At least one analyzed timeframe is outside the completed-bar "
+            "freshness policy window."
+        )
+    else:
+        result["freshness"] = (
+            f"fresh, all {len(available)} analyzed timeframes within policy"
+        )
+
+
 @mcp.tool()
 def patterns_detect(
     request: PatternsDetectRequest,
@@ -1584,8 +1643,58 @@ def patterns_detect(
         connection_error = _patterns_connection_error()
         if connection_error is not None:
             return connection_error
-        result = run_patterns_detect(request, _patterns_detect_deps())
+        freshness_by_timeframe: Dict[str, Dict[str, Any]] = {}
+
+        def _record_freshness(timeframe: Any, last_bar_epoch: Any) -> None:
+            if request.start or request.end:
+                return
+            freshness = completed_bar_freshness_fields(
+                request.symbol,
+                timeframe,
+                last_bar_epoch,
+                item="bar",
+            )
+            if freshness:
+                freshness_by_timeframe[str(timeframe).upper()] = freshness
+
+        deps = _patterns_detect_deps()
+        fetch_pattern_data = deps.fetch_pattern_data
+        detect_candlestick_patterns = deps.detect_candlestick_patterns
+
+        def _tracked_fetch_pattern_data(*args: Any, **kwargs: Any) -> Any:
+            frame, error = fetch_pattern_data(*args, **kwargs)
+            timeframe = args[1] if len(args) > 1 else kwargs.get("timeframe")
+            if (
+                error is None
+                and isinstance(frame, pd.DataFrame)
+                and not frame.empty
+                and "time" in frame
+            ):
+                _record_freshness(timeframe, frame["time"].iloc[-1])
+            return frame, error
+
+        def _tracked_detect_candlestick_patterns(**kwargs: Any) -> Dict[str, Any]:
+            payload = detect_candlestick_patterns(**kwargs)
+            if isinstance(payload, dict) and not payload.get("error"):
+                freshness = {
+                    key: payload[key]
+                    for key in COMPLETED_BAR_FRESHNESS_KEYS
+                    if key in payload
+                }
+                if freshness:
+                    freshness_by_timeframe[
+                        str(kwargs.get("timeframe") or "").upper()
+                    ] = freshness
+            return payload
+
+        deps = replace(
+            deps,
+            fetch_pattern_data=_tracked_fetch_pattern_data,
+            detect_candlestick_patterns=_tracked_detect_candlestick_patterns,
+        )
+        result = run_patterns_detect(request, deps)
         if isinstance(result, dict) and "error" not in result:
+            _attach_pattern_freshness_contract(result, freshness_by_timeframe)
             result.setdefault("timezone", "UTC")
             if request.denoise is not None:
                 effective_denoise = (

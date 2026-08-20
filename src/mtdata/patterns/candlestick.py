@@ -19,6 +19,7 @@ from ..core.patterns_support import (
 )
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
+from ..utils.freshness import completed_bar_freshness_fields
 from ..utils.time import _format_time_minimal_local, _use_client_tz
 from ..utils.utils import (
     _parse_end_datetime,
@@ -1008,6 +1009,16 @@ def detect_candlestick_patterns(  # noqa: C901
     )
     if warnings_out:
         payload["warnings"] = warnings_out
+    if not start and not end and epochs:
+        payload.update(
+            completed_bar_freshness_fields(
+                symbol,
+                timeframe,
+                epochs[-1],
+                now_epoch=utc_now.timestamp(),
+                item="bar",
+            )
+        )
     if last_n_val is not None:
         payload["last_n_bars"] = int(last_n_val)
     if _use_ctz:

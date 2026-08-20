@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from mtdata.utils import time as time_utils
 from mtdata.utils.freshness import (
     closed_session_context,
+    completed_bar_freshness_fields,
     format_freshness_label,
     is_standard_weekend_closure,
 )
@@ -27,6 +28,33 @@ def test_closed_session_context_marks_other_non_crypto_weekend_markets() -> None
 
     assert closed_session_context("US500", now_epoch=saturday)["market_status"] == "closed"
     assert closed_session_context("XAUUSD", now_epoch=saturday)["market_status"] == "closed"
+
+
+def test_completed_bar_freshness_uses_close_time_and_shared_policy() -> None:
+    last_bar_open = datetime(2026, 8, 19, 19, tzinfo=timezone.utc).timestamp()
+    stale_now = datetime(2026, 8, 20, 0, tzinfo=timezone.utc).timestamp()
+
+    stale = completed_bar_freshness_fields(
+        "TSLA.NAS",
+        "H1",
+        last_bar_open,
+        now_epoch=stale_now,
+    )
+    at_boundary = completed_bar_freshness_fields(
+        "TSLA.NAS",
+        "H1",
+        last_bar_open,
+        now_epoch=datetime(2026, 8, 19, 23, tzinfo=timezone.utc).timestamp(),
+    )
+
+    assert stale["data_as_of"] == "2026-08-19T20:00:00Z"
+    assert stale["data_age_seconds"] == 4 * 60 * 60
+    assert stale["stale_after_seconds"] == 3 * 60 * 60
+    assert stale["data_stale"] is True
+    assert stale["history_policy_ok"] is False
+    assert stale["freshness"] == "stale, bar 4h 0m ago"
+    assert at_boundary["data_stale"] is False
+    assert at_boundary["history_policy_ok"] is True
 
 
 def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:

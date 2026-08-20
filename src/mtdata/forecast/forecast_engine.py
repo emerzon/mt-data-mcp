@@ -26,7 +26,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ..utils.freshness import closed_session_context, format_age_seconds
+from ..utils.freshness import completed_bar_freshness_fields, format_age_seconds
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.time import (
     _format_time_minimal,
@@ -1413,41 +1413,51 @@ def _last_price_freshness_fields(
     now_epoch: Optional[float] = None,
     symbol: Optional[str] = None,
 ) -> Dict[str, Any]:
-    try:
-        last_value = float(last_epoch)
-        step_seconds = max(1, int(tf_secs))
-    except Exception:
+    timeframe = next(
+        (
+            name
+            for name, seconds in TIMEFRAME_SECONDS.items()
+            if int(seconds) == int(tf_secs)
+        ),
+        None,
+    )
+    if timeframe is None:
         return {}
-    if now_epoch is None:
-        now_epoch = datetime.now(timezone.utc).timestamp()
-    try:
-        completed_at = last_value + float(step_seconds)
-        age_seconds = max(0.0, float(now_epoch) - completed_at)
-    except Exception:
+    freshness = completed_bar_freshness_fields(
+        symbol,
+        timeframe,
+        last_epoch,
+        now_epoch=now_epoch,
+        item="forecast anchor",
+        tolerance_bars=SANITY_BARS_TOLERANCE,
+    )
+    if not freshness:
         return {}
-    stale_after = int(step_seconds * max(1, int(SANITY_BARS_TOLERANCE)))
-    rounded_age = int(round(age_seconds))
+    rounded_age = int(freshness["data_age_seconds"])
     out: Dict[str, Any] = {
         "last_price_age_seconds": rounded_age,
-        "last_price_stale": age_seconds > float(stale_after),
-        "freshness_basis": "last_completed_bar_close",
-        "freshness_age_metric": "latest_completed_bar_close_age_seconds",
-        "last_observation_close_epoch": completed_at,
-        "stale_after_seconds": stale_after,
+        "last_price_stale": bool(freshness["data_stale"]),
+        "freshness_basis": freshness["freshness_basis"],
+        "freshness_age_metric": freshness["freshness_age_metric"],
+        "last_observation_close_epoch": freshness["data_as_of_epoch"],
+        "stale_after_seconds": freshness["stale_after_seconds"],
     }
     age_text = format_age_seconds(rounded_age)
     if age_text:
         out["last_price_age"] = age_text
-    closed_session = closed_session_context(
-        symbol,
-        now_epoch=now_epoch,
-        item="forecast anchor",
-        data_age_seconds=age_seconds,
-    )
-    if closed_session:
-        out.update(closed_session)
-    history_policy_ok = not out["last_price_stale"] and not bool(closed_session)
-    out["history_policy_ok"] = history_policy_ok
+    for key in (
+        "market_status",
+        "market_status_reason",
+        "market_status_source",
+        "note",
+        "freshness_policy_relaxed",
+        "assumed_closure_start",
+        "assumed_closure_end",
+        "assumed_closure_seconds",
+        "history_policy_ok",
+    ):
+        if key in freshness:
+            out[key] = freshness[key]
     if out["last_price_stale"]:
         out["stale_warning"] = (
             "Last forecast anchor is older than the bar freshness policy; "

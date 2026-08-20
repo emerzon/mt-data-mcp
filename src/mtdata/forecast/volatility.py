@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ..services.data_service import _is_last_bar_forming
-from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -18,9 +18,7 @@ from ..shared.validators import (
 from ..utils.denoise import apply_denoise, effective_denoise_base_col
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.freshness import (
-    closed_session_context,
-    format_age_seconds,
-    format_freshness_label,
+    completed_bar_freshness_fields,
 )
 from ..utils.mt5 import (
     _ensure_symbol_ready,
@@ -668,52 +666,20 @@ def _volatility_input_context(
 
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
-    completed_at = bar_close_epoch(last_epoch, observation_timeframe)
-    age_seconds = max(0, int(round(float(now_epoch) - completed_at)))
-    stale_after = int(
-        max(1, int(TIMEFRAME_SECONDS.get(observation_timeframe, 0) or 0))
-        * max(1, int(SANITY_BARS_TOLERANCE))
-    )
-    out.update(
-        {
-            "data_age_seconds": age_seconds,
-            "data_stale": age_seconds > stale_after,
-            "stale_after_seconds": stale_after,
-            "freshness_basis": "last_completed_bar_close",
-            "freshness_age_metric": "latest_completed_bar_close_age_seconds",
-            "last_observation_close_time": _format_time_minimal(completed_at),
-        }
-    )
-    if observation_timeframe != str(timeframe):
-        out["freshness_timeframe"] = observation_timeframe
-    closed_session = closed_session_context(
+    freshness = completed_bar_freshness_fields(
         symbol,
+        observation_timeframe,
+        last_epoch,
         now_epoch=now_epoch,
         item="data",
-        data_age_seconds=age_seconds,
     )
-    if closed_session:
-        out.update(closed_session)
-    history_policy_ok = not bool(out.get("data_stale")) and not bool(closed_session)
-    out["history_policy_ok"] = history_policy_ok
-    freshness = format_freshness_label(
-        data_stale=out.get("data_stale"),
-        market_status=(
-            out.get("market_status")
-            if out.get("freshness_policy_relaxed") is not False
-            else None
-        ),
-        market_status_reason=(
-            out.get("market_status_reason")
-            if out.get("freshness_policy_relaxed") is not False
-            else None
-        ),
-        age_seconds=age_seconds,
-        age_text=format_age_seconds(age_seconds),
-        item="data",
-    )
-    if freshness:
-        out["freshness"] = freshness
+    data_as_of = out.get("data_as_of")
+    out.update(freshness)
+    if data_as_of is not None:
+        out["data_as_of"] = data_as_of
+    out["last_observation_close_time"] = freshness.get("data_as_of")
+    if observation_timeframe != str(timeframe):
+        out["freshness_timeframe"] = observation_timeframe
     return out
 
 

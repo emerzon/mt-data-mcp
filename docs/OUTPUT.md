@@ -270,6 +270,14 @@ may still use a live quote as their distance reference; check
 `current_price_source` or `reference_price_source` separately from the
 closed-bar structure policy.
 
+For an unbounded latest-data request, `patterns_detect`, `regime_detect`,
+`forecast_generate`, and `forecast_volatility_estimate` also publish the shared
+completed-bar freshness fields: `data_as_of`, `data_age_seconds`, `data_stale`,
+`stale_after_seconds`, `freshness`, and `history_policy_ok`. The age starts at
+the latest analyzed bar's close, not its open. A successful analytical result
+can still have `history_policy_ok=false`; treat that as historical context and
+refresh the market data before using it in a current-market decision.
+
 ---
 
 ## TOON vs JSON

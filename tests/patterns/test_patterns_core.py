@@ -192,6 +192,18 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     monkeypatch.setattr(core_patterns, "_fetch_pattern_data", lambda *args, **kwargs: (df, None))
     monkeypatch.setattr(
         core_patterns,
+        "completed_bar_freshness_fields",
+        lambda *args, **kwargs: {
+            "data_as_of": "2026-08-19T20:00:00Z",
+            "data_age_seconds": 14_400,
+            "data_stale": True,
+            "stale_after_seconds": 10_800,
+            "freshness": "stale, bar 4h 0m ago",
+            "history_policy_ok": False,
+        },
+    )
+    monkeypatch.setattr(
+        core_patterns,
         "_select_classic_engines",
         lambda engine, ensemble: (["native"], []),
     )
@@ -226,6 +238,12 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     assert out["input_bar_policy"] == "closed_bars_only"
     assert out["latest_bar_complete"] is True
     assert out["forming_candle_status"] == "excluded"
+    assert out["data_as_of"] == "2026-08-19T20:00:00Z"
+    assert out["data_age_seconds"] == 14_400
+    assert out["data_stale"] is True
+    assert out["stale_after_seconds"] == 10_800
+    assert out["freshness"] == "stale, bar 4h 0m ago"
+    assert out["history_policy_ok"] is False
     assert out["top_patterns"][0]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
