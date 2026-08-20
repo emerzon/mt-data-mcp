@@ -818,6 +818,13 @@ mtdata-cli trade_journal_analyze --magic 3001 --minutes-back 43200 --json
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
+`trade_history` returns at most 20 rows by default. Set `--limit` for another
+page size. When `pagination.has_more` is true, reuse
+`pagination.next_cursor` as `--cursor` with the same history kind, filters,
+time controls, and order. The cursor freezes the first page's exact UTC bounds
+and expires after one hour; start a fresh query after expiration. Offset and
+page-number inputs are not supported because relative windows and changing
+account history make them unstable.
 Use `--magic` to isolate one strategy on shared accounts. The
 `trade_history --column-style humanized` option applies display labels at every
 detail level, including `--detail full`.

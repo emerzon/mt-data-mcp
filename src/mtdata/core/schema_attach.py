@@ -203,6 +203,15 @@ def _patch_data_fetch_ticks_schema(schema: Dict[str, Any]) -> None:
         )
 
 
+def _patch_trade_history_schema(schema: Dict[str, Any]) -> None:
+    params, _required_params = _schema_params(schema)
+    if "cursor" in params:
+        params["cursor"]["description"] = (
+            "Opaque keyset cursor from pagination.next_cursor; reuse it with "
+            "the same history kind, filters, time controls, and order."
+        )
+
+
 def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     params, _required_params = _schema_params(schema)
     if "method" not in params:
@@ -308,6 +317,7 @@ _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
     "indicators_describe": (_patch_indicators_describe_schema,),
     "data_fetch_candles": (_patch_data_fetch_candles_schema,),
     "data_fetch_ticks": (_patch_data_fetch_ticks_schema,),
+    "trade_history": (_patch_trade_history_schema,),
     "forecast_barrier_prob": (_patch_forecast_barrier_prob_schema,),
     "forecast_barrier_optimize": (_patch_forecast_barrier_optimize_schema,),
     "trade_place": (_patch_trade_place_schema,),

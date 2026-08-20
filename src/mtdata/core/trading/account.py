@@ -615,7 +615,7 @@ def _run_trade_journal_request(  # noqa: C901
     message: Any = None
     history_has_more = False
     history_total_count: Optional[int] = None
-    page_offset = 0
+    page_cursor: Optional[str] = None
 
     def _matches_requested_side(row: Dict[str, Any]) -> bool:
         if side_filter is None:
@@ -643,16 +643,15 @@ def _run_trade_journal_request(  # noqa: C901
         history_result = _run_trade_history_request(
             TradeHistoryRequest(
                 history_kind="deals",
-                start=request.start,
-                end=request.end,
+                start=period_context.get("period_start"),
+                end=period_context.get("period_end"),
                 symbol=request.symbol,
                 magic=request.magic,
                 side=None,
                 position_ticket=request.position_ticket,
                 deal_ticket=None,
-                minutes_back=request.minutes_back,
                 limit=page_limit,
-                offset=page_offset,
+                cursor=page_cursor,
             )
         )
         if not isinstance(history_result, dict):
@@ -675,19 +674,25 @@ def _run_trade_journal_request(  # noqa: C901
                 history_total_count = int(pagination.get("total"))
             except (TypeError, ValueError):
                 history_total_count = None
-            next_offset = pagination.get("next_offset")
+            next_cursor = pagination.get("next_cursor")
         else:
             history_has_more = False
-            next_offset = None
+            next_cursor = None
         if not history_has_more:
             break
-        try:
-            next_offset_value = int(next_offset)
-        except (TypeError, ValueError):
-            next_offset_value = page_offset + len(page_rows)
-        if next_offset_value <= page_offset or not page_rows:
-            break
-        page_offset = next_offset_value
+        if not isinstance(next_cursor, str) or not next_cursor.strip():
+            return {
+                "error": (
+                    "trade_history reported more rows without a continuation cursor"
+                ),
+                "error_code": "trade_history_pagination_incomplete",
+            }
+        if next_cursor == page_cursor or not page_rows:
+            return {
+                "error": "trade_history continuation cursor did not advance",
+                "error_code": "trade_history_pagination_stalled",
+            }
+        page_cursor = next_cursor
 
     def _sample_provenance(exit_deals: int) -> Dict[str, Any]:
         items_returned = (

@@ -578,6 +578,10 @@ def _normalize_trade_read_output(
                 "observed_at",
                 "data_quality",
                 "warnings",
+                "next_cursor",
+                "cursor_expires_at",
+                "snapshot_start",
+                "snapshot_end",
             ):
                 if key in rows:
                     out[key] = rows.get(key)
@@ -1131,8 +1135,6 @@ def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str,
         "order_ticket",
         "symbol",
         "limit",
-        "offset",
-        "page",
     ):
         value = getattr(request, field, None)
         if value is None:
@@ -1258,6 +1260,10 @@ def normalize_trade_history_output(
     include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True:
         period_context = _trade_history_period_context(request)
+        if out.get("snapshot_start") is not None:
+            period_context["period_start"] = out["snapshot_start"]
+        if out.get("snapshot_end") is not None:
+            period_context["period_end"] = out["snapshot_end"]
         out = _insert_trade_history_period_context(out, period_context)
         out["order"] = str(getattr(request, "order", "desc") or "desc")
         out["order_basis"] = "history_time"
@@ -1281,6 +1287,20 @@ def normalize_trade_history_output(
             offset=offset_value,
             limit=limit_value,
         )
+        if out.get("has_more") is not None:
+            out["pagination"]["has_more"] = bool(out["has_more"])
+        if out.get("more_available") is not None:
+            out["pagination"]["more_available"] = int(out["more_available"])
+        for field in (
+            "next_cursor",
+            "cursor_expires_at",
+            "snapshot_start",
+            "snapshot_end",
+        ):
+            if out.get(field) is not None:
+                out["pagination"][field] = out[field]
+        if out.get("next_cursor") is not None or getattr(request, "cursor", None):
+            out["pagination"]["mode"] = "keyset"
         for field in (
             "total_count",
             "offset",
@@ -1292,6 +1312,10 @@ def normalize_trade_history_output(
             "pages",
             "next_offset",
             "next_page",
+            "next_cursor",
+            "cursor_expires_at",
+            "snapshot_start",
+            "snapshot_end",
         ):
             out.pop(field, None)
         for item in raw_items:

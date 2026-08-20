@@ -140,6 +140,28 @@ def test_trade_history_filters_magic_before_pagination() -> None:
     assert out["request_echo"]["magic"] == 3001
 
 
+def test_trade_history_default_page_returns_twenty_rows() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=index, time=1_700_000_000 + index, symbol="EURUSD")
+        for index in range(1, 26)
+    ]
+
+    try:
+        with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+            out = trade_history(history_kind="deals", __cli_raw=True)
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+
+    assert out["count"] == 20
+    assert out["pagination"]["limit"] == 20
+    assert out["pagination"]["has_more"] is True
+    assert out["pagination"]["more_available"] == 5
+    assert out["pagination"]["next_cursor"]
+
+
 def test_trade_history_flags_future_broker_fill_timestamp() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
@@ -163,7 +185,7 @@ def test_trade_history_flags_future_broker_fill_timestamp() -> None:
     assert out["items"][0]["fill_time_future_seconds"] == 1000.0
 
 
-def test_trade_history_supports_offset_pagination() -> None:
+def test_trade_history_cursor_survives_insertions_and_removals() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
     mt5.history_deals_get.return_value = [
@@ -174,19 +196,38 @@ def test_trade_history_supports_offset_pagination() -> None:
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", limit=2, offset=1, __cli_raw=True)
+        first = trade_history(history_kind="deals", limit=2, __cli_raw=True)
+        cursor = first["pagination"]["next_cursor"]
+        mt5.history_deals_get.return_value = [
+            Deal(ticket=1, time=1700000000, symbol="EURUSD"),
+            Deal(ticket=2, time=1700000060, symbol="EURUSD"),
+            Deal(ticket=5, time=1700000240, symbol="EURUSD"),
+        ]
+        second = trade_history(
+            history_kind="deals",
+            limit=2,
+            cursor=cursor,
+            __cli_raw=True,
+        )
 
-    assert out["success"] is True
-    assert [item["deal_ticket"] for item in out["items"]] == [3, 2]
-    assert out["pagination"] == {
-        "total": 4,
+    assert first["success"] is True
+    assert [item["deal_ticket"] for item in first["items"]] == [4, 3]
+    assert first["pagination"]["mode"] == "keyset"
+    assert first["pagination"]["snapshot_start"]
+    assert first["pagination"]["snapshot_end"]
+    assert [item["deal_ticket"] for item in second["items"]] == [2, 1]
+    assert second["pagination"] == {
+        "total": 3,
         "returned": 2,
-        "offset": 1,
+        "offset": 2,
         "limit": 2,
-        "has_more": True,
-        "more_available": 1,
+        "has_more": False,
+        "more_available": 0,
+        "snapshot_start": first["pagination"]["snapshot_start"],
+        "snapshot_end": first["pagination"]["snapshot_end"],
+        "mode": "keyset",
     }
-    assert not {"total_count", "offset", "limit", "has_more"} & out.keys()
+    assert not {"total_count", "offset", "limit", "has_more"} & second.keys()
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         ascending = trade_history(
@@ -198,6 +239,87 @@ def test_trade_history_supports_offset_pagination() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
     assert [item["deal_ticket"] for item in ascending["items"]] == [1, 2]
+
+
+def test_trade_history_cursor_keeps_equal_millisecond_tickets_complete() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "time_msc", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(11, 1_700_000_000, 1_700_000_000_500, "EURUSD"),
+        Deal(13, 1_700_000_000, 1_700_000_000_500, "EURUSD"),
+        Deal(12, 1_700_000_000, 1_700_000_000_500, "EURUSD"),
+    ]
+
+    try:
+        cursors = [None]
+        tickets = []
+        bounds = []
+        with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+            for _ in range(3):
+                page = trade_history(
+                    history_kind="deals",
+                    limit=1,
+                    cursor=cursors[-1],
+                    __cli_raw=True,
+                )
+                tickets.append(page["items"][0]["deal_ticket"])
+                call = mt5.history_deals_get.call_args
+                bounds.append(call.args[:2])
+                next_cursor = page["pagination"].get("next_cursor")
+                if next_cursor:
+                    cursors.append(next_cursor)
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+
+    assert tickets == [13, 12, 11]
+    assert len(cursors) == 3
+    assert bounds[0] == bounds[1] == bounds[2]
+
+
+def test_trade_history_cursor_rejects_filter_mismatch_and_expiry() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1_700_000_000, symbol="EURUSD"),
+        Deal(ticket=2, time=1_700_000_001, symbol="EURUSD"),
+    ]
+
+    try:
+        with (
+            patch("mtdata.core.trading.account._use_client_tz", lambda: False),
+            patch("mtdata.core.trading.use_cases.time.time", return_value=1_000.0),
+        ):
+            first = trade_history(history_kind="deals", limit=1, __cli_raw=True)
+        cursor = first["pagination"]["next_cursor"]
+        with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+            mismatch = trade_history(
+                history_kind="deals",
+                limit=1,
+                order="asc",
+                cursor=cursor,
+                __cli_raw=True,
+            )
+        with (
+            patch("mtdata.core.trading.account._use_client_tz", lambda: False),
+            patch("mtdata.core.trading.use_cases.time.time", return_value=4_601.0),
+        ):
+            expired = trade_history(
+                history_kind="deals",
+                limit=1,
+                cursor=cursor,
+                __cli_raw=True,
+            )
+    finally:
+        if prev is not None:
+            sys.modules["MetaTrader5"] = prev
+
+    assert mismatch["success"] is False
+    assert mismatch["error_code"] == "trade_history_invalid_cursor"
+    assert "does not match" in mismatch["error"]
+    assert expired["success"] is False
+    assert expired["error_code"] == "trade_history_cursor_expired"
+    assert "fresh snapshot" in expired["error"]
 
 
 def test_trade_history_sorts_same_second_deals_by_millisecond_time() -> None:
@@ -806,9 +928,18 @@ def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeGetOpenRequest(side="long").side == "BUY"
     assert TradeGetPendingRequest(side="short").side == "SELL"
     assert TradeHistoryRequest().detail == "compact"
+    assert TradeHistoryRequest().limit == 20
     assert TradeJournalAnalyzeRequest().detail == "compact"
     assert TradeGetOpenRequest().detail == "compact"
     assert TradeGetPendingRequest().detail == "compact"
+
+
+@pytest.mark.parametrize("legacy_pagination", [{"offset": 1}, {"page": 2}])
+def test_trade_history_rejects_unstable_legacy_pagination(
+    legacy_pagination,
+) -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeHistoryRequest(**legacy_pagination)
 
 
 @pytest.mark.parametrize(
@@ -1944,20 +2075,22 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
 
 def test_trade_journal_pages_until_period_history_is_complete() -> None:
     pages = {
-        0: [
+        None: [
             {"ticket": 1, "symbol": "EURUSD", "entry": "Out", "profit": 3.0},
             {"ticket": 2, "symbol": "GBPUSD", "entry": "Out", "profit": 4.0},
         ],
-        2: [
+        "page-2": [
             {"ticket": 3, "symbol": "EURUSD", "entry": "Out", "profit": 2.0},
             {"ticket": 4, "symbol": "GBPUSD", "entry": "Out", "profit": -1.0},
         ],
     }
-    observed_offsets = []
+    observed_cursors = []
+    observed_bounds = []
 
     def _fake_history(request):
-        observed_offsets.append(request.offset)
-        rows = pages[request.offset]
+        observed_cursors.append(request.cursor)
+        observed_bounds.append((request.start, request.end))
+        rows = pages[request.cursor]
         return {
             "success": True,
             "count": len(rows),
@@ -1965,10 +2098,15 @@ def test_trade_journal_pages_until_period_history_is_complete() -> None:
             "pagination": {
                 "total": 4,
                 "returned": len(rows),
-                "offset": request.offset,
+                "offset": 0 if request.cursor is None else 2,
                 "limit": request.limit,
-                "has_more": request.offset == 0,
-                "more_available": 2 if request.offset == 0 else 0,
+                "has_more": request.cursor is None,
+                "more_available": 2 if request.cursor is None else 0,
+                **(
+                    {"next_cursor": "page-2"}
+                    if request.cursor is None
+                    else {}
+                ),
             },
         }
 
@@ -1978,7 +2116,9 @@ def test_trade_journal_pages_until_period_history_is_complete() -> None:
     ):
         out = trade_journal_analyze(limit=2, __cli_raw=True)
 
-    assert observed_offsets == [0, 2]
+    assert observed_cursors == [None, "page-2"]
+    assert observed_bounds[0] == observed_bounds[1]
+    assert all(start and end for start, end in observed_bounds)
     assert out["sample_size"] == 4
     assert out["sample_provenance"] == {
         "output_item_limit": 2,

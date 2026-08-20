@@ -312,6 +312,10 @@ mtdata-cli trade_session_context EURUSD --json
 
 `trade_history` and `trade_journal_analyze` default to the last 7 days when you
 omit a window.
+`trade_history` returns 20 rows by default. If more rows exist, pass its opaque
+`pagination.next_cursor` back as `--cursor` with the same filters and time
+controls. Cursor pages retain the first page's exact UTC bounds and expire
+after one hour, preventing a moving relative window from skipping records.
 On accounts shared by multiple strategies, pass `--magic` to either command so
 history pagination and journal metrics are scoped to one MT5 strategy identifier.
 

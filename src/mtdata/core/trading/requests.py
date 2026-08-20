@@ -373,9 +373,18 @@ class TradeHistoryRequest(_SideNormalizedRequest):
             "when start, end, and minutes_back are omitted."
         ),
     )
-    limit: int = Field(default=100, ge=1)
-    offset: int = Field(default=0, ge=0)
-    page: Optional[int] = Field(default=None, ge=1)
+    limit: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum rows returned per page. Defaults to 20.",
+    )
+    cursor: Optional[str] = Field(
+        default=None,
+        description=(
+            "Opaque keyset continuation token from pagination.next_cursor. "
+            "Reuse it with the same history kind, filters, time controls, and order."
+        ),
+    )
     order: Literal["desc", "asc"] = Field(
         default="desc",
         description="History time order. desc returns newest activity first.",
