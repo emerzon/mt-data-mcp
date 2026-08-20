@@ -21,6 +21,10 @@ same current-quote policy used by `market_ticker`. The summary keeps that raw
 event in `raw_update_quality` and `data_quality.latest_raw_update_quality` so a
 valid carried quote does not hide feed diagnostics. Explicit historical windows
 continue to report their final historical update without live reconciliation.
+When a window has fewer than 20 usable ticks, the error reports the requested
+window and observed count. Increase `--minutes-back` for a relative request,
+or move/widen an explicit window with `--start` and `--end`; bar counts and
+timeframes are not controls for this tick-based tool.
 
 ```bash
 mtdata-cli market_microstructure_analyze EURUSD --minutes-back 60 --json

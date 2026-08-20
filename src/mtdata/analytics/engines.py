@@ -542,6 +542,21 @@ def analyze_microstructure(  # noqa: C901
                 )
     if len(df) < 20:
         last_tick_epoch = float(df["epoch"].iloc[-1]) if len(df) else None
+        explicit_window = request.start is not None and request.end is not None
+        window_details: Dict[str, Any] = {
+            "requested_start": format_datetime_utc(start),
+            "requested_end": format_datetime_utc(end),
+            "window_mode": "explicit" if explicit_window else "relative",
+            "ticks_available": int(len(df)),
+            "minimum_ticks_required": 20,
+            "max_ticks": int(request.max_ticks),
+            "truncated": bool(truncated),
+            "last_tick_time": (
+                format_epoch_utc(last_tick_epoch)
+                if last_tick_epoch is not None
+                else None
+            ),
+        }
         error_session = closed_session_context(
             request.symbol,
             now_epoch=datetime.now(timezone.utc).timestamp(),
@@ -557,21 +572,34 @@ def analyze_microstructure(  # noqa: C901
                 "error": "Market is closed and fewer than 20 recent usable ticks are available.",
                 "error_code": "market_closed",
                 "remediation": (
-                    "Wait for the session to reopen or analyze a currently trading symbol."
+                    "Select or widen an active or latest completed trading-session "
+                    "window with --start and --end."
+                    if explicit_window
+                    else "Increase --minutes-back to include the latest completed "
+                    "session, wait for the market to reopen, or choose an active "
+                    "window with --start and --end."
                 ),
-                "ticks_available": int(len(df)),
-                "last_tick_time": (
-                    format_epoch_utc(last_tick_epoch)
-                    if last_tick_epoch is not None
-                    else None
-                ),
+                **window_details,
                 **error_session,
+                "related_tools": ["market_status"],
                 "note": (
                     "Market is closed; fewer than 20 ticks were found in the "
                     "latest completed-session analysis window."
                 ),
             }
-        return {"error": "At least 20 usable ticks are required.", "error_code": "insufficient_data"}
+        return {
+            "error": "At least 20 usable ticks are required in the requested window.",
+            "error_code": "insufficient_data",
+            "remediation": (
+                "Widen or move the tick window with --start and --end to include "
+                "a period when the instrument traded."
+                if explicit_window
+                else "Increase --minutes-back to include more traded time, or use "
+                "--start and --end to select an active or completed session."
+            ),
+            **window_details,
+            "related_tools": ["market_status"],
+        }
     quote_mask = np.isfinite(df["mid"])
     flag_values = df["flags"].astype(np.int64)
     trade_mask = (flag_values & mt5_trade_event_mask(gateway)) != 0

@@ -594,8 +594,44 @@ def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch
 
     assert result["error_code"] == "market_closed"
     assert result["ticks_available"] == 3
+    assert result["minimum_ticks_required"] == 20
+    assert result["window_mode"] == "relative"
+    assert result["requested_start"].endswith("Z")
+    assert result["requested_end"].endswith("Z")
     assert result["market_status_reason"] == "weekend"
-    assert "reopen" in result["remediation"]
+    assert "--minutes-back" in result["remediation"]
+    assert result["related_tools"] == ["market_status"]
+
+
+def test_microstructure_short_explicit_window_has_supported_remediation(
+    monkeypatch,
+) -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = []
+    monkeypatch.setattr(
+        "mtdata.analytics.engines.closed_session_context",
+        lambda *args, **kwargs: None,
+    )
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(
+            symbol="EURUSD",
+            start="2026-08-20T00:00:00Z",
+            end="2026-08-20T01:00:00Z",
+        ),
+        gateway,
+    )
+
+    assert result["error_code"] == "insufficient_data"
+    assert result["window_mode"] == "explicit"
+    assert result["requested_start"] == "2026-08-20T00:00:00Z"
+    assert result["requested_end"] == "2026-08-20T01:00:00Z"
+    assert result["ticks_available"] == 0
+    assert result["minimum_ticks_required"] == 20
+    assert "--start" in result["remediation"]
+    assert "--end" in result["remediation"]
+    assert "bars" not in result["remediation"]
+    assert "timeframe" not in result["remediation"]
 
 
 def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
