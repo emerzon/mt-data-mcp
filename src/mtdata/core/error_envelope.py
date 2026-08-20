@@ -249,8 +249,21 @@ def _error_payload_text(value: Any) -> list[str]:
     return []
 
 
-def _canonical_error_code(payload: Dict[str, Any], current_code: str) -> str:
-    if str(current_code or "").strip().lower() not in _GENERIC_ERROR_CODES:
+def _canonical_error_code(
+    payload: Dict[str, Any],
+    current_code: str,
+    *,
+    operation: Optional[str] = None,
+) -> str:
+    normalized_code = str(current_code or "").strip().lower()
+    normalized_operation = str(
+        payload.get("operation") or operation or ""
+    ).strip().lower()
+    is_operation_catch_all = bool(
+        normalized_operation
+        and normalized_code == f"{normalized_operation}_error"
+    )
+    if normalized_code not in _GENERIC_ERROR_CODES and not is_operation_catch_all:
         return current_code
     evidence = " ".join(
         _error_payload_text(
@@ -319,10 +332,14 @@ def normalize_error_payload(
     original_error_code = str(
         out.get("error_code") or default_code or "tool_error"
     ).strip()
-    error_code = _canonical_error_code(out, original_error_code)
+    operation_value = str(out.get("operation") or operation or "").strip()
+    error_code = _canonical_error_code(
+        out,
+        original_error_code,
+        operation=operation_value,
+    )
     error_code_changed = error_code != original_error_code
     rid = str(out.get("request_id") or "").strip() or (request_id or new_request_id())
-    operation_value = str(out.get("operation") or operation or "").strip()
 
     normalized_error = str(error_text)
     if error_code == "invalid_date_range":

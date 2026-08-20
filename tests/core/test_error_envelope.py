@@ -197,6 +197,35 @@ def test_normalize_error_payload_classifies_forecast_symbol_failure():
     assert out["related_tools"] == ["symbols_list"]
 
 
+def test_normalize_error_payload_classifies_any_forecast_operation_catch_all():
+    out = normalize_error_payload(
+        {
+            "error": "Symbol 'NOTAREALSYM' was not found in MT5.",
+            "error_code": "forecast_conformal_intervals_error",
+        },
+        operation="forecast_conformal_intervals",
+    )
+
+    assert out["error_code"] == "symbol_not_found"
+    assert out["remediation"].startswith("Use symbols_list")
+    assert out["related_tools"] == ["symbols_list"]
+
+
+def test_forecast_operation_catch_all_canonicalizes_reversed_date_range():
+    out = normalize_error_payload(
+        {
+            "error": "start must be before or equal to end.",
+            "error_code": "forecast_conformal_intervals_error",
+        },
+        operation="forecast_conformal_intervals",
+    )
+
+    assert out["error_code"] == "invalid_date_range"
+    assert out["remediation"] == (
+        "Set start to a timestamp earlier than or equal to end."
+    )
+
+
 def test_normalize_error_payload_does_not_override_dependency_code():
     out = normalize_error_payload(
         build_error_payload(
