@@ -62,8 +62,12 @@ Ticketless bulk `trade_close` previews also remain blocked until
 The CLI prints those blocked previews and exits `1`; an eligible preview exits `0`.
 Compact output always retains these gate fields and the broker-validation
 limitations. Its `guardrails_preview` summary retains `enabled`, `blocked`,
-`ignored_for_demo`, and `checks_not_performed`; standard/full detail includes
-the complete guardrail diagnostics.
+`ignored_for_demo`, `would_block_live`, `live_projection`, and
+`checks_not_performed`; standard/full detail includes the complete guardrail
+diagnostics. When demo enforcement is disabled, `blocked` remains the decision
+for the demo account while `live_projection.blocked` and `would_block_live`
+show what the same request would do on a live account. A projected live block
+makes the dry-run preview ineligible (`preview_ok=false`).
 
 Trade previews also report `requested_comment`, `applied_comment`, and
 `comment_max_length`. MT5-bound comments use a conservative ASCII subset and
@@ -246,7 +250,7 @@ Reduce-only checks the current open positions before allowing an opposite-side
 order no larger than the net position. On hedging accounts, `trade_place` cannot
 guarantee a reduction, so use `trade_close` with a position ticket instead.
 
-See [ENV_VARS.md § Trade Guardrails](ENV_VARS.md#trade-guardrails) for every variable, defaults, formats, and a ready-to-copy `.env` block. A dry run returns a `guardrails_preview` so you can confirm which rules would fire before going live.
+See [ENV_VARS.md § Trade Guardrails](ENV_VARS.md#trade-guardrails) for every variable, defaults, formats, and a ready-to-copy `.env` block. A dry run returns a `guardrails_preview` so you can confirm which rules would fire before going live. On a demo account where enforcement is ignored, inspect `would_block_live` and `live_projection`; these evaluate the configured rules without changing demo enforcement.
 
 Live market and pending placements are serialized within one mtdata process so
 the portfolio snapshot, guardrail decision, and broker submission are atomic

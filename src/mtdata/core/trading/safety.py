@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from typing import Any, Callable, Dict, List, Literal, Optional
 
@@ -217,11 +218,15 @@ def guardrails_require_position_snapshot(
     enforce_safety_policy: bool = True,
     enforce_account_risk: bool = True,
     enforce_wallet_risk: bool = True,
+    for_live_projection: bool = False,
 ) -> bool:
     """Return whether enabled guardrails depend on the current position book."""
     if not _guardrails_active(config):
         return False
-    if _guardrails_ignored_for_demo(config, account_info=account_info):
+    if (
+        not for_live_projection
+        and _guardrails_ignored_for_demo(config, account_info=account_info)
+    ):
         return False
     if (
         enforce_safety_policy
@@ -248,11 +253,15 @@ def guardrails_require_pending_snapshot(
     account_info: Any = None,
     enforce_account_risk: bool = True,
     enforce_wallet_risk: bool = True,
+    for_live_projection: bool = False,
 ) -> bool:
     """Return whether enabled portfolio guardrails depend on pending orders."""
     if not _guardrails_active(config):
         return False
-    if _guardrails_ignored_for_demo(config, account_info=account_info):
+    if (
+        not for_live_projection
+        and _guardrails_ignored_for_demo(config, account_info=account_info)
+    ):
         return False
     if (
         enforce_account_risk
@@ -1250,20 +1259,17 @@ def preview_trade_guardrails(
             "checks_not_performed": [],
             "message": "No trade guardrails are configured.",
         }
-    if (
+    ignored_for_demo = bool(
         config is not None
         and config.trading_enabled
         and _guardrails_ignored_for_demo(config, account_info=account_info)
-    ):
-        return {
-            "enabled": True,
-            "blocked": False,
-            "checks_not_performed": [],
-            "ignored_for_demo": True,
-            "message": "Trade guardrails are ignored on demo accounts by default.",
-        }
+    )
+    evaluation_config = config
+    if ignored_for_demo and config is not None:
+        evaluation_config = copy.copy(config)
+        evaluation_config.ignore_on_demo = False
 
-    wallet_risk_active = _wallet_limits_active(config.wallet_risk_limits)
+    wallet_risk_active = _wallet_limits_active(evaluation_config.wallet_risk_limits)
     resolved_symbol_info = symbol_info
     if wallet_risk_active and resolved_symbol_info is None and symbol_info_resolver:
         try:
@@ -1277,7 +1283,7 @@ def preview_trade_guardrails(
         and math.isfinite(float(entry_price))
     )
     static_result = evaluate_trade_guardrails(
-        config,
+        evaluation_config,
         symbol=symbol,
         volume=volume,
         stop_loss=stop_loss,
@@ -1315,6 +1321,21 @@ def preview_trade_guardrails(
             value = static_result.get(key)
             if value not in (None, "", []):
                 preview[key] = value
+    if ignored_for_demo:
+        projection = dict(preview)
+        projection.pop("enabled", None)
+        return {
+            "enabled": True,
+            "blocked": False,
+            "ignored_for_demo": True,
+            "would_block_live": bool(preview["blocked"]),
+            "checks_not_performed": list(preview["checks_not_performed"]),
+            "live_projection": projection,
+            "message": (
+                "Trade guardrails are not enforced on this demo account; "
+                "live_projection shows the decision for a live account."
+            ),
+        }
     return preview
 
 

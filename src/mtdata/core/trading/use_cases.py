@@ -353,6 +353,8 @@ def _shape_trade_place_preview(
                 "enabled",
                 "blocked",
                 "ignored_for_demo",
+                "would_block_live",
+                "live_projection",
                 "checks_not_performed",
             )
             if key in preview
@@ -1679,6 +1681,8 @@ def run_trade_place(  # noqa: C901
                 local_blockers.append("invalid_protection_levels")
             if guardrail_preview.get("checks_not_performed"):
                 local_blockers.append("guardrail_checks_incomplete")
+            if guardrail_preview.get("would_block_live") is True:
+                local_blockers.append("guardrails_would_block_live")
             preview: Dict[str, Any] = {
                 "success": True,
                 "dry_run": True,
@@ -2301,6 +2305,7 @@ def run_trade_place(  # noqa: C901
                 account_info=guardrail_account_info,
                 enforce_account_risk=True,
                 enforce_wallet_risk=True,
+                for_live_projection=True,
             )
             guardrail_positions = (
                 _best_effort_trade_guardrail_positions()
@@ -2323,6 +2328,7 @@ def run_trade_place(  # noqa: C901
                 account_info=guardrail_account_info,
                 enforce_account_risk=True,
                 enforce_wallet_risk=True,
+                for_live_projection=True,
             )
             guardrail_pending_orders = (
                 _best_effort_trade_guardrail_pending_orders()

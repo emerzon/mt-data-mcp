@@ -170,7 +170,7 @@ def test_wrong_side_pending_stop_is_classified_as_risk_increasing():
     ) is True
 
 
-def test_preview_trade_guardrails_ignores_demo_accounts_by_default():
+def test_preview_trade_guardrails_projects_demo_request_for_live_account():
     config = TradeGuardrailsConfig(
         enabled=True,
         blocked_symbols=["BTCUSD"],
@@ -189,6 +189,24 @@ def test_preview_trade_guardrails_ignores_demo_accounts_by_default():
     assert preview["enabled"] is True
     assert preview["blocked"] is False
     assert preview["ignored_for_demo"] is True
+    assert preview["would_block_live"] is True
+    assert preview["live_projection"]["blocked"] is True
+    assert preview["live_projection"]["rule"] == "symbol_policy"
+    assert preview["live_projection"]["violations"] == [
+        "Symbol BTCUSD is blocked by guardrail policy."
+    ]
+
+    allowed_preview = preview_trade_guardrails(
+        TradeGuardrailsConfig(enabled=True, max_volume_by_symbol={"BTCUSD": 0.1}),
+        symbol="BTCUSD",
+        volume=0.1,
+        side="BUY",
+        account_info=SimpleNamespace(trade_mode="demo"),
+    )
+
+    assert allowed_preview["ignored_for_demo"] is True
+    assert allowed_preview["would_block_live"] is False
+    assert allowed_preview["live_projection"]["blocked"] is False
 
 
 def test_preview_trade_guardrails_surfaces_allowlist_context():
@@ -811,11 +829,11 @@ def test_run_trade_place_dry_run_evaluates_wallet_risk_with_estimated_fill(
     assert result["guardrails_preview"]["checks_not_performed"] == []
 
 
-def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(
+def test_run_trade_place_dry_run_projects_demo_guardrails_for_live_account(
     restore_trade_guardrails,
 ):
     trade_guardrails_config.enabled = True
-    trade_guardrails_config.blocked_symbols = ["BTCUSD"]
+    trade_guardrails_config.max_volume_by_symbol = {"BTCUSD": 0.01}
 
     with patch(
         "mtdata.core.trading.use_cases.mt5_adapter.account_info",
@@ -838,15 +856,22 @@ def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(
             safe_int_ticket=lambda value: value,
     )
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["preview_ok"] is False
+    assert result["error_code"] == "preview_blocked"
+    assert "guardrails_would_block_live" in result["blockers"]
     assert result.get("guardrail_blocked") is not True
     assert result["guardrails_enabled"] is True
-    assert result["guardrails_preview"] == {
-        "enabled": True,
-        "blocked": False,
-        "ignored_for_demo": True,
-        "checks_not_performed": [],
-    }
+    guardrail_preview = result["guardrails_preview"]
+    assert guardrail_preview["enabled"] is True
+    assert guardrail_preview["blocked"] is False
+    assert guardrail_preview["ignored_for_demo"] is True
+    assert guardrail_preview["would_block_live"] is True
+    assert guardrail_preview["live_projection"]["blocked"] is True
+    assert guardrail_preview["live_projection"]["rule"] == "symbol_policy"
+    assert "exceeds the configured max volume" in (
+        guardrail_preview["live_projection"]["violations"][0]
+    )
 
 
 def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guardrails):
