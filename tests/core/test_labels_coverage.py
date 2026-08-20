@@ -3,6 +3,7 @@
 import inspect
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -205,11 +206,12 @@ class TestLabelsTripleBarrier:
                 result_idx=0,
                 source_idx=0,
                 closes=np.array([1.23456]),
-                t_entry=["2024-01-01T00:00:00Z"],
+                entry_bar_open_times=["2024-01-01T00:00:00Z"],
+                entry_price_available_times=["2024-01-01T01:00:00Z"],
                 labels=[1],
                 hold=[3],
-                tp_times=[None],
-                sl_times=[None],
+                tp_hit_bar_open_times=[None],
+                sl_hit_bar_open_times=[None],
                 direction_value="long",
                 tick_size=0.0001,
                 barrier_kwargs={"tp_pct": 0.5, "sl_pct": 0.5},
@@ -313,7 +315,7 @@ class TestLabelsTripleBarrier:
             "invalid_barrier": 0,
         }
         assert len(result["labels"]) == 8
-        assert len(result["entries"]) == 8
+        assert len(result["entry_bar_open_times"]) == 8
         assert result["sample_limit"] == 1
         assert any("1 invalid or non-positive price" in msg for msg in result["warnings"])
 
@@ -374,11 +376,12 @@ class TestLabelsTripleBarrier:
             result_idx=0,
             source_idx=source_indices[0],
             closes=closes,
-            t_entry=entries,
+            entry_bar_open_times=entries,
+            entry_price_available_times=["1970-01-01T00:00:01Z"],
             labels=labels,
             hold=hold,
-            tp_times=tp_times,
-            sl_times=sl_times,
+            tp_hit_bar_open_times=tp_times,
+            sl_hit_bar_open_times=sl_times,
             same_bar_flags=same_bar,
             direction_value="long",
             tick_size=0.01,
@@ -430,11 +433,15 @@ class TestLabelsTripleBarrier:
         assert "history_bars_requested" not in result["summary"]["sample_quality"]
         assert "history_bars_used" not in result["summary"]["sample_quality"]
         assert len(result["data"]) <= 10
-        assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
-            result["data"][0]
-        )
+        assert {
+            "entry_bar_open_time",
+            "entry_price_available_at",
+            "label",
+            "outcome",
+            "holding_bars",
+        }.issubset(result["data"][0])
         assert "labels" not in result
-        assert "entries" not in result
+        assert "entry_bar_open_times" not in result
         assert result["sample_size"] <= 10
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
@@ -539,11 +546,15 @@ class TestLabelsTripleBarrier:
         assert result["sample_basis"] == "recent"
         assert result["sample_size"] == 25
         assert len(result["data"]) == 25
-        assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
-            result["data"][0]
-        )
+        assert {
+            "entry_bar_open_time",
+            "entry_price_available_at",
+            "label",
+            "outcome",
+            "holding_bars",
+        }.issubset(result["data"][0])
         assert "labels" not in result
-        assert "entries" not in result
+        assert "entry_bar_open_times" not in result
         assert result["data_note"] == "data rows cover the recent summary lookback window."
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
@@ -582,7 +593,7 @@ class TestLabelsTripleBarrier:
         mock_hist.return_value = _make_df(60)
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="full")
         assert result["success"] is True
-        assert "entries" in result
+        assert "entry_bar_open_times" in result
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
@@ -603,7 +614,7 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="summary")
         assert result["success"] is True
         assert "summary" in result
-        assert "entries" not in result
+        assert "entry_bar_open_times" not in result
         assert any("neutral timeouts" in warning for warning in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
@@ -660,7 +671,7 @@ class TestLabelsTripleBarrier:
 
         assert result["success"] is True
         assert len(result["labels"]) == 2
-        assert len(result["entries"]) == 2
+        assert len(result["entry_bar_open_times"]) == 2
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
@@ -763,9 +774,83 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["labels"][0] == -1
         assert result["holding_bars"][0] == 1
-        assert result["tp_time"][0] == "1970-01-01T01:00Z"
-        assert result["sl_time"][0] == "1970-01-01T01:00Z"
+        assert result["tp_hit_bar_open_times"][0] == "1970-01-01T01:00Z"
+        assert result["sl_hit_bar_open_times"][0] == "1970-01-01T01:00Z"
         assert result["same_bar"][0] is True
+        assert result["data"][0]["tp_hit_bar_open_time"] == "1970-01-01T01:00Z"
+        assert result["data"][0]["sl_hit_bar_open_time"] == "1970-01-01T01:00Z"
+        assert "tp_time" not in result["data"][0]
+
+    @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_entry_close_availability_is_explicit_in_compact_and_full(
+        self, mock_hist, mock_den, mock_pip
+    ):
+        del mock_den, mock_pip
+        start = pd.Timestamp("2026-08-19T05:00:00Z").timestamp()
+        frame = _make_flat_df(5)
+        frame["time"] = start + np.arange(5, dtype=float) * 3600.0
+        mock_hist.return_value = frame
+
+        compact = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=5.0,
+            sl_pct=5.0,
+            horizon=3,
+            lookback=2,
+            detail="compact",
+        )
+        full = _get_raw_fn()(
+            "EURUSD",
+            tp_pct=5.0,
+            sl_pct=5.0,
+            horizon=3,
+            lookback=2,
+            detail="full",
+        )
+
+        for result in (compact, full):
+            row = result["data"][0]
+            assert row["entry_bar_open_time"] == "2026-08-19T05:00Z"
+            assert row["entry_price_available_at"] == "2026-08-19T06:00Z"
+            assert "entry_time" not in row
+            assert result["timestamp_contract"]["bar_timestamp_basis"] == "open_time"
+            assert result["timestamp_contract"]["hit_time_precision"] == "bar_only"
+        assert compact["timestamp_contract"] == full["timestamp_contract"]
+
+    @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_daily_entry_availability_uses_broker_calendar_boundary(
+        self, mock_hist, mock_den, mock_pip
+    ):
+        del mock_den, mock_pip
+        start = pd.Timestamp("2026-03-07T22:00:00Z").timestamp()
+        frame = _make_flat_df(3)
+        frame["time"] = [
+            start,
+            pd.Timestamp("2026-03-08T21:00:00Z").timestamp(),
+            pd.Timestamp("2026-03-09T21:00:00Z").timestamp(),
+        ]
+        mock_hist.return_value = frame
+
+        with patch(
+            "mtdata.utils.time._broker_calendar_timezone",
+            return_value=ZoneInfo("America/New_York"),
+        ):
+            result = _get_raw_fn()(
+                "EURUSD",
+                timeframe="D1",
+                tp_pct=5.0,
+                sl_pct=5.0,
+                horizon=1,
+                lookback=2,
+                detail="full",
+            )
+
+        assert result["entry_bar_open_times"][0] == "2026-03-07T22:00Z"
+        assert result["entry_price_available_at"][0] == "2026-03-08T21:00Z"
 
 
 @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)

@@ -469,12 +469,13 @@ class TestNormalizeTripleBarrierPayload:
             "symbol": "EURUSD",
             "timeframe": "H1",
             "horizon": 3,
-            "entries": ["2026-03-17 00:00", "2026-03-17 01:00"],
+            "entry_bar_open_times": ["2026-03-17 00:00", "2026-03-17 01:00"],
+            "entry_price_available_at": ["2026-03-17 01:00", "2026-03-17 02:00"],
             "labels": [1, 0],
             "outcomes": ["tp", "neutral"],
             "holding_bars": [2, 3],
-            "tp_time": ["2026-03-17 02:00", None],
-            "sl_time": [None, None],
+            "tp_hit_bar_open_times": ["2026-03-17 02:00", None],
+            "sl_hit_bar_open_times": [None, None],
             "summary": {
                 "lookback": 2,
                 "counts": {"tp": 1, "sl": 0, "neutral": 1},
@@ -495,20 +496,22 @@ class TestNormalizeTripleBarrierPayload:
             "horizon": 3,
             "labels": [
                 {
-                    "entry": "2026-03-17 00:00",
+                    "entry_bar_open_time": "2026-03-17 00:00",
+                    "entry_price_available_at": "2026-03-17 01:00",
                     "label": 1,
                     "outcome": "tp",
                     "holding_bars": 2,
-                    "tp_time": "2026-03-17 02:00",
-                    "sl_time": None,
+                    "tp_hit_bar_open_time": "2026-03-17 02:00",
+                    "sl_hit_bar_open_time": None,
                 },
                 {
-                    "entry": "2026-03-17 01:00",
+                    "entry_bar_open_time": "2026-03-17 01:00",
+                    "entry_price_available_at": "2026-03-17 02:00",
                     "label": 0,
                     "outcome": "neutral",
                     "holding_bars": 3,
-                    "tp_time": None,
-                    "sl_time": None,
+                    "tp_hit_bar_open_time": None,
+                    "sl_hit_bar_open_time": None,
                 },
             ],
             "summary": {
@@ -531,18 +534,23 @@ class TestNormalizeTripleBarrierPayload:
             "timeframe": "M15",
             "horizon": 5,
             "direction": "long",
-            "entries": ["2026-08-12T19:00Z", "2026-08-12T19:15Z"],
+            "entry_bar_open_times": ["2026-08-12T19:00Z", "2026-08-12T19:15Z"],
+            "entry_price_available_at": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
             "labels": [-1, 1],
             "outcomes": ["sl", "tp"],
             "holding_bars": [1, 1],
-            "tp_time": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
-            "sl_time": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
+            "tp_hit_bar_open_times": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
+            "sl_hit_bar_open_times": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
             "same_bar": [True, True],
             "same_bar_policy": "sl_first",
             "label_uses_future_path": True,
             "denoise_lookahead_bias": False,
             "suitable_as_training_target": True,
             "suitable_as_live_feature": False,
+            "timestamp_contract": {
+                "bar_timestamp_basis": "open_time",
+                "hit_time_precision": "bar_only",
+            },
             "price_precision": 2,
             "trade_tick_size": 0.01,
             "labeling_spec": {
@@ -570,6 +578,7 @@ class TestNormalizeTripleBarrierPayload:
         assert result["denoise_lookahead_bias"] is False
         assert result["suitable_as_training_target"] is True
         assert result["suitable_as_live_feature"] is False
+        assert result["timestamp_contract"] == payload["timestamp_contract"]
         assert result["labeling_spec"] == payload["labeling_spec"]
         assert result["labeling_coverage"] == 2 / 7
         assert result["history_bars_used"] == 7
@@ -1646,25 +1655,34 @@ class TestFormatResultMinimal:
             "symbol": "EURUSD",
             "timeframe": "H1",
             "horizon": 3,
-            "entries": ["2026-03-17 00:00", "2026-03-17 01:00"],
+            "entry_bar_open_times": ["2026-03-17 00:00", "2026-03-17 01:00"],
+            "entry_price_available_at": ["2026-03-17 01:00", "2026-03-17 02:00"],
             "labels": [1, 0],
             "outcomes": ["tp", "neutral"],
             "holding_bars": [2, 3],
-            "tp_time": ["2026-03-17 02:00", None],
-            "sl_time": [None, None],
+            "tp_hit_bar_open_times": ["2026-03-17 02:00", None],
+            "sl_hit_bar_open_times": [None, None],
             "label_key": {"1": "tp_first", "-1": "sl_first", "0": "hold"},
         }
         result = format_result_minimal(payload, verbose=True)
         lines = result.splitlines()
-        assert "labels[2]{entry,label,outcome,holding_bars,tp_time,sl_time}:" in lines
-        assert "  \"2026-03-17 00:00\",1,tp,2,\"2026-03-17 02:00\",null" in lines
+        assert (
+            "labels[2]{entry_bar_open_time,label,entry_price_available_at,"
+            "outcome,holding_bars,tp_hit_bar_open_time,sl_hit_bar_open_time}:"
+            in lines
+        )
+        assert (
+            "  \"2026-03-17 00:00\",1,\"2026-03-17 01:00\",tp,2,"
+            "\"2026-03-17 02:00\",null"
+            in lines
+        )
         assert "label_key:" in lines
         assert "  1: tp_first" in lines
         assert "  -1: sl_first" in lines
         assert "  0: hold" in lines
-        assert not any(line.startswith("entries[") for line in lines)
+        assert not any(line.startswith("entry_bar_open_times[") for line in lines)
         assert not any(line.startswith("holding_bars[") for line in lines)
-        assert not any(line.startswith("tp_time[") for line in lines)
+        assert not any(line.startswith("tp_hit_bar_open_times[") for line in lines)
 
     def test_trade_place_default_view_hides_comment_diagnostics(self):
         payload = {

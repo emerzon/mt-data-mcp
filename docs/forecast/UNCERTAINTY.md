@@ -167,6 +167,16 @@ Every triple-barrier outcome uses later bars by design. Responses therefore set
 state whether the result remains a valid historical training target. Join these
 labels as targets, never as same-timestamp live features.
 
+The label row is keyed by `entry_bar_open_time`, but its `entry_price` is the
+source bar's close. Use `entry_price_available_at` as the earliest decision time
+and only join features that were available by that instant. For example, an H1
+row opened at `05:00Z` has a close-derived entry price available at `06:00Z`.
+`tp_hit_bar_open_time` and `sl_hit_bar_open_time` identify the candle containing
+the first observed touch; OHLC data cannot reveal the exact intrabar touch time.
+The machine-readable `timestamp_contract` carries the same rules in compact and
+full responses. Daily, weekly, and monthly availability uses broker-calendar
+bar boundaries, including configured daylight-saving changes.
+
 ### Usage
 
 ```bash
@@ -191,10 +201,12 @@ five-digit FX quotes, one pip is 10 ticks).
 {
   "data": [
     {
-      "entry_time": "2025-12-18 17:00",
+      "entry_bar_open_time": "2025-12-18T17:00Z",
+      "entry_price_available_at": "2025-12-18T18:00Z",
       "label": 1,
       "outcome": "tp_first",
-      "holding_bars": 5
+      "holding_bars": 5,
+      "tp_hit_bar_open_time": "2025-12-18T22:00Z"
     }
   ],
   "summary": {
@@ -205,7 +217,8 @@ five-digit FX quotes, one pip is 10 ticks).
 
 Compact output keeps at most 10 representative rows in `data`; summary counts
 cover the full requested lookback. Use `--detail full` when you need the
-parallel `entries`, `labels`, and `holding_bars` arrays for model training.
+parallel `entry_bar_open_times`, `entry_price_available_at`, `labels`, and
+`holding_bars` arrays for model training.
 
 **Interpretation:**
 - Label distribution shows historical win/loss rates for these barrier levels

@@ -548,7 +548,8 @@ def _normalize_triple_barrier_payload(
     verbose: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Convert triple-barrier column arrays into a single tabular block."""
-    entries = payload.get("entries")
+    entries = payload.get("entry_bar_open_times")
+    entry_price_available_raw = payload.get("entry_price_available_at")
     labels = payload.get("labels")
     holding_bars = payload.get("holding_bars")
     if (
@@ -564,10 +565,15 @@ def _normalize_triple_barrier_payload(
     if n <= 0:
         return None
 
-    tp_times_raw = payload.get("tp_time")
-    sl_times_raw = payload.get("sl_time")
+    tp_times_raw = payload.get("tp_hit_bar_open_times")
+    sl_times_raw = payload.get("sl_hit_bar_open_times")
     outcomes_raw = payload.get("outcomes")
     same_bar_raw = payload.get("same_bar")
+    entry_price_available = (
+        list(entry_price_available_raw)
+        if isinstance(entry_price_available_raw, list)
+        else []
+    )
     tp_times = list(tp_times_raw) if isinstance(tp_times_raw, list) else []
     sl_times = list(sl_times_raw) if isinstance(sl_times_raw, list) else []
     outcomes = list(outcomes_raw) if isinstance(outcomes_raw, list) else []
@@ -576,16 +582,26 @@ def _normalize_triple_barrier_payload(
     rows: List[Dict[str, Any]] = []
     for idx in range(n):
         row: Dict[str, Any] = {
-            "entry": entries[idx],
+            "entry_bar_open_time": entries[idx],
             "label": labels[idx],
         }
+        if "entry_price_available_at" in payload:
+            row["entry_price_available_at"] = (
+                entry_price_available[idx]
+                if idx < len(entry_price_available)
+                else None
+            )
         if "outcomes" in payload:
             row["outcome"] = outcomes[idx] if idx < len(outcomes) else None
         row["holding_bars"] = holding_bars[idx]
-        if "tp_time" in payload:
-            row["tp_time"] = tp_times[idx] if idx < len(tp_times) else None
-        if "sl_time" in payload:
-            row["sl_time"] = sl_times[idx] if idx < len(sl_times) else None
+        if "tp_hit_bar_open_times" in payload:
+            row["tp_hit_bar_open_time"] = (
+                tp_times[idx] if idx < len(tp_times) else None
+            )
+        if "sl_hit_bar_open_times" in payload:
+            row["sl_hit_bar_open_time"] = (
+                sl_times[idx] if idx < len(sl_times) else None
+            )
         if "same_bar" in payload:
             row["same_bar"] = same_bar[idx] if idx < len(same_bar) else None
         rows.append(row)
@@ -611,6 +627,7 @@ def _normalize_triple_barrier_payload(
         "denoise_lookahead_bias",
         "suitable_as_training_target",
         "suitable_as_live_feature",
+        "timestamp_contract",
         "price_precision",
         "trade_tick_size",
         "label_legend",

@@ -42,7 +42,7 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     symbol_price_digits,
 )
-from ..utils.time import _format_time_minimal
+from ..utils.time import _format_time_minimal, bar_close_epoch
 from ._mcp_instance import mcp
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_detail
@@ -121,11 +121,12 @@ def _triple_barrier_sample_row(
     result_idx: int,
     source_idx: int,
     closes: np.ndarray,
-    t_entry: List[str],
+    entry_bar_open_times: List[str],
+    entry_price_available_times: List[str],
     labels: List[int],
     hold: List[int],
-    tp_times: List[Optional[str]],
-    sl_times: List[Optional[str]],
+    tp_hit_bar_open_times: List[Optional[str]],
+    sl_hit_bar_open_times: List[Optional[str]],
     direction_value: str,
     tick_size: float,
     barrier_kwargs: Dict[str, Any],
@@ -134,7 +135,8 @@ def _triple_barrier_sample_row(
 ) -> Dict[str, Any]:
     label = int(labels[result_idx])
     row: Dict[str, Any] = {
-        "entry_time": t_entry[result_idx],
+        "entry_bar_open_time": entry_bar_open_times[result_idx],
+        "entry_price_available_at": entry_price_available_times[result_idx],
         "label": label,
         "outcome": (
             "same_bar_neutral"
@@ -142,8 +144,8 @@ def _triple_barrier_sample_row(
             else _label_outcome(label)
         ),
         "holding_bars": hold[result_idx],
-        "tp_time": tp_times[result_idx],
-        "sl_time": sl_times[result_idx],
+        "tp_hit_bar_open_time": tp_hit_bar_open_times[result_idx],
+        "sl_hit_bar_open_time": sl_hit_bar_open_times[result_idx],
         "same_bar": bool(same_bar_flags and same_bar_flags[result_idx]),
     }
     try:
@@ -410,6 +412,9 @@ def labels_triple_barrier(  # noqa: C901
     is conservative SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
+    entry_bar_open_time is the source-bar join key; entry_price_available_at is
+    the completed-bar close when its entry price first exists. TP/SL hit fields
+    identify the hit bar's open label, not an exact intrabar touch instant.
     Compact and standard `data` contain the most recent labeled rows, including
     neutral outcomes; full detail returns the complete labeled series.
     """
@@ -767,6 +772,12 @@ def labels_triple_barrier(  # noqa: C901
                 barrier_kwargs=barrier_kwargs,
                 same_bar_policy=same_bar_policy_value,
             )
+            entry_price_available_times = [
+                _format_time_minimal(
+                    bar_close_epoch(times[source_idx], str(timeframe))
+                )
+                for source_idx in source_indices
+            ]
             rows_before_labeling = int(N)
             labelable_rows = int(max(0, max_entry_index))
             rows_after_labeling = int(len(labels))
@@ -793,6 +804,15 @@ def labels_triple_barrier(  # noqa: C901
                     "future bar(s). Increase lookback if you need a larger labeled window."
                 )
 
+            timestamp_contract = {
+                "bar_timestamp_basis": "open_time",
+                "entry_bar_open_time": "source_bar_open_join_key",
+                "entry_price_available_at": "source_bar_close_earliest_decision_time",
+                "hit_bar_open_time": "bar_containing_first_observed_barrier_touch",
+                "hit_time_precision": "bar_only",
+                "exact_intrabar_hit_time_available": False,
+            }
+
             payload: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
@@ -804,6 +824,7 @@ def labels_triple_barrier(  # noqa: C901
                 "denoise_lookahead_bias": denoise_lookahead_bias,
                 "suitable_as_training_target": suitable_as_training_target,
                 "suitable_as_live_feature": False,
+                "timestamp_contract": timestamp_contract,
                 "preprocessing": preprocessing,
                 "labeling_spec": {
                     "direction": direction_value,
@@ -812,11 +833,14 @@ def labels_triple_barrier(  # noqa: C901
                         "denoised_close" if denoise_applied else "close"
                     ),
                     "entry_price_column": str(base_col),
+                    "entry_price_timing": "completed_bar_close",
                     "hit_price_source": (
                         "raw_high_low"
                         if label_on == "high_low"
                         else ("denoised_close" if denoise_applied else "close")
                     ),
+                    "hit_time_basis": "bar_open_time",
+                    "exact_intrabar_hit_time_available": False,
                     "label_uses_future_path": True,
                     "denoise_lookahead_bias": denoise_lookahead_bias,
                     "suitable_as_training_target": suitable_as_training_target,
@@ -851,15 +875,16 @@ def labels_triple_barrier(  # noqa: C901
                 "history_bars_fetched": history_bars_fetched,
                 "history_bars_used": history_bars_used,
                 "sample_limit": sample_limit,
-                "entries": t_entry,
+                "entry_bar_open_times": t_entry,
+                "entry_price_available_at": entry_price_available_times,
                 "labels": labels,
                 "outcomes": [
                     "same_bar_neutral" if same_bar and label == 0 else _label_outcome(label)
                     for label, same_bar in zip(labels, same_bar_flags)
                 ],
                 "holding_bars": hold,
-                "tp_time": tp_times,
-                "sl_time": sl_times,
+                "tp_hit_bar_open_times": tp_times,
+                "sl_hit_bar_open_times": sl_times,
                 "same_bar": same_bar_flags,
             }
             if price_digits > 0:
@@ -872,11 +897,12 @@ def labels_triple_barrier(  # noqa: C901
                         result_idx=idx,
                         source_idx=source_indices[idx],
                         closes=closes,
-                        t_entry=t_entry,
+                        entry_bar_open_times=t_entry,
+                        entry_price_available_times=entry_price_available_times,
                         labels=labels,
                         hold=hold,
-                        tp_times=tp_times,
-                        sl_times=sl_times,
+                        tp_hit_bar_open_times=tp_times,
+                        sl_hit_bar_open_times=sl_times,
                         same_bar_flags=same_bar_flags,
                         direction_value=direction_value,
                         tick_size=tick_size,
@@ -1029,6 +1055,7 @@ def labels_triple_barrier(  # noqa: C901
                         "denoise_lookahead_bias": denoise_lookahead_bias,
                         "suitable_as_training_target": suitable_as_training_target,
                         "suitable_as_live_feature": False,
+                        "timestamp_contract": timestamp_contract,
                         "preprocessing": preprocessing,
                         "sample_quality_status": sample_quality["status"],
                         "summary": summary,
@@ -1065,11 +1092,12 @@ def labels_triple_barrier(  # noqa: C901
                             result_idx=idx,
                             source_idx=source_indices[idx],
                             closes=closes,
-                            t_entry=t_entry,
+                            entry_bar_open_times=t_entry,
+                            entry_price_available_times=entry_price_available_times,
                             labels=labels,
                             hold=hold,
-                            tp_times=tp_times,
-                            sl_times=sl_times,
+                            tp_hit_bar_open_times=tp_times,
+                            sl_hit_bar_open_times=sl_times,
                             same_bar_flags=same_bar_flags,
                             direction_value=direction_value,
                             tick_size=tick_size,
@@ -1118,12 +1146,13 @@ def labels_triple_barrier(  # noqa: C901
                         compact_sample_quality.pop("history_bars_used", None)
                         summary["sample_quality"] = compact_sample_quality
                     for key in (
-                        "entries",
+                        "entry_bar_open_times",
+                        "entry_price_available_at",
                         "labels",
                         "outcomes",
                         "holding_bars",
-                        "tp_time",
-                        "sl_time",
+                        "tp_hit_bar_open_times",
+                        "sl_hit_bar_open_times",
                         "same_bar",
                     ):
                         payload.pop(key, None)
@@ -1136,12 +1165,13 @@ def labels_triple_barrier(  # noqa: C901
                     )
                     payload["data"] = _sample_rows(sample_indices)
                     for key in (
-                        "entries",
+                        "entry_bar_open_times",
+                        "entry_price_available_at",
                         "labels",
                         "outcomes",
                         "holding_bars",
-                        "tp_time",
-                        "sl_time",
+                        "tp_hit_bar_open_times",
+                        "sl_hit_bar_open_times",
                         "same_bar",
                     ):
                         payload.pop(key, None)
