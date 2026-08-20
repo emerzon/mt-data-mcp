@@ -406,23 +406,32 @@ def _get_candlestick_pattern_methods(temp: pd.DataFrame) -> List[str]:
     return list(_CANDLESTICK_PATTERN_METHOD_CACHE)
 
 
-def _filter_candlestick_pattern_methods(
+def _candlestick_dispatch_catalog(ta_module: Any) -> set[str]:
+    """Return public pattern names understood by an aggregate dispatcher."""
+    for attribute in ("CDL_PATTERN_NAMES", "ALL_PATTERNS"):
+        values = getattr(ta_module, attribute, None)
+        if not isinstance(values, (list, tuple, set, frozenset)):
+            continue
+        catalog = {
+            normalized
+            for value in values
+            if (normalized := _normalize_candlestick_name(str(value)))
+        }
+        if catalog:
+            return catalog
+    return set()
+
+
+def _candlestick_direct_method_map(
     pattern_methods: List[str],
-    *,
-    robust_only: bool,
-    robust_set: set[str],
-    whitelist_set: Optional[set[str]],
-) -> List[str]:
-    return [
-        name
-        for name in pattern_methods
-        if _is_candlestick_allowed(
-            str(name),
-            robust_only=bool(robust_only),
-            robust_set=robust_set,
-            whitelist_set=whitelist_set,
-        )
-    ]
+) -> Dict[str, str]:
+    methods: Dict[str, str] = {}
+    for method_name in sorted(pattern_methods):
+        normalized = _normalize_candlestick_name(method_name)
+        if not normalized or normalized == "pattern":
+            continue
+        methods.setdefault(normalized, method_name)
+    return methods
 
 
 def _dedupe_redundant_candlestick_hits(
@@ -890,55 +899,148 @@ def detect_candlestick_patterns(  # noqa: C901
         except Exception:
             pass
 
-    available_pattern_methods = _filter_candlestick_pattern_methods(
-        pattern_methods,
-        robust_only=bool(robust_only),
-        robust_set=_ROBUST_CANDLESTICK_WHITELIST,
-        whitelist_set=None,
+    dispatcher_method = next(
+        (
+            name
+            for name in pattern_methods
+            if _normalize_candlestick_name(name) == "pattern"
+        ),
+        None,
     )
-    pattern_methods = _filter_candlestick_pattern_methods(
-        available_pattern_methods,
-        robust_only=bool(robust_only),
-        robust_set=_ROBUST_CANDLESTICK_WHITELIST,
-        whitelist_set=parsed_whitelist,
+    dispatch_catalog = _candlestick_dispatch_catalog(ta)
+    direct_methods = _candlestick_direct_method_map(pattern_methods)
+    backend_detector_names = set(direct_methods) | dispatch_catalog
+    available_detector_names = (
+        backend_detector_names & _ROBUST_CANDLESTICK_WHITELIST
+        if robust_only
+        else backend_detector_names
     )
-    if not pattern_methods:
-        available = _format_candlestick_detector_labels(available_pattern_methods)
-        if parsed_whitelist is not None:
-            requested = (
-                ", ".join(whitelist_parts) if whitelist_parts else str(whitelist)
-            )
-            return {
-                "error": (
-                    "No candlestick detectors match whitelist "
-                    f"'{requested}'. Available detectors: {available}"
-                )
-            }
+
+    requested_order = list(
+        dict.fromkeys(
+            _normalize_candlestick_name(part)
+            for part in whitelist_parts
+            if _normalize_candlestick_name(part)
+        )
+    )
+    requested_names = set(requested_order) if parsed_whitelist is not None else None
+    robust_filtered_names = sorted(
+        (requested_names or set()) - _ROBUST_CANDLESTICK_WHITELIST
+    ) if robust_only else []
+    selected_names = requested_names
+    if robust_only:
+        selected_names = (
+            (requested_names & _ROBUST_CANDLESTICK_WHITELIST)
+            if requested_names is not None
+            else set(_ROBUST_CANDLESTICK_WHITELIST)
+        )
+
+    dispatcher_catalog_unknown = bool(dispatcher_method and not dispatch_catalog)
+    supported_selected = (
+        available_detector_names
+        if selected_names is None
+        else selected_names & available_detector_names
+    )
+    if (
+        selected_names is not None
+        and not supported_selected
+        and not dispatcher_catalog_unknown
+    ):
+        available = _format_candlestick_detector_labels(
+            sorted(available_detector_names)
+        )
+        requested = ", ".join(whitelist_parts) if whitelist_parts else str(whitelist)
         return {
             "error": (
-                "No candlestick detectors match the requested filters. "
-                f"Available detectors: {available}"
-            )
+                "No candlestick detectors match whitelist "
+                f"'{requested}'. Available detectors: {available}"
+            ),
+            "requested_detectors": requested_order,
+            "unsupported_detectors": sorted(
+                (requested_names or set()) - backend_detector_names
+            ),
+            "filtered_by_robust_only": robust_filtered_names,
+        }
+    if selected_names is None and not available_detector_names and not dispatcher_method:
+        return {
+            "error": "No candlestick detectors match the requested filters.",
         }
 
     before_cols = set(temp.columns)
-    for name in sorted(pattern_methods):
+    dispatcher_succeeded = False
+    failed_detectors: List[str] = []
+    if dispatcher_method:
+        dispatch_names: Any
+        if selected_names is None:
+            dispatch_names = "all"
+        elif dispatch_catalog:
+            dispatch_names = sorted(selected_names & dispatch_catalog)
+        else:
+            dispatch_names = sorted(selected_names)
+        if dispatch_names:
+            try:
+                method = getattr(temp.ta, dispatcher_method)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    method(name=dispatch_names, append=True)
+                dispatcher_succeeded = True
+            except Exception:
+                logger.warning(
+                    "Aggregate candlestick pattern dispatcher '%s' failed.",
+                    dispatcher_method,
+                    exc_info=True,
+                )
+                if isinstance(dispatch_names, list):
+                    failed_detectors.extend(str(name) for name in dispatch_names)
+
+    for detector_name, method_name in sorted(direct_methods.items()):
+        if selected_names is not None and detector_name not in selected_names:
+            continue
+        if robust_only and detector_name not in _ROBUST_CANDLESTICK_WHITELIST:
+            continue
+        if dispatcher_succeeded and detector_name in dispatch_catalog:
+            continue
         try:
-            method = getattr(temp.ta, name)
+            method = getattr(temp.ta, method_name)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 method(append=True)
         except Exception:
+            failed_detectors.append(detector_name)
             logger.warning(
-                "Candlestick pattern detector '%s' failed.", name, exc_info=True
+                "Candlestick pattern detector '%s' failed.", method_name, exc_info=True
             )
             continue
 
     pattern_cols = [
         c for c in temp.columns if c not in before_cols and c.lower().startswith("cdl_")
     ]
+    evaluated_detectors = sorted(
+        {
+            normalized
+            for column in pattern_cols
+            if (normalized := _normalize_candlestick_name(str(column)))
+        }
+    )
+    unsupported_detectors = sorted(
+        (requested_names or set())
+        - set(evaluated_detectors)
+        - set(robust_filtered_names)
+    )
+    unresolved_failures = sorted(set(failed_detectors) - set(evaluated_detectors))
     if not pattern_cols:
-        return {"error": "No candle patterns produced any outputs."}
+        available = _format_candlestick_detector_labels(
+            sorted(available_detector_names)
+        )
+        return {
+            "error": (
+                "No requested candlestick detectors produced outputs. "
+                f"Available detectors: {available}"
+            ),
+            "requested_detectors": requested_order,
+            "unsupported_detectors": unsupported_detectors,
+            "failed_detectors": unresolved_failures,
+        }
 
     try:
         gap = max(0, int(min_gap))
@@ -1005,8 +1107,22 @@ def detect_candlestick_patterns(  # noqa: C901
             "strength_scale": "ohlc_geometry_and_pattern_reliability_v3",
             "signal_scale": "backend_native_cdl_signal",
             "gap_selection_policy": "newest_first",
+            "detectors_evaluated": evaluated_detectors,
         }
     )
+    if requested_names is not None:
+        payload["requested_detectors"] = requested_order
+    if unsupported_detectors:
+        payload["unsupported_detectors"] = unsupported_detectors
+        warnings_out.append(
+            "Unsupported candlestick detectors were not evaluated: "
+            + ", ".join(name.upper() for name in unsupported_detectors)
+            + "."
+        )
+    if robust_filtered_names:
+        payload["filtered_by_robust_only"] = robust_filtered_names
+    if unresolved_failures:
+        payload["failed_detectors"] = unresolved_failures
     if warnings_out:
         payload["warnings"] = warnings_out
     if not start and not end and epochs:

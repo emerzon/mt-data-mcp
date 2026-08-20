@@ -34,6 +34,73 @@ def _always_ready_guard(*_args, **_kwargs):
     yield None, None
 
 
+def _install_fake_aggregate_backend(monkeypatch, *, catalog, signals):
+    calls = []
+
+    class _FakeFrame(pd.DataFrame):
+        @property
+        def _constructor(self):
+            return _FakeFrame
+
+        @property
+        def ta(self):
+            frame = self
+
+            class _Accessor:
+                def cdl_pattern(self, name="all", append=True):
+                    assert append is True
+                    requested = list(catalog) if name == "all" else list(name)
+                    calls.append(("cdl_pattern", tuple(requested)))
+                    for detector in requested:
+                        if detector in catalog:
+                            frame[f"CDL_{detector.upper()}"] = signals.get(
+                                detector, [0.0, 0.0]
+                            )
+
+                def cdl_doji(self, append=True):
+                    assert append is True
+                    calls.append(("cdl_doji", ()))
+                    frame["CDL_DOJI"] = signals.get("doji", [0.0, 0.0])
+
+            return _Accessor()
+
+    monkeypatch.setattr(candlestick_mod, "_ensure_candlestick_runtime", lambda: None)
+    monkeypatch.setattr(candlestick_mod, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(candlestick_mod, "_symbol_ready_guard", _always_ready_guard)
+    monkeypatch.setattr(
+        candlestick_mod, "_mt5_copy_rates_from", lambda *_a, **_k: [object(), object()]
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_get_candlestick_pattern_methods",
+        lambda _temp: ["cdl_doji", "cdl_pattern"],
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "ta",
+        SimpleNamespace(CDL_PATTERN_NAMES=list(catalog)),
+    )
+    monkeypatch.setattr(
+        candlestick_mod,
+        "_rates_to_df",
+        lambda _rates: _FakeFrame(
+            {
+                "time": [1_700_000_000.0, 1_700_003_600.0],
+                "open": [100.0, 101.0],
+                "high": [101.0, 102.0],
+                "low": [99.0, 100.0],
+                "close": [100.5, 101.5],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        data_service_mod,
+        "_resolve_live_bar_reference_epoch",
+        lambda *_a, **_k: None,
+    )
+    return calls
+
+
 def test_candlestick_allowed_respects_whitelist_when_not_robust_only():
     robust_set = {"engulfing", "harami"}
     whitelist = {"engulfing"}
@@ -451,6 +518,90 @@ def test_detect_candlestick_patterns_whitelist_error_lists_detectors(monkeypatch
     assert "No candlestick detectors match whitelist 'foo'" in res["error"]
     assert "DOJI" in res["error"]
     assert "HAMMER" in res["error"]
+
+
+def test_aggregate_dispatcher_evaluates_supported_zero_hit_whitelist(monkeypatch):
+    calls = _install_fake_aggregate_backend(
+        monkeypatch,
+        catalog=["doji", "engulfing", "hammer"],
+        signals={"engulfing": [0.0, 0.0]},
+    )
+
+    result = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.0,
+        min_gap=0,
+        robust_only=False,
+        whitelist="engulfing",
+        top_k=3,
+    )
+
+    assert result["success"] is True
+    assert result["data"] == []
+    assert result["requested_detectors"] == ["engulfing"]
+    assert result["detectors_evaluated"] == ["engulfing"]
+    assert "unsupported_detectors" not in result
+    assert calls == [("cdl_pattern", ("engulfing",))]
+
+
+def test_aggregate_dispatcher_discloses_mixed_whitelist_coverage(monkeypatch):
+    calls = _install_fake_aggregate_backend(
+        monkeypatch,
+        catalog=["doji", "engulfing", "hammer"],
+        signals={
+            "doji": [0.0, 100.0],
+            "engulfing": [0.0, 0.0],
+            "hammer": [0.0, 100.0],
+        },
+    )
+
+    result = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.0,
+        min_gap=0,
+        robust_only=False,
+        whitelist="engulfing,hammer,unknown,doji",
+        top_k=3,
+    )
+
+    assert result["success"] is True
+    assert result["requested_detectors"] == [
+        "engulfing",
+        "hammer",
+        "unknown",
+        "doji",
+    ]
+    assert result["detectors_evaluated"] == ["doji", "engulfing", "hammer"]
+    assert result["unsupported_detectors"] == ["unknown"]
+    assert "UNKNOWN" in result["warnings"][-1]
+    assert calls == [("cdl_pattern", ("doji", "engulfing", "hammer"))]
+
+
+def test_aggregate_dispatcher_applies_robust_name_preset(monkeypatch):
+    calls = _install_fake_aggregate_backend(
+        monkeypatch,
+        catalog=["doji", "engulfing"],
+        signals={"doji": [0.0, 100.0], "engulfing": [0.0, 100.0]},
+    )
+
+    result = candlestick_mod.detect_candlestick_patterns(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        min_strength=0.0,
+        min_gap=0,
+        robust_only=True,
+        whitelist=None,
+        top_k=3,
+    )
+
+    assert result["success"] is True
+    assert result["detectors_evaluated"] == ["engulfing"]
+    assert calls == [("cdl_pattern", ("engulfing",))]
 
 
 def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):

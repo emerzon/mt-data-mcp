@@ -168,13 +168,18 @@ Detector config is strict. Candlestick mode accepts
 
 Pattern names listed in this guide describe detector coverage, not a promise
 that every pattern is returned at the default threshold. `robust_only=true`
-restricts which candlestick methods run based on pattern name, while
+restricts which candlestick detectors run based on pattern name, while
 `min_strength` independently filters their conviction scores. Lower-strength
 and deprioritized formations such as many dojis may be absent by default.
 The score uses body/range geometry, directional close location, range expansion,
 pattern span, and the curated reliability tier. Raw detector magnitudes remain
 in `raw_signal` but do not alter strength because pandas-ta backends use
 different native signal scales.
+
+Named whitelists are resolved against both individual backend methods and an
+aggregate pattern dispatcher. Full results report `requested_detectors`,
+`detectors_evaluated`, and any `unsupported_detectors`, so a zero-hit detector
+is distinguishable from one the active backend could not run.
 
 ### Filtering Patterns
 
