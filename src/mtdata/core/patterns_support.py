@@ -1398,6 +1398,16 @@ def _compact_all_mode_payload(
     errors = payload.get("errors")
     if errors:
         compact["errors"] = errors
+    for key in (
+        "partial_failure",
+        "requested_count",
+        "succeeded_count",
+        "failed_count",
+        "failed_items",
+        "allow_partial",
+    ):
+        if key in payload:
+            compact[key] = payload[key]
 
     return compact
 
@@ -1448,6 +1458,16 @@ def _highlights_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     errors = payload.get("errors")
     if errors:
         compact["errors"] = errors
+    for key in (
+        "partial_failure",
+        "requested_count",
+        "succeeded_count",
+        "failed_count",
+        "failed_items",
+        "allow_partial",
+    ):
+        if key in payload:
+            compact[key] = payload[key]
 
     return compact
 

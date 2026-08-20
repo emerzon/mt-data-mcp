@@ -1409,6 +1409,7 @@ def _check_symbol_market_status_batch(
     *,
     detail: str,
     timezone_display: str,
+    allow_partial: bool = True,
     gateway: Any = None,
 ) -> Dict[str, Any]:
     mt5_gateway = gateway or create_mt5_gateway(
@@ -1424,7 +1425,10 @@ def _check_symbol_market_status_batch(
             gateway=mt5_gateway,
         )
         if result.get("error"):
-            errors.append({"symbol": symbol, "error": result.get("error")})
+            failure = {"symbol": symbol, "error": result.get("error")}
+            if result.get("error_code") not in (None, ""):
+                failure["error_code"] = result["error_code"]
+            errors.append(failure)
             continue
         rows.append(_compact_symbol_market_status(result, detail=detail))
 
@@ -1434,17 +1438,45 @@ def _check_symbol_market_status_batch(
         status_counts[status] = status_counts.get(status, 0) + 1
     can_open_count = sum(1 for row in rows if row.get("can_open_new_positions") is True)
     total = len(symbols)
-    return {
-        "success": True,
+    failed_count = len(errors)
+    succeeded_count = len(rows)
+    partial_failure = bool(succeeded_count and failed_count)
+    success = bool(succeeded_count) and (bool(allow_partial) or not failed_count)
+    payload: Dict[str, Any] = {
+        "success": success,
         "mode": "symbols",
         "symbols": symbols,
         "data": rows,
-        "count": len(rows),
+        "count": succeeded_count,
         "errors": errors if errors else None,
+        "failed_items": errors,
+        "requested_count": total,
+        "succeeded_count": succeeded_count,
+        "failed_count": failed_count,
+        "partial_failure": partial_failure,
+        "allow_partial": bool(allow_partial),
         "summary": f"{can_open_count}/{total} symbol(s) can open new positions.",
         "status_counts": status_counts,
         "timezone_context": _symbol_market_status_timezone_context(timezone_display),
     }
+    if failed_count == total:
+        payload.update(
+            {
+                "error": "Market status failed for all requested symbols.",
+                "error_code": "market_status_all_symbols_failed",
+            }
+        )
+    elif partial_failure and not allow_partial:
+        payload.update(
+            {
+                "error": (
+                    "Market status was incomplete and allow_partial=false requires "
+                    "every requested symbol to succeed."
+                ),
+                "error_code": "market_status_partial_failure",
+            }
+        )
+    return payload
 
 
 def _market_status_symbol_mode_warnings(
@@ -1465,6 +1497,7 @@ def market_status(  # noqa: C901
     region: Literal["us", "europe", "asia", "all"] = "all",
     timezone_display: Literal["local", "utc", "server", "auto"] = "auto",
     detail: DetailLiteral = "compact",
+    allow_partial: bool = True,
 ) -> Dict[str, Any]:
     """Get exchange-calendar status or MT5 symbol tradability.
 
@@ -1491,6 +1524,9 @@ def market_status(  # noqa: C901
         Response detail level. `compact`, `standard`, and `summary` use the
         concise view without per-market messages or upcoming holiday details;
         `full` preserves them.
+    allow_partial : bool, optional
+        For comma-separated symbol batches, keep usable rows when some symbols
+        fail. Set false to return `success=false` unless every symbol succeeds.
 
     Returns
     -------
@@ -1571,6 +1607,7 @@ def market_status(  # noqa: C901
                     symbol_list,
                     detail=detail_mode,
                     timezone_display=timezone_display_mode,
+                    allow_partial=allow_partial,
                     gateway=mt5_gateway,
                 )
                 if symbol_warnings:

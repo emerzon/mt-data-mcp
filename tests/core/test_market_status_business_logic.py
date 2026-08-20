@@ -25,18 +25,91 @@ def test_market_status_tool_supports_detail_contract() -> None:
         "region",
         "timezone_display",
         "detail",
+        "allow_partial",
     ]
     assert params[0].default is None
     assert params[1].default is None
     assert params[2].default == "all"
     assert params[3].default == "auto"
     assert params[4].default == "compact"
+    assert params[5].default is True
     assert get_args(get_type_hints(raw)["detail"]) == (
         "compact",
         "standard",
         "summary",
         "full",
     )
+
+
+def test_symbol_batch_reports_partial_failure_counts(monkeypatch) -> None:
+    def fake_status(symbol, **kwargs):
+        if symbol == "BAD":
+            return {"error": "Symbol BAD not found"}
+        return {"symbol": symbol, "status": "open", "can_open_new_positions": True}
+
+    monkeypatch.setattr(market_status_mod, "_check_symbol_market_status", fake_status)
+
+    result = market_status_mod._check_symbol_market_status_batch(
+        ["EURUSD", "BAD"],
+        detail="compact",
+        timezone_display="server",
+        gateway=object(),
+    )
+
+    assert result["success"] is True
+    assert result["partial_failure"] is True
+    assert result["requested_count"] == 2
+    assert result["succeeded_count"] == 1
+    assert result["failed_count"] == 1
+    assert result["failed_items"] == [
+        {"symbol": "BAD", "error": "Symbol BAD not found"}
+    ]
+
+
+def test_symbol_batch_strict_mode_fails_on_partial_result(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_check_symbol_market_status",
+        lambda symbol, **kwargs: (
+            {"error": f"Symbol {symbol} not found"}
+            if symbol == "BAD"
+            else {"symbol": symbol, "status": "open"}
+        ),
+    )
+
+    result = market_status_mod._check_symbol_market_status_batch(
+        ["EURUSD", "BAD"],
+        detail="compact",
+        timezone_display="server",
+        allow_partial=False,
+        gateway=object(),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "market_status_partial_failure"
+    assert result["partial_failure"] is True
+    assert result["count"] == 1
+
+
+def test_symbol_batch_total_failure_is_unsuccessful(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_check_symbol_market_status",
+        lambda symbol, **kwargs: {"error": f"Symbol {symbol} not found"},
+    )
+
+    result = market_status_mod._check_symbol_market_status_batch(
+        ["BAD1", "BAD2"],
+        detail="compact",
+        timezone_display="server",
+        gateway=object(),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "market_status_all_symbols_failed"
+    assert result["partial_failure"] is False
+    assert result["succeeded_count"] == 0
+    assert result["failed_count"] == 2
 
 
 def test_market_status_standard_and_summary_use_compact_shape() -> None:

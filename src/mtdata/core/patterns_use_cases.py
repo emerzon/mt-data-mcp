@@ -22,6 +22,41 @@ from .patterns_support import (
 )
 
 _ALL_MODE_TIMEFRAMES = ("M30", "H1", "H4", "D1", "W1")
+_ALL_MODE_SECTIONS = ("candlestick", "classic", "harmonic", "elliott", "fractal")
+
+
+def _all_mode_failed_items(
+    section_errors: Dict[str, Dict[str, str]],
+) -> List[Dict[str, str]]:
+    items: List[Dict[str, str]] = []
+    for section in _ALL_MODE_SECTIONS:
+        for timeframe, error in sorted(section_errors.get(section, {}).items()):
+            items.append(
+                {
+                    "section": section,
+                    "timeframe": str(timeframe),
+                    "error": str(error),
+                }
+            )
+    return items
+
+
+def _apply_all_mode_partial_policy(
+    payload: Dict[str, Any],
+    *,
+    allow_partial: bool,
+) -> Dict[str, Any]:
+    if not payload.get("partial_failure") or allow_partial:
+        return payload
+    return {
+        **payload,
+        "success": False,
+        "error": (
+            "Pattern scan was incomplete and allow_partial=false requires every "
+            "detector/timeframe item to succeed."
+        ),
+        "error_code": "patterns_partial_failure",
+    }
 
 # Calendar-time budgets for pattern age/span (in seconds)
 _MAX_AGE_SECONDS = 180 * 86400   # 180 days — oldest a pattern end_date can be
@@ -1466,14 +1501,29 @@ def run_patterns_detect(  # noqa: C901
             + len(fractal_patterns)
         )
 
-        if total == 0 and section_errors:
+        failed_items = _all_mode_failed_items(section_errors)
+        requested_count = len(_ALL_MODE_SECTIONS) * len(timeframes)
+        failed_count = len(failed_items)
+        succeeded_count = requested_count - failed_count
+        partial_failure = bool(failed_count and succeeded_count)
+
+        if failed_count == requested_count:
             flat: Dict[str, str] = {}
             for section, tf_errs in section_errors.items():
                 for tf_name, msg in tf_errs.items():
                     flat[f"{section}/{tf_name}"] = msg
             return {
+                "success": False,
                 "error": "No patterns detected across any mode or timeframe.",
+                "error_code": "patterns_all_sections_failed",
                 "details": flat,
+                "errors": section_errors,
+                "requested_count": requested_count,
+                "succeeded_count": 0,
+                "failed_count": failed_count,
+                "failed_items": failed_items,
+                "partial_failure": False,
+                "allow_partial": bool(request.allow_partial),
             }
 
         resp: Dict[str, Any] = {
@@ -1503,6 +1553,12 @@ def run_patterns_detect(  # noqa: C901
                 "patterns": fractal_patterns,
             },
             "total_patterns": total,
+            "requested_count": requested_count,
+            "succeeded_count": succeeded_count,
+            "failed_count": failed_count,
+            "failed_items": failed_items,
+            "partial_failure": partial_failure,
+            "allow_partial": bool(request.allow_partial),
         }
         if request.include_series and series_by_timeframe:
             resp["series_by_timeframe"] = series_by_timeframe
@@ -1534,14 +1590,19 @@ def run_patterns_detect(  # noqa: C901
         }
 
         if detail_value == "summary":
-            return _highlights_all_mode_payload(resp)
-        if detail_value in ("compact", "standard"):
-            return _compact_all_mode_payload(
+            projected = _highlights_all_mode_payload(resp)
+        elif detail_value in ("compact", "standard"):
+            projected = _compact_all_mode_payload(
                 resp,
                 preview_limit=request.top_k,
                 include_diagnostics=detail_value == "standard",
             )
-        return _dedupe_repeated_regime_context(resp)
+        else:
+            projected = _dedupe_repeated_regime_context(resp)
+        return _apply_all_mode_partial_policy(
+            projected,
+            allow_partial=request.allow_partial,
+        )
 
     return {
         "error": (

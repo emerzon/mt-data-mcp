@@ -588,6 +588,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Advanced deterministic recovery partition size (1-250). Omit it for "
         "the managed global scan."
     ),
+    ("patterns_detect", "allow_partial"): (
+        "Keep usable mode=all detector/timeframe results after partial failure; "
+        "set false for strict completion."
+    ),
+    ("market_status", "allow_partial"): (
+        "Keep usable comma-separated symbol results after partial failure; set "
+        "false for strict completion."
+    ),
     ("symbols_top_markets", "candidate_offset"): (
         "Zero-based offset into the deterministic sorted candidate universe. Increment "
         "by candidate_limit until candidate_page.has_more is false."

@@ -93,6 +93,13 @@ class PatternsDetectRequest(BaseModel):
     include_series: bool = False
     series_time: Literal["string", "epoch"] = "string"
     include_completed: bool = False
+    allow_partial: bool = Field(
+        True,
+        description=(
+            "For mode='all', keep usable detector/timeframe results when some "
+            "fail. Set false to make any incomplete scan return success=false."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_request(self) -> "PatternsDetectRequest":

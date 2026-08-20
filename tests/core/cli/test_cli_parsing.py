@@ -1645,6 +1645,8 @@ class TestResolveParamKwargs:
                 "max_search_time_seconds",
                 "wall-clock search limit",
             ),
+            ("market_status", "allow_partial", "strict completion"),
+            ("patterns_detect", "allow_partial", "strict completion"),
             ("forecast_task_wait", "timeout_seconds", "Maximum 86400"),
         ],
     )

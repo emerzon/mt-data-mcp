@@ -17,6 +17,12 @@ Use patterns as **context**, not automatic entry rules. Confirm with regime, vol
 
 Identifies visual patterns traders often watch for structure and timing context.
 
+`mode=all` runs five detector families for each selected timeframe. If only
+some detector/timeframe pairs fail, the response sets `partial_failure: true`
+and includes requested, succeeded, and failed counts plus `failed_items`.
+Partial findings remain usable by default; pass `--allow-partial false` for a
+strict scan that returns `success: false` on any omission.
+
 ### Candlestick Patterns
 
 Single or multi-bar patterns with historical significance.

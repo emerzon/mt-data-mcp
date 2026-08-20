@@ -1131,6 +1131,40 @@ class TestPatternsDetectAllMode:
         assert result["classic"]["patterns"] == []
         assert result["elliott"]["patterns"] == []
         assert "errors" in result
+        assert result["partial_failure"] is True
+        assert result["requested_count"] == 5
+        assert result["succeeded_count"] == 1
+        assert result["failed_count"] == 4
+        assert {item["section"] for item in result["failed_items"]} == {
+            "classic",
+            "harmonic",
+            "elliott",
+            "fractal",
+        }
+
+    @patch("mtdata.core.patterns._format_elliott_patterns")
+    @patch("mtdata.core.patterns._run_classic_engine")
+    @patch("mtdata.core.patterns._fetch_pattern_data")
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_all_mode_strict_partial_failure(
+        self, mock_candle, mock_fetch, mock_engine, mock_elliott
+    ):
+        mock_candle.return_value = {
+            "data": [{"pattern": "Doji", "direction": "neutral", "confidence": 0.8}],
+        }
+        mock_fetch.return_value = (None, {"error": "no data"})
+
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            allow_partial=False,
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "patterns_partial_failure"
+        assert result["partial_failure"] is True
+        assert result["candlestick"]["by_timeframe"]
 
     @patch("mtdata.core.patterns._format_elliott_patterns")
     @patch("mtdata.core.patterns._run_classic_engine")
@@ -1142,7 +1176,12 @@ class TestPatternsDetectAllMode:
         mock_fetch.return_value = (None, {"error": "no data"})
 
         result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
-        assert "error" in result
+        assert result["success"] is False
+        assert result["error_code"] == "patterns_all_sections_failed"
+        assert result["partial_failure"] is False
+        assert result["requested_count"] == 5
+        assert result["succeeded_count"] == 0
+        assert result["failed_count"] == 5
         assert "details" in result
 
     @patch("mtdata.core.patterns._format_elliott_patterns")

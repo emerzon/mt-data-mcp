@@ -34,6 +34,18 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 
 > **Scripting tip:** branch on `success` first, then read the tool-specific fields. On the CLI, also check the [exit code](CLI.md#exit-codes).
 
+### Partial composite results
+
+Tools that combine independently requested symbols or sections use
+`partial_failure: true` when at least one item succeeds and at least one fails.
+Multi-symbol `market_status` and all-mode `patterns_detect` also return
+`requested_count`, `succeeded_count`, `failed_count`, and machine-readable
+`failed_items`; radar, snapshot, and reports identify their missing rows or
+sections in their domain-specific fields. Where `allow_partial` is exposed, it
+keeps usable results by default; set it to false when automation requires
+`success: false` and a nonzero CLI exit for any omission. If every requested
+item fails, `success` is false regardless of `allow_partial`.
+
 ### Data provenance
 
 Successful MT5 market-data, analytics, forecast, account, and broker-symbol

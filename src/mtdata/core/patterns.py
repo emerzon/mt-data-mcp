@@ -1603,6 +1603,11 @@ def patterns_detect(
         Candlestick mode always scans closed-bar detections; use
         `last_n_bars` to restrict their recency. Harmonic mode always returns
         both forming and completed candidates because both are primary findings.
+
+    allow_partial : bool, optional (default=True)
+        In `mode="all"`, retain usable detector/timeframe results after some
+        requested items fail. Set false to return `success=false` for any
+        incomplete scan while preserving the usable results and failure list.
     
     Returns:
     --------

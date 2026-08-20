@@ -132,6 +132,11 @@ all three responses. Tool-specific aliases such as ticker `time`, status
 `last_tick_time`, and compact snapshot `snapshot.time` remain descriptive
 views of the same quote instant.
 
+`market_status` also accepts a comma-separated symbol batch. Mixed results set
+`partial_failure: true` and include requested, succeeded, and failed counts plus
+`failed_items`. Usable rows remain successful by default; pass
+`--allow-partial false` when a pre-trade gate must fail if any symbol is omitted.
+
 ---
 
 ## Deeper detail
