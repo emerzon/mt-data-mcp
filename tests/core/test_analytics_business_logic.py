@@ -285,6 +285,25 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert result["summary"]["spread_points"]["median"] == pytest.approx(10.0)
     assert result["summary"]["spread_pips"]["median"] == pytest.approx(1.0)
     assert result["units"]["spread_points"] == "broker_points"
+    mids = np.asarray(
+        [(row["bid"] + row["ask"]) / 2.0 for row in gateway.tick_rows],
+        dtype=float,
+    )
+    expected_realized = np.sqrt(np.sum(np.square(np.diff(np.log(mids)))))
+    assert result["summary"][
+        "mid_log_return_realized_volatility_observed_window"
+    ] == pytest.approx(expected_realized)
+    assert result["summary"]["mid_return_observations"] == len(mids) - 1
+    assert "mid_realized_volatility" not in result["summary"]
+    assert result["units"][
+        "mid_log_return_realized_volatility_observed_window"
+    ] == "decimal_log_return_realized_over_observed_window"
+    definitions = result["estimator_scope"]["volatility_metrics"]
+    assert definitions["cross_metric_comparable"] is False
+    assert definitions["cross_window_comparable"] is False
+    assert definitions[
+        "mid_log_return_realized_volatility_observed_window"
+    ]["annualized"] is False
     assert all("start" in item and "end" in item for item in result["liquidity_events"])
     assert all("start_epoch" not in item for item in result["liquidity_events"])
 
@@ -312,6 +331,23 @@ def test_microstructure_full_windows_are_chronological_but_events_are_ranked() -
     assert result["liquidity_events_order"] == "spread_p95_desc_then_ticks_desc"
     event_spreads = [row["spread_p95"] for row in result["liquidity_events"]]
     assert event_spreads == sorted(event_spreads, reverse=True)
+    first_window = result["windows"][0]
+    first_mids = np.asarray(
+        [
+            (row["bid"] + row["ask"]) / 2.0
+            for row in gateway.tick_rows[: first_window["ticks"]]
+        ],
+        dtype=float,
+    )
+    expected_std = np.nanstd(np.diff(np.log(first_mids)))
+    assert first_window[
+        "mid_log_return_std_per_quote_update"
+    ] == pytest.approx(expected_std)
+    assert first_window["mid_return_observations"] == len(first_mids) - 1
+    assert "mid_volatility" not in first_window
+    assert result["units"]["mid_log_return_std_per_quote_update"] == (
+        "decimal_log_return_stddev_per_quote_update"
+    )
 
 
 def test_microstructure_rejects_unknown_symbol_before_tick_fetch() -> None:

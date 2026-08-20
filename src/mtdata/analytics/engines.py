@@ -638,6 +638,7 @@ def analyze_microstructure(  # noqa: C901
         psq = part[part["spread_sample_eligible"]]
         bucket_start_epoch = float(part["epoch"].iloc[0])
         bucket_end_epoch = float(part["epoch"].iloc[-1])
+        bucket_mid_returns = np.log(pq["mid"]).diff()
         windows.append({
             "bucket": int(bucket_id),
             "start": format_epoch_utc(bucket_start_epoch),
@@ -645,10 +646,13 @@ def analyze_microstructure(  # noqa: C901
             "start_epoch": bucket_start_epoch,
             "end_epoch": bucket_end_epoch,
             "ticks": int(len(part)),
+            "mid_return_observations": int(bucket_mid_returns.notna().sum()),
             "ticks_per_second": float(len(part) / max(1.0, part["epoch"].iloc[-1] - part["epoch"].iloc[0])),
             "spread_median": float(psq["spread"].median()) if len(psq) else None,
             "spread_p95": float(psq["spread"].quantile(0.95)) if len(psq) else None,
-            "mid_volatility": float(np.nanstd(np.log(pq["mid"]).diff())) if len(pq) > 2 else None,
+            "mid_log_return_std_per_quote_update": (
+                float(np.nanstd(bucket_mid_returns)) if len(pq) > 2 else None
+            ),
         })
     windows.sort(key=lambda item: (float(item["start_epoch"]), int(item["bucket"])))
     summary: Dict[str, Any] = {
@@ -658,7 +662,12 @@ def analyze_microstructure(  # noqa: C901
         "ticks_per_second": float(len(df) / duration),
         "spread": _percentiles(spread_q["spread"]),
         "quote_gap_seconds": _percentiles(q["dt"].dropna()),
-        "mid_realized_volatility": float(np.sqrt(np.nansum(np.square(q["mid_return"])))) if len(q) > 1 else None,
+        "mid_return_observations": int(q["mid_return"].notna().sum()),
+        "mid_log_return_realized_volatility_observed_window": (
+            float(np.sqrt(np.nansum(np.square(q["mid_return"]))))
+            if len(q) > 1
+            else None
+        ),
         "broker_quote_revision_imbalance": revision_pressure,
     }
     if point > 0:
@@ -941,12 +950,34 @@ def analyze_microstructure(  # noqa: C901
             "trade_sign_method": "prevailing_quote_then_tick_rule",
             "volume_source": "volume_real" if tier == "trade_volume" else None,
             "volume_unit": "broker_reported_real_volume" if tier == "trade_volume" else None,
+            "volatility_metrics": {
+                "mid_log_return_realized_volatility_observed_window": {
+                    "formula": "sqrt(sum(tick_to_tick_log_return_squared))",
+                    "sampling_basis": "successive_valid_quote_updates",
+                    "horizon": "observed_window",
+                    "annualized": False,
+                },
+                "mid_log_return_std_per_quote_update": {
+                    "formula": "population_stddev(tick_to_tick_log_returns)",
+                    "sampling_basis": "successive_valid_quote_updates_within_bucket",
+                    "horizon": "bucket",
+                    "annualized": False,
+                },
+                "cross_metric_comparable": False,
+                "cross_window_comparable": False,
+            },
         },
         "units": {
             "spread": "absolute_price",
             "spread_points": "broker_points",
             "spread_pips": "fx_pips_when_symbol_is_identifiable_as_forex",
             "quote_gap_seconds": "seconds",
+            "mid_log_return_realized_volatility_observed_window": (
+                "decimal_log_return_realized_over_observed_window"
+            ),
+            "mid_log_return_std_per_quote_update": (
+                "decimal_log_return_stddev_per_quote_update"
+            ),
             "broker_quote_revision_imbalance": "signed_fraction",
             "broker_tick_signed_volume_impact_slope": "log_return_per_broker_real_volume",
             "broker_tick_abs_return_per_real_volume": "absolute_log_return_per_broker_real_volume",

@@ -39,6 +39,16 @@ MT5 tick rows are complete snapshots. The analyzer uses the `flags` bitmask to
 identify trade events, so a quote update that repeats the last price and volume
 is not counted as another trade.
 
+Volatility fields are deliberately distinct. The summary's
+`mid_log_return_realized_volatility_observed_window` is the square root of
+summed squared tick-to-tick log returns over the observed window. Bucket rows'
+`mid_log_return_std_per_quote_update` is the population standard deviation of
+tick-to-tick log returns inside that bucket. Both are decimal log-return
+statistics over irregular quote updates and are not annualized. They are not
+directly comparable with each other or across different window lengths;
+`mid_return_observations`, duration fields, `units`, and
+`estimator_scope.volatility_metrics` state the applicable basis.
+
 ## Execution quality
 
 `trade_execution_quality` joins MT5 deal history to order history and nearby
