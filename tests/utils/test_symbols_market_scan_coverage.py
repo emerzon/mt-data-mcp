@@ -2532,6 +2532,7 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
         assert [row["symbol"] for row in result["data"]] == ["EURUSD"]
+        assert "note" not in result
         assert result["data"][0]["price_currency"] == "USD"
         assert result["data"][0]["price_basis"] == "mt5_latest_completed_bar_close"
         assert result["data"][0]["price_point"] == 0.0001

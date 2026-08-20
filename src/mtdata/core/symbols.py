@@ -5277,7 +5277,10 @@ def market_scan(  # noqa: C901
             _attach_market_scan_volume_semantics(out, units)
             if "columns" in table_payload:
                 out["columns"] = table_payload["columns"]
-            if len(selected_symbols) < int(limit_value):
+            if (
+                selection_meta.get("scope") == "universe"
+                and len(selected_symbols) < int(limit_value)
+            ):
                 out["note"] = (
                     f"Requested {int(limit_value)} rows but only "
                     f"{len(selected_symbols)} symbols were available in the "
