@@ -146,6 +146,12 @@ share a millisecond are neither skipped nor duplicated. For simplified output,
 `pagination.returned` remains the number of rows actually present while
 `source_events_returned` records the pre-simplification page size.
 
+Start-anchored candle ranges use the same continuation pattern. When
+`pagination.has_more` is true, reuse `pagination.next_cursor` with the original
+symbol, timeframe, start, and end values. A provider-bounded candle page reports
+`total: null`, `more_available: null`, and an evidence-based
+`total_lower_bound`; it never presents the fetched prefix as the full range.
+
 List-style tools return a normalized pagination block so you can page deterministically:
 
 Public `limit` parameters always cap returned rows (including returned candles or

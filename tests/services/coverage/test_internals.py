@@ -473,7 +473,11 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
 
         self.assertIsNone(err)
         self.assertIsNotNone(result)
-        mock_range.assert_called_once()
+        self.assertEqual(mock_range.call_count, 2)
+        self.assertGreater(
+            mock_range.call_args.args[3],
+            mock_range.call_args_list[0].args[3],
+        )
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)

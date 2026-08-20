@@ -130,6 +130,32 @@ def test_attach_report_timeframes_forwards_resolved_indicators():
     assert attach.call_args.kwargs["extra_timeframes"] == ["H4"]
 
 
+def test_bounded_multi_timeframe_contexts_use_end_anchored_snapshots(monkeypatch):
+    calls = []
+
+    def _context(*args, **kwargs):
+        calls.append(kwargs)
+        return {"source_bar_time": "2026-07-31T20:45:00Z"}
+
+    monkeypatch.setattr("mtdata.core.report.utils.context_for_tf", _context)
+    report = {
+        "meta": {"timeframe": "H1"},
+        "sections": {"context": {"timeframe": "H1"}},
+    }
+
+    attach_multi_timeframes(
+        report,
+        "EURUSD",
+        None,
+        extra_timeframes=["M15"],
+        start="2026-07-01",
+        end="2026-07-31T22:59:59Z",
+    )
+
+    assert calls[0]["start"] is None
+    assert calls[0]["end"] == "2026-07-31T22:59:59Z"
+
+
 # ---------------------------------------------------------------------------
 # 2. parse_table_tail
 # ---------------------------------------------------------------------------

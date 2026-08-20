@@ -696,10 +696,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
         )
         initial_span_seconds = min(
             available_span_seconds,
-            max(
-                seconds_per_bar * requested_rows * 2,
-                seconds_per_bar * requested_rows + 7 * 24 * 60 * 60,
-            ),
+            seconds_per_bar * max(requested_rows * 2, requested_rows + 7),
         )
         if diagnostics is not None:
             diagnostics["range_fetch"] = {

@@ -990,6 +990,162 @@ def test_start_only_candle_cap_discloses_incomplete_range_and_gap():
     assert "implied end at the current time" in result["warnings"][0]
 
 
+def test_incomplete_candle_prefix_larger_than_page_uses_unknown_total():
+    rows = [
+        {"time": f"2026-05-01T00:0{index}:00Z", "close": 1.0 + index}
+        for index in range(3)
+    ]
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="M1",
+        start="2026-05-01",
+        end="2026-08-01",
+        limit=2,
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": rows,
+            "meta": {
+                "diagnostics": {
+                    "query": {
+                        "mode": "range",
+                        "provider_end_bounded": True,
+                    }
+                }
+            },
+        },
+    )
+
+    assert result["data"] == rows[:2]
+    assert result["pagination"]["total"] is None
+    assert result["pagination"]["total_lower_bound"] == 3
+    assert result["pagination"]["more_available"] is None
+    assert result["pagination"]["next_cursor"]
+
+
+def test_candle_cursor_continues_start_anchored_range_without_duplicates():
+    pages = [
+        (
+            [
+                {"time": "2026-05-01T00:00:00Z", "close": 1.0},
+                {"time": "2026-05-01T00:01:00Z", "close": 1.1},
+                {"time": "2026-05-01T00:02:00Z", "close": 1.2},
+            ],
+            True,
+        ),
+        (
+            [
+                {"time": "2026-05-01T00:02:00Z", "close": 1.2},
+                {"time": "2026-05-01T00:03:00Z", "close": 1.3},
+            ],
+            False,
+        ),
+    ]
+    observed_starts = []
+
+    def _fetch(**kwargs):
+        observed_starts.append(kwargs["start"])
+        rows, provider_end_bounded = pages[len(observed_starts) - 1]
+        return {
+            "success": True,
+            "data": rows,
+            "query_applied": {"mode": "range", "start": kwargs["start"]},
+            "meta": {
+                "diagnostics": {
+                    "query": {
+                        "mode": "range",
+                        "provider_end_bounded": provider_end_bounded,
+                    }
+                }
+            },
+        }
+
+    common = {
+        "symbol": "EURUSD",
+        "timeframe": "M1",
+        "start": "2026-05-01",
+        "end": "2026-05-02",
+        "limit": 2,
+    }
+    gateway = SimpleNamespace(ensure_connection=lambda: None)
+    first = run_data_fetch_candles(
+        DataFetchCandlesRequest(**common),
+        gateway=gateway,
+        fetch_candles_impl=_fetch,
+    )
+    second = run_data_fetch_candles(
+        DataFetchCandlesRequest(
+            **common,
+            cursor=first["pagination"]["next_cursor"],
+        ),
+        gateway=gateway,
+        fetch_candles_impl=_fetch,
+    )
+
+    combined = first["data"] + second["data"]
+    assert [row["time"] for row in combined] == [
+        "2026-05-01T00:00:00Z",
+        "2026-05-01T00:01:00Z",
+        "2026-05-01T00:02:00Z",
+        "2026-05-01T00:03:00Z",
+    ]
+    assert observed_starts[1] == "2026-05-01T00:01:00.000001Z"
+    assert second["pagination"] == {
+        "total": 4,
+        "returned": 2,
+        "offset": 2,
+        "limit": 2,
+        "has_more": False,
+        "more_available": 0,
+    }
+
+
+def test_candle_cursor_rejects_changed_request_bounds():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="M1",
+        start="2026-05-01",
+        end="2026-05-02",
+        limit=1,
+    )
+    first = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": [
+                {"time": "2026-05-01T00:00:00Z", "close": 1.0},
+                {"time": "2026-05-01T00:01:00Z", "close": 1.1},
+            ],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "range", "provider_end_bounded": True}
+                }
+            },
+        },
+    )
+
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(
+            symbol="EURUSD",
+            timeframe="M1",
+            start="2026-05-01",
+            end="2026-05-03",
+            limit=1,
+            cursor=first["pagination"]["next_cursor"],
+        ),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: pytest.fail("invalid cursor must fail before fetch"),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "data_fetch_candles_invalid_cursor"
+
+
 def test_run_data_fetch_candles_range_is_incomplete_on_spacing_mismatch():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

@@ -1119,7 +1119,10 @@ def attach_multi_timeframes(  # noqa: C901
                 limit=200,
                 tail=30,
                 indicators=context_indicators,
-                start=start,
+                # Multi-timeframe entries are snapshots at the shared cutoff,
+                # not range calculations. A start plus a fixed limit selects
+                # the beginning of a long range and silently makes the snapshot stale.
+                start=None,
                 end=end,
                 allow_stale=allow_stale,
                 _fetch_cache=_fetch_cache,
@@ -1255,8 +1258,11 @@ def attach_report_timeframes(
         return
     extra = ((params or {}).get('extra_timeframes') or default_extra) if context_enabled else []
     pivots = ((params or {}).get('pivot_timeframes') or default_pivots) if pivot_enabled else []
-    start = (params or {}).get('start')
     end = (params or {}).get('end')
+    base_timeframe = _extract_base_timeframe(report) or str(
+        (params or {}).get('timeframe') or 'H1'
+    )
+    context_end = resolve_report_context_end(end, base_timeframe)
     attach_multi_timeframes(
         report,
         symbol,
@@ -1264,8 +1270,8 @@ def attach_report_timeframes(
         extra_timeframes=extra,
         pivot_timeframes=pivots,
         context_indicators=resolve_report_context_indicators(params),
-        start=start,
-        end=end,
+        start=None,
+        end=context_end,
         allow_stale=bool((params or {}).get('allow_stale', False)),
         _fetch_cache=_fetch_cache,
     )

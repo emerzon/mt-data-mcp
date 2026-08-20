@@ -601,6 +601,10 @@ def data_fetch_candles(
 
     end : str, optional
         End time (dateparser)
+
+    cursor : str, optional
+        Opaque continuation token from a prior start-anchored candle page. Reuse
+        it with the original symbol, timeframe, start, and end values.
     
     ohlcv : str, optional
         Candle fields to include. Use "all", "ohlcv", "ohlc", "close"/"price",

@@ -9,6 +9,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
+from ...shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
 from ...utils.time import format_datetime_utc
 from ..error_envelope import build_error_payload, normalize_error_payload
 from ..execution_logging import log_operation_exception, run_logged_operation
@@ -221,9 +222,9 @@ def _report_temporal_alignment(sections: Any) -> Dict[str, Any] | None:
     parsed_forecast = _parse_report_timestamp(forecast_time)
     if parsed_context is None or parsed_forecast is None:
         return None
-    aligned = parsed_context == parsed_forecast
-    return {
-        "status": "aligned" if aligned else "mismatch",
+    base_aligned = parsed_context == parsed_forecast
+    result: Dict[str, Any] = {
+        "status": "aligned" if base_aligned else "mismatch",
         "canonical_as_of": _format_report_timestamp(
             min(parsed_context, parsed_forecast)
         ),
@@ -233,6 +234,46 @@ def _report_temporal_alignment(sections: Any) -> Dict[str, Any] | None:
         },
         "basis": "context_last_snapshot_vs_forecast_last_observation",
     }
+    contexts_multi = sections.get("contexts_multi")
+    if not isinstance(contexts_multi, dict):
+        return result
+
+    base_timeframe = str(context.get("timeframe") or "").strip().upper()
+    base_seconds = int(TIMEFRAME_SECONDS.get(base_timeframe, 0) or 0)
+    multi_times: Dict[str, str] = {}
+    tolerances: Dict[str, int] = {}
+    mismatched: List[str] = []
+    reference = min(parsed_context, parsed_forecast)
+    for timeframe, payload in contexts_multi.items():
+        if str(timeframe).startswith("__") or not isinstance(payload, dict):
+            continue
+        parsed = _parse_report_timestamp(payload.get("source_bar_time"))
+        if parsed is None:
+            continue
+        normalized_timeframe = str(timeframe).strip().upper()
+        section_seconds = int(
+            TIMEFRAME_SECONDS.get(normalized_timeframe, 0) or 0
+        )
+        tolerance = max(base_seconds, section_seconds, 60) * int(
+            SANITY_BARS_TOLERANCE
+        )
+        multi_times[normalized_timeframe] = _format_report_timestamp(parsed)
+        tolerances[normalized_timeframe] = tolerance
+        if abs((parsed - reference).total_seconds()) > tolerance:
+            mismatched.append(f"contexts_multi.{normalized_timeframe}")
+
+    if not multi_times:
+        return result
+    result["section_as_of"]["contexts_multi"] = multi_times
+    result["section_tolerance_seconds"] = {"contexts_multi": tolerances}
+    result["mismatched_sections"] = (
+        (["context", "forecast"] if not base_aligned else []) + mismatched
+    )
+    result["status"] = (
+        "aligned" if base_aligned and not mismatched else "mismatch"
+    )
+    result["basis"] = "shared_cutoff_with_timeframe_session_tolerance"
+    return result
 
 
 def _has_payload_error(payload: Any) -> bool:

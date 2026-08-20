@@ -2609,6 +2609,55 @@ def test_multitimeframe_source_times_drive_conservative_report_data_as_of():
     ) == "2026-08-17T21:00:00Z"
 
 
+def test_report_temporal_alignment_rejects_stale_multitimeframe_context():
+    from mtdata.core.report.use_cases import _report_temporal_alignment
+
+    alignment = _report_temporal_alignment(
+        {
+            "context": {
+                "timeframe": "H1",
+                "last_snapshot": {"time": "2026-07-31T20:00:00Z"},
+            },
+            "forecast": {"last_observation_time": "2026-07-31T20:00:00Z"},
+            "contexts_multi": {
+                "M15": {"source_bar_time": "2026-07-03T01:45:00Z"},
+                "H4": {"source_bar_time": "2026-07-31T17:00:00Z"},
+                "D1": {"source_bar_time": "2026-07-30T21:00:00Z"},
+            },
+        }
+    )
+
+    assert alignment is not None
+    assert alignment["status"] == "mismatch"
+    assert alignment["mismatched_sections"] == ["contexts_multi.M15"]
+    assert alignment["section_as_of"]["contexts_multi"]["H4"] == (
+        "2026-07-31T17:00:00Z"
+    )
+
+
+def test_report_temporal_alignment_accepts_timeframe_aware_source_offsets():
+    from mtdata.core.report.use_cases import _report_temporal_alignment
+
+    alignment = _report_temporal_alignment(
+        {
+            "context": {
+                "timeframe": "H1",
+                "last_snapshot": {"time": "2026-07-31T20:00:00Z"},
+            },
+            "forecast": {"last_observation_time": "2026-07-31T20:00:00Z"},
+            "contexts_multi": {
+                "M15": {"source_bar_time": "2026-07-31T20:45:00Z"},
+                "H4": {"source_bar_time": "2026-07-31T17:00:00Z"},
+                "D1": {"source_bar_time": "2026-07-30T21:00:00Z"},
+            },
+        }
+    )
+
+    assert alignment is not None
+    assert alignment["status"] == "aligned"
+    assert alignment["mismatched_sections"] == []
+
+
 def test_report_assessment_elevates_closed_session_freshness():
     from mtdata.core.report.use_cases import _build_overall_report_assessment
 

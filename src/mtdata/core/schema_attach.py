@@ -181,6 +181,11 @@ def _patch_indicators_describe_schema(schema: Dict[str, Any]) -> None:
 
 def _patch_data_fetch_candles_schema(schema: Dict[str, Any]) -> None:
     params, required_params = _schema_params(schema)
+    if "cursor" in params:
+        params["cursor"]["description"] = (
+            "Opaque continuation cursor from pagination.next_cursor; reuse it "
+            "with the same symbol, timeframe, start, and end."
+        )
     if "indicators" in params:
         indicator_options = [
             {"type": "string"},

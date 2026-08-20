@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -243,11 +243,36 @@ def _run_data_fetch_candles_impl(
     connection_error = _ensure_gateway_connection(gateway)
     if connection_error is not None:
         return connection_error
+    fetch_start = request.start
+    page_offset = 0
+    if request.cursor:
+        if not request.start:
+            return build_error_payload(
+                "cursor requires start for a start-anchored candle query.",
+                code="data_fetch_candles_invalid_cursor",
+                operation="data_fetch_candles",
+                remediation=(
+                    "Reuse next_cursor with the original start value and unchanged "
+                    "symbol, timeframe, and end."
+                ),
+            )
+        try:
+            fetch_start, page_offset = _decode_candle_cursor(request.cursor, request)
+        except ValueError as exc:
+            return build_error_payload(
+                str(exc),
+                code="data_fetch_candles_invalid_cursor",
+                operation="data_fetch_candles",
+                remediation=(
+                    "Use next_cursor from the preceding candle page without changing "
+                    "symbol, timeframe, start, or end."
+                ),
+            )
     result = fetch_candles_impl(
         symbol=request.symbol,
         timeframe=request.timeframe,
         limit=effective_limit if effective_limit is not None else request.limit,
-        start=request.start,
+        start=fetch_start,
         end=request.end,
         ohlcv=request.ohlcv,
         indicators=request.indicators,
@@ -273,6 +298,11 @@ def _run_data_fetch_candles_impl(
         applied_limit = (
             effective_limit if effective_limit is not None else request.limit
         )
+        if request.cursor:
+            query_applied = result.get("query_applied")
+            if isinstance(query_applied, dict):
+                query_applied["start"] = request.start
+                query_applied["cursor_applied"] = True
         if bool(getattr(request, "explain_indicators", False)):
             _attach_indicator_explanations(result)
         _apply_range_limit_cap(
@@ -281,6 +311,8 @@ def _run_data_fetch_candles_impl(
             limit_explicit=limit_explicit,
             start=request.start,
             end=request.end,
+            request=request,
+            page_offset=page_offset,
         )
         _reconcile_returned_window_completeness(result)
         if request.start or request.end:
@@ -760,6 +792,8 @@ def _apply_range_limit_cap(
     limit_explicit: bool,
     start: Optional[str],
     end: Optional[str],
+    request: DataFetchCandlesRequest,
+    page_offset: int = 0,
 ) -> None:
     data = result.get("data")
     if not isinstance(data, list):
@@ -807,6 +841,15 @@ def _apply_range_limit_cap(
                 data_window["latest_bar_complete"] = False
         elif spacing_mismatch:
             result["range_incomplete_reason"] = "timeframe_spacing_mismatch"
+        if request.cursor:
+            result["pagination"] = {
+                "total": page_offset + available,
+                "returned": available,
+                "offset": page_offset,
+                "limit": limit_value,
+                "has_more": False,
+                "more_available": 0,
+            }
         return
 
     retained = (
@@ -838,14 +881,21 @@ def _apply_range_limit_cap(
             f"Fetched range contained {available} bars; returned the {retained_label} "
             f"{len(retained)} because limit={limit_value}."
         )
-        result["pagination"] = {
-            "total": available,
+        pagination: Dict[str, Any] = {
+            "total": None if query.get("provider_end_bounded") else page_offset + available,
             "returned": len(retained),
-            "offset": 0,
+            "offset": page_offset,
             "limit": limit_value,
             "has_more": True,
-            "more_available": available - len(retained),
+            "more_available": (
+                None
+                if query.get("provider_end_bounded")
+                else available - len(retained)
+            ),
         }
+        if query.get("provider_end_bounded"):
+            pagination["total_lower_bound"] = page_offset + len(retained) + 1
+        result["pagination"] = pagination
     else:
         result["truncation"]["excluded_count"] = None
         if start_anchored and query.get("provider_end_bounded"):
@@ -863,13 +913,21 @@ def _apply_range_limit_cap(
             )
         result["pagination"] = {
             "total": None,
-            "total_lower_bound": len(retained) + 1,
+            "total_lower_bound": page_offset + len(retained) + 1,
             "returned": len(retained),
-            "offset": 0,
+            "offset": page_offset,
             "limit": limit_value,
             "has_more": True,
             "more_available": None,
         }
+    if start_anchored and retained:
+        next_cursor = _next_candle_cursor(
+            request,
+            retained[-1],
+            offset=page_offset + len(retained),
+        )
+        if next_cursor is not None:
+            result["pagination"]["next_cursor"] = next_cursor
     result.setdefault("warnings", []).append(warning)
     data_window = result.get("data_window")
     if isinstance(data_window, dict) and retained:
@@ -892,6 +950,89 @@ def _apply_range_limit_cap(
     query["limit_applied_to_range"] = True
     query["available_rows_before_limit"] = available
     query["returned_rows_after_limit"] = len(retained)
+
+
+def _encode_candle_cursor(
+    request: DataFetchCandlesRequest,
+    *,
+    resume_start: str,
+    offset: int,
+) -> str:
+    cursor_payload = {
+        "v": 1,
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "start": request.start,
+        "end": request.end,
+        "selection": "first_n",
+        "resume_start": resume_start,
+        "offset": int(offset),
+    }
+    raw = json.dumps(cursor_payload, separators=(",", ":"), sort_keys=True).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_candle_cursor(
+    cursor: str,
+    request: DataFetchCandlesRequest,
+) -> tuple[str, int]:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(cursor + padding).decode())
+    except Exception as exc:
+        raise ValueError("cursor is not a valid candle continuation token") from exc
+    if not isinstance(decoded, dict) or decoded.get("v") != 1:
+        raise ValueError("cursor uses an unsupported candle continuation version")
+    for key, expected in (
+        ("symbol", request.symbol),
+        ("timeframe", request.timeframe),
+        ("start", request.start),
+        ("end", request.end),
+    ):
+        if decoded.get(key) != expected:
+            raise ValueError(f"cursor does not match the request {key}")
+    if decoded.get("selection") != "first_n":
+        raise ValueError("cursor has an invalid candle selection direction")
+    resume_start = decoded.get("resume_start")
+    if not isinstance(resume_start, str) or not resume_start.strip():
+        raise ValueError("cursor has an invalid candle resume boundary")
+    try:
+        offset = int(decoded.get("offset"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cursor has an invalid candle page offset") from exc
+    if offset < 0:
+        raise ValueError("cursor has an invalid candle page offset")
+    return resume_start, offset
+
+
+def _next_candle_cursor(
+    request: DataFetchCandlesRequest,
+    last_row: Any,
+    *,
+    offset: int,
+) -> Optional[str]:
+    if not isinstance(last_row, dict):
+        return None
+    value = last_row.get("time")
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            observed = datetime.fromtimestamp(float(value), timezone.utc)
+        else:
+            observed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            else:
+                observed = observed.astimezone(timezone.utc)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+    resume_start = (observed + timedelta(microseconds=1)).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
+    return _encode_candle_cursor(
+        request,
+        resume_start=resume_start,
+        offset=offset,
+    )
 
 
 def _normalize_range_limit_contract(

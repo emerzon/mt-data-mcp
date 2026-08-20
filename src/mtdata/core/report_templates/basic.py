@@ -252,8 +252,8 @@ def template_basic(  # noqa: C901
                 else []
             ),
             context_indicators=indicators,
-            start=start,
-            end=end,
+            start=None,
+            end=context_end,
             allow_stale=bool(p.get('allow_stale', False)),
             _fetch_cache=_fetch_cache,
         )

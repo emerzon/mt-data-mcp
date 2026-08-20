@@ -400,6 +400,14 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "is treated as that exact instant and returns only bars closed by it."
         ),
     )
+    cursor: Optional[str] = Field(
+        None,
+        description=(
+            "Opaque continuation cursor returned by a previous start-anchored "
+            "candle query. Reuse it with the same symbol, timeframe, start, and "
+            "end values."
+        ),
+    )
     timestamp_format: Literal["epoch", "iso"] = Field(
         "iso",
         description=(
