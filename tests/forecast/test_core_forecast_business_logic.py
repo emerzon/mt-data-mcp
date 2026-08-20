@@ -4259,7 +4259,7 @@ def test_forecast_barrier_prob_closed_form_compact_keeps_already_hit_and_warning
 
     assert out["already_hit"] is True
     assert out["denoise_status"] == "failed"
-    assert out["usable_for_live_trading"] is False
+    assert "usable_for_live_trading" not in out
     assert "Denoise request failed" in out["warnings"][0]
 
 
@@ -4326,7 +4326,8 @@ def test_forecast_barrier_prob_marks_stale_reference_verdict_research_only():
     assert out["verdict"] == "Research only — SL-first probability bias"
 
 
-def test_forecast_barrier_prob_compact_keeps_execution_blockers():
+@pytest.mark.parametrize("detail", ["compact", "full"])
+def test_forecast_barrier_prob_keeps_blockers_without_execution_readiness(detail):
     out = forecast_use_cases._apply_barrier_prob_detail(
         {
             "success": True,
@@ -4339,7 +4340,7 @@ def test_forecast_barrier_prob_compact_keeps_execution_blockers():
         },
         ForecastBarrierProbRequest(
             symbol="EURUSD",
-            detail="compact",
+            detail=detail,
             barrier={
                 "kind": "tp_sl",
                 "unit": "pct",
@@ -4349,7 +4350,8 @@ def test_forecast_barrier_prob_compact_keeps_execution_blockers():
         ),
     )
 
-    assert out["usable_for_live_trading"] is False
+    assert "usable_for_live_trading" not in out
+    assert "usable_for_live_trading_basis" not in out
     assert out["execution_blockers"] == ["live_reference_quote_not_used"]
     assert out["remediation"] == {
         "next_steps": ["Fetch a current two-sided quote."]

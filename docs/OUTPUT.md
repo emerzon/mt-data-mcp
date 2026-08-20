@@ -296,8 +296,10 @@ outputs and is accompanied by `usable_for_live_trading_basis`:
   not publish this execution-sounding boolean. Use `history_policy_ok`,
   `signal_status`, and `usage` for their respective contracts, then obtain a
   current quote before execution.
-- Combined forecast outputs may require both model-history and reference-quote
-  readiness and expose `execution_blockers` when either input fails.
+- Forecast optimizers that explicitly gate candidate viability may require both
+  model-history and reference-quote readiness. Probability forecasts remain
+  research outputs: they expose `execution_blockers` when an input fails but do
+  not publish the execution-sounding readiness boolean.
 
 Historical detection outputs from `patterns_detect`, `regime_detect`,
 `support_resistance_levels`, and `confluence_levels` disclose their repaint

@@ -1648,6 +1648,8 @@ def _apply_barrier_prob_detail(
         return payload
     payload = _round_barrier_prob_payload(payload)
     payload = _with_reference_price_context(_annotate_barrier_prob_context(payload, request))
+    payload.pop("usable_for_live_trading", None)
+    payload.pop("usable_for_live_trading_basis", None)
 
     def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
         if value not in (None, "", [], {}):
@@ -1688,8 +1690,6 @@ def _apply_barrier_prob_detail(
             "denoise_applied",
             "denoise_status",
             "denoise_error",
-            "usable_for_live_trading",
-            "usable_for_live_trading_basis",
             "execution_blockers",
             "remediation",
             "data_as_of",
@@ -1752,8 +1752,6 @@ def _apply_barrier_prob_detail(
         "seed_source",
         "as_of",
         "data_as_of",
-        "usable_for_live_trading",
-        "usable_for_live_trading_basis",
         "execution_blockers",
         "remediation",
         "verdict",
