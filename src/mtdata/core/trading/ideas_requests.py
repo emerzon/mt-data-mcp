@@ -32,8 +32,10 @@ class TradeIdeaComposeRequest(BaseModel):
     direction: Literal["auto", "long", "short"] = Field(
         default="auto",
         description=(
-            "Trade direction. auto uses the forecast's actionable horizon direction "
-            "relative to its last-price anchor and stands down when unconfirmed."
+            "Trade direction. auto calibrates 95% rolling-residual forecast bands "
+            "at 50 historical anchors and selects a side only when the horizon band "
+            "excludes the last-price anchor; it stands down when unconfirmed. Explicit "
+            "long or short skips that calibration."
         ),
     )
     template: Literal["quick", "standard"] = Field(

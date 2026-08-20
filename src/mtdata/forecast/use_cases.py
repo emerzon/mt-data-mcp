@@ -1532,6 +1532,9 @@ def _apply_conformal_intervals_detail(
         "market_status_reason",
         "retrieved_at",
         "retrieval_time",
+        "forecast_vs_last_price",
+        "signal_status",
+        "units",
         "warnings",
     ):
         value = payload.get(key)
@@ -3249,6 +3252,7 @@ def run_forecast_conformal_intervals(
             if coverage_warning not in warnings_list:
                 warnings_list.append(coverage_warning)
             result["warnings"] = warnings_list
+        result = _annotate_forecast_generate_quality(result)
         result = _apply_conformal_intervals_detail(result, request)
     except Exception as exc:
         log_operation_exception(

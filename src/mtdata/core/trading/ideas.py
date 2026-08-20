@@ -372,9 +372,39 @@ def _snap_exit(
 def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -> Dict[str, Any]:
     compact: Dict[str, Any] = {}
     if isinstance(payload, dict):
-        for key in ("method", "library", "quantity", "horizon", "interval_status"):
+        for key in (
+            "method",
+            "library",
+            "quantity",
+            "horizon",
+            "interval_method",
+            "ci_alpha",
+            "ci_status",
+            "ci_available",
+            "required_calibration_points",
+            "calibration_sufficient",
+            "interval_usage",
+        ):
             if payload.get(key) not in (None, ""):
                 compact[key] = payload[key]
+        conformal = payload.get("conformal")
+        if isinstance(conformal, dict):
+            calibration = {
+                key: conformal[key]
+                for key in (
+                    "calibration_steps",
+                    "calibration_spacing",
+                    "min_calibration_points",
+                    "required_calibration_points",
+                    "calibration_sufficient",
+                    "empirical_coverage",
+                    "coverage_target",
+                    "interval_usage",
+                )
+                if conformal.get(key) not in (None, "")
+            }
+            if calibration:
+                compact["calibration"] = calibration
     if values:
         compact["first"] = values[0]
         compact["last"] = values[-1]
@@ -392,6 +422,9 @@ def _compact_forecast(payload: Any, values: List[float], trend: Optional[str]) -
                 "direction_status",
                 "direction_suppressed_reason",
                 "point_estimate_direction",
+                "direction_interval_excludes_last_price",
+                "direction_interval_basis",
+                "direction_interpretation",
                 "horizon_delta",
                 "horizon_delta_pct",
             )
@@ -547,6 +580,26 @@ def _default_call_section(name: str, kwargs: Dict[str, Any]) -> Any:
             **({"end": kwargs["as_of"]} if kwargs.get("as_of") else {}),
         )
     if name == "forecast":
+        if kwargs.get("requested_direction") == "auto":
+            from ...forecast.requests import ForecastConformalIntervalsRequest
+            from ..forecast import forecast_conformal_intervals
+
+            horizon = int(kwargs["horizon"])
+            return call_tool_sync_structured(
+                forecast_conformal_intervals,
+                request=ForecastConformalIntervalsRequest(
+                    symbol=kwargs["symbol"],
+                    timeframe=kwargs["timeframe"],
+                    horizon=horizon,
+                    method="theta",
+                    steps=50,
+                    spacing=max(20, horizon),
+                    ci_alpha=0.05,
+                    as_of=kwargs.get("as_of"),
+                    detail="compact",
+                ),
+            )
+
         from ..forecast import forecast_generate
 
         payload = {
@@ -663,6 +716,7 @@ def run_trade_idea_compose(  # noqa: C901
         "symbol": symbol,
         "timeframe": request.timeframe,
         "horizon": int(request.horizon),
+        "requested_direction": request.direction,
         "as_of": request.as_of,
         "detail": "compact",
     }

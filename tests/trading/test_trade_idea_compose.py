@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 import pytest
 
+import mtdata.core.trading.ideas as ideas_module
 from mtdata.core.trading.ideas import run_trade_idea_compose
 from mtdata.core.trading.ideas_requests import TradeIdeaComposeRequest
 
@@ -168,6 +169,98 @@ def test_trade_idea_compose_quick_preview_path() -> None:
     assert idea["gates"]["preview"]["status"] == "pass"
     assert "source_tool_calls" not in idea
     assert "not an order" in idea["narrative"]
+
+
+@pytest.mark.parametrize(
+    ("actionable", "expected_direction", "expect_downstream"),
+    [(True, "long", True), (False, "stand_down", False)],
+)
+def test_trade_idea_default_auto_wiring_uses_calibrated_intervals(
+    monkeypatch,
+    actionable: bool,
+    expected_direction: str,
+    expect_downstream: bool,
+) -> None:
+    calls: list[str] = []
+    conformal_requests: list[Any] = []
+
+    forecast = _forecast()
+    forecast.update(
+        {
+            "interval_method": "rolling_residual_quantiles",
+            "ci_alpha": 0.05,
+            "ci_status": "available" if actionable else "insufficient_calibration",
+            "ci_available": actionable,
+            "required_calibration_points": 30,
+            "calibration_sufficient": actionable,
+            "interval_usage": "calibrated" if actionable else "diagnostic_only",
+            "conformal": {
+                "calibration_steps": 50,
+                "calibration_spacing": 20,
+                "min_calibration_points": 50 if actionable else 12,
+                "required_calibration_points": 30,
+                "calibration_sufficient": actionable,
+                "empirical_coverage": 0.94,
+                "coverage_target": 0.95,
+                "interval_usage": "calibrated" if actionable else "diagnostic_only",
+            },
+        }
+    )
+    if actionable:
+        forecast["forecast_vs_last_price"].update(
+            {
+                "direction_interval_excludes_last_price": True,
+                "direction_interval_basis": "horizon_interval_vs_last_price",
+                "direction_interpretation": "interval_excludes_last_price",
+            }
+        )
+    else:
+        forecast["forecast_vs_last_price"] = {
+            "point_estimate_direction": "bullish",
+            "direction_actionable": False,
+            "direction_status": "unconfirmed",
+            "direction_suppressed_reason": "forecast_uncertainty_not_available",
+            "direction_interval_excludes_last_price": None,
+            "direction_interval_basis": "not_available",
+        }
+
+    def fake_call_tool(tool, **kwargs):
+        name = tool.__name__
+        calls.append(name)
+        if name == "trade_session_context":
+            return _session()
+        if name == "forecast_conformal_intervals":
+            conformal_requests.append(kwargs["request"])
+            return forecast
+        if name == "forecast_volatility_estimate":
+            return _volatility()
+        if name == "forecast_barrier_prob":
+            return _barriers()
+        if name == "trade_risk_analyze":
+            return _sizing()
+        if name == "trade_place":
+            return _preview()
+        raise AssertionError(f"unexpected default section tool: {name}")
+
+    monkeypatch.setattr(ideas_module, "call_tool_sync_structured", fake_call_tool)
+
+    idea = run_trade_idea_compose(TradeIdeaComposeRequest(symbol="EURUSD"))
+
+    assert idea["direction"] == expected_direction
+    assert len(conformal_requests) == 1
+    request = conformal_requests[0]
+    assert request.method == "theta"
+    assert request.steps == 50
+    assert request.spacing == 20
+    assert request.ci_alpha == 0.05
+    assert ("forecast_barrier_prob" in calls) is expect_downstream
+    if actionable:
+        assert idea["forecast"]["interval_method"] == "rolling_residual_quantiles"
+        assert idea["forecast"]["calibration"]["min_calibration_points"] == 50
+        assert (
+            idea["forecast"]["forecast_vs_last_price"]["direction_interval_basis"]
+            == "horizon_interval_vs_last_price"
+        )
 
 
 def test_trade_idea_compose_stands_down_on_stale_quote() -> None:

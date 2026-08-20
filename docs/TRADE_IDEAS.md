@@ -32,17 +32,26 @@ The composer **reuses existing tools**. It does not invent new forecast or barri
 |------|------|-------|----------|
 | Session + quote | `trade_session_context` | live only | live only |
 | Structure | `confluence_levels` | no | yes (and may snap TP/SL toward nearby zones) |
-| Price path | `forecast_generate` (Theta) | yes | yes |
+| Price path | `forecast_conformal_intervals` (Theta) for auto; `forecast_generate` for an explicit side | yes | yes |
 | Typical movement | `forecast_volatility_estimate` (EWMA) | yes | yes |
 | One TP/SL pair | `forecast_barrier_prob` (0.40% / 0.60%) | yes | yes |
 | Size | `trade_risk_analyze` (fixed-fraction) | live only | live only |
 | Preview | `trade_place` with `dry_run=true` | live only | live only |
 
-`--direction auto` (default) uses `forecast_generate`'s actionable horizon
-direction relative to its last-price anchor. A neutral or uncertainty-suppressed
-direction stands down; the composer does not infer a side from the slope between
-forecast steps. It also stands down when the barrier sketch says the stop is
-more likely to hit first.
+`--direction auto` (default) calibrates Theta residual-quantile bands over 50
+rolling historical anchors, spaced by at least the requested horizon. It selects
+a side only when the calibrated horizon band excludes the last-price anchor. The
+result's `forecast` section identifies the method, interval method, alpha,
+calibration sample, and exact interval gate basis. A neutral direction,
+insufficient calibration, an interval containing the anchor, or unavailable
+uncertainty stands down; the composer does not infer a side from the slope
+between forecast steps. It also stands down when the barrier sketch says the
+stop is more likely to hit first.
+
+Auto mode is therefore materially slower than `--direction long` or
+`--direction short`: it fits 50 rolling backtest forecasts before the current
+forecast. Explicit directions use the point forecast only, while all other
+quote, barrier, sizing, and preview safety gates remain in force.
 
 `--as-of` makes the idea historical and **research-only**: no live session or
 quote, no live sizing, and no dry-run preview. Historical geometry uses the
@@ -57,6 +66,8 @@ barrier analysis's cutoff-bound reference price.
 | `direction` | `long`, `short`, or `stand_down` |
 | `direction_basis` | `forecast_vs_last_price` for auto direction, or `requested` for an explicit side |
 | `suggested_direction` | Forecast-based hint; may differ from `direction` |
+| `forecast.calibration` | Auto mode's requested anchors, minimum usable residual sample, empirical coverage, and sufficiency status |
+| `forecast.forecast_vs_last_price.direction_interval_basis` | Exact comparison used by the auto direction gate |
 | `actionability` | Always `preview_only` or `research`. Never live. |
 | `gates` | `pass` / `fail` / `skip` for quote, session, forecast, barriers, SL/TP, sizing, preview |
 | `preview.preview_ok` | Local dry-run eligibility. Still not a broker fill. |

@@ -3510,6 +3510,42 @@ def test_conformal_interval_availability_uses_calibration_threshold(
     assert result["conformal"]["min_calibration_points"] == sample_size
 
 
+def test_conformal_intervals_expose_actionable_direction_gate():
+    details = [
+        {"forecast": [100.0], "actual": [100.25]}
+        for _ in range(30)
+    ]
+
+    result = forecast_use_cases.run_forecast_conformal_intervals(
+        ForecastConformalIntervalsRequest(
+            symbol="EURUSD",
+            method="theta",
+            horizon=1,
+            steps=30,
+            spacing=1,
+        ),
+        backtest_impl=lambda **kwargs: {
+            "results": {"theta": {"details": details}}
+        },
+        forecast_impl=lambda **kwargs: {
+            "success": True,
+            "method": "theta",
+            "horizon": 1,
+            "forecast_price": [101.0],
+            "last_price": 100.0,
+            "digits": 5,
+        },
+    )
+
+    context = result["forecast_vs_last_price"]
+    assert context["direction"] == "bullish"
+    assert context["direction_actionable"] is True
+    assert context["direction_status"] == "interval_confirmed"
+    assert context["direction_interval_excludes_last_price"] is True
+    assert context["direction_interval_basis"] == "horizon_interval_vs_last_price"
+    assert result["ci_status"] == "available"
+
+
 def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     raw_tune = _unwrap(cf.forecast_tune_genetic)
     raw_barrier = _unwrap(cf.forecast_barrier_prob)
