@@ -2841,7 +2841,7 @@ class TestEdgeCases:
         assert cmd_fn(args) == 0
         assert mock_fn.call_args.kwargs["denoise"] == {
             "method": "sma",
-            "params": {"window": "7"},
+            "params": {"window": 7},
         }
 
     def test_denoise_companion_promotes_pipeline_controls(self):
@@ -2870,7 +2870,7 @@ class TestEdgeCases:
             "method": "kalman",
             "keep_original": True,
             "suffix": "_filtered",
-            "params": {"process_var": "0.1"},
+            "params": {"process_var": 0.1},
         }
 
     @pytest.mark.parametrize("cmd_name", ["data_fetch_candles", "data_fetch_ticks"])

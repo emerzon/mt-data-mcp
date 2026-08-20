@@ -835,7 +835,7 @@ class TestCreateCommandFunction:
 
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["params"] == {
-            "alpha": "0.5",
+            "alpha": 0.5,
             "beta": 0.2,
             "model": {"window": 64},
         }
