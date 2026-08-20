@@ -33,6 +33,7 @@ from .output_contract import normalize_output_verbosity_detail
 from .runtime_metadata import run_mt5_logged_operation
 
 logger = logging.getLogger(__name__)
+_CALENDAR_ALIAS_RELATIVE_TOLERANCE = 0.01
 
 
 def _fetch_diagnostic_bars(
@@ -255,7 +256,10 @@ def _seasonality_period_context(
             "max": _format_period_duration(maximum),
             "pairs": int(observed_durations.size),
         }
-    if abs(nearest - duration_seconds) / nearest <= 0.05:
+    if (
+        abs(nearest - duration_seconds) / nearest
+        <= _CALENDAR_ALIAS_RELATIVE_TOLERANCE
+    ):
         out["calendar_alias"] = aliases[nearest]
     return out
 

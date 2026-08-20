@@ -321,6 +321,26 @@ def test_seasonality_daily_duration_matches_nominal_for_continuous_market():
         "max": "7 days",
         "pairs": 33,
     }
+    assert context["calendar_alias"] == "calendar_week"
+
+
+def test_seasonality_23_hour_period_is_not_aliased_as_calendar_day():
+    times = pd.date_range(
+        "2026-01-01",
+        periods=80,
+        freq="h",
+        tz="UTC",
+    )
+
+    context = diagnostics._seasonality_period_context(
+        23,
+        "H1",
+        observed_times=[value.timestamp() for value in times],
+    )
+
+    assert context["period_duration"] == "23 hours"
+    assert context["period_duration_seconds"] == 23 * 3_600
+    assert "calendar_alias" not in context
 
 
 def test_seasonality_minimum_lookback_survives_preprocessing(monkeypatch):
