@@ -91,6 +91,7 @@ def report_generate(
     - denoise: pass-through to candles, forecast, backtest, volatility, and barriers.
     - max_runtime: cooperative seconds budget; expensive sections that do not fit are omitted.
     - allow_partial: defaults true so usable sections survive nested failures; set false for strict runs.
+    - allow_stale: permit closed-session completed candle context while retaining stale warnings.
     - progress: emit sub-tool start/finish lines to stderr.
     - start/end: start requires end; end alone creates an as-of historical report.
     """

@@ -82,6 +82,14 @@ mtdata-cli report_generate EURUSD --template basic \
   --methods theta,arima --denoise kalman --json
 ```
 
+For an after-hours review, explicitly allow completed context from the latest
+closed session. The result keeps the candle timestamp, age, stale status, and
+warning so it cannot be mistaken for a live mark:
+
+```bash
+mtdata-cli report_generate AAPL.NAS --template minimal --allow-stale true
+```
+
 Useful controls:
 
 - `--horizon` sets the forecast horizon in bars.

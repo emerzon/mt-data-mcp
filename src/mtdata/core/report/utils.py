@@ -927,6 +927,7 @@ def context_for_tf(
     indicators: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    allow_stale: bool = False,
     _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> Optional[Dict[str, Any]]:
     indicator_spec = str(indicators or '').strip() or DEFAULT_REPORT_CONTEXT_INDICATORS
@@ -936,6 +937,7 @@ def context_for_tf(
         _report_context_cache_key(indicator_spec),
         str(start or ""),
         str(end or ""),
+        str(bool(allow_stale)),
     )
     if _fetch_cache is not None and cache_key in _fetch_cache:
         return _fetch_cache[cache_key]
@@ -955,6 +957,7 @@ def context_for_tf(
             end=end,
             indicators=indicator_spec,
             denoise=denoise,
+            allow_stale=bool(allow_stale),
             raw_tool_output=True,
         )
 
@@ -1083,6 +1086,7 @@ def attach_multi_timeframes(  # noqa: C901
     context_indicators: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    allow_stale: bool = False,
     _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> None:
     sections = report.setdefault('sections', {})
@@ -1117,6 +1121,7 @@ def attach_multi_timeframes(  # noqa: C901
                 indicators=context_indicators,
                 start=start,
                 end=end,
+                allow_stale=allow_stale,
                 _fetch_cache=_fetch_cache,
             )
         if snap:
@@ -1261,6 +1266,7 @@ def attach_report_timeframes(
         context_indicators=resolve_report_context_indicators(params),
         start=start,
         end=end,
+        allow_stale=bool((params or {}).get('allow_stale', False)),
         _fetch_cache=_fetch_cache,
     )
 

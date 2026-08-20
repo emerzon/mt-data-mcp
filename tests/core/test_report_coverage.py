@@ -181,6 +181,7 @@ def test_report_generate_request_defaults_to_compact_detail():
     assert request.template == "minimal"
     assert request.max_runtime is None
     assert request.allow_partial is True
+    assert request.allow_stale is False
     assert request.progress is False
 
 
@@ -2085,10 +2086,12 @@ class TestReportWarnings:
                 "EURUSD",
                 template="basic",
                 include_sections=["forecast"],
+                allow_stale=True,
                 format="toon",
             )
 
         assert captured_params["_report_execution_sections"] == ["forecast"]
+        assert captured_params["allow_stale"] is True
         assert list(res["sections"]) == ["forecast"]
         assert "forecast" in res["summary_structured"]
         assert "backtest" not in res["summary_structured"]

@@ -170,13 +170,18 @@ def test_template_minimal_anchors_bounded_context_at_end() -> None:
             "EURUSD",
             2,
             None,
-            {"start": "2026-03-01", "end": "2026-03-29"},
+            {
+                "start": "2026-03-01",
+                "end": "2026-03-29",
+                "allow_stale": True,
+            },
         )
 
     assert calls["data_fetch_candles"]["start"] is None
     assert calls["data_fetch_candles"]["end"] == (
         "2026-03-29T22:59:59.999999Z"
     )
+    assert calls["data_fetch_candles"]["allow_stale"] is True
     assert calls["forecast_generate"]["start"] == "2026-03-01"
     assert calls["forecast_generate"]["end"] == "2026-03-29"
 

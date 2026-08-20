@@ -96,6 +96,13 @@ class ReportGenerateRequest(BaseModel):
             "retaining section_run_status='partial' and per-section errors."
         ),
     )
+    allow_stale: bool = Field(
+        False,
+        description=(
+            "Allow completed candle context from a closed or inactive session. "
+            "The report still preserves stale-data age and warning metadata."
+        ),
+    )
     progress: bool = Field(
         False,
         description="Emit report sub-tool progress lines to stderr while the request runs.",

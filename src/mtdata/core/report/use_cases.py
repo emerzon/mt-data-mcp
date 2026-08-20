@@ -1501,6 +1501,7 @@ def run_report_generate(  # noqa: C901
                 params["start"] = request.start
             if request.end:
                 params["end"] = request.end
+            params["allow_stale"] = bool(request.allow_stale)
             if request.methods is not None:
                 params["methods"] = normalize_report_methods(request.methods)
             section_plan = _resolve_report_section_plan(

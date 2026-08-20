@@ -77,6 +77,31 @@ class TestContextForTfCache:
         assert result["trend_compact"] == {"bars": 80}
         assert result["close"] == 80.0
 
+    def test_allow_stale_is_forwarded_and_part_of_cache_identity(self, monkeypatch):
+        calls = []
+
+        def _tracking_fetch(**kwargs):
+            calls.append(kwargs)
+            return {"data": list(_ROWS)}
+
+        monkeypatch.setattr("mtdata.core.data.data_fetch_candles", _tracking_fetch)
+        monkeypatch.setattr(
+            "mtdata.core.report.utils._compute_compact_trend",
+            lambda _rows: None,
+        )
+        cache = {}
+
+        context_for_tf("AAPL.NAS", "H1", None, _fetch_cache=cache)
+        context_for_tf(
+            "AAPL.NAS",
+            "H1",
+            None,
+            allow_stale=True,
+            _fetch_cache=cache,
+        )
+
+        assert [call["allow_stale"] for call in calls] == [False, True]
+
     def test_cache_is_case_insensitive(self, monkeypatch):
         """'h1' and 'H1' should share the same cache entry."""
         call_count = 0

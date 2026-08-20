@@ -77,6 +77,7 @@ def template_minimal(
             end=context_end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
+            allow_stale=bool(p.get("allow_stale", False)),
         )
         if report_section_enabled(p, "context")
         else {"error": "context section not requested"}

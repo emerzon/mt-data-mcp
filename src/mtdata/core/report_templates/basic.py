@@ -138,6 +138,7 @@ def template_basic(  # noqa: C901
             end=context_end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
+            allow_stale=bool(p.get('allow_stale', False)),
         )
         if report_section_enabled(p, 'context')
         else {'error': 'context section not requested'}
@@ -253,6 +254,7 @@ def template_basic(  # noqa: C901
             context_indicators=indicators,
             start=start,
             end=end,
+            allow_stale=bool(p.get('allow_stale', False)),
             _fetch_cache=_fetch_cache,
         )
 
