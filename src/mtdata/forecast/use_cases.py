@@ -1480,6 +1480,8 @@ def _apply_conformal_intervals_detail(
         return payload
     payload = _round_forecast_generate_payload(payload)
     payload = _normalize_forecast_time_fields(payload)
+    payload.setdefault("symbol", request.symbol)
+    payload.setdefault("timeframe", request.timeframe)
     forecast_rows = _forecast_generate_compact_rows(payload)
     point_mode = _forecast_point_mode(payload)
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
