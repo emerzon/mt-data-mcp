@@ -1025,6 +1025,7 @@ def test_incomplete_candle_prefix_larger_than_page_uses_unknown_total():
     )
 
     assert result["data"] == rows[:2]
+    assert result["range_incomplete_reason"] == "limit"
     assert result["pagination"]["total"] is None
     assert result["pagination"]["total_lower_bound"] == 3
     assert result["pagination"]["more_available"] is None

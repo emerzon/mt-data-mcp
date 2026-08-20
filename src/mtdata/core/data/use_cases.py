@@ -864,11 +864,14 @@ def _apply_range_limit_cap(
         "retained": "first" if start_anchored else "last",
     }
     result["range_complete"] = False
-    result["range_incomplete_reason"] = (
-        "provider_window_ended_before_requested_end"
-        if query.get("provider_end_bounded")
-        else "limit"
-    )
+    if available > limit_value:
+        result["range_incomplete_reason"] = "limit"
+    elif query.get("provider_end_bounded"):
+        result["range_incomplete_reason"] = (
+            "provider_window_ended_before_requested_end"
+        )
+    else:
+        result["range_incomplete_reason"] = "limit"
     if available > limit_value:
         result["available_count"] = available
         result["truncation"]["excluded_count"] = available - len(retained)
