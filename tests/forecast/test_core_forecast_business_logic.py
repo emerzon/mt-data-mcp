@@ -16,7 +16,7 @@ from mtdata.core import forecast as cf
 from mtdata.core import options as opt
 from mtdata.forecast import barriers_shared
 from mtdata.forecast import use_cases as forecast_use_cases
-from mtdata.forecast.exceptions import ForecastError
+from mtdata.forecast.exceptions import ForecastError, ModelCompatibilityError
 from mtdata.forecast.requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -74,6 +74,25 @@ def test_forecast_future_as_of_error_has_date_specific_guidance() -> None:
     assert result["error_code"] == "forecast_as_of_in_future"
     assert "forecast_list_methods" not in result["remediation"]
     assert "ISO 8601" in result["remediation"]
+
+
+def test_forecast_model_mismatch_has_structured_identity_details() -> None:
+    error = ModelCompatibilityError(
+        "stored model is incompatible",
+        model_id="nhits/EURUSD_H1/abc",
+        stored_fingerprint={"horizon": 12},
+        requested_fingerprint={"horizon": 24},
+        mismatches={"horizon": {"stored": 12, "requested": 24}},
+    )
+
+    result = cf._forecast_error_payload(error, operation="forecast_generate")
+
+    assert result["error_code"] == "forecast_model_incompatible"
+    assert result["details"]["model_id"] == "nhits/EURUSD_H1/abc"
+    assert result["details"]["mismatches"]["horizon"] == {
+        "stored": 12,
+        "requested": 24,
+    }
 
 
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):

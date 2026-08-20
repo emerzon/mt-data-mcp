@@ -19,6 +19,7 @@ import pytest
 from pydantic import ValidationError
 
 import src.mtdata.forecast.forecast_engine as fe
+from src.mtdata.forecast.exceptions import ModelCompatibilityError
 from src.mtdata.forecast.interface import (
     ArtifactCompatibilityError,
     ForecastMethod,
@@ -939,6 +940,10 @@ class TestRunRegisteredForecastMethodIntegration:
             params_hash="custom_id",
             created_at=2000.0,
             metadata={
+                "compatibility_fingerprint": {
+                    "method": "stub_trainable",
+                    "horizon": 8,
+                },
                 "training_context": {
                     "training_end_epoch": float(_sample_df(100)["time"].iloc[-1])
                 }
@@ -951,14 +956,23 @@ class TestRunRegisteredForecastMethodIntegration:
         with patch.object(fe, "ForecastRegistry", FakeReg), \
              patch.object(fe, "_compute_model_key", return_value="expected_id"), \
              patch(_PATCH_MODEL_STORE, mock_store):
-            with pytest.raises(ValueError, match="incompatible"):
+            with pytest.raises(ModelCompatibilityError, match="incompatible") as caught:
                 fe._run_registered_forecast_method(
                     **_common_call_kwargs(
                         model_id="stub_trainable/EURUSD_H1/custom_id"
                     ),
                 )
 
-        mock_store.find.assert_not_called()
+        assert caught.value.model_id == "stub_trainable/EURUSD_H1/custom_id"
+        assert caught.value.mismatches["horizon"] == {
+            "stored": 8,
+            "requested": 3,
+        }
+        mock_store.find.assert_called_once_with(
+            "stub_trainable",
+            "EURUSD_H1",
+            "custom_id",
+        )
 
     def test_model_id_rejects_mismatched_scope(self):
         stub = _StubTrainable(category="heavy")

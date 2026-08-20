@@ -540,6 +540,72 @@ class TestForecastTaskList:
 
 
 class TestForecastModels:
+    def test_full_model_handle_exposes_replayable_compatibility_contract(self):
+        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+
+        fingerprint = {
+            "method": "nhits",
+            "horizon": 24,
+            "seasonality": 24,
+            "timeframe": "H1",
+            "has_exog": False,
+            "params": {"quantity": "price"},
+        }
+        handle = TrainedModelHandle(
+            "nhits/EURUSD_H1/a",
+            "nhits",
+            "EURUSD_H1",
+            "a",
+            1000.0,
+            metadata={
+                "compatibility_fingerprint": fingerprint,
+                "reuse_request": {
+                    "symbol": "EURUSD",
+                    "timeframe": "H1",
+                    "method": "nhits",
+                    "horizon": 24,
+                    "quantity": "price",
+                    "params": {"seasonality": 24},
+                },
+            },
+        )
+
+        result = _serialize_model_handle(handle, detail="full")
+
+        assert result["store_compatibility_status"] == "warning"
+        assert "compatibility_status" not in result
+        assert result["request_compatibility_status"] == "ready"
+        assert result["compatibility_fingerprint"] == fingerprint
+        assert result["reuse_request"]["model_id"] == handle.model_id
+        assert result["reuse_request"]["model_cache"] == "require_existing"
+        from src.mtdata.forecast.requests import ForecastGenerateRequest
+
+        replay = ForecastGenerateRequest(**result["reuse_request"])
+        assert replay.horizon == 24
+        assert replay.params == {"seasonality": 24}
+
+    def test_full_model_handle_marks_legacy_oversized_horizon_unusable(self):
+        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+
+        handle = TrainedModelHandle(
+            "nhits/EURUSD_H1/a",
+            "nhits",
+            "EURUSD_H1",
+            "a",
+            1000.0,
+            metadata={
+                "compatibility_fingerprint": {"horizon": 501},
+                "reuse_request": {"horizon": 501},
+            },
+        )
+
+        result = _serialize_model_handle(handle, detail="full")
+
+        assert result["request_compatibility_status"] == "unusable"
+        assert result["request_compatibility_reason"] == (
+            "horizon_out_of_supported_range"
+        )
+
     def test_model_handle_includes_describe_error_when_store_lookup_fails(self, caplog):
         from src.mtdata.core.forecast_tasks import _serialize_model_handle
 
@@ -848,6 +914,14 @@ class TestForecastModels:
 
 
 class TestForecastTrain:
+    def test_training_rejects_horizon_above_generate_limit(self):
+        with pytest.raises(ValueError, match="less than or equal to 500"):
+            ForecastTrainRequest(
+                symbol="EURUSD",
+                method="nhits",
+                horizon=501,
+            )
+
     def test_training_returns_task_snapshot(self):
         from src.mtdata.core.forecast_tasks import forecast_train
 

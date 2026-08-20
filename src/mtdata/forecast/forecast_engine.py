@@ -54,11 +54,16 @@ from .common import (
 from .ensemble_dispatch import (
     build_dispatch_error as _build_ensemble_dispatch_error,
 )
+from .exceptions import ModelCompatibilityError
 from .forecast_validation import (
     attach_denoise_causality_disclosure,
     format_invalid_method_error,
 )
 from .interface import ArtifactCompatibilityError, ForecastCallContext
+from .model_compatibility import (
+    build_model_reuse_metadata,
+    fingerprint_mismatches,
+)
 
 if TYPE_CHECKING:
     from .interface import ForecastMethod
@@ -709,6 +714,8 @@ def build_training_context(
         features=features,
         target_spec=target_spec,
         exog=X,
+        dimred_method=dimred_method,
+        dimred_params=dimred_params,
         training_window_mode=(
             "as_of"
             if as_of is not None
@@ -839,6 +846,8 @@ def _training_context_fingerprint(
     features: Any,
     target_spec: Any,
     exog: Optional[np.ndarray],
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
     training_window_mode: str = "latest",
 ) -> Dict[str, Any]:
     if features in (None, {}):
@@ -851,6 +860,14 @@ def _training_context_fingerprint(
         "denoise": _stable_training_value(denoise),
         "features": _stable_training_value(features),
         "target_spec": _stable_training_value(target_spec),
+        "dimred": (
+            {
+                "method": str(dimred_method),
+                "params": _stable_training_value(dimred_params or {}),
+            }
+            if dimred_method
+            else None
+        ),
         "exog_columns": int(exog.shape[1]) if exog is not None and exog.ndim > 1 else 0,
         "training_window_mode": str(training_window_mode),
     }
@@ -1074,6 +1091,7 @@ def _submit_async_training(
     params_hash: str,
     timeframe: str,
     exog: Optional[np.ndarray],
+    training_window: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Submit a background training task. Returns an async response dict."""
     from .task_manager import get_task_manager
@@ -1088,6 +1106,7 @@ def _submit_async_training(
         data_scope=data_scope,
         exog=exog,
         timeframe=timeframe,
+        training_window=training_window,
     )
 
     category = getattr(forecaster, "training_category", "unknown")
@@ -1132,6 +1151,9 @@ def _run_registered_forecast_method(
     features: Optional[Dict[str, Any]] = None,
     feature_info: Optional[Dict[str, Any]] = None,
     target_spec: Optional[Dict[str, Any]] = None,
+    dimred_method: Optional[str] = None,
+    dimred_params: Optional[Dict[str, Any]] = None,
+    training_window: Optional[Dict[str, Any]] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
     model_cache: Literal["reuse", "ephemeral", "require_existing"] = "reuse",
@@ -1223,7 +1245,16 @@ def _run_registered_forecast_method(
             features=features,
             target_spec=target_spec,
             exog=X,
+            dimred_method=dimred_method,
+            dimred_params=dimred_params,
             training_window_mode=training_window_mode,
+        )
+        compatibility_fingerprint = forecaster.training_fingerprint(
+            horizon=horizon,
+            seasonality=seasonality,
+            params=training_params,
+            timeframe=str(timeframe),
+            has_exog=has_exog,
         )
         expected_params_hash = _compute_model_key(
             forecaster, method_l, horizon, seasonality,
@@ -1236,10 +1267,32 @@ def _run_registered_forecast_method(
                 data_scope=data_scope,
             )
             if supplied_params_hash != expected_params_hash:
-                raise ValueError(
+                from .model_store import model_store as _store
+
+                supplied_handle = _store.find(
+                    method_l,
+                    data_scope,
+                    supplied_params_hash,
+                )
+                if supplied_handle is None:
+                    raise ValueError(
+                        f"Model with ID '{requested_model_id}' was not found in the "
+                        "model store. Use forecast_models_list to see available models."
+                    )
+                stored_fingerprint = supplied_handle.metadata.get(
+                    "compatibility_fingerprint"
+                )
+                mismatches = fingerprint_mismatches(
+                    stored_fingerprint,
+                    compatibility_fingerprint,
+                )
+                raise ModelCompatibilityError(
                     f"model_id '{requested_model_id}' is incompatible with the "
-                    "current horizon, seasonality, timeframe, target, features, "
-                    "or training parameters."
+                    "requested forecast identity.",
+                    model_id=requested_model_id,
+                    stored_fingerprint=stored_fingerprint,
+                    requested_fingerprint=compatibility_fingerprint,
+                    mismatches=mismatches,
                 )
             params_hash = supplied_params_hash
         else:
@@ -1301,6 +1354,7 @@ def _run_registered_forecast_method(
                 forecaster, method_l, target_series,
                 horizon, seasonality, training_params,
                 data_scope, params_hash, str(timeframe), X,
+                training_window,
             )
             raise _AsyncTrainingStarted(async_resp)
 
@@ -1329,6 +1383,16 @@ def _run_registered_forecast_method(
                     "params_used": trained.params_used,
                     "source_task_id": None,
                     "training_context": training_context,
+                    **(
+                        {"training_window": dict(training_window)}
+                        if training_window
+                        else {}
+                    ),
+                    **build_model_reuse_metadata(
+                        compatibility_fingerprint,
+                        data_scope,
+                        training_window,
+                    ),
                 },
             )
         artifact = forecaster.deserialize_artifact(trained.artifact_bytes)
@@ -2048,12 +2112,29 @@ def forecast_engine(  # noqa: C901
                 features=features,
                 feature_info=feature_info,
                 target_spec=target_spec,
+                dimred_method=dimred_method,
+                dimred_params=dimred_params,
+                training_window={
+                    "mode": (
+                        "as_of"
+                        if as_of is not None
+                        else "range"
+                        if start is not None or end is not None
+                        else "latest"
+                    ),
+                    **({"lookback": int(lookback)} if lookback is not None else {}),
+                    **({"as_of": as_of} if as_of is not None else {}),
+                    **({"start": start} if start is not None else {}),
+                    **({"end": end} if end is not None else {}),
+                },
                 async_mode=async_mode,
                 model_id=model_id,
                 model_cache=model_cache,
             )
         except _AsyncTrainingStarted as at:
             return at.response
+        except ModelCompatibilityError:
+            raise
         except ValueError as e:
             if method_l == 'ensemble':
                 return {"error": str(e)}
@@ -2195,6 +2276,8 @@ def forecast_engine(  # noqa: C901
                 result["ensemble"] = ensemble_metadata
         return result
 
+    except ModelCompatibilityError:
+        raise
     except Exception as e:
         return {"error": f"Forecast engine failed: {str(e)}"}
 

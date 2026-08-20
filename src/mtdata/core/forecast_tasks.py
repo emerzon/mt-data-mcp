@@ -18,6 +18,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from ..forecast.requests import MAX_FORECAST_HORIZON
 from ..shared.schema import (
     DetailLiteral,
     TimeframeLiteral,
@@ -60,6 +61,32 @@ def _days(value: Any) -> Optional[float]:
     return round(max(0.0, seconds) / 86400.0, 3)
 
 
+def _attach_model_reuse_fields(
+    payload: Dict[str, Any],
+    *,
+    handle: Any,
+    model_metadata: Dict[str, Any],
+) -> None:
+    from ..forecast.model_compatibility import describe_request_compatibility
+
+    compatibility = describe_request_compatibility(model_metadata)
+    payload["request_compatibility_status"] = compatibility["status"]
+    if compatibility.get("reason"):
+        payload["request_compatibility_reason"] = compatibility["reason"]
+    if compatibility.get("supported_horizon"):
+        payload["supported_horizon"] = compatibility["supported_horizon"]
+    fingerprint = model_metadata.get("compatibility_fingerprint")
+    if isinstance(fingerprint, dict):
+        payload["compatibility_fingerprint"] = fingerprint
+    reuse_request = model_metadata.get("reuse_request")
+    if isinstance(reuse_request, dict):
+        payload["reuse_request"] = {
+            **reuse_request,
+            "model_id": handle.model_id,
+            "model_cache": "require_existing",
+        }
+
+
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
@@ -70,7 +97,7 @@ class ForecastTrainRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     method: str = Field(..., description="Forecast method name (e.g. nhits, tft, mlf_rf).")
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = Field(
         None,
@@ -360,10 +387,10 @@ def _serialize_model_handle(
         compatibility = describe_store_metadata_compatibility(store_metadata)
     except Exception:
         compatibility = {}
-    # Surface a light status only; full migration diagnostics stay in the store layer.
+    # Store-format compatibility and request compatibility are separate contracts.
     compatibility_status = compatibility.get("status") if isinstance(compatibility, dict) else None
     if compatibility_status:
-        payload["compatibility_status"] = compatibility_status
+        payload["store_compatibility_status"] = compatibility_status
     if detail == "full":
         from ..forecast.model_store import (
             sanitize_store_metadata,
@@ -378,6 +405,11 @@ def _serialize_model_handle(
             payload["model_dir"] = store_info.get("model_dir")
         payload["metadata"] = model_metadata
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
+        _attach_model_reuse_fields(
+            payload,
+            handle=handle,
+            model_metadata=model_metadata,
+        )
     return payload
 
 

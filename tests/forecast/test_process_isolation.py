@@ -8,6 +8,7 @@ import pytest
 
 from mtdata.core import forecast as core_forecast
 from mtdata.forecast import gpu_runtime
+from mtdata.forecast.exceptions import ModelCompatibilityError
 from mtdata.forecast.gpu_runtime import forecast_method_may_use_gpu
 
 
@@ -188,6 +189,29 @@ def test_child_entry_returns_exception_message(monkeypatch):
     assert queue.messages[0]["stdout_tail"] == "child progress marker"
     assert queue.messages[0]["stderr_tail"] == "child warning marker"
     assert "raise RuntimeError(\"boom\")" in queue.messages[0]["traceback"]
+
+
+def test_child_entry_preserves_model_compatibility_details(monkeypatch):
+    def fail(operation, payload):
+        raise ModelCompatibilityError(
+            "stored model is incompatible",
+            model_id="nhits/EURUSD_H1/abc",
+            stored_fingerprint={"horizon": 12},
+            requested_fingerprint={"horizon": 24},
+            mismatches={"horizon": {"stored": 12, "requested": 24}},
+        )
+
+    monkeypatch.setattr(core_forecast, "_run_forecast_payload_direct", fail)
+    queue = _DummyQueue()
+
+    core_forecast._forecast_process_entry("forecast_generate", {}, queue)
+
+    assert queue.messages[0]["status"] == "model_compatibility_error"
+    assert queue.messages[0]["model_id"] == "nhits/EURUSD_H1/abc"
+    assert queue.messages[0]["mismatches"]["horizon"] == {
+        "stored": 12,
+        "requested": 24,
+    }
 
 
 def test_child_exception_traceback_is_error_visible(caplog):

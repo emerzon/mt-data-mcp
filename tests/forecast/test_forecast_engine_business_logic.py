@@ -66,6 +66,34 @@ def test_training_context_versions_return_value_policy():
     )["features"]
 
 
+def test_training_context_includes_dimensionality_reduction_identity():
+    df = _df(4)
+    target = pd.Series([1.0, 2.0, 3.0], index=df.index[-3:])
+    kwargs = {
+        "df": df,
+        "target_series": target,
+        "base_col": "close",
+        "quantity": "price",
+        "denoise": None,
+        "features": {"lags": [1, 2]},
+        "target_spec": None,
+        "exog": np.ones((3, 2)),
+    }
+
+    pca = fe._training_context_fingerprint(
+        dimred_method="pca",
+        dimred_params={"n_components": 1},
+        **kwargs,
+    )
+    none = fe._training_context_fingerprint(**kwargs)
+
+    assert pca["dimred"] == {
+        "method": "pca",
+        "params": {"n_components": 1},
+    }
+    assert pca != none
+
+
 def test_available_methods_filters_dependency_unavailable_registry_entries(monkeypatch):
     monkeypatch.setattr(
         fe.ForecastRegistry,

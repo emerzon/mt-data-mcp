@@ -397,6 +397,17 @@ history refresh retrain instead of forecasting from a stale cutoff. Historical
 `as_of` calls always require the artifact's exact training anchor to prevent
 look-ahead reuse.
 
+Training and generation share the same supported horizon range of 1–500 bars.
+`forecast_models_list --detail full` exposes the stored
+`compatibility_fingerprint`, a `request_compatibility_status`, and a replayable
+`reuse_request` containing the model ID and `model_cache: require_existing`.
+Legacy artifacts without identity metadata report `unknown`; artifacts whose
+request is no longer valid report `unusable`. Store-file format health is reported
+separately as `store_compatibility_status`. If a supplied model ID differs from
+the requested horizon, timeframe, target, preprocessing, exogenous-input shape,
+or training parameters, `forecast_generate` returns
+`forecast_model_incompatible` with per-dimension stored and requested values.
+
 Default pickle-based model artifacts use a versioned envelope that records the
 Python, mtdata, and observed scientific-library versions. Compatibility is
 checked before unpickling. Legacy or runtime-mismatched artifacts are rejected

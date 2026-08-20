@@ -39,6 +39,7 @@ from .interface import (
     TrainingProgress,
 )
 from .job_store import JobRecord, JobStore
+from .model_compatibility import build_model_reuse_metadata
 from .model_store import ModelStore
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,7 @@ class _TrainingSpec:
     request_payload: Optional[Dict[str, Any]] = None
     method_object: Any = None
     training_window: Optional[Dict[str, Any]] = None
+    compatibility_fingerprint: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -505,6 +507,14 @@ def _execute_training_spec(
         "source_task_id": source_task_id,
         "training_context": training_context,
     }
+    if spec.compatibility_fingerprint:
+        metadata.update(
+            build_model_reuse_metadata(
+                spec.compatibility_fingerprint,
+                prepared["data_scope"],
+                spec.training_window,
+            )
+        )
     if spec.training_window:
         metadata["training_window"] = dict(spec.training_window)
     return store.save(
@@ -852,7 +862,7 @@ class TaskManager:
         if stale:
             logger.warning("Marked %d persisted forecast task(s) as failed during recovery", stale)
 
-    def _compute_params_hash(
+    def _compute_model_identity(
         self,
         method_name: str,
         *,
@@ -861,7 +871,7 @@ class TaskManager:
         params: Dict[str, Any],
         timeframe: str,
         has_exog: bool,
-    ) -> str:
+    ) -> tuple[str, Dict[str, Any]]:
         _ensure_training_methods_registered()
         forecaster = ForecastRegistry.get(method_name)
         fingerprint = forecaster.training_fingerprint(
@@ -871,7 +881,7 @@ class TaskManager:
             timeframe=timeframe,
             has_exog=has_exog,
         )
-        return ForecastMethod.hash_fingerprint(fingerprint)
+        return ForecastMethod.hash_fingerprint(fingerprint), fingerprint
 
     def _get_existing_task(self, method_name: str, data_scope: str, params_hash: str) -> Optional[TrainingTask]:
         dedup_key = (method_name, data_scope, params_hash)
@@ -1014,13 +1024,14 @@ class TaskManager:
         *,
         exog: Optional[np.ndarray] = None,
         timeframe: str = "",
+        training_window: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> tuple[str, bool]:
         if self._shutdown:
             raise RuntimeError("TaskManager is shut down")
         info = ForecastRegistry.get_method_info(method_name)
         params_for_hash = dict(params or {})
-        canonical_hash = self._compute_params_hash(
+        canonical_hash, compatibility_fingerprint = self._compute_model_identity(
             method_name,
             horizon=int(horizon),
             seasonality=int(seasonality),
@@ -1040,6 +1051,8 @@ class TaskManager:
             series=series.copy(),
             exog=np.array(exog, copy=True) if isinstance(exog, np.ndarray) else exog,
             method_object=ForecastRegistry.get(method_name),
+            training_window=(dict(training_window) if training_window else None),
+            compatibility_fingerprint=compatibility_fingerprint,
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 
@@ -1080,7 +1093,7 @@ class TaskManager:
         )
         params_for_hash = dict(context.method_params)
         params_for_hash["quantity"] = str(quantity)
-        canonical_hash = self._compute_params_hash(
+        canonical_hash, compatibility_fingerprint = self._compute_model_identity(
             context.method_l,
             horizon=context.horizon,
             seasonality=context.seasonality,
@@ -1117,6 +1130,7 @@ class TaskManager:
                 **({"start": start} if start is not None else {}),
                 **({"end": end} if end is not None else {}),
             },
+            compatibility_fingerprint=compatibility_fingerprint,
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 

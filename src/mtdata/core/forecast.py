@@ -14,7 +14,7 @@ from pydantic import Field
 from ..forecast.barrier_constants import (
     BARRIER_MONTE_CARLO_METHODS,
 )
-from ..forecast.exceptions import ForecastError
+from ..forecast.exceptions import ForecastError, ModelCompatibilityError
 from ..forecast.requests import (
     ForecastBacktestRequest,
     ForecastBarrierOptimizeRequest,
@@ -392,6 +392,15 @@ def _forecast_process_entry(operation: str, payload: Dict[str, Any], result_chan
     with _suppress_forecast_child_side_output() as (stdout_buffer, stderr_buffer):
         try:
             result = _run_forecast_payload_direct(operation, payload)
+        except ModelCompatibilityError as exc:
+            _send_forecast_process_message(
+                result_channel,
+                {
+                    "status": "model_compatibility_error",
+                    "message": str(exc),
+                    **exc.details(),
+                },
+            )
         except ForecastError as exc:
             _send_forecast_process_message(
                 result_channel,
@@ -629,6 +638,14 @@ def _run_forecast_payload_in_process(operation: str, payload: Dict[str, Any]) ->
         return {"success": True, "result": result}
     if status == "forecast_error":
         raise ForecastError(str(message.get("message") or "Forecast child process failed"))
+    if status == "model_compatibility_error":
+        raise ModelCompatibilityError(
+            str(message.get("message") or "Stored forecast model is incompatible"),
+            model_id=str(message.get("model_id") or ""),
+            stored_fingerprint=message.get("stored_fingerprint"),
+            requested_fingerprint=message.get("requested_fingerprint"),
+            mismatches=message.get("mismatches") or {},
+        )
     if status == "exception":
         _raise_forecast_child_exception(operation, message)
     raise RuntimeError(f"{operation} child process returned an invalid status: {status or '<missing>'}")
@@ -838,6 +855,18 @@ def _forecast_connection_error() -> Optional[Dict[str, Any]]:
 
 def _forecast_error_payload(message: Any, *, operation: str) -> Dict[str, Any]:
     message_text = str(message)
+    if isinstance(message, ModelCompatibilityError):
+        return build_error_payload(
+            message_text,
+            code="forecast_model_incompatible",
+            operation=operation,
+            details=message.details(),
+            remediation=(
+                "Use the reuse_request returned by forecast_models_list --detail full, "
+                "or omit model_id to train or select a compatible artifact."
+            ),
+            related_tools=["forecast_models_list", "forecast_generate"],
+        )
     if "as_of must not be in the future" in message_text.lower():
         return build_error_payload(
             message_text,

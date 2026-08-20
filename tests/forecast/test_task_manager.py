@@ -366,6 +366,23 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
             series=_make_series(),
             method_object=_FakeMethod(delay=0.0),
             training_window=training_window,
+            compatibility_fingerprint={
+                "method": "fake",
+                "horizon": 5,
+                "seasonality": 1,
+                "timeframe": "H1",
+                "has_exog": False,
+                "params": {
+                    "quantity": "price",
+                    "alpha": 0.1,
+                    "_training_context": {
+                        "features": {"lags": [1, 2]},
+                        "denoise": None,
+                        "target_spec": None,
+                        "dimred": None,
+                    },
+                },
+            },
         )
 
         handle = _execute_training_spec(
@@ -380,6 +397,21 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
         self.assertEqual(
             handle.metadata["training_context"],
             {"training_end_epoch": 1_700_000_000.0},
+        )
+        self.assertEqual(handle.metadata["compatibility_fingerprint"]["horizon"], 5)
+        self.assertEqual(
+            handle.metadata["reuse_request"],
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "method": "fake",
+                "horizon": 5,
+                "quantity": "price",
+                "params": {"alpha": 0.1, "seasonality": 1},
+                "features": {"lags": [1, 2]},
+                "start": "2025-01-01",
+                "end": "2025-12-31",
+            },
         )
 
     def test_progress_and_heartbeat_update_task(self):
