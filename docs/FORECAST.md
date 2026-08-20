@@ -298,8 +298,14 @@ Evolutionary search through parameter space. Good for discrete/mixed search spac
 
 ```bash
 mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --horizon 12 \
-  --metric avg_rmse --mode auto --population 20 --generations 10
+  --metric avg_rmse --mode auto --population 20 --generations 10 \
+  --max-search-time-seconds 300
 ```
+
+Population and generations are each capped at 100. When the optional wall-clock
+limit is reached, a run with at least one valid evaluation returns its best
+completed candidate and marks `timed_out: true`, with completed and planned
+evaluation counts. A timeout before any valid result is a failed search.
 
 See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
 

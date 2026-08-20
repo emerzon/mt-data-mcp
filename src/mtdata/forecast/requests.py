@@ -446,6 +446,7 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     population: int = Field(
         12,
         ge=2,
+        le=100,
         description=(
             "Population size per generation (minimum 2). Defaults evaluate "
             "about 12*10*5=600 rolling backtests."
@@ -454,6 +455,7 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     generations: int = Field(
         10,
         ge=1,
+        le=100,
         description=(
             "Generation count. Combined with population and steps, defaults "
             "evaluate about 600 rolling backtests."
@@ -462,6 +464,14 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     seed: int = 42
+    max_search_time_seconds: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description=(
+            "Optional wall-clock search limit in seconds. A deadline returns "
+            "the best completed candidate with partial-search accounting."
+        ),
+    )
     slippage_bps: float = Field(
         0.0,
         ge=0.0,

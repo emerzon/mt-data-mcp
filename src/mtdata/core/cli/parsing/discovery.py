@@ -133,6 +133,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_tune_optuna", "timeout"): (
         "Optional wall-clock search limit in seconds."
     ),
+    ("forecast_tune_genetic", "max_search_time_seconds"): (
+        "Optional wall-clock search limit in seconds; returns the best completed "
+        "candidate with partial-search accounting."
+    ),
     ("forecast_optimize_hints", "timeframes"): (
         "Timeframes to evaluate. The default searches H1, H4, D1, and W1; "
         "pass one timeframe for a cheaper exploratory run."

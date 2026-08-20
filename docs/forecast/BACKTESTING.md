@@ -347,6 +347,7 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods fourier_ols \
 | `--trade-threshold` | `0` | Minimum expected return required to enter a simulated trade |
 | `--population` | 12 | Population size per generation (minimum 2) |
 | `--generations` | 10 | Number of generations |
+| `--max-search-time-seconds` | (none) | Optional wall-clock limit; returns the best completed candidate and partial-search counts |
 | `--crossover-rate` | 0.6 | Probability of crossover |
 | `--mutation-rate` | 0.3 | Probability of mutation |
 | `--seed` | 42 | Random seed for reproducibility |

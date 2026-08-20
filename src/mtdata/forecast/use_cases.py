@@ -3735,6 +3735,11 @@ def run_forecast_tune_genetic(
             crossover_rate=float(request.crossover_rate),
             mutation_rate=float(request.mutation_rate),
             seed=int(request.seed),
+            max_search_time_seconds=(
+                float(request.max_search_time_seconds)
+                if request.max_search_time_seconds is not None
+                else None
+            ),
             slippage_bps=float(request.slippage_bps),
             trade_threshold=float(request.trade_threshold),
             denoise=request.denoise,

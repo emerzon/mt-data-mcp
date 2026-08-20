@@ -46,6 +46,59 @@ def test_genetic_search_rejects_population_below_two():
         )
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["population", "generations"],
+)
+def test_genetic_request_caps_multiplicative_work(field):
+    with pytest.raises(ValueError, match="less than or equal to 100"):
+        ForecastTuneGeneticRequest(symbol="EURUSD", **{field: 101})
+
+
+def test_genetic_request_requires_positive_search_deadline():
+    with pytest.raises(ValueError, match="greater than 0"):
+        ForecastTuneGeneticRequest(
+            symbol="EURUSD",
+            max_search_time_seconds=0,
+        )
+
+
+def test_genetic_search_returns_best_completed_candidate_at_deadline(monkeypatch):
+    clock = iter([0.0, 0.4, 1.1, 1.2])
+    monkeypatch.setattr(tune.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(
+        tune,
+        "_eval_candidate",
+        lambda **kwargs: (
+            float(kwargs["candidate_params"]["x"]),
+            {
+                "_sel_method": "theta",
+                "results": {"theta": {"success": True}},
+            },
+        ),
+    )
+
+    out = tune.genetic_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="theta",
+        search_space={"x": {"type": "float", "min": 0.0, "max": 1.0}},
+        population=3,
+        generations=2,
+        max_search_time_seconds=1.0,
+        seed=3,
+    )
+
+    assert out["success"] is True
+    assert out["timed_out"] is True
+    assert out["partial_search"] is True
+    assert out["stop_reason"] == "timeout"
+    assert out["evaluations_completed"] == 2
+    assert out["evaluations_planned"] == 6
+    assert out["generations_completed"] == 0
+    assert out["history_count"] == 2
+
+
 def test_suppress_noisy_forecast_tune_loggers_raises_verbose_loggers(monkeypatch):
     logger = logging.getLogger("timesfm_2p5_torch")
     original_level = logger.level

@@ -1640,6 +1640,11 @@ class TestResolveParamKwargs:
             ),
             ("forecast_tune_genetic", "population", "600 rolling backtests"),
             ("forecast_tune_genetic", "generations", "600 at the defaults"),
+            (
+                "forecast_tune_genetic",
+                "max_search_time_seconds",
+                "wall-clock search limit",
+            ),
             ("forecast_task_wait", "timeout_seconds", "Maximum 86400"),
         ],
     )

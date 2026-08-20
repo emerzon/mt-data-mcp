@@ -912,6 +912,7 @@ def genetic_search_forecast_params(  # noqa: C901
     crossover_rate: float = 0.6,
     mutation_rate: float = 0.3,
     seed: int = 42,
+    max_search_time_seconds: Optional[float] = None,
     denoise: Optional[Dict[str, Any]] = None,
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
@@ -925,6 +926,14 @@ def genetic_search_forecast_params(  # noqa: C901
     - metric: one of backtest aggregates (e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy')
     - mode: 'auto' (metric-aware), 'min', or 'max' (direction)
     """
+    if max_search_time_seconds is not None and float(max_search_time_seconds) <= 0:
+        raise ValueError("max_search_time_seconds must be greater than 0")
+    search_started_at = time.monotonic()
+    deadline = (
+        search_started_at + float(max_search_time_seconds)
+        if max_search_time_seconds is not None
+        else None
+    )
     mode = resolve_tuning_mode(str(metric), str(mode or 'auto'))
     rng = random.Random(int(seed))
     raw = dict(search_space or {})
@@ -949,6 +958,13 @@ def genetic_search_forecast_params(  # noqa: C901
     population_size = int(population)
     if population_size < 2:
         raise ValueError("population must be greater than or equal to 2")
+    if population_size > 100:
+        raise ValueError("population must be less than or equal to 100")
+    generation_count = int(generations)
+    if generation_count < 1:
+        raise ValueError("generations must be greater than or equal to 1")
+    if generation_count > 100:
+        raise ValueError("generations must be less than or equal to 100")
     pop: List[Dict[str, Any]] = []
     for _ in range(population_size):
         cand: Dict[str, Any] = {}
@@ -980,8 +996,11 @@ def genetic_search_forecast_params(  # noqa: C901
     best_params: Dict[str, Any] = {}
     best_result: Optional[Dict[str, Any]] = None
     successful_evaluations = 0
+    evaluations_planned = population_size * generation_count
+    generations_completed = 0
+    timed_out = False
 
-    for gen in range(max(1, int(generations))):
+    for gen in range(generation_count):
         scored: List[Tuple[float, Dict[str, Any]]] = []
         for cand in pop:
             score, res = _eval_candidate(
@@ -1027,6 +1046,19 @@ def genetic_search_forecast_params(  # noqa: C901
                 best_params = dict(cand)
                 best_result = res if isinstance(res, dict) else None
 
+            if (
+                deadline is not None
+                and len(history) < evaluations_planned
+                and time.monotonic() >= deadline
+            ):
+                timed_out = True
+                break
+
+        if len(scored) == len(pop):
+            generations_completed += 1
+        if timed_out:
+            break
+
         # Selection (elitism: top 2)
         scored.sort(key=lambda t: t[0])  # ascending in adjusted score
         elites = [dict(scored[0][1]), dict(scored[1][1])] if len(scored) >= 2 else [dict(scored[0][1])]
@@ -1065,11 +1097,29 @@ def genetic_search_forecast_params(  # noqa: C901
             new_pop.append(child)
         pop = new_pop[: len(pop)]
 
+    elapsed_seconds = round(time.monotonic() - search_started_at, 3)
+    progress = {
+        "timed_out": timed_out,
+        "partial_search": timed_out,
+        "stop_reason": "timeout" if timed_out else "completed",
+        "evaluations_completed": len(history),
+        "evaluations_planned": evaluations_planned,
+        "generations_completed": generations_completed,
+        "elapsed_seconds": elapsed_seconds,
+        "max_search_time_seconds": max_search_time_seconds,
+    }
+
     if successful_evaluations == 0:
         return {
             "success": False,
-            "error": "No candidate produced a finite requested metric.",
-            "error_code": "no_successful_trials",
+            "error": (
+                "Search timed out before any candidate produced a finite requested metric."
+                if timed_out
+                else "No candidate produced a finite requested metric."
+            ),
+            "error_code": (
+                "search_timeout_no_results" if timed_out else "no_successful_trials"
+            ),
             "metric": metric,
             "mode": mode,
             "population": population_size,
@@ -1078,6 +1128,7 @@ def genetic_search_forecast_params(  # noqa: C901
             "history_count": len(history),
             "failure_causes": _failure_causes(history),
             "failed_candidates": history[:5],
+            **progress,
         }
 
     payload: Dict[str, Any] = {
@@ -1091,6 +1142,7 @@ def genetic_search_forecast_params(  # noqa: C901
         "population_requested": int(population),
         "generations": int(generations),
         "history_count": len(history),
+        **progress,
     }
     if best_result is not None:
         sel = best_result.get('_sel_method') if isinstance(best_result, dict) else None

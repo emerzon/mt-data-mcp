@@ -2067,11 +2067,13 @@ def test_forecast_tuning_propagates_historical_anchor_and_discloses_window():
             symbol="EURUSD",
             methods=["theta"],
             as_of="2025-12-31T21:00:00Z",
+            max_search_time_seconds=15.0,
         ),
         genetic_search_impl=fake_genetic,
     )
 
     assert captured["as_of"] == "2025-12-31T21:00:00Z"
+    assert captured["max_search_time_seconds"] == 15.0
     assert result["analysis_time_window"] == {
         "as_of": "2025-12-31T21:00:00Z",
         "timezone": "UTC",
