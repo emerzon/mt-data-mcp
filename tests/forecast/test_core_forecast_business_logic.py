@@ -680,6 +680,7 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "method": kwargs["method"],
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
+            "data_as_of": "2026-06-02 19:00",
             "last_observation_time": "2026-06-02 19:00",
             "forecast_start_time": "2026-06-02 20:00",
             "forecast_start_gap_bars": 1.0,
@@ -706,6 +707,7 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         )
     )
 
+    assert out["data_as_of"] == "2026-06-02T19:00Z"
     assert out["last_observation_time"] == "2026-06-02T19:00Z"
     assert out["timezone"] == "UTC"
     assert out["data_window"] == {
@@ -3430,6 +3432,7 @@ def test_forecast_conformal_intervals_compact_marks_flat_point_forecast():
             "success": True,
             "method": "theta",
             "horizon": 2,
+            "data_as_of": "2026-06-02 19:00",
             "last_observation_time": "2026-06-02 19:00",
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
             "forecast_price": [1.23456, 1.23456],
@@ -3447,6 +3450,7 @@ def test_forecast_conformal_intervals_compact_marks_flat_point_forecast():
         ),
     )
 
+    assert out["data_as_of"] == "2026-06-02T19:00Z"
     assert out["last_observation_time"] == "2026-06-02T19:00Z"
     assert out["forecast"] == [
         {"time": "2026-06-02T20:00Z", "value": 1.23456, "lower": 1.23, "upper": 1.24},

@@ -259,6 +259,7 @@ def test_preprocessing_helpers_and_output_format():
             reconstructed_prices=reconstructed,
         )
     assert res["success"] is True
+    assert res["data_as_of"] == res["last_observation_time"]
     assert res["forecast_return"] == [0.01, 0.02, -0.01]
     assert res["forecast_price"] == [101.0, 103.0, 102.0]
     assert res["forecast_time"] == [

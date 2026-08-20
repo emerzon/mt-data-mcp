@@ -1717,6 +1717,7 @@ def _format_forecast_output(
         "base_col": base_col,
         "last_observation_epoch": float(last_epoch),
         "last_observation_time": last_observation_time,
+        "data_as_of": last_observation_time,
         "last_bar_complete": observation_close_epoch <= current_epoch,
         "timezone": timezone_label,
         "forecast_from": {

@@ -1194,6 +1194,7 @@ def _apply_forecast_generate_detail(  # noqa: C901
         compact["forecast_mode"] = "point_only"
     ci_warning_dedup = ci_unavailable
     for key in (
+        "data_as_of",
         "last_observation_time",
         "timezone",
         "forecast_time",
@@ -1509,6 +1510,7 @@ def _apply_conformal_intervals_detail(
         "detail": detail_value,
     }
     for key in (
+        "data_as_of",
         "last_observation_time",
         "timezone",
         "forecast_time",
