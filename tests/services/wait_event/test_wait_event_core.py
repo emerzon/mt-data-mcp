@@ -661,6 +661,27 @@ def test_wait_event_compact_timeout_keeps_explicit_watch_types() -> None:
     assert result["details"]["mode"] == "timeframe_boundary"
 
 
+def test_wait_event_compact_budget_error_keeps_required_retry_seconds() -> None:
+    result = core_data._compact_wait_event_public_result(
+        {
+            "success": False,
+            "status": "wait_budget_exceeded",
+            "error_code": "wait_budget_exceeded",
+            "error": "The next candle boundary exceeds max_wait_seconds.",
+            "remaining_seconds": 46.25,
+            "max_wait_seconds": 1.0,
+            "remediation": (
+                "Increase max_wait_seconds beyond remaining_seconds and retry."
+            ),
+        },
+        explicit_watch_for=False,
+        explicit_end_on=False,
+    )
+
+    assert result["remaining_seconds"] == 46.25
+    assert "remaining_seconds" in result["remediation"]
+
+
 def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
     def _mock_run_wait_event(request, gateway):
         return {

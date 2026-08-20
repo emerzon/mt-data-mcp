@@ -461,9 +461,11 @@ def _compact_wait_event_public_result(
         "sleep_seconds",
         "slept",
         "slept_seconds",
-        "remaining_seconds",
     ):
         out.pop(key, None)
+
+    if status != "wait_budget_exceeded":
+        out.pop("remaining_seconds", None)
 
     boundary_event = out.get("boundary_event")
     if isinstance(boundary_event, dict):
