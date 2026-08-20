@@ -337,6 +337,20 @@ class TestPatternsDetect:
         mock_detect.assert_called_once()
 
     @patch("mtdata.core.patterns._detect_candlestick_patterns")
+    def test_candlestick_rejects_unknown_config(self, mock_detect):
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="candlestick",
+            config={"bogus": 1},
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "unknown_config_key"
+        assert result["unknown_keys"] == ["bogus"]
+        assert "use_volume_confirmation" in result["valid_keys"]
+        mock_detect.assert_not_called()
+
+    @patch("mtdata.core.patterns._detect_candlestick_patterns")
     def test_candlestick_empty_compact_adds_parameter_note(self, mock_detect):
         mock_detect.return_value = {"success": True, "data": []}
 

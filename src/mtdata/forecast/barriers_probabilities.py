@@ -4,7 +4,10 @@ import numpy as np
 
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
-from ..shared.validators import unsupported_timeframe_seconds_error
+from ..shared.validators import (
+    unknown_mapping_keys_error,
+    unsupported_timeframe_seconds_error,
+)
 from ..utils import denoise as _denoise_api
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
@@ -50,6 +53,31 @@ from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc
 from .monte_carlo import simulate_heston_mc as _simulate_heston_mc
 from .monte_carlo import simulate_hmm_mc as _simulate_hmm_mc
 from .monte_carlo import simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc
+
+_BARRIER_COMMON_PARAM_KEYS = {"n_sims", "seed", "sims"}
+_BARRIER_METHOD_PARAM_KEYS = {
+    "mc_gbm": set(),
+    "mc_gbm_bb": set(),
+    "hmm_mc": {"n_states"},
+    "garch": {"p", "q"},
+    "bootstrap": {"block_size"},
+    "heston": {"kappa", "rho", "theta", "v0", "xi"},
+    "jump_diffusion": {
+        "jump_lambda",
+        "jump_mu",
+        "jump_sigma",
+        "jump_threshold",
+        "lambda",
+    },
+}
+
+
+def _barrier_param_keys(method: str) -> set[str]:
+    if method == "auto":
+        method_keys = set().union(*_BARRIER_METHOD_PARAM_KEYS.values())
+    else:
+        method_keys = set(_BARRIER_METHOD_PARAM_KEYS.get(method, set()))
+    return _BARRIER_COMMON_PARAM_KEYS | method_keys
 
 
 def _abs_barrier_side_error(
@@ -148,6 +176,16 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         except ValueError as exc:
             return {"error": str(exc)}
         p = _parse_kv_or_json(params)
+        method_key = normalize_barrier_method(method)
+        if method_key is None:
+            return {"error": barrier_method_error(method)}
+        parameter_error = unknown_mapping_keys_error(
+            p,
+            _barrier_param_keys(method_key),
+            subject=f"barrier params for method '{method_key}'",
+        )
+        if parameter_error is not None:
+            return parameter_error
         warnings_out: List[str] = []
         try:
             barrier_values = validate_barrier_unit_family_exclusivity(
@@ -258,9 +296,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 return {"error": f"Invalid n_sims: {raw_sims}. Must be >= 1."}
         if sims <= 0:
             return {"error": f"Invalid n_sims: {sims}. Must be >= 1."}
-        method_key = normalize_barrier_method(method)
-        if method_key is None:
-            return {"error": barrier_method_error(method)}
         method_requested = method_key
         auto_reason = None
         if method_key == 'auto':

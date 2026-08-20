@@ -153,6 +153,13 @@ use `--include-completed true` to include broken levels as well.
 | `--min-strength` | 0.70 | Minimum OHLC-geometry and pattern-reliability strength score (0.0-1.0) |
 | `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. Harmonics support `pattern_types`, `ratio_tolerance`, `min_confidence`, and pivot controls. |
 
+Detector config is strict. Candlestick mode accepts
+`use_volume_confirmation`, `volume_confirm_breakout_bars`,
+`volume_confirm_lookback_bars`, `volume_confirm_min_ratio`,
+`volume_confirm_bonus`, `volume_confirm_penalty`, `use_regime_context`,
+`regime_alignment_bonus`, and `regime_countertrend_penalty`; other keys return
+`unknown_config_key` instead of being ignored.
+
 Pattern names listed in this guide describe detector coverage, not a promise
 that every pattern is returned at the default threshold. `robust_only=true`
 restricts which candlestick methods run based on pattern name, while

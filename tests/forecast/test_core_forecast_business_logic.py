@@ -272,10 +272,25 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="unknown"))
     assert "Unknown sktime forecaster" in out["error"]
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="", params={"x": 1}))
+    captured.clear()
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="native",
+            method="naive",
+            params={"bogus": 1},
+        )
+    )
+    assert out["success"] is False
+    assert out["error_code"] == "unknown_parameter"
+    assert out["unknown_keys"] == ["bogus"]
+    assert out["valid_keys"] == []
+    assert captured == {}
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method=""))
     assert out["ok"] is True
     assert captured["method"] == "theta"
-    assert captured["params"] == {"x": 1}
+    assert captured["params"] == {}
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="statsforecast", method="AutoARIMA", params={}))
     assert out["ok"] is True
@@ -408,10 +423,10 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert captured["method"] == "mlf_rf"
     assert captured["params"]["lags"] == [1, 2, 3]
 
-    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="native:theta", params={"x": 2}))
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="native", method="native:theta"))
     assert out["ok"] is True
     assert captured["method"] == "theta"
-    assert captured["params"] == {"x": 2}
+    assert captured["params"] == {}
 
     with pytest.raises(Exception):
         ForecastGenerateRequest(symbol="EURUSD", library="unsupported", method="x")

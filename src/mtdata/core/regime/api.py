@@ -13,6 +13,7 @@ from pydantic import Field
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ...shared.validators import unknown_mapping_keys_error
 from ...utils.denoise import resolve_denoise_base_col
 from ...utils.freshness import completed_bar_freshness_fields
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
@@ -61,6 +62,64 @@ from .smoothing import (
 )
 
 logger = logging.getLogger(__name__)
+
+_REGIME_COMMON_PARAM_KEYS = {"lookback", "min_regime_bars"}
+_REGIME_METHOD_PARAM_KEYS = {
+    "bocpd": {
+        "cp_confirm_bars",
+        "cp_confirm_relaxed_mult",
+        "cp_edge_multiplier",
+        "cp_threshold",
+        "cp_threshold_calibration_mode",
+        "hazard_lambda",
+        "hazard_mode",
+        "max_run_length",
+        "min_cp_distance_bars",
+        "threshold",
+        "threshold_calibration_bootstraps",
+        "threshold_calibration_max_windows",
+        "threshold_calibration_step",
+        "threshold_calibration_window",
+        "threshold_target_false_alarm_rate",
+    },
+    "pelt": {"jump", "min_size", "model", "penalty"},
+    "ms_ar": {"inference", "maxiter", "n_states", "order"},
+    "hmm": {"inference", "maxiter", "n_states", "seed", "tol"},
+    "gmm": {"inference", "n_states"},
+    "clustering": {
+        "affinity",
+        "algorithm",
+        "n_components",
+        "n_states",
+        "use_pca",
+        "window_size",
+    },
+    "garch": {"n_states", "p_order", "q_order", "vol_threshold"},
+    "rule_based": {
+        "efficiency_threshold",
+        "trend_strength_threshold",
+        "window_bars",
+    },
+    "wavelet": {"energy_window", "level", "n_states", "wavelet"},
+}
+_REGIME_ENSEMBLE_METHODS = {"clustering", "gmm", "hmm", "ms_ar", "wavelet"}
+
+
+def _regime_param_keys(method: str) -> set[str]:
+    if method == "ensemble":
+        method_keys = set().union(
+            *(_REGIME_METHOD_PARAM_KEYS[name] for name in _REGIME_ENSEMBLE_METHODS)
+        ) | {"methods", "n_states", "voting"}
+    elif method == "all":
+        method_keys = set().union(*_REGIME_METHOD_PARAM_KEYS.values()) | {"voting"}
+    else:
+        method_keys = set(_REGIME_METHOD_PARAM_KEYS.get(method, set()))
+    return _REGIME_COMMON_PARAM_KEYS | method_keys
+
+
+def _regime_params_for_method(params: Dict[str, Any], method: str) -> Dict[str, Any]:
+    allowed = _regime_param_keys(method)
+    return {key: value for key, value in params.items() if key in allowed}
 
 
 def _rolling_prefix_std(values: np.ndarray, lookback: int) -> np.ndarray:
@@ -1714,6 +1773,13 @@ def regime_detect(  # noqa: C901
         return _finish(connection_error)
     try:
         p = dict(params or {})
+        parameter_error = unknown_mapping_keys_error(
+            p,
+            _regime_param_keys(method),
+            subject=f"regime params for method '{method}'",
+        )
+        if parameter_error is not None:
+            return _finish(parameter_error)
         requested_lookback = -1 if lookback is None else int(lookback)
         requested_min_regime_bars = -1 if min_regime_bars is None else int(min_regime_bars)
 
@@ -4011,7 +4077,7 @@ def regime_detect(  # noqa: C901
             sub_results: List[Dict[str, Any]] = []
             sub_errors: List[str] = []
             for sm in sub_methods:
-                sub_params = dict(p)
+                sub_params = _regime_params_for_method(p, sm)
                 sub_params.pop("methods", None)
                 sub_params.pop("voting", None)
                 sub_params.setdefault("n_states", n_states_ens)
@@ -4097,7 +4163,7 @@ def regime_detect(  # noqa: C901
             for m in all_methods:
                 method_started_at = time.perf_counter()
                 try:
-                    sub_params = dict(p)
+                    sub_params = _regime_params_for_method(p, m)
                     # Only set default n_states for methods that don't auto-detect
                     # GARCH auto-detects optimal n_states, don't force a default
                     if m in ("hmm", "ms_ar", "clustering"):

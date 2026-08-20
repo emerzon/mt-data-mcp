@@ -7,6 +7,7 @@ import numpy as np
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.market_units import forex_pip_size
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
+from ..shared.validators import unknown_mapping_keys_error
 from ..utils import denoise as _denoise_api
 from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
@@ -122,6 +123,124 @@ _BARRIER_SEARCH_PROFILE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "refine": True,
     },
 }
+
+_BARRIER_OPTIMIZER_PARAM_KEYS = {
+    "commission_bps",
+    "commission_pct",
+    "concise",
+    "convergence_threshold",
+    "convergence_window",
+    "drift_stress_multipliers",
+    "enable_bootstrap",
+    "enable_convergence_check",
+    "enable_drift_stress",
+    "enable_oos_validation",
+    "enable_power_analysis",
+    "enable_sensitivity_analysis",
+    "fast_defaults",
+    "gap_aware_stops",
+    "grid_preset",
+    "grid_style",
+    "live_price",
+    "max_median_time",
+    "max_prob_no_hit",
+    "min_barrier_multiplier",
+    "min_barrier_pct",
+    "min_barrier_ticks",
+    "min_edge",
+    "min_ev",
+    "min_kelly",
+    "min_prob_resolve",
+    "min_prob_win",
+    "n_bootstrap",
+    "n_jobs",
+    "n_seeds",
+    "n_seeds_stability",
+    "n_trials",
+    "oos_folds",
+    "oos_holdout_bars",
+    "oos_n_sims",
+    "optimizer",
+    "optuna_pareto",
+    "optuna_pareto_objectives",
+    "pareto_limit",
+    "power_effect_size",
+    "preset",
+    "pruner",
+    "ratio_max",
+    "ratio_min",
+    "ratio_steps",
+    "refine",
+    "refine_radius",
+    "refine_steps",
+    "rr_max",
+    "rr_min",
+    "same_bar_policy",
+    "sampler",
+    "search_profile",
+    "sensitivity_params",
+    "sl_max",
+    "sl_min",
+    "sl_steps",
+    "slippage_bps",
+    "slippage_pct",
+    "slippage_pips",
+    "spread_bps",
+    "spread_pct",
+    "spread_pips",
+    "statistical_robustness",
+    "target_ci_width",
+    "timeout",
+    "tp_max",
+    "tp_min",
+    "tp_steps",
+    "tradable_only",
+    "use_live_price",
+    "viable_only",
+    "vol_floor_pct",
+    "vol_floor_ticks",
+    "vol_max_mult",
+    "vol_min_mult",
+    "vol_sl_multiplier",
+    "vol_sl_steps",
+    "vol_steps",
+    "vol_window",
+}
+_BARRIER_OPTIMIZER_COMMON_SIM_KEYS = {"n_sims", "seed", "sims"}
+_BARRIER_OPTIMIZER_METHOD_KEYS = {
+    "mc_gbm": set(),
+    "mc_gbm_bb": set(),
+    "hmm_mc": {"n_states"},
+    "garch": {"p", "q"},
+    "bootstrap": {"block_size"},
+    "heston": {"kappa", "rho", "theta", "v0", "xi"},
+    "jump_diffusion": {
+        "jump_lambda",
+        "jump_mu",
+        "jump_sigma",
+        "jump_threshold",
+        "lambda",
+    },
+}
+_BARRIER_ENSEMBLE_PARAM_KEYS = {
+    "ensemble_agg",
+    "ensemble_methods",
+    "ensemble_weights",
+}
+
+
+def _barrier_optimizer_param_keys(method: str) -> set[str]:
+    if method in {"auto", "ensemble"}:
+        method_keys = set().union(*_BARRIER_OPTIMIZER_METHOD_KEYS.values())
+    else:
+        method_keys = set(_BARRIER_OPTIMIZER_METHOD_KEYS.get(method, set()))
+    if method == "ensemble":
+        method_keys |= _BARRIER_ENSEMBLE_PARAM_KEYS
+    return (
+        _BARRIER_OPTIMIZER_PARAM_KEYS
+        | _BARRIER_OPTIMIZER_COMMON_SIM_KEYS
+        | method_keys
+    )
 
 
 @dataclass(frozen=True)
@@ -1282,6 +1401,9 @@ def forecast_barrier_optimize(  # noqa: C901
             return {"error": direction_error}
 
         params_dict = _parse_kv_or_json(params)
+        method_name = normalize_barrier_method(method, allow_ensemble=True)
+        if method_name is None:
+            return {"error": barrier_method_error(method, allow_ensemble=True)}
         try:
             same_bar_policy_value = normalize_same_bar_policy(
                 params_dict.get("same_bar_policy", "sl_first")
@@ -1444,6 +1566,18 @@ def forecast_barrier_optimize(  # noqa: C901
                     "Use one of: intraday, position, scalp, swing."
                 )
             }
+        parameter_error = unknown_mapping_keys_error(
+            params_dict,
+            _barrier_optimizer_param_keys(method_name),
+            subject=f"barrier optimizer params for method '{method_name}'",
+        )
+        if parameter_error is not None:
+            if "return_grid" in parameter_error["unknown_keys"]:
+                parameter_error["remediation"] = (
+                    "Pass return_grid as the top-level return_grid option; correct or "
+                    "remove every other unknown key and use only valid_keys inside params."
+                )
+            return parameter_error
         if grid_style_val != 'preset' and preset_val is not None:
             return {
                 "error": (
@@ -1911,9 +2045,6 @@ def forecast_barrier_optimize(  # noqa: C901
         # structurally negative-EV after slippage/commission can slip through.
         min_barrier_distance = max(min_barrier_absolute, min_barrier_multiplier * cost_per_trade)
         
-        method_name = normalize_barrier_method(method, allow_ensemble=True)
-        if method_name is None:
-            return {"error": barrier_method_error(method, allow_ensemble=True)}
         method_requested = method_name
         auto_reason = None
         supported_member_methods = ['mc_gbm', 'mc_gbm_bb', 'hmm_mc', 'garch', 'bootstrap', 'heston', 'jump_diffusion', 'auto']

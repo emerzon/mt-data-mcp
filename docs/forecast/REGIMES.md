@@ -68,6 +68,11 @@ and observed bar count; without enough evidence the label remains neutral.
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
 ```
 
+`params` is method-specific and strict. Unknown keys fail with the selected
+method's valid key list, so `n_statez=3` cannot silently fall back to the
+two-state HMM default. `ensemble` and `all` accept the union needed by their
+submethods, then pass each submethod only the keys it consumes.
+
 **Output:**
 ```
 summary:

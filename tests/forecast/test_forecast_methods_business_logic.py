@@ -71,6 +71,12 @@ def test_validate_method_params_type_rules(monkeypatch):
     assert "Parameter 'bool_p' should be a boolean" in errors
     assert "Parameter 'tuple_p' should have 3 elements" in errors
 
+    unknown_param = fm.validate_method_params("m", {"int_q": 2})
+    assert unknown_param == [
+        "Unknown parameter(s) for method 'm': int_q. "
+        "Valid parameters: bool_p, float_p, int_p, tuple_p"
+    ]
+
     ok = fm.validate_method_params(
         "m",
         {

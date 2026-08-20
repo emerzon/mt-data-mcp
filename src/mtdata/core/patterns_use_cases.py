@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from ..shared.validators import unknown_mapping_keys_error
 from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
     _build_highlights,
@@ -145,6 +146,17 @@ _MODE_FETCH_FLOOR_BARS = {
     "harmonic": 120,
     "elliott": 150,
     "all": 150,
+}
+_CANDLESTICK_CONFIG_KEYS = {
+    "regime_alignment_bonus",
+    "regime_countertrend_penalty",
+    "use_regime_context",
+    "use_volume_confirmation",
+    "volume_confirm_bonus",
+    "volume_confirm_breakout_bars",
+    "volume_confirm_lookback_bars",
+    "volume_confirm_min_ratio",
+    "volume_confirm_penalty",
 }
 
 
@@ -497,6 +509,15 @@ def run_patterns_detect(  # noqa: C901
             )
 
     if mode_value == "candlestick":
+        config_value = request.config if isinstance(request.config, dict) else {}
+        config_error = unknown_mapping_keys_error(
+            config_value,
+            _CANDLESTICK_CONFIG_KEYS,
+            subject="candlestick config",
+            error_code="unknown_config_key",
+        )
+        if config_error is not None:
+            return config_error
         tf_single = tf_norm or "H1"
         last_n_bars_val: Optional[int] = None
         if request.last_n_bars is not None:
@@ -516,7 +537,7 @@ def run_patterns_detect(  # noqa: C901
             whitelist=request.whitelist,
             top_k=request.top_k,
             last_n_bars=last_n_bars_val,
-            config=request.config if isinstance(request.config, dict) else None,
+            config=config_value or None,
             start=request.start,
             end=request.end,
             denoise=request.denoise,

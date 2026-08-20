@@ -289,6 +289,12 @@ mtdata-cli forecast_generate EURUSD --method arima --params "p=2 d=1 q=2"
 mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000 seed=42" --ci-alpha 0.05
 ```
 
+Free-form `--params` and detector `--config` mappings are strict: an unknown
+key fails before data fetching or model execution and reports the valid keys
+for the selected method, with close-name suggestions when available. Put
+top-level options at the top level; for example, use `--return-grid false` on
+`forecast_barrier_optimize`, not `return_grid=false` inside `--params`.
+
 ---
 
 ## Date Inputs

@@ -239,6 +239,18 @@ def validate_method_params(method: str, params: Dict[str, Any]) -> List[str]:
         errors.append(f"Unknown method: {method}")
         return errors
 
+    valid_names = sorted(
+        str(param_def["name"])
+        for param_def in method_def.get("params", [])
+        if isinstance(param_def, dict) and param_def.get("name")
+    )
+    unknown_names = sorted(str(name) for name in params if str(name) not in valid_names)
+    if unknown_names:
+        errors.append(
+            f"Unknown parameter(s) for method '{method}': {', '.join(unknown_names)}. "
+            f"Valid parameters: {', '.join(valid_names) if valid_names else '(none)'}"
+        )
+
     # Check parameter types
     for param_def in method_def.get("params", []):
         param_name = param_def["name"]
@@ -279,3 +291,15 @@ def validate_method_params(method: str, params: Dict[str, Any]) -> List[str]:
                         errors.append(f"Parameter '{param_name}' should have {expected_len} elements")
 
     return errors
+
+
+def get_method_param_names(method: str) -> tuple[str, ...]:
+    """Return the declared public parameter names for one forecast method."""
+    method_def = _find_method_definition(method)
+    if not isinstance(method_def, dict):
+        return ()
+    return tuple(
+        str(param_def["name"])
+        for param_def in method_def.get("params", [])
+        if isinstance(param_def, dict) and param_def.get("name")
+    )

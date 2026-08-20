@@ -521,7 +521,11 @@ does not combine statistics from different member-specific optima.
 | `medium` (default) | 4,000 | 63 | 7 × 9 | off |
 | `long` | 10,000 | 600 | 41 × 51 | on |
 
-Use `--search-profile fast` for the fast profile. Explicit `params` values such as `n_sims` and `tp_steps` override the profile values.
+Use `--search-profile fast` for the fast profile. Explicit `params` values such
+as `n_sims` and `tp_steps` override the profile values. Parameter names are
+strict and method-aware: unknown keys fail before history is fetched. The
+documented `sims` alias remains accepted. Pass command options such as
+`return_grid` at the top level (`--return-grid false`), not inside `params`.
 
 **Grid Styles**:
 

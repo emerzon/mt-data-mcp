@@ -446,6 +446,23 @@ def test_regime_rejects_future_range_before_connection() -> None:
     connection.assert_not_called()
 
 
+@patch(_FETCH)
+def test_regime_rejects_unknown_method_params_before_history_fetch(mock_fetch) -> None:
+    result = _get_regime_detect()(
+        "EURUSD",
+        fetch_limit=60,
+        method="hmm",
+        params={"n_statez": 3, "seed": 42},
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "unknown_parameter"
+    assert result["unknown_keys"] == ["n_statez"]
+    assert result["suggestions"]["n_statez"] == ["n_states"]
+    assert {"n_states", "seed", "maxiter", "tol"}.issubset(result["valid_keys"])
+    mock_fetch.assert_not_called()
+
+
 class TestRegimeDetectBOCPD:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

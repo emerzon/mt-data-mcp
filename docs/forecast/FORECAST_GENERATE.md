@@ -55,6 +55,12 @@ or `--detail full`.
 | `--params` | — | Method-specific parameters (JSON or `key=value`) |
 | `--model-cache` | `reuse` | Trainable-model policy: `reuse` loads or persists an artifact, `ephemeral` trains without model-store reads/writes, and `require_existing` fails on a cache miss |
 
+Method parameters are validated against the selected method before history is
+fetched. Misspelled or unsupported keys return `unknown_parameter` with
+`unknown_keys`, `valid_keys`, and close-name suggestions. Methods shown with no
+parameters in [METHODS.md](METHODS.md), such as `naive` and `theta`, reject a
+non-empty `--params` mapping.
+
 ### Window
 | Parameter | Default | Description |
 |-----------|---------|-------------|

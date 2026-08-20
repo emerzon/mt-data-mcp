@@ -26,6 +26,7 @@ from ..core.execution_logging import (
     log_operation_start,
 )
 from ..core.output_contract import attach_collection_contract
+from ..shared.validators import unknown_mapping_keys_error
 from ..utils.coercion import coerce_finite_float as _finite_float
 from ..utils.coercion import is_explicit_false as _is_explicit_false
 from ..utils.coercion import round_finite
@@ -40,7 +41,11 @@ from .barriers_shared import (
 from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
-from .forecast_methods import get_forecast_method_names, get_forecast_methods_snapshot
+from .forecast_methods import (
+    get_forecast_method_names,
+    get_forecast_methods_snapshot,
+    get_method_param_names,
+)
 from .forecast_registry import ForecastRegistry
 from .forecast_validation import format_invalid_method_error
 from .requests import (
@@ -2751,6 +2756,19 @@ def run_forecast_generate(  # noqa: C901
             ):
                 proxy_value = _DEFAULT_VOLATILITY_PROXY
                 proxy_defaulted = True
+
+        parameter_error = unknown_mapping_keys_error(
+            params,
+            get_method_param_names(str(resolved_method)),
+            subject=f"forecast params for method '{resolved_method}'",
+        )
+        if parameter_error is not None:
+            parameter_error["operation"] = "forecast_generate"
+            parameter_error["details"] = {
+                "library": lib or "native",
+                "method": str(resolved_method),
+            }
+            return _finish(parameter_error, resolved_method=str(resolved_method))
 
         out = forecast_impl(
             symbol=request.symbol,

@@ -26,6 +26,33 @@ class TestBarrierOptimizeBasic(_BarrierTestBase):
         self.assertNotIn("format", parameters)
         self.assertTrue(parameters["viable_only"].default)
 
+    def test_unknown_optimizer_param_fails_before_history_fetch(self):
+        self.mock_fetch_history_opt.reset_mock()
+
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=2,
+            method="mc_gbm",
+            params={"n_simz": 500, "seed": 42},
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "unknown_parameter")
+        self.assertEqual(result["unknown_keys"], ["n_simz"])
+        self.assertIn("n_sims", result["valid_keys"])
+        self.mock_fetch_history_opt.assert_not_called()
+
+    def test_top_level_optimizer_options_are_rejected_inside_params(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            method="mc_gbm",
+            params={"return_grid": False},
+        )
+
+        self.assertEqual(result["unknown_keys"], ["return_grid"])
+        self.assertIn("top-level", result["remediation"])
+
     def test_forecast_barrier_optimize(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD",

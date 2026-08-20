@@ -135,6 +135,27 @@ def test_barrier_optimize_rejects_removed_profile_alias():
     }
 
 
+def test_barrier_probability_rejects_unknown_params_before_history_fetch():
+    with patch(f"{_BARRIER_PROB_ROOT}._fetch_history") as fetch_history:
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=2,
+            method="mc_gbm",
+            direction="long",
+            tp_pct=0.2,
+            sl_pct=0.2,
+            params={"n_simz": 5000, "seed": 42},
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "unknown_parameter"
+    assert result["unknown_keys"] == ["n_simz"]
+    assert result["suggestions"]["n_simz"] == ["n_sims", "sims"]
+    assert {"n_sims", "sims", "seed"}.issubset(result["valid_keys"])
+    fetch_history.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Main test class
 # ---------------------------------------------------------------------------
