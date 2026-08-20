@@ -131,6 +131,14 @@ at the next bar's open (`signal_timing=completed_bar_close`,
 the simulated return. The final anchor is used only when that next open and the
 full realized horizon are available.
 
+Every detail level includes `analysis_time_window`. It records requested
+`start`/`end` cutoffs, the effective source-history bounds, first and last
+anchors, and the first/last evaluated target bar in UTC. These timestamps use
+candle open times; `input_bar_policy=closed_bars_only` states that each anchor's
+inputs were available only after that candle completed. Keep this block with
+persisted scores so results from different historical periods are not compared
+as though they covered the same sample.
+
 Consequently, `win_rate`, Sharpe, drawdown, and return metrics describe this
 specific take-profit-only heuristic. They are not directly comparable to a
 hold-to-horizon or dual-barrier strategy.

@@ -195,6 +195,19 @@ class TestForecastBacktest:
         assert result["backtest_plan"]["method_selection"] == "default_bounded_baselines"
         assert result["backtest_plan"]["methods_planned"] == ["naive", "drift", "theta"]
         assert result["backtest_plan"]["fits_planned"] == 15
+        window = result["analysis_time_window"]
+        assert window["history_start"] == _format_time_minimal(
+            float(fetch.return_value["time"].iloc[0])
+        )
+        assert window["history_end"] == _format_time_minimal(
+            float(fetch.return_value["time"].iloc[-1])
+        )
+        assert window["evaluation_start"].endswith("Z")
+        assert window["evaluation_end"].endswith("Z")
+        assert window["first_anchor"].endswith("Z")
+        assert window["last_anchor"].endswith("Z")
+        assert window["timezone"] == "UTC"
+        assert window["input_bar_policy"] == "closed_bars_only"
         assert {call.kwargs["method"] for call in fc.call_args_list} == {
             "naive",
             "drift",

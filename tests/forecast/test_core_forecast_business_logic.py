@@ -1486,6 +1486,45 @@ def test_run_forecast_backtest_preserves_requested_noncompact_detail():
     assert standard["backtest_plan"]["actual_runtime_seconds"] >= 0.0
 
 
+def test_run_forecast_backtest_retains_requested_and_effective_window_in_compact():
+    def fake_backtest_impl(**kwargs):
+        return {
+            "success": True,
+            "detail": "compact",
+            "backtest_plan": {"fits_planned": 1},
+            "analysis_time_window": {
+                "history_start": "2026-08-01T00:00:00Z",
+                "history_end": "2026-08-18T11:00:00Z",
+                "evaluation_start": "2026-08-18T08:00:00Z",
+                "evaluation_end": "2026-08-18T11:00:00Z",
+                "timezone": "UTC",
+                "input_bar_policy": "closed_bars_only",
+            },
+            "results": {},
+        }
+
+    result = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(
+            symbol="EURUSD",
+            start="2026-08-01T00:00:00Z",
+            end="2026-08-18T12:00:00Z",
+        ),
+        backtest_impl=fake_backtest_impl,
+    )
+
+    assert result["analysis_time_window"] == {
+        "history_start": "2026-08-01T00:00:00Z",
+        "history_end": "2026-08-18T11:00:00Z",
+        "evaluation_start": "2026-08-18T08:00:00Z",
+        "evaluation_end": "2026-08-18T11:00:00Z",
+        "timezone": "UTC",
+        "input_bar_policy": "closed_bars_only",
+        "start": "2026-08-01T00:00:00Z",
+        "end": "2026-08-18T12:00:00Z",
+        "reference_policy": "historical_candle_close",
+    }
+
+
 def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     def fake_backtest_impl(**kwargs):
         return {

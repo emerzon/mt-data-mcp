@@ -2904,6 +2904,7 @@ def run_forecast_backtest(
                 time.perf_counter() - started_at,
                 6,
             )
+        result = _attach_analysis_time_window(result, request)
     requested_detail = _requested_detail_label(request.detail)
     if str(request.detail or "compact").strip().lower() == "compact":
         return _compact_backtest_result(result)
@@ -2993,13 +2994,20 @@ def _attach_analysis_time_window(
         "start": getattr(request, "start", None),
         "end": getattr(request, "end", None),
     }
-    if not any(value not in (None, "") for value in values.values()):
+    existing_window = result.get("analysis_time_window")
+    if not any(value not in (None, "") for value in values.values()) and not isinstance(
+        existing_window,
+        dict,
+    ):
         return result
     out = dict(result)
-    out["analysis_time_window"] = {
-        key: value for key, value in values.items() if value not in (None, "")
-    }
+    out["analysis_time_window"] = (
+        dict(existing_window) if isinstance(existing_window, dict) else {}
+    )
     window = out["analysis_time_window"]
+    window.update(
+        {key: value for key, value in values.items() if value not in (None, "")}
+    )
     data_window = out.get("data_window")
     if not isinstance(data_window, dict):
         data_window = out.get("history_window")

@@ -2815,12 +2815,43 @@ def forecast_backtest(  # noqa: C901
             if isinstance(method_result, dict) and method_result.get("success") is True
         ]
         failed_methods = [method for method in results if method not in successful_methods]
+        first_anchor_idx = int(anchor_indices[0]) if anchor_indices else None
+        last_anchor_idx = int(anchor_indices[-1]) if anchor_indices else None
+        analysis_time_window = {
+            "history_start": _format_time_minimal(float(times[0])),
+            "history_end": _format_time_minimal(float(times[-1])),
+            "evaluation_start": (
+                _format_time_minimal(float(times[first_anchor_idx + 1]))
+                if first_anchor_idx is not None
+                else None
+            ),
+            "evaluation_end": (
+                _format_time_minimal(float(times[last_anchor_idx + int(horizon)]))
+                if last_anchor_idx is not None
+                else None
+            ),
+            "first_anchor": (
+                _format_time_minimal(float(times[first_anchor_idx]))
+                if first_anchor_idx is not None
+                else None
+            ),
+            "last_anchor": (
+                _format_time_minimal(float(times[last_anchor_idx]))
+                if last_anchor_idx is not None
+                else None
+            ),
+            "timezone": "UTC",
+            "timestamp_basis": "bar_open_time",
+            "input_bar_policy": "closed_bars_only",
+            "evaluation_target_policy": "next_bar_through_horizon_bar",
+        }
         result_payload = {
             "success": bool(successful_methods),
             "symbol": symbol,
             "timeframe": timeframe,
             "units": _backtest_units(quantity),
             "backtest_plan": backtest_plan,
+            "analysis_time_window": analysis_time_window,
             "slippage_bps": float(slippage_bps),
             "trade_threshold": trade_threshold_value,
             "signal_timing": "completed_bar_close",
