@@ -33,7 +33,7 @@ def finviz_percent_value(
     *,
     fraction_input: bool = True,
 ) -> Optional[float]:
-    """Normalize Finviz performance values to percentage points."""
+    """Normalize Finviz performance values to percent."""
     parsed = to_float_or_none(value)
     if parsed is None:
         return None

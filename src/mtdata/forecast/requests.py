@@ -83,7 +83,7 @@ class TakeProfitStopLossBarrierSpec(BaseModel):
 
     kind: Literal["tp_sl"] = "tp_sl"
     unit: Literal["price", "pct", "ticks"] = Field(
-        description="Barrier unit: absolute price, percentage points, or trade ticks."
+        description="Barrier unit: absolute price, percent, or trade ticks."
     )
     take_profit: float = Field(gt=0.0, description="Positive take-profit level or distance.")
     stop_loss: float = Field(gt=0.0, description="Positive stop-loss level or distance.")

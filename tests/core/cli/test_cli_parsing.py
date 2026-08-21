@@ -1361,6 +1361,17 @@ class TestResolveParamKwargs:
 
         assert expected in kwargs["help"]
 
+    def test_strategy_barrier_help_uses_documented_percent_term(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "barrier", "type": dict, "required": False, "default": None},
+            None,
+            cmd_name="strategy_validate",
+        )
+
+        assert "percent values" in kwargs["help"]
+        assert "0.5 means 0.5" in kwargs["help"]
+        assert "percentage points" not in kwargs["help"]
+
     def test_basic_str_param(self):
         param = {"name": "symbol", "type": str, "required": True, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)

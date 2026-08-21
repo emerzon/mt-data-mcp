@@ -25,6 +25,12 @@ def test_to_numeric_logs_non_empty_conversion_failures(caplog):
     assert "Failed to coerce Yahoo options 'strike' value 'bad-data' to float" in caplog.text
 
 
+def test_option_premium_contract_uses_documented_percent_unit():
+    contract = osvc._option_premium_contract()
+
+    assert contract["units"]["percent_change"] == "percent"
+
+
 def test_options_quote_metadata_uses_provider_quote_time(monkeypatch):
     monkeypatch.setattr(osvc._time, "time", lambda: 1_700_000_120.0)
 

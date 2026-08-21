@@ -64,14 +64,14 @@ class BarrierPairSpec(BaseModel):
         gt=0.0,
         description=(
             "Positive absolute take-profit level when unit=price, otherwise a "
-            "positive distance from entry in percentage points or trade ticks."
+            "positive distance from entry in percent or trade ticks."
         ),
     )
     stop_loss: float = Field(
         gt=0.0,
         description=(
             "Positive absolute stop-loss level when unit=price, otherwise a "
-            "positive distance from entry in percentage points or trade ticks."
+            "positive distance from entry in percent or trade ticks."
         ),
     )
 
@@ -232,7 +232,7 @@ PARAM_HINTS = {
     "price_field": "Quote field to use as the ticker price, such as bid, ask, last, or mid.",
     "volume": "Order volume (lots).",
     "risk_pct": (
-        "Account risk in percentage points (0.5 means 0.5% of equity)."
+        "Account risk in percent (0.5 means 0.5% of equity)."
     ),
     "comment": "Order comment tag.",
     "deviation": "Max slippage (points).",
@@ -291,8 +291,8 @@ PARAM_HINTS = {
     "top_n": "Return the top N rows or candidates.",
     "tp_abs": "Take-profit absolute price level.",
     "sl_abs": "Stop-loss absolute price level.",
-    "tp_pct": "Take-profit distance in percentage points (e.g. 0.5 means 0.5%, not 50%).",
-    "sl_pct": "Stop-loss distance in percentage points (e.g. 0.5 means 0.5%, not 50%).",
+    "tp_pct": "Take-profit distance in percent (e.g. 0.5 means 0.5%, not 50%).",
+    "sl_pct": "Stop-loss distance in percent (e.g. 0.5 means 0.5%, not 50%).",
     "tp_ticks": "Take-profit barrier distance in ticks.",
     "sl_ticks": "Stop-loss barrier distance in ticks.",
     "label_on": "Barrier evaluation basis: close or high_low.",
@@ -340,11 +340,11 @@ PARAM_HINTS = {
     "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
     "preset": "TP/SL grid preset: scalp, intraday, swing, or position.",
-    "tp_min": "Minimum TP grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
-    "tp_max": "Maximum TP grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
+    "tp_min": "Minimum TP grid distance: percent in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
+    "tp_max": "Maximum TP grid distance: percent in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
     "tp_steps": "Number of TP grid steps.",
-    "sl_min": "Minimum SL grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
-    "sl_max": "Maximum SL grid distance: percentage points in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
+    "sl_min": "Minimum SL grid distance: percent in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
+    "sl_max": "Maximum SL grid distance: percent in pct mode (0.5 means 0.5%) or ticks in ticks mode.",
     "sl_steps": "Number of SL grid steps.",
     "vol_window": "Lookback window for volatility-based grid.",
     "vol_min_mult": "Minimum volatility multiple for grid.",
@@ -407,7 +407,7 @@ PARAM_HINTS = {
     "page": PARAMETER_HELP["page"],
     "name": "Name of the item to describe.",
     "tolerance_pct": (
-        "Level-clustering tolerance in percentage points; 0.15 means 0.15%."
+        "Level-clustering tolerance in percent; 0.15 means 0.15%."
     ),
     "tolerance_points": "Tolerance as a broker-point count; for five-digit EURUSD, 10 points at point=0.00001 gives a 0.0001 price width.",
     "min_touches": "Minimum historical tests/touches required for a level.",
@@ -433,7 +433,7 @@ PARAM_HINTS = {
     "bucket_count": "Target number of volume-profile price buckets.",
     "max_buckets": "Maximum volume-profile buckets returned after auto sizing.",
     "value_area_pct": (
-        "Value area in percentage points for VAH/VAL; 70 means 70%."
+        "Value area in percent for VAH/VAL; 70 means 70%."
     ),
     "reference_price": "Reference price used for nearest-level context; defaults to current quote when available.",
     "max_tick_window_days": "Maximum raw-tick lookback window in days for volume profile.",

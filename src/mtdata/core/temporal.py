@@ -1544,7 +1544,7 @@ def temporal_analyze(  # noqa: C901
                     "win_rate": "fraction",
                     "win_rate_pct": _PERCENT_UNIT,
                     "avg_range_pct": _PERCENT_UNIT,
-                    "volatility_pct": "percentage_point_return_stddev_per_bar",
+                    "volatility_pct": _PERCENT_UNIT,
                 },
                 "timezone": tz_name,
                 "timezone_source": timezone_source,

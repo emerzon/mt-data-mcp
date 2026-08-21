@@ -698,7 +698,7 @@ class TestTemporalAnalyze:
             "avg_abs_return_pct": "percent (1.0 = 1%)",
             "win_rate_pct": "percent (1.0 = 1%)",
             "avg_range_pct": "percent (1.0 = 1%)",
-            "volatility_pct": "percentage_point_return_stddev_per_bar",
+            "volatility_pct": "percent (1.0 = 1%)",
         }
 
     @_apply_analyze_patches
@@ -1149,7 +1149,7 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert r["return_mode"] == "pct"
         assert r["units"]["avg_return_pct"] == "percent (1.0 = 1%)"
-        assert r["units"]["volatility_pct"] == "percentage_point_return_stddev_per_bar"
+        assert r["units"]["volatility_pct"] == "percent (1.0 = 1%)"
 
     @_apply_analyze_patches
     def test_volume_source_tick(self, mock_fetch, *_):

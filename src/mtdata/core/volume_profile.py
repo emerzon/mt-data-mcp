@@ -944,7 +944,7 @@ def compute_volume_profile_payload(
     if not math.isfinite(value_area_value) or not 0.0 < value_area_value <= 100.0:
         return {
             "error": (
-                "value_area_pct must be in (0, 100] percentage points; "
+                "value_area_pct must be in (0, 100] percent; "
                 f"got {value_area_pct!r}"
             ),
             "code": "volume_profile_invalid_value_area_pct",

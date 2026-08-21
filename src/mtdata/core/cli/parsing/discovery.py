@@ -123,7 +123,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "and stands down when evidence disagrees."
     ),
     ("trade_idea_compose", "risk_pct"): (
-        "Fixed-fraction account risk in percentage points (0.5 means 0.5% of "
+        "Fixed-fraction account risk in percent (0.5 means 0.5% of "
         "equity). Used only for preview sizing."
     ),
     ("forecast_tune_optuna", "n_trials"): (
@@ -432,7 +432,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("strategy_validate", "barrier"): (
         "JSON next-open execution barrier for strategy P&L (not labels_triple_barrier). "
         "Uses horizon, tp_pct, sl_pct, and same_bar_policy; tp_pct/sl_pct are "
-        "percentage points (0.5 means 0.5%). Entry is the next bar's open; timeout "
+        "percent values (0.5 means 0.5%). Entry is the next bar's open; timeout "
         "is mark-to-market return, not a 0 label."
     ),
     ("options_chain", "symbol"): (

@@ -125,7 +125,8 @@ def test_compute_volume_profile_payload_rejects_invalid_value_area_before_io(mon
         )
 
         assert result["code"] == "volume_profile_invalid_value_area_pct"
-        assert "percentage points" in result["error"]
+        assert "percent" in result["error"]
+        assert "percentage points" not in result["error"]
 
 
 def test_compute_volume_profile_payload_rejects_conflicting_bucket_controls_before_io(

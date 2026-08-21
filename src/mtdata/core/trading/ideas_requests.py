@@ -51,7 +51,7 @@ class TradeIdeaComposeRequest(BaseModel):
         gt=0.0,
         le=100.0,
         description=(
-            "Fixed-fraction account risk in percentage points (0.5 means 0.5% "
+            "Fixed-fraction account risk in percent (0.5 means 0.5% "
             "of equity). Used only for preview sizing."
         ),
     )

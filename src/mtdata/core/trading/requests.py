@@ -26,7 +26,7 @@ class FixedFractionSizing(BaseModel):
         gt=0.0,
         le=100.0,
         description=(
-            "Target account risk in percentage points (1 means 1%); must not "
+            "Target account risk in percent (1 means 1%); must not "
             "exceed 100% of equity."
         ),
     )
@@ -45,7 +45,7 @@ class KellySizing(BaseModel):
         gt=0.0,
         le=100.0,
         description=(
-            "Maximum Kelly account risk in percentage points (1 means 1%); "
+            "Maximum Kelly account risk in percent (1 means 1%); "
             "must not exceed 100% of equity."
         ),
     )
