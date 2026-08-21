@@ -870,6 +870,37 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
+    def test_wrapped_function_preserves_explicit_toon_projection(self):
+        import mtdata.core._mcp_tools as tools
+
+        original = tools._ORIG_TOOL_DECORATOR
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def trade_risk_analyze():
+                return {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "account": {"equity": 10_000.0},
+                    "trade_evaluation": {
+                        "status": "valid",
+                        "reward_risk_ratio": 2.0,
+                    },
+                }
+
+            dec(trade_risk_analyze)
+            wrapped = tools._TOOL_REGISTRY["trade_risk_analyze"]
+            result = wrapped(output_fields="trade_evaluation")
+
+            assert "success: true" in result
+            assert "symbol: EURUSD" in result
+            assert "trade_evaluation:" in result
+            assert "reward_risk_ratio: 2.0" in result
+            assert "account" not in result
+        finally:
+            tools._ORIG_TOOL_DECORATOR = original
+
     def test_wrapped_function_hides_meta_by_default_and_exposes_output_contract(self):
         import mtdata.core._mcp_tools as tools
 

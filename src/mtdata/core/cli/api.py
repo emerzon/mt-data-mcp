@@ -36,7 +36,11 @@ from ...bootstrap.tools import bootstrap_tools, cli_tool_module_names
 from ...forecast.requests import ForecastGenerateRequest
 from ...utils.coercion import UNPARSED_BOOL, parse_bool_like
 from .._mcp_instance import mcp
-from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
+from .._mcp_tools import (
+    _get_pydantic_model_fields,
+    _normalize_output_fields,
+    _select_output_fields,
+)
 from .._mcp_tools import get_tool_registry as get_registered_tools
 from ..error_envelope import build_error_payload
 from ..execution_logging import infer_result_success
@@ -594,9 +598,11 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
     verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
+    output_fields = getattr(args, "output_fields", None)
+    projection_requested = bool(_normalize_output_fields(output_fields))
     result = _select_output_fields(
         result,
-        getattr(args, "output_fields", None),
+        output_fields,
         tool_name=cmd_name,
     )
     output = _format_result_for_cli(
@@ -605,6 +611,7 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
         verbose=verbose,
         cmd_name=cmd_name,
         precision=getattr(args, "precision", None),
+        preserve_payload_shape=projection_requested,
     )
     if output:
         _write_cli_text(output)

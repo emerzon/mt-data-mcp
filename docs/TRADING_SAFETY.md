@@ -33,7 +33,13 @@ canonical decimal string and set
 
 ## Preview with `--dry-run`
 
-A dry run routes and validates the request **without sending it to MT5**. The `trade_place` preview returns markers you can assert on:
+A dry run routes and validates the request **without sending it to MT5**.
+Successful `trade_place`, `trade_modify`, and `trade_close` previews expose
+`dry_run=true`, `preview_ok=true`, and `would_send_order=false`. Modify and
+close previews also retain `actionability=preview_only` and a
+`preview_scope_summary` that states no request was sent, including in compact
+TOON output. The `trade_place` preview returns these additional markers you can
+assert on:
 
 ```jsonc
 {

@@ -2679,6 +2679,68 @@ class TestEdgeCases:
         assert "success: false" in output
         assert "error_code: output_fields_unresolved" in output
         assert "output_fields_status: failed" in output
+        assert "unresolved_output_fields[1]: missing" in output
+        assert "valid_output_fields[1]: value" in output
+        assert "Choose one or more paths from valid_output_fields" in output
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_trade_projection_has_same_selected_fields_in_toon_and_json(
+        self, mock_discover, capsys, monkeypatch
+    ):
+        def trade_risk_analyze(symbol: str, output_fields=None, **_kwargs):
+            return {
+                "success": True,
+                "symbol": symbol,
+                "account": {"equity": 10_000.0},
+                "trade_evaluation": {
+                    "status": "valid",
+                    "reward_risk_ratio": 2.0,
+                },
+            }
+
+        mock_discover.return_value = {
+            "trade_risk_analyze": {
+                "func": trade_risk_analyze,
+                "meta": {"description": "Analyze trade risk"},
+            }
+        }
+        monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "toon")
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "trade_risk_analyze",
+                "EURUSD",
+                "--output-fields",
+                "trade_evaluation",
+            ],
+        ):
+            toon_status = main()
+        toon_output = capsys.readouterr().out
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "trade_risk_analyze",
+                "EURUSD",
+                "--output-fields",
+                "trade_evaluation",
+                "--json",
+            ],
+        ):
+            json_status = main()
+        json_output = json.loads(capsys.readouterr().out)
+
+        assert toon_status == json_status == 0
+        assert set(json_output) == {"success", "symbol", "trade_evaluation"}
+        assert "success: true" in toon_output
+        assert "symbol: EURUSD" in toon_output
+        assert "trade_evaluation:" in toon_output
+        assert "status: valid" in toon_output
+        assert "reward_risk_ratio: 2.0" in toon_output
+        assert "account" not in toon_output
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_empty_trade_collection_accepts_declared_row_path(

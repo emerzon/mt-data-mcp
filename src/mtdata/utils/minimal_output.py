@@ -61,9 +61,15 @@ def _compact_error_envelope(payload: Dict[str, Any]) -> Dict[str, Any]:
         "request_id",
         "operation",
         "remediation",
+        "suggestion",
         "related_tools",
         "valid_values",
+        "example",
+        "documentation",
         "details",
+        "unresolved_output_fields",
+        "valid_output_fields",
+        "output_fields_status",
     )
     return {
         key: payload[key]
@@ -870,9 +876,14 @@ def _normalize_trade_payload(  # noqa: C901
 
     out: Dict[str, Any] = {}
     if "error" in payload and not _is_empty_value(payload.get("error")):
-        for key in ("success", "error_code", "dry_run", "preview_ok"):
+        out.update(_compact_error_envelope(payload))
+        for key in (
+            "dry_run",
+            "preview_ok",
+            "would_send_order",
+            "would_send_orders",
+        ):
             _maybe_add_trade_key(out, key, payload.get(key))
-        out["error"] = payload.get("error")
         _maybe_add_trade_key(out, "checked_scopes", payload.get("checked_scopes"))
         _maybe_add_trade_key(out, "message", payload.get("message"))
         blockers = payload.get("blockers")
@@ -901,6 +912,12 @@ def _normalize_trade_payload(  # noqa: C901
 
     if "results" in payload and isinstance(payload.get("results"), list):
         for key in (
+            "dry_run",
+            "preview_ok",
+            "actionability",
+            "would_send_order",
+            "would_send_orders",
+            "preview_scope_summary",
             "closed_count",
             "cancelled_count",
             "attempted_count",
@@ -951,11 +968,13 @@ def _normalize_trade_payload(  # noqa: C901
         _maybe_add_trade_key(out, "remediation", payload.get("remediation"))
         if verbose and isinstance(validation_payload, dict) and validation_payload:
             out["validation"] = validation_payload
-    if not (
-        is_successful_dry_run_preview
-        and payload.get("actionability") == "preview_only"
-    ):
-        _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
+    _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
+    if is_successful_dry_run_preview:
+        _maybe_add_trade_key(
+            out,
+            "would_send_order",
+            payload.get("would_send_order"),
+        )
     _maybe_add_trade_key(out, "symbol", payload.get("symbol"))
     _maybe_add_trade_key(out, "order_type", payload.get("order_type"))
     _maybe_add_trade_key(out, "pending", payload.get("pending"))
@@ -1034,7 +1053,10 @@ def _normalize_trade_payload(  # noqa: C901
         "broker_validation_not_performed",
     ):
         _maybe_add_trade_key(out, key, payload.get(key))
-    if not is_successful_dry_run_preview:
+    if (
+        not is_successful_dry_run_preview
+        or _is_empty_value(payload.get("message"))
+    ):
         _maybe_add_trade_key(
             out, "preview_scope_summary", payload.get("preview_scope_summary")
         )
@@ -2612,6 +2634,7 @@ def format_result_minimal(  # noqa: C901
     simplify_numbers: Optional[bool] = None,
     tool_name: Optional[str] = None,
     precision: Any = None,
+    preserve_payload_shape: bool = False,
 ) -> str:
     """Render tool outputs as TOON text."""
     if result is None:
@@ -2625,6 +2648,11 @@ def format_result_minimal(  # noqa: C901
             precision=precision,
             simplify_numbers=simplify_numbers,
         )
+        if preserve_payload_shape:
+            return _format_to_toon(
+                result,
+                simplify_numbers=precision_policy.simplify_numbers,
+            ).strip()
         if isinstance(result, dict):
             news_rendered = _render_news_payload(
                 result,

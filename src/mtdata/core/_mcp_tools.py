@@ -1643,6 +1643,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     verbose=contract_state.verbose,
                     precision=precision,
                     tool_name=fname,
+                    preserve_payload_shape=bool(
+                        _normalize_output_fields(output_fields)
+                    ),
                 )
             except Exception:
                 return str(out) if out is not None else ""

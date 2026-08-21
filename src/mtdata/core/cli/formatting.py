@@ -21,9 +21,18 @@ from .output_format import (
 )
 
 
-def _format_result_minimal(result: Any, verbose: bool = True) -> str:
+def _format_result_minimal(
+    result: Any,
+    verbose: bool = True,
+    *,
+    preserve_payload_shape: bool = False,
+) -> str:
     try:
-        return _shared_minimal(result, verbose=verbose)
+        return _shared_minimal(
+            result,
+            verbose=verbose,
+            preserve_payload_shape=preserve_payload_shape,
+        )
     except Exception:
         return str(result) if result is not None else ""
 
@@ -68,6 +77,7 @@ def _format_result_for_cli(
     verbose: bool,
     cmd_name: str,
     precision: Any = None,
+    preserve_payload_shape: bool = False,
 ) -> str:
     fmt_s = _normalize_cli_formatter(fmt)
     precision_policy = resolve_output_precision(
@@ -82,6 +92,7 @@ def _format_result_for_cli(
         verbose=verbose,
         cmd_name=cmd_name,
         precision=precision_policy.mode,
+        preserve_payload_shape=preserve_payload_shape,
     )
     if fmt_s == CLI_FORMAT_JSON:
         payload = {"text": prepared} if isinstance(prepared, str) else prepared
@@ -98,9 +109,14 @@ def _format_result_for_cli(
             verbose=verbose,
             precision=precision_policy.mode,
             tool_name=cmd_name,
+            preserve_payload_shape=preserve_payload_shape,
         )
     except TypeError:
-        return _format_result_minimal(prepared, verbose=verbose)
+        return _format_result_minimal(
+            prepared,
+            verbose=verbose,
+            preserve_payload_shape=preserve_payload_shape,
+        )
 
 
 def _prune_compact_runtime_meta(result: Any) -> Any:
@@ -620,8 +636,11 @@ def _prepare_cli_payload(
     verbose: bool,
     cmd_name: str,
     precision: Any = None,
+    preserve_payload_shape: bool = False,
 ) -> Any:
     prepared = _normalize_cli_command_hints(result)
+    if preserve_payload_shape:
+        return prepared
     compact_numbers = resolve_output_precision(
         None,
         tool_name=cmd_name,

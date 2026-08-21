@@ -133,6 +133,10 @@ Declared row paths remain resolvable through an empty collection, so a flat
 account can return `items=[]` for `trade_get_open --output-fields items.symbol`
 without reporting `items.symbol` as unresolved.
 
+Field selection is authoritative across formats. JSON and TOON retain the same
+selected keys; TOON may still apply the requested numeric precision, but it
+does not run a per-tool shape compactor after projection.
+
 `json` and `output_fields` are the shared output-shaping parameters available
 across tools. A domain-specific parameter named `fields` (currently used by
 Finviz fundamentals) selects source data and is not response projection.

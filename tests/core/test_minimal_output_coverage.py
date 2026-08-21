@@ -1816,6 +1816,69 @@ class TestFormatResultMinimal:
         assert "actionability_reason" not in result
         assert "warnings[1]: Dry run only." in result
 
+    @pytest.mark.parametrize("tool_name", ["trade_modify", "trade_close"])
+    def test_trade_mutation_preview_states_no_request_was_sent(self, tool_name):
+        payload = {
+            "success": True,
+            "dry_run": True,
+            "preview_ok": True,
+            "actionability": "preview_only",
+            "would_send_order": False,
+            "preview_scope_summary": (
+                "Validated routing and levels; no request was sent to MT5."
+            ),
+            "symbol": "EURUSD",
+            "ticket": 123,
+            "applied_sl": 1.1,
+        }
+
+        result = format_result_minimal(
+            payload,
+            verbose=False,
+            tool_name=tool_name,
+        )
+
+        assert "dry_run: true" in result
+        assert "actionability: preview_only" in result
+        assert "would_send_order: false" in result
+        assert "no request was sent to MT5" in result
+
+    def test_trade_error_preserves_recovery_suggestion(self):
+        result = format_result_minimal(
+            {
+                "success": False,
+                "error": "Position 123 not found.",
+                "error_code": "ticket_not_found",
+                "checked_scopes": ["positions"],
+                "suggestion": (
+                    "Use trade_get_open, or set target=pending to cancel an order."
+                ),
+            },
+            verbose=False,
+            tool_name="trade_close",
+        )
+
+        assert "error_code: ticket_not_found" in result
+        assert "target=pending" in result
+
+    def test_explicit_projection_bypasses_trade_risk_compaction(self):
+        result = format_result_minimal(
+            {
+                "success": True,
+                "trade_evaluation": {
+                    "status": "valid",
+                    "reward_risk_ratio": 2.0,
+                },
+            },
+            verbose=False,
+            tool_name="trade_risk_analyze",
+            preserve_payload_shape=True,
+        )
+
+        assert "trade_evaluation:" in result
+        assert "status: valid" in result
+        assert "reward_risk_ratio: 2.0" in result
+
 
 @pytest.mark.parametrize(
     "tool_name",

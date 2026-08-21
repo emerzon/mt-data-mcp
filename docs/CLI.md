@@ -212,6 +212,10 @@ none resolve, the response has `success=false`,
 paths, including the trade-read `items.*` fields, remain valid when their
 collection is empty.
 
+Projection is format-independent: default TOON and `--json` retain the same
+selected fields. TOON only changes their textual encoding and numeric display
+precision.
+
 ### Exit Codes
 
 | Code | Meaning |
