@@ -4075,10 +4075,7 @@ def fetch_ticks(  # noqa: C901
             }
             if one_sided_update_count > 0:
                 payload["data_quality"]["one_sided_update_status"] = "expected"
-            if (
-                incomplete_ratio < _INCOMPLETE_TICK_WARNING_RATIO
-                and zero_spread_count <= 0
-            ):
+            if incomplete_ratio < _INCOMPLETE_TICK_WARNING_RATIO:
                 payload["data_quality"]["incomplete_quote_status"] = "info"
                 return
             payload["data_quality"]["incomplete_quote_status"] = "warning"

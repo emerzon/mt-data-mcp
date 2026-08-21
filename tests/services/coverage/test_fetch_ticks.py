@@ -560,8 +560,12 @@ class TestFetchTicks(unittest.TestCase):
         self.assertFalse(result["data"][0]["spread_valid"])
         self.assertFalse(result["data"][0]["spread_sample_eligible"])
         self.assertEqual(result["data_quality"]["zero_spread_ticks"], 1)
+        self.assertEqual(result["data_quality"]["incomplete_quote_ticks"], 0)
+        self.assertEqual(result["data_quality"]["incomplete_quote_ratio"], 0.0)
+        self.assertEqual(result["data_quality"]["incomplete_quote_status"], "info")
         self.assertEqual(result["data_quality"]["valid_spread_ticks"], 1)
         self.assertEqual(result["data_quality"]["spread_ticks_excluded"], 1)
+        self.assertNotIn("warnings", result)
         self.assertAlmostEqual(result["stats"]["spread"]["mean"], 0.0002)
 
     @patch(_TICKS_RANGE)
