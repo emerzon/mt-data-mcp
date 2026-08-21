@@ -140,12 +140,12 @@ def test_finviz_symbol_errors_use_provider_specific_discovery_guidance():
             "error": "Symbol not found",
             "error_code": "finviz_symbol_not_found",
         },
-        operation="finviz_news",
+        operation="news",
     )
 
     assert "standard US equity ticker" in out["remediation"]
     assert "MT5 broker suffix" in out["remediation"]
-    assert out["related_tools"] == ["finviz_screen"]
+    assert out["related_tools"] == ["screener"]
 
 
 def test_normalize_error_payload_preserves_specific_code_from_warnings():

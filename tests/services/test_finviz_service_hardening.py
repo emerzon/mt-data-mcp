@@ -394,7 +394,7 @@ def test_earnings_empty_filtered_prefix_does_not_claim_another_page(monkeypatch)
     assert result["total_lower_bound"] == 0
     assert result["source_incomplete"] is True
     assert "bounded prefix" in result["warnings"][0]
-    assert result["related_tools"] == ["finviz_calendar"]
+    assert result["related_tools"] == ["calendar"]
 
 
 def test_earnings_elapsed_filter_scans_beyond_public_page_limit(monkeypatch):

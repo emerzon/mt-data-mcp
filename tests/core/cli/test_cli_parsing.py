@@ -198,7 +198,7 @@ def test_required_symbol_help_shows_positional_and_flag_forms() -> None:
         cmd_name="sample_tool",
     )
 
-    help_text = parser.format_help()
+    help_text = re.sub(r"\x1b\[[0-9;]*m", "", parser.format_help())
     assert (
         "usage: mtdata-cli sample_tool (SYMBOL | --symbol SYMBOL) [options]"
         in help_text
@@ -296,7 +296,13 @@ def test_dynamic_cli_help_has_no_placeholder_param_text():
         exclude_globals = [p["name"] for p in func_info["params"]]
         if cmd_name == "report_generate":
             exclude_globals.append("timeframe")
-        if cmd_name.startswith("finviz_") or cmd_name in cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS:
+        if cmd_name in {
+            "news",
+            "calendar",
+            "equity_profile",
+            "screener",
+            "asset_performance",
+        } or cmd_name in cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS:
             exclude_globals.append("timeframe")
         cli_api.add_global_args_to_parser(
             cmd_parser,
@@ -938,7 +944,7 @@ class TestAddDynamicArguments:
         )
         assert "--bars" not in limit_action.option_strings
 
-    def test_finviz_news_accepts_optional_positional_symbol(self):
+    def test_news_accepts_optional_positional_symbol(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -946,7 +952,7 @@ class TestAddDynamicArguments:
                 {"name": "limit", "type": int, "required": False, "default": 20},
             ]
         }
-        add_dynamic_arguments(parser, func_info, cmd_name="finviz_news")
+        add_dynamic_arguments(parser, func_info, cmd_name="news")
         args = parser.parse_args(["AAPL", "--limit", "5"])
         assert args.symbol == "AAPL"
         assert args.limit == 5
@@ -1166,7 +1172,7 @@ class TestAddDynamicArguments:
             "GBPUSD",
         ]
 
-    def test_finviz_calendar_prefers_start_end_and_hides_legacy_date_flags(self):
+    def test_calendar_prefers_start_end_and_hides_legacy_date_flags(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -1177,7 +1183,7 @@ class TestAddDynamicArguments:
             ]
         }
 
-        add_dynamic_arguments(parser, func_info, cmd_name="finviz_calendar")
+        add_dynamic_arguments(parser, func_info, cmd_name="calendar")
 
         args = parser.parse_args(["--start", "2026-01-05", "--end", "2026-01-12"])
         assert args.start == "2026-01-05"
@@ -1873,7 +1879,7 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "alias"),
         [
-            ("finviz_filters_list", "search", "--search-term"),
+            ("screener", "search", "--search-term"),
             ("forecast_list_methods", "search_term", "--search"),
         ],
     )
@@ -1981,7 +1987,7 @@ class TestResolveParamKwargs:
             ("trade_execution_quality", "limit", "eligible fills"),
             ("trade_history", "side", "position_side"),
             ("trade_journal_analyze", "side", "realized position"),
-            ("finviz_insider_activity", "option", "latest buys/sales"),
+            ("asset_performance", "option", "latest buys/sales"),
         ],
     )
     def test_command_specific_help_describes_effective_contract(
@@ -2058,31 +2064,31 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="report_generate")
         assert kwargs["help"] == "Domain-specific shape selector when supported; TOON/JSON selection uses json."
 
-    def test_finviz_screen_filters_help_is_command_specific(self):
+    def test_screener_filters_help_is_command_specific(self):
         param = {
             "name": "filters",
             "type": Optional[str],
             "required": False,
             "default": None,
         }
-        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="screener")
         assert "NASDAQ" in kwargs["help"]
         assert "Sector" in kwargs["help"]
 
-    def test_finviz_screen_order_help_is_command_specific(self):
+    def test_screener_order_help_is_command_specific(self):
         param = {
             "name": "order",
             "type": Optional[str],
             "required": False,
             "default": None,
         }
-        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="screener")
         assert (
             kwargs["help"]
-            == "Finviz sort key. Use --order=-marketcap for descending or --order=price for ascending."
+            == "Sort key. Use --order=-marketcap for descending or --order=price for ascending."
         )
 
-    def test_finviz_screen_descending_order_uses_parser_safe_equals_form(self):
+    def test_screener_descending_order_uses_parser_safe_equals_form(self):
         parser = argparse.ArgumentParser(allow_abbrev=False)
 
         def tool(order: Optional[str] = None) -> None:
@@ -2091,7 +2097,7 @@ class TestResolveParamKwargs:
         add_dynamic_arguments(
             parser,
             get_function_info(tool),
-            cmd_name="finviz_screen",
+            cmd_name="screener",
         )
 
         assert parser.parse_args(["--order=-marketcap"]).order == "-marketcap"
@@ -2116,15 +2122,10 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         "cmd_name",
         [
-            "finviz_fundamentals",
-            "finviz_description",
-            "finviz_news",
-            "finviz_insider",
-            "finviz_ratings",
-            "finviz_peers",
+            "equity_profile",
         ],
     )
-    def test_finviz_symbol_help_uses_an_equity_ticker(self, cmd_name):
+    def test_equity_profile_symbol_help_uses_an_equity_ticker(self, cmd_name):
         kwargs, _ = _resolve_param_kwargs(
             {"name": "symbol", "type": str, "required": True, "default": None},
             None,
@@ -2185,10 +2186,10 @@ class TestResolveParamKwargs:
         assert "abs_price_change/abs_price_change_pct" in kwargs["help"]
         assert "rsi" not in kwargs["help"]
 
-    def test_finviz_news_limit_help_is_command_specific(self):
+    def test_news_limit_help_is_command_specific(self):
         param = {"name": "limit", "type": int, "required": False, "default": 20}
-        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_news")
-        assert kwargs["help"] == "Max news items to return on this page."
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="news")
+        assert "Global maximum across all news/event buckets" in kwargs["help"]
 
     def test_trade_stress_test_shocks_help_has_json_examples(self):
         param = {
@@ -2223,24 +2224,24 @@ class TestResolveParamKwargs:
         with pytest.raises(SystemExit):
             parser.parse_args(['{"*":-2}'])
 
-    def test_finviz_calendar_start_help_is_command_specific(self):
+    def test_calendar_start_help_is_command_specific(self):
         param = {
             "name": "start",
             "type": Optional[str],
             "required": False,
             "default": None,
         }
-        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="calendar")
         assert kwargs["help"].startswith("Start date")
 
-    def test_finviz_calendar_end_help_is_command_specific(self):
+    def test_calendar_end_help_is_command_specific(self):
         param = {
             "name": "end",
             "type": Optional[str],
             "required": False,
             "default": None,
         }
-        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_calendar")
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="calendar")
         assert kwargs["help"].startswith("End date")
 
     def test_temporal_min_bars_help_describes_group_filter(self):

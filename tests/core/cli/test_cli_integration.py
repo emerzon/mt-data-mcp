@@ -3453,7 +3453,7 @@ class TestMatchCommands:
 
         info = get_function_info(command)
         functions = {
-            "finviz_insider": {
+            "equity_profile": {
                 "func": command,
                 "meta": {"description": "Show insider trades"},
                 "_cli_func_info": info,
@@ -3477,7 +3477,7 @@ class TestMatchCommands:
 
         assert [row[0] for row in _match_commands(functions, "trade")][:2] == [
             "trade_place",
-            "finviz_insider",
+            "equity_profile",
         ]
         assert [row[0] for row in _match_commands(functions, "options")][:2] == [
             "options_chain",
@@ -3536,9 +3536,8 @@ def test_help_search_indexes_reviewed_examples():
     [
         ("outliers_detect", "--method mad", "theta"),
         ("forecast_volatility_estimate", "--method ewma", "theta"),
-        ("finviz_fundamentals", "AAPL", "EURUSD"),
-        ("finviz_insider", "AAPL", "EURUSD"),
-        ("finviz_news", "AAPL", "EURUSD"),
+        ("equity_profile", "AAPL", "EURUSD"),
+        ("news", "AAPL", "EURUSD"),
         ("options_chain", "AAPL", "EURUSD"),
         ("options_expirations", "AAPL", "EURUSD"),
         ("options_heston_calibrate", "AAPL", "EURUSD"),

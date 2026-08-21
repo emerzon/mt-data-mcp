@@ -320,9 +320,9 @@ def test_finviz_market_news_marks_blog_items() -> None:
     assert out["items"][0]["content_type"] == "blog"
 
 
-def test_finviz_news_helpers_are_registered_tools() -> None:
-    assert hasattr(finviz_news, "__wrapped__")
-    assert hasattr(finviz_market_news, "__wrapped__")
+def test_finviz_news_helpers_are_internal_adapters() -> None:
+    assert getattr(finviz_news, "_mcp_tool_object", None) is None
+    assert getattr(finviz_market_news, "_mcp_tool_object", None) is None
 
 
 def test_news_tool_docstrings_describe_tool_boundaries() -> None:

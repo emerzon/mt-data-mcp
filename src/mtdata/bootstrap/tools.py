@@ -34,7 +34,10 @@ TOOL_MODULE_NAMES: Final[tuple[str, ...]] = (
     "mtdata.core.report",
     "mtdata.core.trading",
     "mtdata.core.temporal",
-    "mtdata.core.finviz",
+    "mtdata.core.calendar",
+    "mtdata.core.equity_profile",
+    "mtdata.core.screener",
+    "mtdata.core.asset_performance",
     "mtdata.core.news",
     "mtdata.core.tools",
 )
@@ -67,6 +70,10 @@ def cli_tool_module_names(command: str) -> Optional[tuple[str, ...]]:
         "pivot_compute_points": "mtdata.core.pivot",
         "volume_profile_levels": "mtdata.core.volume_profile",
         "news": "mtdata.core.news",
+        "calendar": "mtdata.core.calendar",
+        "equity_profile": "mtdata.core.equity_profile",
+        "screener": "mtdata.core.screener",
+        "asset_performance": "mtdata.core.asset_performance",
         "report_generate": "mtdata.core.report",
         "regime_detect": "mtdata.core.regime",
         "patterns_detect": "mtdata.core.patterns",
@@ -98,8 +105,6 @@ def cli_tool_module_names(command: str) -> Optional[tuple[str, ...]]:
             module_name = "mtdata.core.options"
         elif name.startswith("symbols_"):
             module_name = "mtdata.core.symbols"
-        elif name.startswith("finviz_"):
-            module_name = "mtdata.core.finviz"
         elif name in {"outliers_detect", "seasonality_detect", "stationarity_test"}:
             module_name = "mtdata.core.diagnostics"
     return (module_name,) if module_name in TOOL_MODULE_NAMES else None

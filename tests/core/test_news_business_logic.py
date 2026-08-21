@@ -25,12 +25,26 @@ def test_news_tool_has_only_optional_symbol_parameter() -> None:
     raw = _unwrap(news)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol", "detail", "limit", "offset", "limit_per_bucket"]
+    assert [param.name for param in params] == [
+        "symbol",
+        "detail",
+        "limit",
+        "offset",
+        "limit_per_bucket",
+        "source",
+        "view",
+        "news_type",
+        "page",
+    ]
     assert params[0].default is None
     assert params[1].default == "compact"
     assert params[2].default is None
     assert params[3].default == 0
     assert params[4].default is None
+    assert params[5].default == "auto"
+    assert params[6].default == "unified"
+    assert params[7].default == "news"
+    assert params[8].default == 1
 
 
 def test_news_tool_forwards_symbol(monkeypatch) -> None:
@@ -38,7 +52,7 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "mtdata.core.news.fetch_unified_news",
-        lambda symbol=None: {
+        lambda symbol=None, source="auto": {
             "success": True,
             "symbol": symbol,
             "general_news": [],
@@ -58,7 +72,7 @@ def test_news_tool_preserves_symbol_validation_error(monkeypatch) -> None:
     raw = _unwrap(news)
     monkeypatch.setattr(
         "mtdata.core.news.fetch_unified_news",
-        lambda symbol=None: {
+        lambda symbol=None, source="auto": {
             "success": False,
             "error": f"Symbol '{symbol}' was not found by the equity news provider.",
             "error_code": "news_symbol_unavailable",
@@ -86,7 +100,7 @@ def test_news_tool_limits_globally(monkeypatch) -> None:
         "upcoming_events": [{"title": "u1"}, {"title": "u2"}],
         "recent_events": [{"title": "e1"}, {"title": "e2"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     limited = raw(limit=3)
 
@@ -117,7 +131,7 @@ def test_compact_broad_news_has_a_global_default_page(monkeypatch) -> None:
         "upcoming_events": [{"title": f"u{i}"} for i in range(20)],
         "recent_events": [{"title": f"e{i}"} for i in range(5)],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     compact = raw()
     full = raw(detail="full")
@@ -163,7 +177,7 @@ def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:
         "upcoming_events": [{"title": "u1"}],
         "recent_events": [{"title": "e1"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     limited = raw(symbol="EURUSD", limit=2)
 
@@ -194,7 +208,7 @@ def test_compact_symbol_news_caps_each_bucket_by_default(monkeypatch) -> None:
         "recent_events": [{"title": f"e{i}"} for i in range(6)],
         "symbol_news_note": "No EURUSD-specific related news passed relevance gates.",
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     compact = raw(symbol="EURUSD")
     full = raw(symbol="EURUSD", detail="full")
@@ -230,8 +244,8 @@ def test_compact_empty_news_discloses_provider_attempts_and_fallback() -> None:
     assert compact["status"] == "no_results"
     assert compact["providers_queried"] == ["finviz", "mt5"]
     assert compact["provider_failures"] == {"mt5": "terminal feed unavailable"}
-    assert compact["related_tools"] == ["finviz_market_news"]
-    assert "finviz_market_news" in compact["hint"]
+    assert compact["related_tools"] == ["news", "calendar"]
+    assert "view='market'" in compact["hint"]
 
 
 def test_news_tool_limit_reserves_recent_event_when_upcoming_empty(
@@ -247,7 +261,7 @@ def test_news_tool_limit_reserves_recent_event_when_upcoming_empty(
         "upcoming_events": [],
         "recent_events": [{"title": "Retail Sales"}, {"title": "Michigan"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     limited = raw(symbol="EURUSD", limit=5)
 
@@ -270,7 +284,7 @@ def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> 
         "recent_events": [{"title": "e1"}],
         "market_context": [{"title": "m1"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     limited = raw(symbol="EURUSD", limit=3)
 
@@ -301,7 +315,7 @@ def test_news_tool_supports_global_offset(monkeypatch) -> None:
         "related_news": [{"title": "r1"}, {"title": "r2"}],
         "impact_news": [{"title": "i1"}, {"title": "i2"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     page = raw(limit=2, offset=2)
 
@@ -328,7 +342,7 @@ def test_news_reserved_event_pagination_slices_one_stable_sequence(monkeypatch) 
         "general_news": [{"title": f"g{i}"} for i in range(8)],
         "upcoming_events": [{"title": "u0"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     pages = [raw(limit=3, offset=offset, detail="full") for offset in (0, 3, 6)]
     whole = raw(limit=9, offset=0, detail="full")
@@ -357,7 +371,7 @@ def test_news_tool_keeps_per_bucket_limit_mode(monkeypatch) -> None:
         "upcoming_events": [{"title": "u1"}, {"title": "u2"}],
         "recent_events": [{"title": "e1"}, {"title": "e2"}],
     }
-    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None, source="auto": payload)
 
     limited = raw(limit_per_bucket=1)
 
@@ -385,7 +399,7 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "mtdata.core.news.fetch_unified_news",
-        lambda symbol=None: {
+        lambda symbol=None, source="auto": {
             "success": True,
             "symbol": symbol,
             "instrument": {"symbol": symbol},

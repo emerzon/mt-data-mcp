@@ -1029,7 +1029,7 @@ How one symbol’s performance compares to peers or a basket over a window (not 
 ### Finviz
 A financial visualization platform providing fundamental data, stock screening, insider trading activity, analyst ratings, and market news for US equities. Data is delayed 15–20 minutes.
 
-**In mtdata:** The `finviz_*` commands fetch data from Finviz. See [FINVIZ.md](FINVIZ.md).
+**In mtdata:** Finviz is an internal adapter for `news`, `calendar`, `equity_profile`, `screener`, and `asset_performance`. See [FINVIZ.md](FINVIZ.md).
 
 ### QuantLib
 **Plain idea:** a calculator library for option-style prices. mtdata uses it locally; you do not need a live options feed for `options_barrier_price`.

@@ -57,6 +57,11 @@ _SUCCESS_RELATED_TOOLS = {
     "seasonality_detect": ["stationarity_test", "temporal_analyze", "forecast_generate"],
     "outliers_detect": ["data_fetch_candles", "denoise_list_methods", "regime_detect"],
     "volatility_term_structure": ["forecast_volatility_estimate", "regime_detect", "trade_var_cvar_calculate"],
+    "news": ["calendar", "market_status", "symbols_list"],
+    "calendar": ["news", "market_status", "equity_profile"],
+    "equity_profile": ["news", "screener", "calendar"],
+    "screener": ["equity_profile", "news"],
+    "asset_performance": ["news", "symbols_top_markets", "calendar"],
 }
 _VERBOSE_ONLY_KEYS = frozenset(
     {

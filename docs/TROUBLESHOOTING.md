@@ -396,7 +396,7 @@ On Windows, a pre-built wheel is available. On Linux, you may need build tools (
 
 ### Finviz Errors
 
-**Symptom:** `finviz_*` commands return empty data or connection errors.
+**Symptom:** `news`, `calendar`, `equity_profile`, `screener`, or `asset_performance` return empty Finviz-backed data or connection errors.
 
 **Possible causes:**
 - Network/firewall blocking finviz.com

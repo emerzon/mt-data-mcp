@@ -476,7 +476,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
                 "may still be available."
             )
             remediation = (
-                "Retry this endpoint or use finviz_screen valuation fields as an "
+                "Retry this endpoint or use screener valuation fields as an "
                 "alternative fundamentals source."
             )
         else:
@@ -1170,10 +1170,10 @@ def get_earnings_calendar(
             warnings_out.append(
                 f"The provider earnings scan stopped after {fetch_limit} source rows "
                 "before the period was exhausted; results are a bounded prefix. "
-                "Use finviz_calendar(calendar='earnings') for the detailed "
+                "Use calendar(kind='earnings') for the detailed "
                 "date-range feed."
             )
-            out["related_tools"] = ["finviz_calendar"]
+            out["related_tools"] = ["calendar"]
         if warnings_out:
             out["warnings"] = warnings_out
         return out

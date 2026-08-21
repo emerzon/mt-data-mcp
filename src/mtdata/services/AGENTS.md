@@ -1,6 +1,6 @@
 # services/ — Data Access Layer
 
-Thin service layer for external data sources. No business logic — data retrieval only. 14 Python files including the `finviz/` package.
+Thin service layer for external data sources. No business logic — data retrieval only. 14 Python files including the `finviz/` package, plus `research/` for adapter registration.
 
 ## FILE MAP
 
@@ -8,6 +8,7 @@ Thin service layer for external data sources. No business logic — data retriev
 |------|-------|---------|
 | `data_service.py` | 3562 | **Single gateway** for all MT5 data: candles, ticks, market depth, symbols, account info |
 | `finviz/` | package | Finviz web scraping: fundamentals, screening, news, economic calendar |
+| `research/` | package | Capability registry for news/calendar/profile/screener adapters |
 | `options_service.py` | — | Options chain data retrieval |
 | `news_service.py` | — | MT5/news data retrieval |
 | `unified_news.py` | — | Unified news provider orchestration |

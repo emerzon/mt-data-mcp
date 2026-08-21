@@ -26,9 +26,13 @@ def tool_catalog_category(name: str, *, module: str = "") -> str:
         return "trading"
     if tool_name.startswith(("forecast_", "strategy_")):
         return "forecast"
-    if tool_name == "news" or tool_name.endswith("_news"):
+    if tool_name in {"news", "calendar"} or tool_name.endswith("_news"):
         return "news"
-    if tool_name.startswith(("finviz_", "market_")):
+    if tool_name in {"equity_profile", "screener"}:
+        return "research"
+    if tool_name == "asset_performance":
+        return "market"
+    if tool_name.startswith("market_"):
         return "market"
     if tool_name.startswith("symbols_"):
         return "symbols"

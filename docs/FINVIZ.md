@@ -1,434 +1,315 @@
-# Finviz fundamentals
+# Company and calendar context
 
 **Audience:** User
 
-Pull **US equity fundamentals**, screens, news, insider activity, and macro snapshots (forex, crypto, futures, economic calendars) via [Finviz](https://finviz.com) — useful when your MT5 workflow also needs equity or calendar context.
+Look up **US company facts**, stock screens, insider filings, and a delayed
+forex/crypto/futures snapshot — plus a filterable **economic and earnings
+calendar** — without leaving mtdata.
 
-These tools complement MT5; they do not replace the terminal for live FX/CFD quotes.
+These commands currently use [Finviz](https://finviz.com) as the research
+adapter. They **complement** MetaTrader 5; they do not replace the terminal
+for live quotes. Data is typically delayed 15–20 minutes. Treat it as
+background, not a live tape.
 
-Finviz `symbol` values are exchange tickers such as `AAPL`, not necessarily the
-connected broker's MT5 identifiers. Stock-specific Finviz tools accept
-recognized broker suffixes and report the conversion through
-`requested_symbol` and `finviz_ticker`. A broker may expose several contracts
-for one ticker (for example a cash-session and a 24-hour CFD), so the reverse
-mapping is not guessed. If an MT5 tool rejects the bare ticker, inspect its
-structured `details.did_you_mean` candidates and choose the intended contract;
-use `symbols_list --search AAPL` when a wider catalog view is needed.
+Everyday headlines still start at [NEWS.md](NEWS.md) (`news`). This page is
+the table-and-dossier side: `equity_profile`, `screener`, `calendar`,
+`asset_performance`, and the raw `news` provider pages.
 
-**Related:** [CLI](CLI.md) · [Glossary](GLOSSARY.md) · [Setup](SETUP.md)
+**Dense terms:** [Finviz](GLOSSARY.md#finviz)
 
----
-
-> **Note:** Coverage is mainly **US-listed equities** plus global macro snapshots. Data may be delayed 15–20 minutes depending on the source.
+**Related:** [News](NEWS.md) · [CLI](CLI.md) · [Glossary](GLOSSARY.md) · [Setup](SETUP.md)
 
 ---
 
-## Quick Start
+## Quick start (read-only)
 
 ```bash
-# Company fundamentals (P/E, EPS, market cap, etc.)
-mtdata-cli finviz_fundamentals AAPL --json
+# Company summary (P/E, EPS, market cap, …)
+mtdata-cli equity_profile AAPL --json
 
-# Latest news for a stock
-mtdata-cli finviz_news NVDA --json
+# Ranked news for a ticker (preferred everyday path)
+mtdata-cli news AAPL --json
 
-# Screen for undervalued tech stocks
-mtdata-cli finviz_screen --filters '{"Sector": "Technology", "P/E": "Under 15"}' --json
+# Screen US stocks
+mtdata-cli screener --filters '{"Sector": "Technology", "P/E": "Under 15"}' --json
 
-# This week's economic calendar
-mtdata-cli finviz_calendar --json
+# High-impact economic calendar
+mtdata-cli calendar --kind economic --impact high --json
 
-# Forex performance snapshot
-mtdata-cli finviz_forex --json
+# Delayed forex performance snapshot — not a live quote
+mtdata-cli asset_performance --universe forex --json
 ```
+
+In the Web UI, open **Tools** and search the same command names. From an
+assistant: “Run `equity_profile` for AAPL. Do not trade.”
+
+Company tools take exchange tickers such as `AAPL`. MetaTrader 5 symbols may
+be suffixed (`AAPL.NAS`). Those suffixes are accepted and reported as
+`requested_symbol` plus `finviz_ticker`. Several broker contracts can match
+one ticker, so the reverse mapping is not guessed. If a MetaTrader 5 tool
+rejects the bare ticker, use its `details.did_you_mean` list or
+`symbols_list --search AAPL`.
 
 ---
 
-## Company Research
+## Which command?
 
-### `finviz_fundamentals`
+| You want | Command |
+|----------|---------|
+| Ranked headlines + a few upcoming events | `news` — see [NEWS.md](NEWS.md) |
+| One stock’s raw provider news page | `news NVDA --view ticker --source finviz` |
+| Broad headlines or blogs | `news --view market --source finviz` |
+| Filterable event table | `calendar` |
+| This week’s earnings list | `calendar --kind earnings --view period` |
+| Company summary / description / ratings / peers / insider | `equity_profile --sections …` |
+| Screen US stocks or list valid filters | `screener` |
+| Delayed forex, crypto, futures, or market-wide insider table | `asset_performance --universe …` |
+| Live broker quote | `market_ticker` / `symbols_top_markets` — not these tools |
 
-Get fundamental metrics for a US stock.
+Pin an adapter with `--source finviz` when you want that provider only.
+`--source mt5` is valid on the schema for `calendar`, `equity_profile`,
+`screener`, and `asset_performance`, but those jobs have no MetaTrader 5
+table yet — the response is `research_capability_unsupported`, not an empty
+fake table. `news --source mt5` does work for the broker news feed.
 
-```bash
-mtdata-cli finviz_fundamentals AAPL --json
-mtdata-cli finviz_fundamentals AAPL --category valuation --detail full --json
-mtdata-cli finviz_fundamentals AAPL --category all --detail full --json
-```
-
-**Returns:** P/E, Forward P/E, EPS, market cap, sector, industry, dividend yield, 52-week range, analyst recommendations, and 60+ other metrics.
-
-`--category` and `--detail` are independent: `detail=full` preserves full
-diagnostics and values inside the selected category, while `--category all` is
-the explicit way to return every available metric family. Percentage metrics
-are JSON numbers on the documented `1.0 = 1%` scale and carry entries in
-`units`. Growth fields use explicit names such as
-`eps_next_year_growth_pct`, `eps_next_5y_growth_pct`, and
-`sales_yoy_ttm_growth_pct`; the ambiguous `eps_next_y` field is not emitted.
-
-Use `--fields` for an explicit comma-separated projection. If none of the names
-resolve, the command fails with `finviz_fundamentals_fields_invalid` and returns
-the available canonical names in `valid_values.fields`. A mixed request keeps
-the resolved metrics and sets `partial_failure=true` with `missing_fields`.
-
-### `finviz_description`
-
-Get a company's business description.
-
-```bash
-mtdata-cli finviz_description TSLA --json
-```
-
-### `finviz_peers`
-
-Find peer companies in the same sector/industry.
-
-```bash
-mtdata-cli finviz_peers MSFT --json
-```
-
-**Returns:** List of ticker symbols for comparable companies.
-
-### `finviz_ratings`
-
-Get analyst ratings history.
-
-```bash
-mtdata-cli finviz_ratings GOOGL --json
-```
-
-**Returns:** Date, analyst firm, rating action (upgrade/downgrade/initiate),
-rating, and price target. Numeric old/new targets are USD per share and
-`price_target_change_pct` uses percentage points; the response declares both
-in `currency` and `units`.
+Booleans on the CLI are `true` / `false`.
 
 ---
 
-## News
+## `equity_profile`
 
-### `finviz_news`
-
-Get stock-specific market news. Use `finviz_market_news` for general market
-headlines/blogs, or the general `news` tool for the unified news workflow.
+A US-issuer dossier. Default compact output is a **fundamentals summary**.
 
 ```bash
-# Stock-specific news
-mtdata-cli finviz_news NVDA --limit 10 --json
+mtdata-cli equity_profile AAPL --json
+mtdata-cli equity_profile AAPL --sections valuation --detail full --json
+mtdata-cli equity_profile AAPL --sections all --detail full --json
+mtdata-cli equity_profile TSLA --sections description --json
+mtdata-cli equity_profile MSFT --sections peers --json
+mtdata-cli equity_profile GOOGL --sections ratings --json
+mtdata-cli equity_profile AAPL --sections insider --limit 10 --json
+mtdata-cli equity_profile AAPL --sections summary,description,ratings --json
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `symbol` | (required) | Stock ticker. |
-| `--limit` | 20 | Max news items |
-| `--page` | 1 | Pagination page |
+| Flag | Default | What it does |
+|------|---------|----------------|
+| `--sections` | `summary` | Comma-separated slices. Fundamentals: `summary`, `valuation`, `performance`, `technical`, `dividends`, `ownership`, `profile`, `all`. Extra: `description`, `ratings`, `peers`, `insider`. |
+| `--fields` | (none) | Optional fundamentals field list. Unknown names fail with `finviz_fundamentals_fields_invalid` and list `valid_values.fields`. |
+| `--limit` | `5` | Row cap for ratings, peers, and insider. |
+| `--offset` | `0` | Skip ratings/peers rows. |
+| `--page` | `1` | Insider page (one-based). |
+| `--source` | `auto` | Adapter pin. |
 
-Finviz may return an empty dividend payload when a requested range begins
-before the current New York date but extends into the future. In that case,
-mtdata retries the current-forward portion. The response reports the effective
-`start`, preserves `requested_start`, and sets `partial=true` and
-`range_complete=false`; it never presents the unsupported historical portion
-as a complete empty result.
+`--sections` and `--detail` are independent: `detail=full` keeps diagnostics
+inside the slices you asked for. One slice returns that payload plus
+`providers_used`. Several slices nest under `fundamentals`, `description`,
+`ratings`, `peers`, and `insider`.
 
-Stock-specific responses use a normalized `items` list with `title`, `source`,
-`published_at`, and `url`. Ticker-page membership is reported as
-`provider_associated`; only an explicit ticker token in the headline is labeled
-`direct_symbol`. The response includes the provider context and relevance basis
-because ticker pages can also contain peer, industry, and macro stories.
-Finviz tools may accept one-based `--page` inputs,
-but responses use the shared offset-based `pagination` object documented in
-[OUTPUT.md](OUTPUT.md#pagination); flat provider `page`/`pages` fields are not
-emitted.
+Percentage metrics are JSON numbers on the `1.0 = 1%` scale and carry
+`units`. Growth fields use names such as `eps_next_year_growth_pct`. A mixed
+`--fields` request keeps resolved metrics, sets `partial_failure=true`, and
+lists `missing_fields`.
 
-### `finviz_market_news`
-
-Get broad financial market headlines or blog posts.
-
-```bash
-mtdata-cli finviz_market_news --news-type news --limit 20 --json
-mtdata-cli finviz_market_news --news-type blogs --json
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--news-type` | `news` | `news` for headlines, `blogs` for blog posts |
-| `--limit` | 20 | Max items |
-| `--page` | 1 | Pagination page |
+Ratings targets are USD per share; `price_target_change_pct` is percentage
+points. Insider rows include owner, role, buy/sell, shares, value, and dates.
 
 ---
 
-## Insider Trading
+## `screener`
 
-### `finviz_insider`
-
-Get insider trading activity for a specific stock.
+Screen US stocks, or list the filter catalog.
 
 ```bash
-mtdata-cli finviz_insider AAPL --limit 10 --json
+# Tech on NASDAQ
+mtdata-cli screener --filters '{"Exchange": "NASDAQ", "Sector": "Technology"}' --json
+
+# Compact key=value
+mtdata-cli screener --filters "exchange=NASDAQ,sector=Technology" --json
+
+# Comparison aliases
+mtdata-cli screener --filters "pe_under=15,beta_under=1" --json
+
+# Native Finviz URL tokens
+mtdata-cli screener --filters "exch_nasd,sec_technology" --json
+
+# Valuation columns, sort by market cap descending
+mtdata-cli screener --filters '{"Dividend Yield": "Over 5%"}' --view valuation --order=-marketcap --json
+
+# List filters, then inspect one
+mtdata-cli screener --list-filters true --json
+mtdata-cli screener --list-filters true --search dividend --json
+mtdata-cli screener --list-filters true --filter-name "Market Cap." --json
 ```
 
-**Returns:** Owner name, relationship (CEO, CFO, Director, etc.), transaction type (buy/sell), shares, value, and date.
+| Flag | Default | What it does |
+|------|---------|----------------|
+| `--filters` | (none) | JSON object, `key=value` pairs, or Finviz shorthand. Names are provider-defined. |
+| `--order` | (none) | Sort, for example `--order=-marketcap` or `--order=price`. |
+| `--view` | `overview` | Column set: `overview`, `valuation`, `financial`, `ownership`, `performance`, `technical`. |
+| `--list-filters` | `false` | List valid filter names instead of screening. |
+| `--search` | (none) | Filter-catalog search when `--list-filters true`. |
+| `--filter-name` | (none) | One filter’s accepted values when `--list-filters true`. |
+| `--limit` / `--page` | `20` / `1` | Result page. Catalog listing uses `--limit` / `--offset`. |
 
-### `finviz_insider_activity`
+**Common JSON keys:** `Exchange`, `Index`, `Sector`, `Industry`, `Country`,
+`Market Cap.`, `P/E`, `Forward P/E`, `PEG`, `P/S`, `P/B`, `Dividend Yield`,
+`EPS growth this year`, `Return on Equity`, `Current Ratio`,
+`Analyst Recom.`, `RSI (14)`, `50-Day Simple Moving Average`,
+`Average Volume`, `Price`, `Beta`.
 
-Get market-wide insider trading activity.
-
-```bash
-# Latest insider trades across the market
-mtdata-cli finviz_insider_activity --option latest --json
-
-# Top insider buys this week
-mtdata-cli finviz_insider_activity --option "top week buys" --json
-
-# Latest insider buys
-mtdata-cli finviz_insider_activity --option "latest buys" --json
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--option` | `latest` | `latest`, `latest buys`, `latest sales`, `top week`, `top week buys`, `top week sales`, `top owner trade`, `top owner buys`, `top owner sales` |
-| `--limit` | 50 | Max items |
-| `--page` | 1 | Pagination page |
-
-The `latest*` feeds preserve provider filing-recency order and report
-`ordering=filed_at_descending`. Compact rows distinguish `transaction_date`
-from timezone-qualified `filed_at`; exact repeated filing transactions are
-removed before pagination and aggregation. Compact summaries keep
-`top_executed_sales`, `top_proposed_sales`, and `top_purchases` separate.
-A Form 144 proposed sale is filing activity, not a completed disposition, and
-is never added to the executed-sales leaderboard.
+Screener percentages are numeric points (`1.0 = 1%`), including performance,
+volatility, gap, and change-from-open. Growth columns use the same
+`*_growth_pct` / `*_cagr_pct` names as `equity_profile`.
 
 ---
 
-## Stock Screening
+## `calendar`
 
-### `finviz_screen`
-
-Screen stocks using Finviz's powerful filter engine.
-
-```bash
-# Tech stocks on NASDAQ
-mtdata-cli finviz_screen --filters '{"Exchange": "NASDAQ", "Sector": "Technology"}' --json
-
-# Same screen using compact key=value syntax
-mtdata-cli finviz_screen --filters "exchange=NASDAQ,sector=Technology" --json
-
-# Discrete comparison aliases for Finviz filters
-mtdata-cli finviz_screen --filters "pe_under=15,beta_under=1" --json
-
-# Same screen using native Finviz shorthand tokens
-mtdata-cli finviz_screen --filters "exch_nasd,sec_technology" --json
-
-# Large-cap value stocks
-mtdata-cli finviz_screen --filters '{"Market Cap.": "Large ($10bln to $200bln)", "P/E": "Under 15"}' --json
-
-# High-dividend stocks with valuation view
-mtdata-cli finviz_screen --filters '{"Dividend Yield": "Over 5%"}' --view valuation --json
-
-# Sort by market cap descending
-mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order=-marketcap --json
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--filters` | (optional) | JSON object, `key=value` pairs, or Finviz shorthand tokens |
-| `--order` | (optional) | Sort: e.g., `--order=-marketcap` (desc), `--order=price` (asc) |
-| `--limit` | 20 | Max results per page |
-| `--page` | 1 | Pagination page |
-| `--view` | `overview` | `overview`, `valuation`, `financial`, `ownership`, `performance`, `technical` |
-
-**Common filter keys:** `Exchange`, `Index`, `Sector`, `Industry`, `Country`, `Market Cap.`, `P/E`, `Forward P/E`, `PEG`, `P/S`, `P/B`, `Dividend Yield`, `EPS growth this year`, `Return on Equity`, `Current Ratio`, `Analyst Recom.`, `RSI (14)`, `50-Day Simple Moving Average`, `Average Volume`, `Price`, `Beta`.
-
-All screener percentage fields are numeric percentage points (`1.0 = 1%`).
-This includes performance horizons, volatility, gap, and change from open;
-their entries in `units` use the same scale. EPS and sales growth columns use
-the same canonical `*_growth_pct`/`*_cagr_pct` names as fundamentals.
-
-**Filter formats:** JSON uses exact Finviz names, for example `{"Exchange":"NASDAQ"}`. Key-value pairs use compact keys and values such as `country=USA,marketcap=mega`; discrete comparison aliases such as `pe_under=15` and `beta_under=1` map to Finviz's available "Under/Over" filter options. Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`; invalid tokens are reported in the error details.
-
-### `finviz_filters_list`
-
-Discover valid screener filters and their accepted values/tokens before building a `finviz_screen` query.
+A **table** of scheduled events. `news` still surfaces a few upcoming/recent
+items in ranked buckets; use `calendar` when you need filters and paging.
 
 ```bash
-# List available filters
-mtdata-cli finviz_filters_list --json
-
-# Search filters by name
-mtdata-cli finviz_filters_list --search dividend --json
-
-# Show accepted values for one filter
-mtdata-cli finviz_filters_list --filter-name "Market Cap." --json
+mtdata-cli calendar --json
+mtdata-cli calendar --kind economic --impact high --currency USD --json
+mtdata-cli calendar --kind earnings --start 2026-03-01 --end 2026-03-15 --json
+mtdata-cli calendar --kind dividends --json
+mtdata-cli calendar --kind earnings --view period --period this-week --json
+mtdata-cli calendar --kind earnings --view period --period this-week --include-elapsed true --json
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--search` | (optional) | Case-insensitive substring match; matched rows include accepted values/tokens |
-| `--filter-name` | (optional) | Show accepted values and tokens for a single filter |
-| `--limit` | 20 | Max filters per page |
-| `--offset` | 0 | Pagination offset |
+| Flag | Default | What it does |
+|------|---------|----------------|
+| `--kind` | `economic` | `economic`, `earnings`, or `dividends`. |
+| `--view` | `range` | `range` is the date-range table. `period` is the compact earnings window and requires `--kind earnings`. |
+| `--period` | `this-week` | With `--view period`: `this-week`, `next-week`, `previous-week`, `this-month`. |
+| `--impact` | (all) | Economic only: `low`, `medium`, `high`. |
+| `--country` / `--currency` | (none) | Economic only, for example `US` / `USD`. |
+| `--start` / `--end` | live window | Inclusive `YYYY-MM-DD` (or a relative date). Omitted ranges use `America/New_York`. |
+| `--upcoming` | live default | Economic only: keep unreleased events. Defaults on when no date range is passed, off for an explicit range. |
+| `--include-elapsed` | `false` | Period view: include already-released dates. `previous-week` is always an archive. |
+| `--limit` / `--page` | `20` / `1` | Page size. |
+
+Default ranges report `start`, `end`, and `calendar_timezone`. Event
+timestamps use the separate root `timezone` field.
 
 ---
 
-## Macro Market Snapshots
+## `asset_performance`
 
-Forex, crypto, and futures snapshots use the same row schema at every detail
-level: `price` is a delayed reference price, and `perf_*_pct` values are
-percent (`1.0 = 1%`). Full detail may add source fields, but it does
-not rename or re-unit those canonical values. Check the response `units` and
-`performance_format` fields when consuming rows programmatically.
-The `performance_periods` metadata lists every returned horizon, including
-intraday, half-year, and year-to-date periods when present.
-
-The period earnings view names the provider's ratio-scaled dividend column
-`dividend_yield` and converts it to percentage points. Detailed earnings
-calendar surprise and one-day reaction fields use that same percentage-point
-unit.
-
-### `finviz_forex`
-
-Get forex currency pairs performance.
+Delayed **research tables**. Not an executable quote — use `market_ticker`
+or `symbols_top_markets` for the broker price. Responses set
+`quote_role=research_context_not_live_broker_quote`.
 
 ```bash
-mtdata-cli finviz_forex --json
+mtdata-cli asset_performance --universe forex --json
+mtdata-cli asset_performance --universe forex --symbol EURUSD --json
+mtdata-cli asset_performance --universe crypto --json
+mtdata-cli asset_performance --universe futures --json
+mtdata-cli asset_performance --universe insider --option "top week buys" --json
 ```
 
-**Returns:** Performance data for major currency pairs (daily change, weekly change, etc.).
+| Flag | Default | What it does |
+|------|---------|----------------|
+| `--universe` | `forex` | `forex`, `crypto`, `futures`, or `insider`. |
+| `--symbol` | (none) | Optional forex pair filter such as `EURUSD`. |
+| `--option` | `latest` | Insider slice: `latest`, `latest buys`, `latest sales`, `top week`, `top week buys`, `top week sales`, `top owner trade`, `top owner buys`, `top owner sales`. |
+| `--limit` / `--offset` | `20` / `0` | Forex, crypto, and futures paging. |
+| `--page` | `1` | Insider paging. |
 
-### `finviz_crypto`
-
-Get cryptocurrency performance.
-
-```bash
-mtdata-cli finviz_crypto --json
-```
-
-Finviz may round prices for very low-priced tokens to zero. In that case the
-tool returns `price_status: unavailable_provider_rounded_zero`, omits `price`,
-and includes a warning instead of presenting the rounded value as a tradable
-zero price.
-
-**Returns:** Price, daily change, volume, and market cap for major cryptocurrencies.
-
-### `finviz_futures`
-
-Get futures market performance.
-
-```bash
-mtdata-cli finviz_futures --json
-```
-
-**Returns:** Performance data for major futures contracts (commodities, indices, bonds, currencies).
+Forex, crypto, and futures rows share one schema: delayed `price` when the
+provider has one, and `perf_*_pct` as percent (`1.0 = 1%`). Check `units`
+and `performance_format`. Futures performance from this source does not
+include a live price or volume — `data_limitations.price` says so.
 
 ---
 
-## Calendars
+## `news` provider pages
 
-### `finviz_calendar`
-
-Get economic, earnings, or dividends calendar.
-
-```bash
-# Economic calendar (default)
-mtdata-cli finviz_calendar --json
-
-# Earnings calendar
-mtdata-cli finviz_calendar --calendar earnings --json
-
-# High-impact economic events only
-mtdata-cli finviz_calendar --calendar economic --impact high --json
-
-# Date range filter
-mtdata-cli finviz_calendar --start 2026-03-01 --end 2026-03-15 --json
-```
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--calendar` | `economic` | `economic`, `earnings`, or `dividends` |
-| `--impact` | (all) | Economic only: `low`, `medium`, `high` |
-| `--start` | current New York date | Start date `YYYY-MM-DD`; omitted ranges anchor to `America/New_York`, independent of host timezone. |
-| `--end` | (optional) | End date `YYYY-MM-DD` |
-| `--upcoming` | live default | Economic only: include unreleased future events; defaults on when no explicit date range is supplied and off for explicit ranges. |
-| `--limit` | 20 | Max events after country and upcoming filters, ordered by scheduled time |
-| `--page` | 1 | Pagination page |
-
-Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
-`ticker`, `importance` (`1` low, `2` medium, `3` high), `actual`, `forecast`,
-`previous`, `category`, `reference`, and `referenceDate` when present. The
-`finviz_calendar` tool presents these as normalized keys, including `symbol`
-for Finviz `ticker` and `reference_date` for `referenceDate`.
-Economic events are unique by the provider `calendar_id` before pagination.
-Rows without an ID use a composite of scheduled time, event, symbol, category,
-reference, country, and currency. If duplicate provider variants disagree on a
-non-empty field, the merged field is `null` and `provider_conflicts` preserves
-the alternatives; root counters and a warning disclose the merge.
-Root output includes `start`, `end`, and `calendar_timezone` so defaulted
-calendar ranges remain explicit. Event timestamps use the separate root
-`timezone` field. Economic rows also include `country_attribution` (`provider`,
-`inferred`, or `unknown`); country-filtered responses warn when unknown rows
-were excluded and paginate the filtered collection.
-
-Earnings rows distinguish exact release times from provider session buckets.
-The provider's `08:30` and `16:30` New York markers are returned as a calendar
-date with `earnings_timing=before_market` or `after_market` and
-`event_time_precision=session_bucket`; they are not exact scheduled instants.
-The `is_earning_date_estimate` flag qualifies the date, independently of that
-time precision, and is retained in compact output.
-
-### `finviz_earnings`
-
-Get a period-based earnings calendar. Current-week and current-month results
-omit dates before the current New York calendar date before pagination, so the
-default first page starts with upcoming reports. Pass `--include-elapsed true`
-for the complete period-start archive. `previous-week` is always an archive.
-Filtered current periods expose `elapsed_cutoff_at` as an offset-qualified New
-York timestamp, alongside `calendar_timezone`, so it can be compared directly
-with UTC fetch timestamps. Every returned earnings date is constrained to the
-requested period. If a yearless provider token cannot be reconciled with that
-window, the row is rejected and the response reports
-`period_rows_rejected`, `partial`, and a warning instead of assigning a nearby
-year. Provider throttles use `error_code=finviz_rate_limited` with
-`retryable=true` and numeric `retry_after_seconds` across the Finviz tools.
+Preferred everyday path: `mtdata-cli news SYMBOL` (ranked, mixed sources).
+Raw Finviz pages:
 
 ```bash
-mtdata-cli finviz_earnings --period this-week --json
-mtdata-cli finviz_earnings --period this-week --include-elapsed true --json
-mtdata-cli finviz_earnings --period next-week --json
+mtdata-cli news NVDA --view ticker --source finviz --limit 10 --json
+mtdata-cli news --view market --source finviz --news-type news --json
+mtdata-cli news --view market --source finviz --news-type blogs --json
 ```
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--period` | `this-week` | `this-week`, `next-week`, `previous-week`, `this-month` |
-| `--limit` | 10 | Max items |
-| `--page` | 1 | Pagination page |
-| `--include-elapsed` | false | Include earlier dates for current periods |
+`--view ticker` needs a symbol. `--page` is the provider page for ticker and
+market views. Full contract: [NEWS.md](NEWS.md).
 
 ---
 
-## Quick Reference
+## Deeper detail
 
-| Task | Command |
-|------|---------|
-| Company fundamentals | `mtdata-cli finviz_fundamentals AAPL` |
-| Company description | `mtdata-cli finviz_description TSLA` |
-| Peer companies | `mtdata-cli finviz_peers MSFT` |
-| Analyst ratings | `mtdata-cli finviz_ratings GOOGL` |
-| Stock news | `mtdata-cli finviz_news NVDA` |
-| Market news | `mtdata-cli finviz_market_news` |
-| Insider trades (stock) | `mtdata-cli finviz_insider AAPL` |
-| Insider trades (market) | `mtdata-cli finviz_insider_activity` |
-| Stock screener | `mtdata-cli finviz_screen --filters '{"Sector":"Technology"}'` |
-| List screener filters | `mtdata-cli finviz_filters_list` |
-| Forex snapshot | `mtdata-cli finviz_forex` |
-| Crypto snapshot | `mtdata-cli finviz_crypto` |
-| Futures snapshot | `mtdata-cli finviz_futures` |
-| Economic calendar | `mtdata-cli finviz_calendar` |
-| Earnings calendar | `mtdata-cli finviz_earnings` |
+### Delay and throttling
+
+Finviz US-equity data is delayed about 15–20 minutes. Rapid calls can return
+`error_code=finviz_rate_limited` with `retryable=true` and numeric
+`retry_after_seconds`.
+
+### Company percentages and fields
+
+`equity_profile` percentage metrics are JSON numbers on `1.0 = 1%` and carry
+`units`. Growth names look like `eps_next_year_growth_pct`,
+`eps_next_5y_growth_pct`, and `sales_yoy_ttm_growth_pct`.
+
+### Screener filter formats
+
+- JSON uses exact Finviz names: `{"Exchange":"NASDAQ"}`.
+- Key-value pairs use compact keys: `country=USA,marketcap=mega`.
+- Comparison aliases such as `pe_under=15` map to Finviz “Under/Over” options.
+- Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`.
+  Invalid tokens are listed in the error details.
+
+### Calendar rows
+
+Economic rows use provider fields `date`, `event`, `ticker`, `importance`
+(`1` low, `2` medium, `3` high), `actual`, `forecast`, `previous`,
+`category`, `reference`, and `referenceDate` when present. The tool exposes
+`symbol` for `ticker` and `reference_date` for `referenceDate`. Events are
+unique by `calendar_id` before pagination. Rows without an ID use a composite
+of scheduled time, event, symbol, category, reference, country, and currency.
+If duplicate variants disagree on a non-empty field, the merged field is
+`null` and `provider_conflicts` keeps the alternatives.
+
+`country_attribution` is `provider`, `inferred`, or `unknown`. Country
+filters warn when unknown rows were dropped.
+
+Earnings rows distinguish exact times from session buckets. Provider `08:30`
+and `16:30` New York markers become a calendar date with
+`earnings_timing=before_market` or `after_market` and
+`event_time_precision=session_bucket`. `is_earning_date_estimate` qualifies
+the date. Period view constrains every date to the requested window; a
+yearless token that cannot be reconciled is rejected with
+`period_rows_rejected`, `partial`, and a warning.
+
+Dividends: if a requested range starts before the current New York date but
+extends into the future, mtdata retries the current-forward portion. The
+response reports effective `start`, keeps `requested_start`, and sets
+`partial=true` and `range_complete=false`.
+
+Pagination is the shared offset-based object in
+[OUTPUT.md](OUTPUT.md#pagination), even when you pass one-based `--page`.
+
+### Insider market-wide order
+
+`universe=insider` `latest*` feeds keep provider filing-recency order
+(`ordering=filed_at_descending`). Compact rows split `transaction_date` from
+timezone-qualified `filed_at`. A Form 144 proposed sale is a filing, not a
+completed sale, and is not added to executed-sales totals.
+
+### Crypto rounded prices
+
+Finviz may round very low token prices to zero. In that case the row uses
+`price_status: unavailable_provider_rounded_zero`, omits `price`, and adds a
+warning instead of presenting zero as tradable.
 
 ---
 
-## See Also
+## See also
 
-- [NEWS.md](NEWS.md) — Unified ranked news + calendar (preferred everyday feed)
+- [NEWS.md](NEWS.md) — Ranked headlines (preferred everyday feed)
 - [CLI.md](CLI.md) — Command usage
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Trade analysis workflow
+- [MARKET.md](MARKET.md) — Live broker quotes and scans
+- [GLOSSARY.md](GLOSSARY.md)
+- [SAMPLE-TRADE.md](SAMPLE-TRADE.md)

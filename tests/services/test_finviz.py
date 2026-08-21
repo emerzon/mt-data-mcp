@@ -144,7 +144,7 @@ class TestFinvizService:
             "Finviz fundamentals failed for INVALID. Other Finviz endpoints may still be available."
         )
         assert result["remediation"] == (
-            "Retry this endpoint or use finviz_screen valuation fields as an "
+            "Retry this endpoint or use screener valuation fields as an "
             "alternative fundamentals source."
         )
         assert result["provider"] == "finviz"
@@ -2575,7 +2575,7 @@ class TestFinvizTools:
             return func()
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(filters="not valid json")
+            result = finviz_screen(filters="not valid json")
 
         assert "error" in result
         # Verify improved error message
@@ -2590,8 +2590,8 @@ class TestFinvizTools:
         assert result["operation"] == "finviz_screen"
         assert result["details"]["received_type"] == "str"
         assert isinstance(result["details"].get("valid_filter_examples"), list)
-        assert result["related_tools"] == ["finviz_filters_list"]
-        assert "finviz_filters_list" in result["remediation"]
+        assert result["related_tools"] == ["screener"]
+        assert "screener" in result["remediation"]
         assert isinstance(result.get("request_id"), str)
 
     def test_finviz_screen_tool_rejects_non_object_json_filters(self):
@@ -2601,7 +2601,7 @@ class TestFinvizTools:
             return func()
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(filters='["NASDAQ"]')
+            result = finviz_screen(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters format.")
         assert "Got: '[\"NASDAQ\"]'" in result["error"]
@@ -2624,7 +2624,7 @@ class TestFinvizTools:
                 return_value=token_map,
             ),
         ):
-            result = finviz_screen.__wrapped__(filters="cap_largeover,sec_stock")
+            result = finviz_screen(filters="cap_largeover,sec_stock")
 
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
@@ -2659,7 +2659,7 @@ class TestFinvizTools:
         }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters={"Exchange": "NASDAQ", "Sector": "Technology"},
                 limit=10
             )
@@ -2717,7 +2717,7 @@ class TestFinvizTools:
         }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 view="technical",
             )
@@ -2776,7 +2776,7 @@ class TestFinvizTools:
             "mtdata.core.finviz.run_logged_operation",
             side_effect=lambda _logger, operation, func, **fields: func(),
         ):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 view="technical",
             )
@@ -2839,7 +2839,7 @@ class TestFinvizTools:
         }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 view="valuation",
             )
@@ -2900,7 +2900,7 @@ class TestFinvizTools:
         mock_screen.return_value = {"success": True, "count": 0, "stocks": []}
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(filters={"Exchange": "NASDAQ"})
+            result = finviz_screen(filters={"Exchange": "NASDAQ"})
 
         mock_screen.assert_called_once_with(
             filters={"Exchange": "NASDAQ"},
@@ -2922,7 +2922,7 @@ class TestFinvizTools:
         mock_screen.return_value = {"success": True, "count": 3, "stocks": []}
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters='{"Exchange": "NASDAQ"}',
                 limit=5
             )
@@ -2954,7 +2954,7 @@ class TestFinvizTools:
                 return_value={"Market Cap.": "Large ($10bln to $200bln)"},
             ) as mock_parse,
         ):
-            result = finviz_screen.__wrapped__(filters="marketcap:large", limit=5)
+            result = finviz_screen(filters="marketcap:large", limit=5)
 
         mock_parse.assert_called_once_with("marketcap:large")
         mock_screen.assert_called_once_with(
@@ -2982,7 +2982,7 @@ class TestFinvizTools:
         }
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 limit=1,
                 detail="full",
@@ -3009,7 +3009,7 @@ class TestFinvizTools:
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters="cap_largeover,exch_nyse",
                 limit=5,
             )
@@ -3038,7 +3038,7 @@ class TestFinvizTools:
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters="country=USA,marketcap=+mega",
                 limit=5,
             )
@@ -3067,7 +3067,7 @@ class TestFinvizTools:
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters="pe_under=15,beta_under=1",
                 limit=5,
             )
@@ -3091,7 +3091,7 @@ class TestFinvizTools:
             return func()
 
         with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
-            result = finviz_screen.__wrapped__(
+            result = finviz_screen(
                 filters="sharpe_above=2,beta_under=1",
                 limit=5,
             )
@@ -3115,7 +3115,7 @@ class TestFinvizTools:
             patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
             patch("mtdata.core.finviz.get_economic_calendar", return_value={"success": True}) as mock_calendar,
         ):
-            result = finviz_calendar.__wrapped__(start="2026-01-05", end="2026-01-12")
+            result = finviz_calendar(start="2026-01-05", end="2026-01-12")
 
             assert result["success"] is True
         mock_calendar.assert_called_once_with(
@@ -3133,7 +3133,7 @@ class TestFinvizTools:
             "mtdata.core.finviz.get_economic_calendar",
             return_value={"success": True, "items": []},
         ) as get_calendar:
-            result = finviz_calendar.__wrapped__(start="2 days ago", end="today")
+            result = finviz_calendar(start="2 days ago", end="today")
 
         assert result["success"] is True
         call = get_calendar.call_args.kwargs
@@ -3166,7 +3166,7 @@ class TestFinvizTools:
                 return_value=service_result,
             ),
         ):
-            result = finviz_calendar.__wrapped__(upcoming=False)
+            result = finviz_calendar(upcoming=False)
 
         assert result["items"] == [
             {
@@ -3210,7 +3210,7 @@ class TestFinvizTools:
                 return_value=service_result,
             ),
         ):
-            result = finviz_calendar.__wrapped__(calendar="dividends")
+            result = finviz_calendar(calendar="dividends")
 
         assert result["items"][0]["ordinary_amount"] == 1.7
         assert result["items"][0]["special_amount"] == 0.1
@@ -3223,7 +3223,7 @@ class TestFinvizTools:
         from mtdata.core.finviz import finviz_calendar
 
         try:
-            finviz_calendar.__wrapped__(start="2026-01-05", date_from="2026-01-06")
+            finviz_calendar(start="2026-01-05", date_from="2026-01-06")
         except TypeError as exc:
             assert "date_from" in str(exc)
         else:

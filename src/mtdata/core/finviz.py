@@ -1,7 +1,9 @@
 """
-Finviz MCP tools for stock screening, fundamentals, news, and market data.
+Internal Finviz research adapters.
 
-Exposes finvizfinance library functionality as MCP tools.
+Public tools are domain-named (`news`, `calendar`, `equity_profile`,
+`screener`, `asset_performance`). This module keeps Finviz fetch/normalize
+helpers and is not part of the MCP catalog.
 Note: Data is delayed 15-20 minutes; US stocks only.
 """
 
@@ -51,7 +53,6 @@ from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ..utils.time import format_datetime_utc
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime
-from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import (
@@ -1075,7 +1076,7 @@ def _invalid_finviz_screen_filters_error(
         raw = filters.strip()
         if raw and not raw.startswith("{"):
             message = (
-                "Invalid filters format. Received a string value, but finviz_screen "
+                "Invalid filters format. Received a string value, but screener "
                 "expects a JSON object (dict) with filter names as keys, "
                 "key=value or key:value pairs, or Finviz screener shorthand tokens "
                 "like "
@@ -1118,9 +1119,9 @@ def _invalid_finviz_screen_filters_error(
         operation="finviz_screen",
         details=details,
     )
-    payload["related_tools"] = ["finviz_filters_list"]
+    payload["related_tools"] = ["screener"]
     payload["remediation"] = (
-        "Run finviz_filters_list(filter_name='<filter>') to inspect accepted "
+        "Run screener(list_filters=true, filter_name='<filter>') to inspect accepted "
         "values, or use shorthand tokens such as fa_pe_under_20."
     )
     return payload
@@ -1344,7 +1345,6 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
     return None, _invalid_finviz_screen_filters_error(filters)
 
 
-@mcp.tool()
 def finviz_filters_list(
     search: Optional[str] = None,
     filter_name: Optional[str] = None,
@@ -3816,7 +3816,6 @@ def _filter_finviz_fundamentals_payload(
     return out
 
 
-@mcp.tool()
 def finviz_fundamentals(
     symbol: str,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -3903,7 +3902,6 @@ def _apply_finviz_description_detail(
     return out
 
 
-@mcp.tool()
 def finviz_description(
     symbol: str,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -3949,7 +3947,6 @@ def finviz_description(
     )
 
 
-@mcp.tool()
 def finviz_news(
     symbol: str,
     limit: Annotated[int, Field(ge=1)] = 20,
@@ -3959,11 +3956,9 @@ def finviz_news(
     """
     Raw Finviz per-ticker news provider endpoint.
 
-    Prefer `news` for trading workflows because it merges Finviz with MT5/CNBC
-    sources, ranks relevance, and buckets general, related, impact, and event
-    news. Use `finviz_news` when you specifically need Finviz pagination, URLs,
-    or the raw flat provider schema for one US equity ticker. Use
-    `finviz_market_news` for raw Finviz general market news/blogs.
+    Raw Finviz per-ticker news provider endpoint.
+
+    Internal adapter. Public callers use ``news(view='ticker', source='finviz')``.
     
     Parameters
     ----------
@@ -4027,7 +4022,6 @@ def finviz_news(
     return _run_logged_tool("finviz_news", fields, _run)
 
 
-@mcp.tool()
 def finviz_insider(
     symbol: str,
     limit: Annotated[int, Field(ge=1)] = 20,
@@ -4082,7 +4076,6 @@ def finviz_insider(
     )
 
 
-@mcp.tool()
 def finviz_ratings(
     symbol: str,
     detail: Literal["compact", "full"] = "compact",
@@ -4141,7 +4134,6 @@ def finviz_ratings(
     )
 
 
-@mcp.tool()
 def finviz_peers(
     symbol: str,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -4189,7 +4181,6 @@ def finviz_peers(
     )
 
 
-@mcp.tool()
 def finviz_screen(
     filters: Optional[Union[str, Dict[str, Any]]] = None,
     order: Optional[str] = None,
@@ -4295,7 +4286,6 @@ def finviz_screen(
     return _run_logged_tool("finviz_screen", fields, _run)
 
 
-@mcp.tool()
 def finviz_market_news(
     news_type: Literal["news", "blogs"] = "news",
     limit: Annotated[int, Field(ge=1)] = 20,
@@ -4305,10 +4295,7 @@ def finviz_market_news(
     """
     Raw Finviz general market news/blog provider endpoint.
 
-    Prefer `news` for trader-facing market news because it aggregates Finviz
-    with other sources and categorizes relevance/impact. Use
-    `finviz_market_news` when you specifically need Finviz-only pagination,
-    `news_type` (`news` vs `blogs`), URLs, or the raw flat provider schema.
+    Internal adapter. Public callers use ``news(view='market', source='finviz')``.
     
     Parameters
     ----------
@@ -4339,7 +4326,6 @@ def finviz_market_news(
     )
 
 
-@mcp.tool()
 def finviz_insider_activity(
     option: Literal[
         "latest",
@@ -4398,7 +4384,6 @@ def finviz_insider_activity(
     )
 
 
-@mcp.tool()
 def finviz_forex(
     symbol: Optional[str] = None,
     limit: Annotated[int, Field(ge=1)] = 20,
@@ -4462,7 +4447,6 @@ def finviz_forex(
     return _run_logged_tool("finviz_forex", request, _run)
 
 
-@mcp.tool()
 def finviz_crypto(
     limit: Annotated[int, Field(ge=1)] = 20,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -4500,7 +4484,6 @@ def finviz_crypto(
     return _run_logged_tool("finviz_crypto", request, _run)
 
 
-@mcp.tool()
 def finviz_futures(
     limit: Annotated[int, Field(ge=1)] = 20,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -4539,7 +4522,135 @@ def finviz_futures(
     return _run_logged_tool("finviz_futures", request, _run)
 
 
-@mcp.tool()
+def run_finviz_calendar(
+    calendar: str = "economic",
+    impact: Optional[str] = None,
+    country: Optional[str] = None,
+    currency: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    upcoming: Optional[bool] = None,
+    limit: int = 20,
+    page: int = 1,
+    detail: str = "compact",
+) -> Dict[str, Any]:
+    """Fetch a Finviz calendar payload without MCP/CLI wrapping."""
+
+    def _calendar_date(value: Optional[str], *, inclusive_end: bool) -> Optional[str]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            try:
+                return datetime.strptime(text, "%Y-%m-%d").date().isoformat()
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid calendar date {text!r}. Use a real YYYY-MM-DD date."
+                ) from exc
+        relative_day = text.lower()
+        if relative_day in {"today", "yesterday", "tomorrow"}:
+            day_offset = {"yesterday": -1, "today": 0, "tomorrow": 1}[
+                relative_day
+            ]
+            current_ny = datetime.now(timezone.utc).astimezone(
+                ZoneInfo("America/New_York")
+            )
+            return (current_ny.date() + timedelta(days=day_offset)).isoformat()
+        parsed = (
+            _parse_end_datetime(text)
+            if inclusive_end
+            else _parse_start_datetime(text)
+        )
+        if parsed is None:
+            raise ValueError(
+                f"Invalid calendar date {text!r}. Use YYYY-MM-DD, an ISO "
+                "datetime, or a relative expression such as '2 days ago'."
+            )
+        aware_utc = parsed.replace(tzinfo=timezone.utc)
+        return aware_utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
+
+    try:
+        start_value = _calendar_date(start, inclusive_end=False)
+        end_value = _calendar_date(end, inclusive_end=True)
+    except ValueError as exc:
+        return build_error_payload(
+            str(exc),
+            code="finviz_calendar_invalid_date",
+            operation="finviz_calendar",
+            remediation=(
+                "Pass YYYY-MM-DD or a dateparser expression such as "
+                "start='2 days ago', end='today'."
+            ),
+        )
+
+    cal = (calendar or "economic").strip().lower()
+    upcoming_only = (
+        bool(upcoming)
+        if upcoming is not None
+        else cal == "economic" and start_value is None and end_value is None
+    )
+
+    country_filter, filter_error = _resolve_finviz_calendar_country_filter(
+        country=country,
+        currency=currency,
+    )
+    if filter_error:
+        return {"error": filter_error}
+    if cal != "economic" and country_filter:
+        return {
+            "error": "country/currency filters are only supported for economic calendar."
+        }
+    if cal != "economic" and upcoming is not None:
+        return {"error": "upcoming is only supported for economic calendar."}
+    if cal != "economic" and impact is not None:
+        return {"error": "impact is only supported for economic calendar."}
+
+    if cal == "economic":
+        return _normalize_finviz_calendar_payload(
+            get_economic_calendar(
+                impact=impact,
+                limit=500,
+                page=1,
+                date_from=start_value,
+                date_to=end_value,
+            ),
+            detail=detail,
+            calendar_type=cal,
+            country_code_filter=country_filter,
+            upcoming_only=upcoming_only,
+            source_is_unpaged=True,
+            limit=limit,
+            page=page,
+        )
+    if cal == "earnings":
+        return _normalize_finviz_calendar_payload(
+            get_earnings_calendar_api(
+                limit=limit,
+                page=page,
+                date_from=start_value,
+                date_to=end_value,
+            ),
+            detail=detail,
+            calendar_type=cal,
+            limit=limit,
+            page=page,
+        )
+    if cal == "dividends":
+        return _normalize_finviz_calendar_payload(
+            get_dividends_calendar_api(
+                limit=limit,
+                page=page,
+                date_from=start_value,
+                date_to=end_value,
+            ),
+            detail=detail,
+            calendar_type=cal,
+            limit=limit,
+            page=page,
+        )
+    return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
+
+
 def finviz_calendar(
     calendar: Literal["economic", "earnings", "dividends"] = "economic",  # type: ignore
     impact: Optional[Literal["low", "medium", "high"]] = None,
@@ -4555,9 +4666,8 @@ def finviz_calendar(
     """
     Get detailed Finviz calendar data (economic, earnings, or dividends).
 
-    Use `calendar="earnings"` for date-range EPS/sales estimate, actual, and
-    surprise data. Use `finviz_earnings` for the quick period-based
-    earnings view with price/volume context.
+    Internal adapter. Public callers use ``calendar``. Use
+    ``calendar(kind='earnings', view='period')`` for the compact period view.
 
     Parameters
     ----------
@@ -4602,126 +4712,24 @@ def finviz_calendar(
         "page": page,
         "detail": detail,
     }
-
-    def _run() -> Dict[str, Any]:
-        def _calendar_date(value: Optional[str], *, inclusive_end: bool) -> Optional[str]:
-            text = str(value or "").strip()
-            if not text:
-                return None
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-                try:
-                    return datetime.strptime(text, "%Y-%m-%d").date().isoformat()
-                except ValueError as exc:
-                    raise ValueError(
-                        f"Invalid calendar date {text!r}. Use a real YYYY-MM-DD date."
-                    ) from exc
-            relative_day = text.lower()
-            if relative_day in {"today", "yesterday", "tomorrow"}:
-                day_offset = {"yesterday": -1, "today": 0, "tomorrow": 1}[
-                    relative_day
-                ]
-                current_ny = datetime.now(timezone.utc).astimezone(
-                    ZoneInfo("America/New_York")
-                )
-                return (current_ny.date() + timedelta(days=day_offset)).isoformat()
-            parsed = (
-                _parse_end_datetime(text)
-                if inclusive_end
-                else _parse_start_datetime(text)
-            )
-            if parsed is None:
-                raise ValueError(
-                    f"Invalid calendar date {text!r}. Use YYYY-MM-DD, an ISO "
-                    "datetime, or a relative expression such as '2 days ago'."
-                )
-            aware_utc = parsed.replace(tzinfo=timezone.utc)
-            return aware_utc.astimezone(ZoneInfo("America/New_York")).date().isoformat()
-
-        try:
-            start_value = _calendar_date(start, inclusive_end=False)
-            end_value = _calendar_date(end, inclusive_end=True)
-        except ValueError as exc:
-            return build_error_payload(
-                str(exc),
-                code="finviz_calendar_invalid_date",
-                operation="finviz_calendar",
-                remediation=(
-                    "Pass YYYY-MM-DD or a dateparser expression such as "
-                    "start='2 days ago', end='today'."
-                ),
-            )
-
-        cal = (calendar or "economic").strip().lower()
-        upcoming_only = (
-            bool(upcoming)
-            if upcoming is not None
-            else cal == "economic" and start_value is None and end_value is None
-        )
-
-        country_filter, filter_error = _resolve_finviz_calendar_country_filter(
+    return _run_logged_tool(
+        "finviz_calendar",
+        fields,
+        lambda: run_finviz_calendar(
+            calendar=calendar,
+            impact=impact,
             country=country,
             currency=currency,
-        )
-        if filter_error:
-            return {"error": filter_error}
-        if cal != "economic" and country_filter:
-            return {
-                "error": "country/currency filters are only supported for economic calendar."
-            }
-        if cal != "economic" and upcoming is not None:
-            return {"error": "upcoming is only supported for economic calendar."}
-        if cal != "economic" and impact is not None:
-            return {"error": "impact is only supported for economic calendar."}
-
-        if cal == "economic":
-            return _normalize_finviz_calendar_payload(
-                get_economic_calendar(
-                    impact=impact,
-                    limit=500,
-                    page=1,
-                    date_from=start_value,
-                    date_to=end_value,
-                ),
-                detail=detail,
-                calendar_type=cal,
-                country_code_filter=country_filter,
-                upcoming_only=upcoming_only,
-                source_is_unpaged=True,
-                limit=limit,
-                page=page,
-            )
-        if cal == "earnings":
-            return _normalize_finviz_calendar_payload(
-                get_earnings_calendar_api(
-                    limit=limit,
-                    page=page,
-                    date_from=start_value,
-                    date_to=end_value,
-                ),
-                detail=detail,
-                calendar_type=cal,
-                limit=limit,
-                page=page,
-            )
-        if cal == "dividends":
-            return _normalize_finviz_calendar_payload(
-                get_dividends_calendar_api(
-                    limit=limit,
-                    page=page,
-                    date_from=start_value,
-                    date_to=end_value,
-                ),
-                detail=detail,
-                calendar_type=cal,
-                limit=limit,
-                page=page,
-            )
-        return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
-
-    return _run_logged_tool("finviz_calendar", fields, _run)
+            start=start,
+            end=end,
+            upcoming=upcoming,
+            limit=limit,
+            page=page,
+            detail=detail,
+        ),
+    )
 
 
-@mcp.tool()
 def finviz_earnings(
     period: Literal["this-week", "next-week", "previous-week", "this-month"] = "this-week",
     limit: Annotated[int, Field(ge=1)] = 10,
@@ -4732,9 +4740,8 @@ def finviz_earnings(
     """
     Get the period-based earnings calendar from Finviz.
     
-    This is the period-based price/volume earnings view. Use
-    `finviz_calendar(calendar="earnings")` when you need date-range EPS/sales
-    estimates, actuals, and surprises from the detailed calendar API.
+    Internal adapter. Public callers use
+    ``calendar(kind='earnings', view='period')``.
     
     Parameters
     ----------

@@ -560,7 +560,7 @@ def create_command_function(  # noqa: C901
                 if choices:
                     message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."
                 elif missing_name in {"symbol", "symbols"}:
-                    if str(cmd_name).startswith("finviz_"):
+                    if str(cmd_name) in {"equity_profile", "screener", "news"}:
                         message += (
                             " Pass a US exchange ticker such as AAPL; broker suffixes "
                             "such as AAPL.NAS are accepted and normalized."

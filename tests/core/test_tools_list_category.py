@@ -38,7 +38,6 @@ def test_tools_list_news_category_matches_news_help_family():
 
     assert out["success"] is True
     assert {row["name"] for row in out["tools"]} == {
-        "finviz_market_news",
-        "finviz_news",
+        "calendar",
         "news",
     }

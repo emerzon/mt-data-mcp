@@ -285,7 +285,7 @@ def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
     assert "MT5" not in result["remediation"]
     assert "symbols_list" in result["remediation"]
     assert "symbols_list" in result["related_tools"]
-    assert "finviz_screen" in result["related_tools"]
+    assert "screener" in result["related_tools"]
 
 
 def test_fetch_unified_news_discloses_broker_symbol_rewrite(monkeypatch) -> None:
@@ -1889,6 +1889,58 @@ def test_fetch_unified_news_maps_indices_to_ycnbc_quote_symbols(monkeypatch) -> 
     assert ycnbc_items[0]["metadata"]["cnbc_symbol"] == ".NDX"
 
 
+def test_fetch_unified_news_source_pin_filters_adapters(monkeypatch) -> None:
+    class FinvizOnly:
+        name = "finviz"
+
+        def is_available(self) -> bool:
+            return True
+
+        def fetch_general_candidates(self, limit: int):
+            return [
+                svc.NewsItem(
+                    title="Finviz headline",
+                    provider="finviz",
+                    source="Finviz",
+                    kind="headline",
+                )
+            ]
+
+        def fetch_related_candidates(self, context, limit: int):
+            return []
+
+    class Mt5Only:
+        name = "mt5"
+
+        def is_available(self) -> bool:
+            return True
+
+        def fetch_general_candidates(self, limit: int):
+            return [
+                svc.NewsItem(
+                    title="MT5 headline",
+                    provider="mt5",
+                    source="MT5",
+                    kind="headline",
+                )
+            ]
+
+        def fetch_related_candidates(self, context, limit: int):
+            return []
+
+    aggregator = svc.NewsAggregator()
+    aggregator._sources = {"finviz": FinvizOnly(), "mt5": Mt5Only()}
+
+    pinned = aggregator.fetch_news(source="finviz")
+    unknown = aggregator.fetch_news(source="yahoo")
+
+    assert pinned["success"] is True
+    assert pinned["sources_used"] == ["finviz"]
+    assert all(item["provider"] == "finviz" for item in pinned["general_news"])
+    assert unknown["success"] is False
+    assert unknown["error_code"] == "research_source_unavailable"
+
+
 def test_fetch_unified_news_returns_failure_when_all_sources_error(monkeypatch) -> None:
     class BrokenSource:
         name = "broken"
@@ -1970,5 +2022,5 @@ def test_symbol_news_reserves_fresh_direct_headline_before_relevance_slice(
         "direct_symbol_recency_reserve": 5,
         "direct_symbol_selected": 1,
         "preselection_truncated": True,
-        "raw_continuation_tool": "finviz_news",
+        "raw_continuation_tool": "news",
     }

@@ -1,0 +1,159 @@
+"""Delayed cross-asset performance context (not live broker quotes)."""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated, Any, Dict, Literal, Optional
+
+from pydantic import Field
+
+from ..services.research.capabilities import PERFORMANCE
+from ..services.research.payload import stamp_provider
+from ..services.research.registry import get_research_registry
+from ..shared.schema import DetailLiteral
+from ._mcp_instance import mcp
+from .execution_logging import run_logged_operation
+
+logger = logging.getLogger(__name__)
+
+ResearchSourcePin = Literal["auto", "finviz", "mt5"]
+PerformanceUniverse = Literal["forex", "crypto", "futures", "insider"]
+
+
+class FinvizPerformanceSource:
+    """Finviz delayed web-table adapter."""
+
+    name = "finviz"
+
+    def is_available(self) -> bool:
+        return True
+
+    def fetch_performance(
+        self,
+        *,
+        universe: str,
+        symbol: Optional[str],
+        option: str,
+        limit: int,
+        offset: int,
+        page: int,
+        detail: str,
+    ) -> Dict[str, Any]:
+        from . import finviz as finviz_impl
+
+        if universe == "forex":
+            return finviz_impl.finviz_forex(
+                symbol=symbol,
+                limit=limit,
+                offset=offset,
+                detail=detail,  # type: ignore[arg-type]
+            )
+        if universe == "crypto":
+            return finviz_impl.finviz_crypto(
+                limit=limit,
+                offset=offset,
+                detail=detail,  # type: ignore[arg-type]
+            )
+        if universe == "futures":
+            return finviz_impl.finviz_futures(
+                limit=limit,
+                offset=offset,
+                detail=detail,  # type: ignore[arg-type]
+            )
+        return finviz_impl.finviz_insider_activity(
+            option=option,  # type: ignore[arg-type]
+            limit=limit,
+            page=page,
+            detail=detail,  # type: ignore[arg-type]
+        )
+
+
+def _ensure_performance_sources() -> None:
+    registry = get_research_registry()
+    if "finviz" not in registry.known_names(PERFORMANCE):
+        registry.register(
+            FinvizPerformanceSource(),
+            capabilities={PERFORMANCE},
+        )
+
+
+@mcp.tool()
+def asset_performance(
+    universe: Annotated[
+        PerformanceUniverse,
+        Field(description="Context table: forex, crypto, futures, or market-wide insider."),
+    ] = "forex",
+    symbol: Annotated[
+        Optional[str],
+        Field(description="Optional forex pair filter such as EURUSD."),
+    ] = None,
+    option: Annotated[
+        Literal[
+            "latest",
+            "latest buys",
+            "latest sales",
+            "top week",
+            "top week buys",
+            "top week sales",
+            "top owner trade",
+            "top owner buys",
+            "top owner sales",
+        ],
+        Field(description="Insider-activity slice when universe=insider."),
+    ] = "latest",
+    limit: Annotated[int, Field(ge=1, description="Max rows per page.")] = 20,
+    offset: Annotated[int, Field(ge=0, description="Zero-based offset for forex/crypto/futures.")] = 0,
+    page: Annotated[int, Field(ge=1, description="One-based page for insider activity.")] = 1,
+    detail: DetailLiteral = "compact",
+    source: Annotated[
+        ResearchSourcePin,
+        Field(
+            description="Adapter pin. auto uses every source that can serve this query."
+        ),
+    ] = "auto",
+) -> Dict[str, Any]:
+    """Fetch delayed cross-asset performance or market-wide insider context.
+
+    This is research context, not a live executable quote. Use
+    ``symbols_top_markets`` or ``market_ticker`` for broker prices. Finviz is
+    the current adapter; ``source="mt5"`` returns a capability error.
+    """
+
+    def _run() -> Dict[str, Any]:
+        _ensure_performance_sources()
+        adapters, error = get_research_registry().resolve_or_error(
+            PERFORMANCE,
+            source,
+            operation="asset_performance",
+        )
+        if error is not None:
+            return error
+        adapter = adapters[0]
+        payload = adapter.fetch_performance(
+            universe=str(universe),
+            symbol=symbol,
+            option=str(option),
+            limit=int(limit),
+            offset=int(offset),
+            page=int(page),
+            detail=str(detail or "compact"),
+        )
+        out = stamp_provider(payload, provider=str(adapter.name))
+        if isinstance(out, dict):
+            out.setdefault("universe", universe)
+            out.setdefault(
+                "quote_role",
+                "research_context_not_live_broker_quote",
+            )
+        return out
+
+    return run_logged_operation(
+        logger,
+        operation="asset_performance",
+        universe=universe,
+        source=source,
+        func=_run,
+    )
+
+
+_ensure_performance_sources()

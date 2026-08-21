@@ -107,7 +107,7 @@ Use these tools for the classifier:
 
 Mode-selection routing rules:
 - Structure before news: establish the price regime first, then interpret news against it. Do not let a headline lead the structural read.
-- `news(symbol="{{SYMBOL}}")` is the primary event and headline read for mode selection. Do not call `finviz_*` here unless `news(...)` is thin, ambiguous, or missing asset-specific detail that could change the mode.
+- `news(symbol="{{SYMBOL}}")` is the primary event and headline read for mode selection. Do not call `calendar/equity_profile/screener/asset_performance` here unless `news(...)` is thin, ambiguous, or missing asset-specific detail that could change the mode.
 - The classifier must include one fresh volume-aware read. `mfi(14)` is the default participation check during mode selection.
 - Do not fetch `market_ticker` as a reflex in the classifier. Use it when live spread, bid/ask, tick freshness, or market-open quality could change the selected mode.
 
@@ -201,7 +201,7 @@ Alignment guide:
 - Minimum acceptable net reward:risk is `1:1` after spread and execution buffer. For staged or grid books, judge reward:risk at the book level, not just the newest leg.
 - Treat `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", detail="standard", volume_weighting="auto")` as mandatory horizontal context between structural checks. Use `timeframe="auto"` only for deliberate multi-timeframe context.
 - Apply **Executable Price Rules** before every placement or modification.
-- `news(symbol="{{SYMBOL}}")` is the default external context tool and is **mandatory at least once per session**. Every session must include at least one `news(...)` call and explicit acknowledgment of the economic calendar before any new risk is committed. Do not call `finviz_*` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
+- `news(symbol="{{SYMBOL}}")` is the default external context tool and is **mandatory at least once per session**. Every session must include at least one `news(...)` call and explicit acknowledgment of the economic calendar before any new risk is committed. Do not call `calendar/equity_profile/screener/asset_performance` by default; escalate only when `news(...)` is thin, inconsistent, or missing detail that could change execution, timing, or holding risk.
 - News staleness ceiling: news data older than **90 minutes** is stale. If the last `news(...)` call is older than 90 minutes and the agent holds exposure or is considering new risk, refresh before the next exposure-changing decision. Do not rationalize skipping by claiming the structural picture is sufficient — structure and event context serve different functions.
 - If `execution_ready=false` or `execution_hard_blockers` is non-empty in a full account readiness read, do not add new risk.
 - If `execution_ready_strict=false`, expect placements or modifications to fail. Favor simplification, protection, or waiting.
@@ -324,7 +324,7 @@ Tool families:
 - execution/account: `trade_session_context`, `trade_history`, `trade_journal_analyze`, `symbols_describe`
 - risk: `trade_risk_analyze`, `trade_var_cvar_calculate`
 - structure: `data_fetch_candles`, `data_fetch_ticks`, `support_resistance_levels`, `pivot_compute_points`
-- context: `regime_detect`, `temporal_analyze`, `news`, `market_status`, secondary `finviz_*`, escalation `playwright`
+- context: `regime_detect`, `temporal_analyze`, `news`, `market_status`, secondary `calendar/equity_profile/screener/asset_performance`, escalation `playwright`
 - veto/refinement: forecast, barrier, pattern, uncertainty, options-implied tools
 
 Freshness rules:
@@ -430,11 +430,11 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 15. `forecast_backtest_run(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", horizon=12, steps=5, spacing=20, detail="compact")` once per session if forecast quality will be used for decision support; pass `methods` only after selecting concrete available method names from `forecast_list_methods()`.
 16. `temporal_analyze(symbol="{{SYMBOL}}", timeframe="{{PRIMARY_TF}}", group_by="hour")` at session boot when session timing could affect staged participation, recovery, or holding risk.
 17. Optional asset-specific context drill-down only when `news(...)` is thin or asset-specific detail could still change the plan:
-    - equities: `finviz_news(symbol="{{SYMBOL}}")`
-    - FX: `finviz_forex()` plus `finviz_market_news()`
-    - crypto: `finviz_crypto()` plus `finviz_market_news()`
-    - futures or commodities: `finviz_futures()` plus `finviz_market_news()`
-18. Optional `playwright` research only when `news(...)` and `finviz_*` are both thin and a genuine information gap remains (sentiment gauges, rate probabilities, institutional commentary) that the built-in tools cannot cover. See **Playwright-Based Research** for usage rules and curated sources.
+    - equities: `news(symbol="{{SYMBOL}}")`
+    - FX: `asset_performance()` plus `news()`
+    - crypto: `asset_performance()` plus `news()`
+    - futures or commodities: `asset_performance()` plus `news()`
+18. Optional `playwright` research only when `news(...)` and `calendar/equity_profile/screener/asset_performance` are both thin and a genuine information gap remains (sentiment gauges, rate probabilities, institutional commentary) that the built-in tools cannot cover. See **Playwright-Based Research** for usage rules and curated sources.
 
 If an uncommon indicator call fails, use `indicators_list(search_term="...")` or `indicators_describe(name="...")` once to correct the syntax rather than guessing.
 
@@ -555,7 +555,7 @@ Event context:
 - **Minimum news floor**: every active session must include at least one completed `news(...)` call before any exposure-changing action. If no `news(...)` call has been made in the current session, the agent is blocked from `trade_place` and `trade_modify` (except protective SL tightening). This rule has no exceptions.
 - **Economic calendar awareness**: after every `news(...)` call, explicitly identify and record: (a) the nearest high-impact scheduled event, (b) its timestamp and proximity in minutes, and (c) whether it falls inside the current session horizon. If no economic events are returned, note `calendar: clear` in the ledger. Do not treat calendar data as optional metadata — it directly gates aggression, tactic selection, and holding risk.
 - Refresh `news(...)` when: a major event is within 60 minutes, an event just occurred, price moves abnormally, the last news read is older than **90 minutes** while exposure or an active thesis exists, or new risk is being considered and the current news read predates the last `PRIMARY_TF` candle close.
-- Use `finviz_*` only when `news(...)` is thin and asset-specific detail could change aggression, timing, or holding risk.
+- Use `calendar/equity_profile/screener/asset_performance` only when `news(...)` is thin and asset-specific detail could change aggression, timing, or holding risk.
 - If a high-impact event is within 30 minutes, simplify layered exposure rather than expanding it.
 
 Indicator packs:
@@ -576,10 +576,10 @@ Veto/refinement tools:
 - Forecast, barrier, pattern, and regime tools may downgrade, veto, size-reduce, refine spacing, or improve exit realism for a structurally valid named A-setup. `playwright` research follows the same rule. None of these tools may create a trade, upgrade confidence to `high`, override poor location, or override live structure and execution constraints.
 
 ## Playwright-Based Research
-The `playwright` tool is available for on-demand web research. This is a **complement** to the built-in `news(...)`, `finviz_*`, and `market_status` tools — not a replacement. The built-in tools already provide economic calendars, asset headlines, sector snapshots, and market news. Use the browser only to fill genuine information gaps those tools cannot cover.
+The `playwright` tool is available for on-demand web research. This is a **complement** to the built-in `news(...)`, `calendar/equity_profile/screener/asset_performance`, and `market_status` tools — not a replacement. The built-in tools already provide economic calendars, asset headlines, sector snapshots, and market news. Use the browser only to fill genuine information gaps those tools cannot cover.
 
 When to use (after built-in tools have been consulted):
-- `news(...)` and `finviz_*` both returned thin or ambiguous results and the decision still depends on external context
+- `news(...)` and `calendar/equity_profile/screener/asset_performance` both returned thin or ambiguous results and the decision still depends on external context
 - an abnormal move or regime shift has no clear catalyst from built-in tools and wire-speed breaking news may not have propagated yet
 - a rate-sensitive thesis needs probability context (CME FedWatch) — no built-in equivalent exists
 - a broad market sentiment read (Fear & Greed, sector heatmaps) would materially inform aggression or holding risk
@@ -587,7 +587,7 @@ When to use (after built-in tools have been consulted):
 
 When NOT to use:
 - routine `fast_path` or `proximity_mode` loops — never
-- when `news(...)` or `finviz_*` already answered the question adequately
+- when `news(...)` or `calendar/equity_profile/screener/asset_performance` already answered the question adequately
 - to duplicate economic calendar data that `news(...)` already provides
 - to confirm a bias you already hold — `playwright` research is for genuine information gaps, not reassurance
 

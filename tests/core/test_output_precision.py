@@ -73,7 +73,7 @@ def test_finviz_forex_auto_precision_preserves_fx_prices():
     result = format_result_minimal(
         {"items": [{"symbol": "EURUSD", "price": 1.1446}]},
         verbose=False,
-        tool_name="finviz_forex",
+        tool_name="asset_performance",
     )
 
     assert "1.1446" in result

@@ -1435,7 +1435,16 @@ def _command_help_category(command: str) -> str:
         }
     ):
         return "ANALYTICS"
-    if name.startswith("finviz_") or name.startswith("news_"):
+    if (
+        name.startswith("news_")
+        or name in {
+            "news",
+            "calendar",
+            "equity_profile",
+            "screener",
+            "asset_performance",
+        }
+    ):
         return "NEWS & FUNDAMENTALS"
     if name.startswith("report_") or name.startswith("tools_") or name.startswith("diagnostics_"):
         return "REPORTS & TOOLS"
@@ -1556,28 +1565,24 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method ewma",
         f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method rolling_std --horizon 8",
     ),
-    "finviz_fundamentals": (
-        f"{CLI_PROGRAM} finviz_fundamentals AAPL",
+    "equity_profile": (
+        f"{CLI_PROGRAM} equity_profile AAPL",
         None,
     ),
-    "finviz_description": (
-        f"{CLI_PROGRAM} finviz_description AAPL",
+    "news": (
+        f"{CLI_PROGRAM} news AAPL --limit 5",
         None,
     ),
-    "finviz_news": (
-        f"{CLI_PROGRAM} finviz_news AAPL --limit 5",
+    "screener": (
+        f"{CLI_PROGRAM} screener --list-filters",
         None,
     ),
-    "finviz_insider": (
-        f"{CLI_PROGRAM} finviz_insider AAPL --limit 5",
+    "asset_performance": (
+        f"{CLI_PROGRAM} asset_performance --universe forex",
         None,
     ),
-    "finviz_ratings": (
-        f"{CLI_PROGRAM} finviz_ratings AAPL",
-        None,
-    ),
-    "finviz_peers": (
-        f"{CLI_PROGRAM} finviz_peers AAPL",
+    "calendar": (
+        f"{CLI_PROGRAM} calendar --kind economic --impact high",
         None,
     ),
     "options_chain": (
@@ -1761,7 +1766,13 @@ def _add_tool_command_arguments(
         exclude_globals.append("timeframe")
     if cmd_name == "report_generate":
         exclude_globals.append("timeframe")
-    if cmd_name.startswith("finviz_"):
+    if cmd_name in {
+        "news",
+        "calendar",
+        "equity_profile",
+        "screener",
+        "asset_performance",
+    }:
         exclude_globals.append("timeframe")
     if cmd_name in _TIMEFRAMELESS_GLOBAL_COMMANDS:
         exclude_globals.append("timeframe")
