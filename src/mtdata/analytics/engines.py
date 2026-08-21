@@ -2430,7 +2430,9 @@ def validate_strategies(  # noqa: C901
                 "skipped_folds": skipped_folds,
             })
             continue
-        equity = np.cumprod(1.0 + np.clip(arr, -0.999, None))
+        equity = np.concatenate(
+            ([1.0], np.cumprod(1.0 + np.clip(arr, -0.999, None)))
+        )
         peaks = np.maximum.accumulate(equity)
         drawdown = equity / peaks - 1.0
         std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
