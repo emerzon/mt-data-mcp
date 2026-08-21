@@ -258,28 +258,70 @@ def _get_available_methods():
 
 
 
+def _analog_window_size(params: Optional[Dict[str, Any]]) -> int:
+    try:
+        return max(1, int((params or {}).get("window_size", 64)))
+    except Exception:
+        return 64
+
+
+def _analog_search_depth(params: Optional[Dict[str, Any]]) -> int:
+    try:
+        return max(1, int((params or {}).get("search_depth", 5000)))
+    except Exception:
+        return 5000
+
+
+def _analog_overhead_bars(window_size: int, horizon: int) -> int:
+    return (2 * int(window_size)) + int(horizon) - 1
+
+
+def _cap_analog_params_to_lookback(
+    params: Dict[str, Any],
+    *,
+    lookback: Optional[int],
+    horizon: int,
+) -> Optional[Dict[str, Any]]:
+    """Bound analog search_depth so history never exceeds an explicit lookback."""
+    if lookback is None or int(lookback) <= 0:
+        return None
+    window_size = _analog_window_size(params)
+    search_depth = _analog_search_depth(params)
+    overhead = _analog_overhead_bars(window_size, horizon)
+    min_bars = overhead + 1
+    if int(lookback) < min_bars:
+        return {
+            "error": (
+                f"Analog lookback {int(lookback)} cannot fit window_size={window_size} "
+                f"and horizon={int(horizon)}; at least {min_bars} bars are required."
+            ),
+            "error_code": "analog_lookback_too_small",
+            "lookback": int(lookback),
+            "minimum_lookback_bars": min_bars,
+            "window_size": window_size,
+            "horizon": int(horizon),
+            "remediation": (
+                f"Increase --lookback to at least {min_bars}, or reduce window_size."
+            ),
+        }
+    fitted = min(search_depth, int(lookback) - overhead)
+    if fitted < search_depth:
+        params["search_depth"] = fitted
+    return None
+
+
 def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int],
                              seasonality: int, timeframe: str,
                              params: Optional[Dict[str, Any]] = None) -> int:
     """Calculate the number of bars needed for forecasting."""
     if method_l == 'analog':
         p = dict(params or {})
-        try:
-            window_size = int(p.get('window_size', 64))
-        except Exception:
-            window_size = 64
-        try:
-            search_depth = int(p.get('search_depth', 5000))
-        except Exception:
-            search_depth = 5000
-        search_depth = max(1, search_depth)
-        # Analog search needs enough history for:
-        # 1. `search_depth` disjoint candidate starts
-        # 2. each candidate's full window plus forecast future
-        # 3. the active query window at the end of the series
-        analog_history_bars = search_depth + (2 * window_size) + int(horizon) - 1
+        window_size = _analog_window_size(p)
+        search_depth = _analog_search_depth(p)
+        overhead = _analog_overhead_bars(window_size, horizon)
+        analog_history_bars = search_depth + overhead
         if lookback is not None and lookback > 0:
-            return max(int(lookback), analog_history_bars)
+            return int(lookback)
         return max(100, analog_history_bars)
 
     if lookback is not None and lookback > 0:
@@ -659,6 +701,11 @@ def build_training_context(
         raise ValueError("Use forecast_volatility for volatility models")
 
     p = _parse_kv_or_json(params)
+    analog_error = _cap_analog_params_to_lookback(
+        p, lookback=lookback, horizon=int(horizon)
+    )
+    if analog_error is not None:
+        raise ValueError(str(analog_error["error"]))
     seasonality = int(p.get("seasonality")) if p.get("seasonality") is not None else default_seasonality(timeframe)
     need = _calculate_lookback_bars(method_l, int(horizon), lookback, seasonality, timeframe, params=p)
     df, base_col, _ = _resolve_history_context(
@@ -1975,6 +2022,11 @@ def forecast_engine(  # noqa: C901
 
         # Parse method params
         p = _parse_kv_or_json(params)
+        analog_error = _cap_analog_params_to_lookback(
+            p, lookback=lookback, horizon=int(horizon)
+        )
+        if analog_error is not None:
+            return analog_error
         seasonality = int(p.get('seasonality')) if p.get('seasonality') is not None else default_seasonality(timeframe)
 
         if method_l == 'seasonal_naive' and (not seasonality or seasonality <= 0):

@@ -131,7 +131,10 @@ def test_ensemble_adaptive_lookback_covers_requested_cv_window():
     ) == 5515
     assert fe._calculate_lookback_bars(
         "analog", horizon=4, lookback=10, seasonality=24, timeframe="H1", params={"window_size": 256}
-    ) == 5515
+    ) == 10
+    assert fe._calculate_lookback_bars(
+        "analog", horizon=4, lookback=200, seasonality=24, timeframe="H1", params={"window_size": 12}
+    ) == 200
     assert fe._calculate_lookback_bars(
         "analog",
         horizon=4,
@@ -140,6 +143,20 @@ def test_ensemble_adaptive_lookback_covers_requested_cv_window():
         timeframe="H1",
         params={"window_size": 64, "search_depth": 500},
     ) == 6000
+
+
+def test_analog_lookback_caps_search_depth_and_rejects_impossible_windows():
+    params = {"window_size": 12, "search_depth": 5000}
+    assert fe._cap_analog_params_to_lookback(params, lookback=200, horizon=4) is None
+    assert params["search_depth"] == 173
+
+    too_small = fe._cap_analog_params_to_lookback(
+        {"window_size": 64, "search_depth": 5000},
+        lookback=50,
+        horizon=4,
+    )
+    assert too_small["error_code"] == "analog_lookback_too_small"
+    assert too_small["minimum_lookback_bars"] == 132
 
 
 def test_explicit_range_is_capped_to_requested_lookback_for_prefetched_history():
