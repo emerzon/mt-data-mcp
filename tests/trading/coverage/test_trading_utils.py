@@ -174,6 +174,16 @@ class TestTickUtils:
         assert result["tick_age_status"] == "unknown"
         assert "freshness cannot be verified" in result["error"]
 
+    def test_validate_tick_freshness_rejects_future_timestamp(self):
+        import time as _time_module
+
+        now_ms = _time_module.time() * 1000.0
+        tick = SimpleNamespace(time_msc=now_ms + 50_000)
+        result = _validate_tick_freshness(tick, symbol="EURUSD")
+        assert result is not None
+        assert result["tick_age_status"] == "future"
+        assert result["timestamp_in_future"] is True
+
 
 # ===================================================================
 #  Edge cases / integration

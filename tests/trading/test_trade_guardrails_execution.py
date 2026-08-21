@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -71,7 +72,7 @@ def mock_mt5():
         trade_tick_value_loss=10.0,
     )
     mt5.symbol_info_tick = lambda symbol: SimpleNamespace(
-        bid=1.1002, ask=1.1004, time=4_102_444_800
+        bid=1.1002, ask=1.1004, time=time.time()
     )
     mt5.orders_get = lambda *args, **kwargs: [
         SimpleNamespace(
@@ -307,6 +308,7 @@ def test_modify_pending_order_ignores_guardrails_for_demo_account(
     patch_gateway,
 ):
     trade_guardrails_config.enabled = True
+    trade_guardrails_config.ignore_on_demo = True
     trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 0.1
     patch_gateway.account_info = lambda: SimpleNamespace(
         equity=10000.0,

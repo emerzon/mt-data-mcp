@@ -1332,8 +1332,7 @@ def _tick_age_seconds(tick: Any) -> Optional[float]:
             else:
                 tick_utc = val
 
-            age_s = now_utc - tick_utc
-            return max(0.0, age_s)
+            return now_utc - tick_utc
         except Exception:
             continue
     return None
@@ -1345,7 +1344,9 @@ def _validate_tick_freshness(
     symbol: str,
     max_age_seconds: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Return an error dict if *tick* is stale or has unknown age."""
+    """Return an error dict if *tick* is stale, future-dated, or has unknown age."""
+    from ...utils.market_metadata import TICK_FUTURE_TOLERANCE_SECONDS
+
     threshold = (
         float(max_age_seconds)
         if max_age_seconds is not None
@@ -1356,6 +1357,18 @@ def _validate_tick_freshness(
         return {
             "error": f"Tick for {symbol} has no usable timestamp; freshness cannot be verified.",
             "tick_age_status": "unknown",
+            "tick_max_age_seconds": threshold,
+        }
+    if age < -float(TICK_FUTURE_TOLERANCE_SECONDS):
+        future_skew = -age
+        return {
+            "error": (
+                f"Tick for {symbol} is {future_skew:.1f}s ahead of the wall clock "
+                "and is not safe for live trading."
+            ),
+            "tick_age_status": "future",
+            "timestamp_in_future": True,
+            "timestamp_skew_seconds": round(future_skew, 2),
             "tick_max_age_seconds": threshold,
         }
     if age <= threshold:

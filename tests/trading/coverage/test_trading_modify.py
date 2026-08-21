@@ -9,6 +9,7 @@ Covers:
 import importlib
 import os
 import sys
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -96,7 +97,7 @@ def _sym(
 
 
 def _tick(bid=1.10000, ask=1.10020):
-    return SimpleNamespace(bid=bid, ask=ask, time=4_102_444_800)
+    return SimpleNamespace(bid=bid, ask=ask, time=time.time())
 
 
 def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
