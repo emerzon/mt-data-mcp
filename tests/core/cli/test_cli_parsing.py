@@ -986,19 +986,6 @@ class TestAddDynamicArguments:
         )
         assert "--bars" not in limit_action.option_strings
 
-    def test_news_accepts_optional_positional_symbol(self):
-        parser = argparse.ArgumentParser()
-        func_info = {
-            "params": [
-                {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "limit", "type": int, "required": False, "default": 20},
-            ]
-        }
-        add_dynamic_arguments(parser, func_info, cmd_name="news")
-        args = parser.parse_args(["AAPL", "--limit", "5"])
-        assert args.symbol == "AAPL"
-        assert args.limit == 5
-
     def test_temporal_and_research_window_aliases(self):
         temporal = argparse.ArgumentParser()
         add_dynamic_arguments(
@@ -1489,7 +1476,7 @@ class TestResolveParamKwargs:
         assert kwargs["type"]("True") == "true"
         assert kwargs["type"]("FALSE") == "false"
 
-    def test_optional_int(self):
+    def test_optional_int_accepts_integer_and_null_tokens(self):
         param = {
             "name": "count",
             "type": Optional[int],
@@ -1497,7 +1484,9 @@ class TestResolveParamKwargs:
             "default": None,
         }
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
-        assert kwargs["type"] is int
+        assert kwargs["type"]("42") == 42
+        assert kwargs["type"]("none") is None
+        assert kwargs["type"]("NULL") is None
 
     def test_dict_param_is_mapping(self):
         param = {

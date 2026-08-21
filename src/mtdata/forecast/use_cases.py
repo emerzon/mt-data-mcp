@@ -3114,11 +3114,6 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
-            **(
-                {"lookback": int(request.lookback)}
-                if request.lookback is not None
-                else {}
-            ),
             **_analysis_time_kwargs(request),
             methods=[str(request.method)],
             denoise=request.denoise,
@@ -3171,11 +3166,6 @@ def run_forecast_conformal_intervals(
             timeframe=request.timeframe,
             method=request.method,
             horizon=int(request.horizon),
-            **(
-                {"lookback": int(request.lookback)}
-                if request.lookback is not None
-                else {}
-            ),
             params=request.params,
             denoise=request.denoise,
             **_analysis_time_kwargs(request),

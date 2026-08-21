@@ -373,18 +373,19 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             step=7 * 86_400,
         )
 
-        result, err = _fetch_rates_with_warmup(
-            "EURUSD",
-            32769,
-            "W1",
-            5,
-            0,
-            "2026-08-10",
-            "2026-08-14",
-            include_incomplete=True,
-            retry=False,
-            sanity_check=False,
-        )
+        with patch(f"{_DS}._broker_calendar_timezone", return_value=_UTC):
+            result, err = _fetch_rates_with_warmup(
+                "EURUSD",
+                32769,
+                "W1",
+                5,
+                0,
+                "2026-08-10",
+                "2026-08-14",
+                include_incomplete=True,
+                retry=False,
+                sanity_check=False,
+            )
 
         self.assertIsNone(err)
         self.assertIsNotNone(result)

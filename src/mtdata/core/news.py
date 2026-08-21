@@ -607,6 +607,71 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _normalize_news_pagination_controls(
+    *,
+    limit: Optional[int],
+    offset: int,
+    limit_per_bucket: Optional[int],
+) -> tuple[Optional[int], int, Optional[int]] | Dict[str, str]:
+    limit_value: Optional[int] = None
+    if limit is not None:
+        try:
+            limit_value = int(limit)
+        except (TypeError, ValueError):
+            return {"error": "limit must be a positive integer."}
+        if limit_value < 1:
+            return {"error": "limit must be a positive integer."}
+
+    limit_per_bucket_value: Optional[int] = None
+    if limit_per_bucket is not None:
+        try:
+            limit_per_bucket_value = int(limit_per_bucket)
+        except (TypeError, ValueError):
+            return {"error": "limit_per_bucket must be a positive integer."}
+        if limit_per_bucket_value < 1:
+            return {"error": "limit_per_bucket must be a positive integer."}
+
+    try:
+        offset_value = int(offset or 0)
+    except (TypeError, ValueError):
+        return {"error": "offset must be a non-negative integer."}
+    if offset_value < 0:
+        return {"error": "offset must be >= 0."}
+    return limit_value, offset_value, limit_per_bucket_value
+
+
+def _news_incompatible_controls(
+    *,
+    view: str,
+    symbol: Optional[str],
+    offset: int,
+    limit_per_bucket: Optional[int],
+    news_type: str,
+    page: int,
+) -> list[str]:
+    invalid: list[str] = []
+    if view == "ticker":
+        if offset != 0:
+            invalid.append("offset")
+        if limit_per_bucket is not None:
+            invalid.append("limit_per_bucket")
+        if news_type != "news":
+            invalid.append("news_type")
+    elif view == "market":
+        if symbol not in (None, ""):
+            invalid.append("symbol")
+        if offset != 0:
+            invalid.append("offset")
+        if limit_per_bucket is not None:
+            invalid.append("limit_per_bucket")
+    else:
+        if page != 1:
+            invalid.append("page")
+        if news_type != "news":
+            invalid.append("news_type")
+    return invalid
+
+
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
@@ -730,28 +795,14 @@ def news(
             remediation="Provide one symbol or omit the symbol argument.",
         )
     detail_mode = normalize_output_verbosity_detail(detail)
-    limit_value: Optional[int] = None
-    if limit is not None:
-        try:
-            limit_value = int(limit)
-        except (TypeError, ValueError):
-            return {"error": "limit must be a positive integer."}
-        if limit_value < 1:
-            return {"error": "limit must be a positive integer."}
-    limit_per_bucket_value: Optional[int] = None
-    if limit_per_bucket is not None:
-        try:
-            limit_per_bucket_value = int(limit_per_bucket)
-        except (TypeError, ValueError):
-            return {"error": "limit_per_bucket must be a positive integer."}
-        if limit_per_bucket_value < 1:
-            return {"error": "limit_per_bucket must be a positive integer."}
-    try:
-        offset_value = int(offset or 0)
-    except (TypeError, ValueError):
-        return {"error": "offset must be a non-negative integer."}
-    if offset_value < 0:
-        return {"error": "offset must be >= 0."}
+    pagination_controls = _normalize_news_pagination_controls(
+        limit=limit,
+        offset=offset,
+        limit_per_bucket=limit_per_bucket,
+    )
+    if isinstance(pagination_controls, dict):
+        return pagination_controls
+    limit_value, offset_value, limit_per_bucket_value = pagination_controls
     default_compact_symbol_bucket_limit = (
         symbol not in (None, "")
         and detail_mode == "compact"
@@ -777,26 +828,14 @@ def news(
         else limit_per_bucket_value
     )
     view_key = str(view or "unified")
-    invalid_controls: list[str] = []
-    if view_key == "ticker":
-        if offset_value != 0:
-            invalid_controls.append("offset")
-        if limit_per_bucket_value is not None:
-            invalid_controls.append("limit_per_bucket")
-        if str(news_type) != "news":
-            invalid_controls.append("news_type")
-    elif view_key == "market":
-        if symbol not in (None, ""):
-            invalid_controls.append("symbol")
-        if offset_value != 0:
-            invalid_controls.append("offset")
-        if limit_per_bucket_value is not None:
-            invalid_controls.append("limit_per_bucket")
-    else:
-        if int(page) != 1:
-            invalid_controls.append("page")
-        if str(news_type) != "news":
-            invalid_controls.append("news_type")
+    invalid_controls = _news_incompatible_controls(
+        view=view_key,
+        symbol=symbol,
+        offset=offset_value,
+        limit_per_bucket=limit_per_bucket_value,
+        news_type=str(news_type),
+        page=int(page),
+    )
     if invalid_controls:
         valid_by_view = {
             "ticker": ["symbol", "limit", "page", "source", "detail"],

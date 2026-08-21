@@ -44,6 +44,7 @@ def test_contract_inventory_assigns_expected_owners() -> None:
     assert matrix["strategy_backtest"]["cost_model"] == "evaluation"
     assert matrix["strategy_backtest"]["spread_bps"] == "evaluation"
     assert matrix["forecast_optimize_hints"]["timeframes"] == "data_preparation"
+    assert matrix["forecast_optimize_hints"]["lookback"] == "data_preparation"
 
 
 def test_data_preparation_detects_feature_inputs_and_future_covariates() -> None:

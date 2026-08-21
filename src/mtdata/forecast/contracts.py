@@ -97,6 +97,7 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
         "as_of": "evaluation",
         "start": "data_preparation",
         "end": "data_preparation",
+        "lookback": "data_preparation",
         "steps": "evaluation",
         "spacing": "evaluation",
         "population": "evaluation",

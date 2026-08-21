@@ -158,7 +158,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("comment_visible_length"), len("audit short"))
         self.assertFalse(row.get("comment_may_be_truncated"))
 
-    def test_trading_open_compact_omits_comment_metadata(self):
+    def test_trading_open_compact_keeps_comment_without_metadata(self):
         Pos = namedtuple(
             "Pos",
             [
@@ -188,7 +188,7 @@ class TestMergedTools(unittest.TestCase):
         res = get_open(__cli_raw=True)
         row = res["items"][0]
 
-        self.assertNotIn("comment", row)
+        self.assertEqual(row["comment"], "audit short")
         self.assertNotIn("comment_max_length", row)
         self.assertNotIn("comment_visible_length", row)
         self.assertNotIn("comment_may_be_truncated", row)
