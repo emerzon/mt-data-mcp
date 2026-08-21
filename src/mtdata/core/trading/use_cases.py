@@ -645,7 +645,13 @@ def _annotate_idempotency_scope(
     if key is not None:
         result.setdefault("idempotency_key", key)
         result.setdefault("idempotency_scope", getattr(store, "scope", "unknown"))
-        result.setdefault("idempotency_durable", bool(getattr(store, "durable", False)))
+        if result.get("dry_run") or result.get("no_action"):
+            result["idempotency_durable"] = False
+            result["idempotency_applies"] = "live_only"
+        else:
+            result.setdefault(
+                "idempotency_durable", bool(getattr(store, "durable", False))
+            )
     return result
 
 
@@ -2298,7 +2304,7 @@ def run_trade_place(  # noqa: C901
                     order_type=order_type_norm,
                     pending=is_pending,
                 )
-        if bool(request.require_sl_tp) and not is_pending:
+        if bool(request.require_sl_tp):
             missing_protection: List[str] = []
             if request.stop_loss in (None, 0):
                 missing_protection.append("stop_loss")
@@ -2308,21 +2314,23 @@ def run_trade_place(  # noqa: C901
                 if bool(request.dry_run):
                     dry_run_missing_protection = list(missing_protection)
                 else:
-                    prevalidation_error = prevalidate_trade_place_market_input(
-                        symbol_norm,
-                        request.volume,
-                    )
-                    if prevalidation_error is not None:
-                        return _finish(
-                            prevalidation_error,
-                            order_type=order_type_norm,
-                            pending=is_pending,
+                    if not is_pending:
+                        prevalidation_error = prevalidate_trade_place_market_input(
+                            symbol_norm,
+                            request.volume,
                         )
+                        if prevalidation_error is not None:
+                            return _finish(
+                                prevalidation_error,
+                                order_type=order_type_norm,
+                                pending=is_pending,
+                            )
+                    order_kind = "pending order" if is_pending else "position"
                     return _finish(
                         {
                             "error": (
-                                "require_sl_tp=True requires both stop_loss and take_profit for market orders. "
-                                "Refusing to place an unprotected position."
+                                "require_sl_tp=True requires both stop_loss and take_profit. "
+                                f"Refusing to place an unprotected {order_kind}."
                             ),
                             "require_sl_tp": True,
                             "missing": missing_protection,
@@ -3215,6 +3223,11 @@ def _run_trade_close_once(  # noqa: C901
                     "Pass --ticket <ticket_number> for a specific target object",
                     "Pass --confirm-close-all true only after reviewing exposure",
                 ],
+                "remediation": (
+                    "Pass --dry-run true to preview matching objects, "
+                    "--ticket for a specific target, or --confirm-close-all true "
+                    "only after reviewing exposure."
+                ),
             },
             scope="bulk_confirmation",
         )
@@ -3239,6 +3252,10 @@ def _run_trade_close_once(  # noqa: C901
                     "Use --magic <number> to preview one strategy's matching objects",
                     "Pass --close-all true to preview the selected target account-wide",
                 ],
+                "remediation": (
+                    "Specify --ticket, --symbol, --magic, or --close-all true, "
+                    "then retry trade_close."
+                ),
             },
             scope="request",
         )
@@ -6455,6 +6472,12 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         return _finish({"error": "lookback must be an integer"})
     if lookback < 2:
         return _finish({"error": "lookback must be at least 2"})
+    try:
+        horizon_bars = int(request.horizon_bars)
+    except (TypeError, ValueError):
+        return _finish({"error": "horizon_bars must be an integer"})
+    if horizon_bars < 1:
+        return _finish({"error": "horizon_bars must be at least 1"})
     history_policy = (
         "includes_current_forming_bar"
         if request.include_incomplete
@@ -6522,10 +6545,19 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             "confidence": round(float(confidence_value), 6),
             "transform": transform_value,
             "timeframe": timeframe_value,
-            "horizon_bars": 1,
-            "holding_period": f"1 {timeframe_value} bar",
+            "horizon_bars": int(horizon_bars),
+            "holding_period": (
+                f"1 {timeframe_value} bar"
+                if horizon_bars == 1
+                else f"{horizon_bars} {timeframe_value} bars"
+            ),
             "var_interpretation": (
-                f"One {timeframe_value} bar loss on the current position snapshot."
+                f"{horizon_bars} {timeframe_value} bar loss on the current position snapshot."
+                if horizon_bars == 1
+                else (
+                    f"{horizon_bars} {timeframe_value} bar overlapping holding-period "
+                    "loss on the current position snapshot."
+                )
             ),
             "lookback": int(lookback),
             "history_policy": history_policy,
@@ -6862,6 +6894,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     if transform_value == "log_return":
         pnl_returns = np.expm1(pnl_returns)
     portfolio_pnl = pnl_returns.mul(exposure_vector, axis=1).sum(axis=1)
+    if horizon_bars > 1:
+        portfolio_pnl = portfolio_pnl.rolling(window=horizon_bars).sum().dropna()
     pnl_values = [
         float(value) for value in portfolio_pnl.tolist() if math.isfinite(float(value))
     ]
@@ -6948,10 +6982,19 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         ),
         "transform": transform_value,
         "timeframe": timeframe_value,
-        "horizon_bars": 1,
-        "holding_period": f"1 {timeframe_value} bar",
+        "horizon_bars": int(horizon_bars),
+        "holding_period": (
+            f"1 {timeframe_value} bar"
+            if horizon_bars == 1
+            else f"{horizon_bars} {timeframe_value} bars"
+        ),
         "var_interpretation": (
             f"One {timeframe_value} bar loss on the current position snapshot."
+            if horizon_bars == 1
+            else (
+                f"{horizon_bars} {timeframe_value} bar overlapping holding-period "
+                "loss on the current position snapshot."
+            )
         ),
         "lookback": int(lookback),
         "history_policy": history_policy,

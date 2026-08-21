@@ -522,6 +522,7 @@ class TestTradeClose:
         assert out["error_code"] == "close_scope_required"
         assert "--close-all true" in out["error"]
         assert "--ticket <ticket>" in out["error"]
+        assert out.get("remediation")
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 

@@ -377,6 +377,17 @@ def _prices_from_percent(
     return None, None
 
 
+def _idea_barrier_percents(vol_payload: Any) -> tuple[float, float, str]:
+    horizon_vol = None
+    if isinstance(vol_payload, dict):
+        horizon_vol = _as_float(vol_payload.get("volatility_horizon"))
+    if horizon_vol is None or horizon_vol <= 0:
+        return DEFAULT_TAKE_PROFIT_PCT, DEFAULT_STOP_LOSS_PCT, "fixed_default"
+    take_profit = min(max(horizon_vol * 100.0 * 2.0, 0.05), 5.0)
+    stop_loss = min(max(horizon_vol * 100.0 * 3.0, 0.05), 5.0)
+    return take_profit, stop_loss, "volatility_scaled"
+
+
 def _barrier_prices(payload: Any, *, entry: Optional[float], direction: str) -> tuple[Optional[float], Optional[float]]:
     if not isinstance(payload, dict):
         return None, None
@@ -737,6 +748,7 @@ def _compact_barriers(payload: Any, *, take_profit: Optional[float], stop_loss: 
             "expected_value",
             "tp_pct",
             "sl_pct",
+            "barrier_source",
             "reference_price",
             "data_as_of",
             "data_window",
@@ -855,40 +867,24 @@ def _default_call_section(name: str, kwargs: Dict[str, Any]) -> Any:
             **({"end": kwargs["as_of"]} if kwargs.get("as_of") else {}),
         )
     if name == "forecast":
-        if kwargs.get("requested_direction") == "auto":
-            from ...forecast.requests import ForecastConformalIntervalsRequest
-            from ..forecast import forecast_conformal_intervals
+        from ...forecast.requests import ForecastConformalIntervalsRequest
+        from ..forecast import forecast_conformal_intervals
 
-            horizon = int(kwargs["horizon"])
-            return call_tool_sync_structured(
-                forecast_conformal_intervals,
-                request=ForecastConformalIntervalsRequest(
-                    symbol=kwargs["symbol"],
-                    timeframe=kwargs["timeframe"],
-                    horizon=horizon,
-                    method="theta",
-                    steps=50,
-                    spacing=max(20, horizon),
-                    ci_alpha=0.05,
-                    as_of=kwargs.get("as_of"),
-                    detail="compact",
-                ),
-            )
-
-        from ..forecast import forecast_generate
-
-        payload = {
-            "symbol": kwargs["symbol"],
-            "timeframe": kwargs["timeframe"],
-            "horizon": kwargs["horizon"],
-            "library": "native",
-            "method": "theta",
-            "quantity": "price",
-            "detail": "compact",
-        }
-        if kwargs.get("as_of"):
-            payload["as_of"] = kwargs["as_of"]
-        return call_tool_sync_structured(forecast_generate, **payload)
+        horizon = int(kwargs["horizon"])
+        return call_tool_sync_structured(
+            forecast_conformal_intervals,
+            request=ForecastConformalIntervalsRequest(
+                symbol=kwargs["symbol"],
+                timeframe=kwargs["timeframe"],
+                horizon=horizon,
+                method="theta",
+                steps=50,
+                spacing=max(20, horizon),
+                ci_alpha=0.05,
+                as_of=kwargs.get("as_of"),
+                detail="compact",
+            ),
+        )
     if name == "volatility":
         from ..forecast import forecast_volatility_estimate
 
@@ -915,8 +911,12 @@ def _default_call_section(name: str, kwargs: Dict[str, Any]) -> Any:
             "barrier": {
                 "kind": "tp_sl",
                 "unit": "pct",
-                "take_profit": DEFAULT_TAKE_PROFIT_PCT,
-                "stop_loss": DEFAULT_STOP_LOSS_PCT,
+                "take_profit": float(
+                    kwargs.get("take_profit_pct", DEFAULT_TAKE_PROFIT_PCT)
+                ),
+                "stop_loss": float(
+                    kwargs.get("stop_loss_pct", DEFAULT_STOP_LOSS_PCT)
+                ),
             },
             "params": {"n_sims": 500},
         }
@@ -1141,10 +1141,18 @@ def run_trade_idea_compose(  # noqa: C901
     take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
     snaps: List[Dict[str, Any]] = []
+    take_profit_pct, stop_loss_pct, barrier_source = _idea_barrier_percents(
+        sections.get("volatility")
+    )
     if direction in {"long", "short"} and "barriers" in planned:
         barriers_payload = _run_section(
             "barriers",
-            {**common, "direction": direction},
+            {
+                **common,
+                "direction": direction,
+                "take_profit_pct": take_profit_pct,
+                "stop_loss_pct": stop_loss_pct,
+            },
         )
         if _section_failed(barriers_payload):
             gates["barriers"] = _gate("fail", "barrier probabilities unavailable")
@@ -1161,8 +1169,8 @@ def run_trade_idea_compose(  # noqa: C901
                 take_profit, stop_loss = _prices_from_percent(
                     entry=entry_for_barriers or 0.0,
                     direction=direction,
-                    take_profit_pct=DEFAULT_TAKE_PROFIT_PCT,
-                    stop_loss_pct=DEFAULT_STOP_LOSS_PCT,
+                    take_profit_pct=take_profit_pct,
+                    stop_loss_pct=stop_loss_pct,
                 ) if entry_for_barriers else (None, None)
             if entry_for_barriers is not None and structure:
                 if take_profit is not None:
@@ -1330,6 +1338,9 @@ def run_trade_idea_compose(  # noqa: C901
         take_profit=take_profit,
         stop_loss=stop_loss,
     )
+    barriers_compact["barrier_source"] = barrier_source
+    barriers_compact.setdefault("tp_pct", take_profit_pct)
+    barriers_compact.setdefault("sl_pct", stop_loss_pct)
     if snaps:
         barriers_compact["snapped_to_structure"] = snaps
     lineage = {

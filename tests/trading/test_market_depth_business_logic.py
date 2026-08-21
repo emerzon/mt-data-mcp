@@ -1346,3 +1346,50 @@ def test_market_ticker_suggests_live_extended_session_sibling() -> None:
         "A live extended-session contract is available: call market_ticker for "
         "AAPL-24, then use that exact symbol for current quotes."
     )
+
+
+def test_market_ticker_stale_success_includes_related_live_symbols() -> None:
+    related_live_symbols = [
+        {
+            "symbol": "AAPL-24",
+            "session_type": "extended_24h",
+            "quote_tool": "market_ticker",
+        }
+    ]
+    tick = SimpleNamespace(
+        bid=100.0,
+        ask=100.1,
+        last=100.05,
+        volume=1,
+        time=1_700_000_000,
+    )
+    with (
+        patch("mtdata.core.market_depth.mt5") as mt5,
+        patch(
+            "mtdata.core.market_depth.find_live_extended_session_symbols",
+            return_value=related_live_symbols,
+        ),
+        patch(
+            "mtdata.core.market_depth.enforce_quote_execution_readiness",
+            side_effect=lambda payload, **kwargs: payload.update(
+                {
+                    "usable_for_live_trading": False,
+                    "data_stale": True,
+                }
+            ),
+        ),
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_ticker("AAPL")
+
+    assert out["success"] is True
+    assert out["related_live_symbols"] == related_live_symbols

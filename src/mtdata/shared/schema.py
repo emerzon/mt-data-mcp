@@ -148,8 +148,9 @@ PARAM_HINTS = {
     "month": "Month filter (1-12 or Jan..Dec).",
     "time_range": "Time-of-day filter 'HH:MM-HH:MM' (start inclusive, end exclusive; wraps midnight).",
     "rank_by": (
-        "Ranking to compute for market scans: abs_price_change_pct, "
-        "price_change_pct, tick_volume, rsi, or spread_pct."
+        "Ranking to compute for market scans. Default abs_price_change_pct uses "
+        "completed-bar closes, not the live bid/ask; use abs_live_price_change_pct "
+        "to rank by executable quotes."
     ),
     "return_mode": "Return calculation mode: pct or log.",
     "ohlcv": "OHLCV column selector (e.g. 'close', 'high,low').",
@@ -211,6 +212,10 @@ PARAM_HINTS = {
     "threshold": "Change-point probability threshold (0-1).",
     "value_col": "Column name to use for value-based operations.",
     "lookback": "Historical bars to use.",
+    "horizon_bars": (
+        "Holding period in bars of the requested timeframe. Default 1 is one-bar "
+        "VaR; pass 5 to match portfolio_risk_decompose."
+    ),
     "min_bars": "Exclude grouped rows with fewer than this many bars.",
     "last_n_bars": "Restrict pattern checks to the most recent N bars.",
     "spacing_pct": "Spacing as percent of duration.",
@@ -241,15 +246,15 @@ PARAM_HINTS = {
     "stop_loss": "Stop-loss price.",
     "take_profit": "Take-profit price.",
     "stop_limit_price": "Limit price activated after a stop-limit order's trigger price.",
-    "require_sl_tp": "For market orders, require both stop_loss and take_profit and fail if protection cannot be attached. Defaults to true.",
-    "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to true.",
+    "require_sl_tp": "Require both stop_loss and take_profit for market and pending orders and fail if protection cannot be attached. Defaults to true.",
+    "auto_close_on_sl_tp_fail": "Always-on policy: if a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Not configurable.",
+    "idempotency_key": "Optional durable SQLite dedupe key for retrying the same live request. Dry-run previews are not stored; completed live outcomes persist across processes and restarts for the configured TTL (24 hours by default).",
     "ticket": "Ticket/order ID.",
     "expiration": (
         "Expiration time/date. Trade-order YYYY-MM-DD values last through 23:59:59 "
         "in the client calendar; also accepts a dateparser string, UTC epoch seconds, "
         "or GTC. Option tools accept YYYY-MM-DD."
     ),
-    "idempotency_key": "Optional durable SQLite dedupe key for retrying the same request. Completed outcomes persist across processes and restarts for the configured TTL (24 hours by default).",
     "dry_run": "Preview the action without applying changes.",
     "check_only": "Return sample sufficiency/status checks without running the full analysis.",
     "pnl_filter": "Filter positions by profit state: all, profit, or loss.",
@@ -257,7 +262,11 @@ PARAM_HINTS = {
     "column_style": "Trade-history column set: compact, standard, or full.",
     "breakdown_limit": "Maximum rows per journal breakdown table.",
     "min_sample": "Recommended minimum realized exit deals for journal statistics.",
-    "sizing": "Position-sizing specification for fixed-fraction or Kelly sizing.",
+    "sizing": (
+        "Position-sizing specification for fixed-fraction or Kelly sizing. "
+        "Kelly avg_win and avg_loss are stake-normalized R-multiples, not "
+        "account-currency averages from trade_journal_analyze."
+    ),
     "strict_risk": "Block positive suggested volume when broker minimum volume would exceed requested risk.",
     "include_pending": "Include pending orders in exposure/risk calculations.",
     "entry": "Proposed entry price; when omitted, live quote is used where supported.",

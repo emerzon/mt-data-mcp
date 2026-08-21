@@ -2323,6 +2323,7 @@ def _resolve_close_dry_run_target(
             "ticket": requested_ticket,
             "checked_scopes": ["positions"],
             "suggestion": "Use trade_get_open to find an active position ticket.",
+            "remediation": "Use trade_get_open to find an active position ticket.",
         }
 
     pending_order, resolved_ticket, pending_resolution = _resolve_pending_order(
@@ -2371,6 +2372,10 @@ def _resolve_close_dry_run_target(
         "ticket": requested_ticket,
         "checked_scopes": ["pending_orders"],
         "suggestion": (
+            "Use trade_get_pending to find an active pending-order ticket "
+            "before retrying trade_close with target=pending."
+        ),
+        "remediation": (
             "Use trade_get_pending to find an active pending-order ticket "
             "before retrying trade_close with target=pending."
         ),

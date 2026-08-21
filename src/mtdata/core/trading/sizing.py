@@ -15,6 +15,7 @@ from ...utils.coercion import coerce_finite_float as _finite_float
 
 DEFAULT_KELLY_FRACTION_MULTIPLIER = 0.5
 DEFAULT_KELLY_MAX_RISK_PCT = 2.0
+MAX_KELLY_R_MULTIPLE = 10.0
 
 
 def _floor_volume_steps(raw: float, step: float) -> int:
@@ -83,8 +84,18 @@ def compute_kelly_sizing_context(
         errors.append("kelly_win_rate must be finite and between 0 and 1.")
     if avg_win_f is None or avg_win_f <= 0:
         errors.append("kelly_avg_win must be positive and finite.")
+    elif avg_win_f > MAX_KELLY_R_MULTIPLE:
+        errors.append(
+            "kelly_avg_win must be a stake-normalized R-multiple "
+            f"(<= {MAX_KELLY_R_MULTIPLE:g}), not account-currency PnL."
+        )
     if avg_loss_f is None or avg_loss_f == 0:
         errors.append("kelly_avg_loss must be non-zero and finite.")
+    elif abs(avg_loss_f) > MAX_KELLY_R_MULTIPLE:
+        errors.append(
+            "kelly_avg_loss must be a stake-normalized R-multiple "
+            f"(<= {MAX_KELLY_R_MULTIPLE:g}), not account-currency PnL."
+        )
     if multiplier_f is None or multiplier_f < 0:
         errors.append("kelly_fraction_multiplier must be non-negative and finite.")
     if max_risk_pct_f is None or max_risk_pct_f <= 0:

@@ -3,8 +3,14 @@
 import math
 
 import pytest
+from pydantic import ValidationError
 
-from src.mtdata.core.trading.sizing import compute_risk_based_volume
+from src.mtdata.core.trading.requests import KellySizing
+from src.mtdata.core.trading.sizing import (
+    MAX_KELLY_R_MULTIPLE,
+    compute_kelly_sizing_context,
+    compute_risk_based_volume,
+)
 
 
 def _base_params(**overrides):
@@ -226,6 +232,32 @@ def test_exact_fx_step_volume_is_not_lost_to_float_underflow():
 # ---------------------------------------------------------------------------
 # Kelly sizing
 # ---------------------------------------------------------------------------
+
+def test_kelly_rejects_currency_like_r_multiples():
+    risk, meta = compute_kelly_sizing_context(
+        win_rate=0.55,
+        avg_win=100,
+        avg_loss=50,
+    )
+    assert risk is None
+    assert "R-multiple" in meta["error"]
+
+    with pytest.raises(ValidationError, match="stake-normalized"):
+        KellySizing(win_rate=0.55, avg_win=100, avg_loss=50)
+
+
+def test_kelly_accepts_stake_normalized_r_multiples():
+    risk, meta = compute_kelly_sizing_context(
+        win_rate=0.55,
+        avg_win=1.2,
+        avg_loss=1.0,
+    )
+    assert risk is not None
+    assert meta["avg_win_return"] == 1.2
+    assert meta["avg_loss_return"] == 1.0
+    KellySizing(win_rate=0.55, avg_win=1.2, avg_loss=1.0)
+    assert MAX_KELLY_R_MULTIPLE == 10.0
+
 
 def test_kelly_sizing_uses_default_cap_when_no_desired_risk_pct():
     params = _base_params(

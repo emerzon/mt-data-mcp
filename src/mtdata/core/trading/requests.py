@@ -3,11 +3,19 @@ from __future__ import annotations
 import math
 from typing import Annotated, Any, Dict, Literal, Optional, Union
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ...shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_symbol
 from ...utils.barriers import normalize_trade_direction_alias
 from . import validation
+from .sizing import MAX_KELLY_R_MULTIPLE
 from .time import ExpirationValue
 from .validation import OrderTypeLiteral
 
@@ -37,8 +45,20 @@ class KellySizing(BaseModel):
 
     method: Literal["kelly"] = "kelly"
     win_rate: float = Field(ge=0.0, le=1.0, description="Win probability as a fraction.")
-    avg_win: float = Field(gt=0.0, description="Average stake-normalized winning return.")
-    avg_loss: float = Field(gt=0.0, description="Average stake-normalized losing return magnitude.")
+    avg_win: float = Field(
+        gt=0.0,
+        description=(
+            "Average stake-normalized winning return (R-multiple), not "
+            "account-currency PnL from trade_journal_analyze."
+        ),
+    )
+    avg_loss: float = Field(
+        gt=0.0,
+        description=(
+            "Average stake-normalized losing return magnitude (R-multiple), not "
+            "account-currency PnL from trade_journal_analyze."
+        ),
+    )
     fraction_multiplier: float = Field(0.5, ge=0.0, description="Multiplier applied to raw Kelly.")
     max_risk_pct: float = Field(
         2.0,
@@ -49,6 +69,17 @@ class KellySizing(BaseModel):
             "must not exceed 100% of equity."
         ),
     )
+
+    @model_validator(mode="after")
+    def _reject_currency_like_returns(self) -> "KellySizing":
+        if self.avg_win > MAX_KELLY_R_MULTIPLE or self.avg_loss > MAX_KELLY_R_MULTIPLE:
+            raise ValueError(
+                "Kelly avg_win and avg_loss must be stake-normalized R-multiples "
+                f"(each <= {MAX_KELLY_R_MULTIPLE:g}), not account-currency PnL. "
+                "trade_journal_analyze summary.avg_win/avg_loss are currency "
+                "amounts and cannot be copied here. Example: avg_win=1.2,avg_loss=1.0."
+            )
+        return self
 
 
 RiskSizing = Annotated[Union[FixedFractionSizing, KellySizing], Field(discriminator="method")]
@@ -178,18 +209,20 @@ class TradePlaceRequest(BaseModel):
     require_sl_tp: bool = Field(
         default=True,
         description=(
-            "Require both stop_loss and take_profit for market orders and fail "
-            "if protection cannot be attached. Market orders using this guarantee "
-            "uses the internal unprotected-position recovery fail-safe."
+            "Require both stop_loss and take_profit for market and pending "
+            "orders and fail if protection cannot be attached. Filled market "
+            "orders that cannot attach protection always use the internal "
+            "unprotected-position recovery fail-safe."
         ),
     )
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
             "Optional durable dedupe key with a configurable 24-hour TTL. "
-            "Reusing the same key with the same payload replays the prior "
-            "result instead of sending another order. The SQLite store is shared "
-            "across processes and restarts; this is not broker-side idempotency."
+            "Reusing the same key with the same live payload replays the prior "
+            "result instead of sending another order. Dry-run previews are not "
+            "stored. The SQLite store is shared across processes and restarts; "
+            "this is not broker-side idempotency."
         ),
     )
 
@@ -202,6 +235,7 @@ class TradePlaceRequest(BaseModel):
 
     @property
     def auto_close_on_sl_tp_fail(self) -> bool:
+        """Always-on unprotected-fill recovery; not a request field."""
         return True
 
 
@@ -465,7 +499,12 @@ class TradeRiskAnalyzeRequest(BaseModel):
     )
     sizing: Optional[RiskSizing] = Field(
         default=None,
-        description="Optional fixed-fraction or Kelly position-sizing inputs.",
+        description=(
+            "Optional fixed-fraction or Kelly position-sizing inputs. Kelly "
+            "avg_win and avg_loss are stake-normalized R-multiples "
+            f"(each <= {MAX_KELLY_R_MULTIPLE:g}), not account-currency PnL "
+            "from trade_journal_analyze."
+        ),
     )
     strict_risk: bool = Field(
         default=True,
@@ -556,9 +595,18 @@ class TradeVarCvarRequest(BaseModel):
     )
     timeframe: TimeframeLiteral = Field(
         default="H1",
-        description="Return interval and one-bar VaR/CVaR holding period.",
+        description="Return interval and VaR/CVaR holding-period bar size.",
     )
     lookback: int = Field(500, ge=2)
+    horizon_bars: int = Field(
+        1,
+        ge=1,
+        le=60,
+        description=(
+            "Holding period in bars of the requested timeframe. Default 1 is a "
+            "one-bar VaR. Pass 5 to match portfolio_risk_decompose's 5-bar horizon."
+        ),
+    )
     include_incomplete: bool = Field(
         default=False,
         description=(

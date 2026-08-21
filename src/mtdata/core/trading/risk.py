@@ -65,8 +65,9 @@ def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
     By default this performs account-level tail-risk analysis over the full
     current portfolio. Pass `symbol` to scope the calculation to open positions
     in one instrument; the response identifies that narrower scope.
-    The risk horizon is one bar of the requested timeframe; no multi-bar
-    scaling is applied.
+    The risk horizon defaults to one bar of the requested timeframe.
+    Pass ``horizon_bars`` to request a multi-bar overlapping holding period
+    comparable with ``portfolio_risk_decompose``.
     For stop-loss exposure and new-trade lot sizing rather than statistical
     return-distribution risk, use `trade_risk_analyze`. For a lightweight
     execution snapshot that includes account, quote, open positions, and pending

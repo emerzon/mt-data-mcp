@@ -5,6 +5,10 @@ from typing import Optional
 
 from .symbols import FOREX_CURRENCY_CODES
 
+UNIT_PERCENT = "percent (1.0 = 1%)"
+UNIT_BROKER_POINTS = "broker_points"
+UNIT_PIPS = "pips"
+
 
 def _increment_decimal_places(increment: float, *, maximum: int = 15) -> int:
     """Return the practical decimal precision encoded by an increment."""

@@ -206,6 +206,49 @@ def test_run_trade_place_rejects_idempotency_key_reuse_for_different_payload():
     place_market_order.assert_called_once()
 
 
+def test_run_trade_place_dry_run_does_not_claim_durable_idempotency(tmp_path):
+    database = tmp_path / "idempotency.sqlite3"
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        require_sl_tp=False,
+        idempotency_key="dry-run-1",
+        dry_run=True,
+    )
+    kwargs = {
+        "normalize_order_type_input": lambda value: ("BUY", None),
+        "normalize_pending_expiration": lambda value: (value, False),
+        "prevalidate_trade_place_market_input": lambda symbol, volume: None,
+        "place_market_order": MagicMock(),
+        "place_pending_order": MagicMock(),
+        "close_positions": lambda **values: {"closed_count": 1},
+        "safe_int_ticket": lambda value: value,
+        "build_dry_run_preview": lambda **values: {
+            "bid": 1.1,
+            "ask": 1.1002,
+            "estimated_fill_price": 1.1002,
+        },
+    }
+
+    first = run_trade_place(
+        request,
+        idempotency_store=SQLiteIdempotencyStore(database),
+        **kwargs,
+    )
+    second = run_trade_place(
+        request,
+        idempotency_store=SQLiteIdempotencyStore(database),
+        **kwargs,
+    )
+
+    assert first["dry_run"] is True
+    assert first["idempotency_durable"] is False
+    assert first["idempotency_applies"] == "live_only"
+    assert second.get("duplicate") is not True
+    kwargs["place_market_order"].assert_not_called()
+
+
 def test_run_trade_modify_replays_duplicate_result_without_resending():
     store = IdempotencyStore()
     modify_position = MagicMock(return_value={"success": True, "ticket": 123})

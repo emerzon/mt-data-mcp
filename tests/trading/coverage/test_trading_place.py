@@ -433,6 +433,7 @@ class TestTradePlace:
             volume=0.01,
             order_type="BUY_LIMIT",
             price=1.09,
+            require_sl_tp=False,
             dry_run=False,
         )
         mock_pending.assert_called_once()

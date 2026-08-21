@@ -147,6 +147,59 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["positions"][0]["signed_notional"] == 100.0
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
     assert out["mark_freshness_status"] == "stale_or_unverified"
+
+
+def test_run_trade_var_cvar_calculate_supports_multi_bar_horizon() -> None:
+    position = SimpleNamespace(
+        ticket=11,
+        symbol="EURUSD",
+        type=0,
+        volume=1.0,
+        price_current=100.0,
+        price_open=99.0,
+        profit=1.0,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: _symbol_info(),
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            bid=99.0,
+            ask=101.0,
+            time=1,
+        ),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: [
+            {"time": 1, "close": 100.0},
+            {"time": 2, "close": 95.0},
+            {"time": 3, "close": 105.0},
+            {"time": 4, "close": 90.0},
+            {"time": 5, "close": 110.0},
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(
+            timeframe="H1",
+            lookback=5,
+            horizon_bars=2,
+            confidence=0.75,
+            method="historical",
+            transform="pct",
+            min_observations=3,
+            detail="compact",
+        ),
+        gateway=gateway,
+    )
+
+    assert out["success"] is True
+    assert out["summary"]["horizon_bars"] == 2
+    assert out["summary"]["holding_period"] == "2 H1 bars"
+    assert out["summary"]["observations"] == 3
     assert out["usable_for_live_trading"] is False
     assert out["data_stale"] is True
     assert out["valuation_time"] == "1970-01-01T00:00:01Z"

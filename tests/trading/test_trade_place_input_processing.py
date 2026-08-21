@@ -769,6 +769,8 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
             volume=0.03,
             order_type="BUY_LIMIT",
             price=64500,
+            stop_loss=64000,
+            take_profit=65500,
             expiration="2026-08-20",
             dry_run=True,
             __cli_raw=True,
@@ -810,6 +812,8 @@ def test_trade_place_stop_limit_preview_exposes_both_prices() -> None:
             order_type="BUY_STOP_LIMIT",
             price=70100,
             stop_limit_price=70050,
+            stop_loss=69000,
+            take_profit=72000,
             dry_run=True,
             __cli_raw=True,
         )
@@ -842,6 +846,8 @@ def test_trade_place_pending_preview_fails_closed_for_invalid_price(price) -> No
             volume=0.01,
             order_type="BUY_LIMIT",
             price=price,
+            stop_loss=1.08,
+            take_profit=1.12,
             dry_run=True,
             __cli_raw=True,
         )
@@ -864,6 +870,8 @@ def test_trade_place_stop_limit_requires_second_price(order_type) -> None:
         volume=0.01,
         order_type=order_type,
         price=1.101 if order_type.startswith("BUY") else 1.099,
+        stop_loss=1.08 if order_type.startswith("BUY") else 1.12,
+        take_profit=1.12 if order_type.startswith("BUY") else 1.08,
         dry_run=True,
         __cli_raw=True,
     )
@@ -888,6 +896,8 @@ def test_trade_place_pending_preview_rejects_invalid_expiration(
             volume=0.01,
             order_type="BUY_LIMIT",
             price=1.09,
+            stop_loss=1.08,
+            take_profit=1.12,
             expiration=expiration,
             dry_run=True,
             __cli_raw=True,
@@ -910,6 +920,8 @@ def test_trade_place_pending_preview_rejects_past_expiration_with_context() -> N
             volume=0.01,
             order_type="BUY_LIMIT",
             price=1.09,
+            stop_loss=1.08,
+            take_profit=1.12,
             expiration="2020-01-01T00:00:00+00:00",
             dry_run=True,
             __cli_raw=True,
@@ -1234,3 +1246,27 @@ def test_trade_modify_missing_ticket_reports_both_checked_scopes() -> None:
     assert out.get("ticket") == 123
     assert out.get("checked_scopes") == ["positions", "pending_orders"]
     assert "trade_get_open" in str(out.get("suggestion"))
+    assert out.get("remediation")
+
+
+def test_trade_place_pending_without_sl_tp_is_blocked_by_default() -> None:
+    with patch("mtdata.core.trading._place_pending_order") as mock_pending, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={"bid": 1.17, "ask": 1.1702, "entry_price": 1.16},
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY_LIMIT",
+            price=1.16,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["preview_ok"] is False
+    assert out["error_code"] == "preview_blocked"
+    assert "missing_stop_loss" in out["blockers"]
+    assert "missing_take_profit" in out["blockers"]
+    assert out["require_sl_tp"] is True
+    mock_pending.assert_not_called()

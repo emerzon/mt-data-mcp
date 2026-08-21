@@ -9,7 +9,12 @@ from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
-from ...shared.market_units import forex_points_per_pip
+from ...shared.market_units import (
+    UNIT_BROKER_POINTS,
+    UNIT_PERCENT,
+    UNIT_PIPS,
+    forex_points_per_pip,
+)
 from ...utils.coercion import round_finite
 from ...utils.quote import compute_spread_metrics, resolve_quote_tick, tick_value
 from . import comments, common, time, validation
@@ -1213,14 +1218,14 @@ def build_trade_place_dry_run_preview(
     )
 
     out["units"] = {
-        "spread_points": "broker_point_count",
-        "spread_pips": "pip_count",
-        "sl_distance_points": "broker_point_count",
-        "sl_distance_pips": "pip_count",
-        "sl_distance_pct": "percent",
-        "tp_distance_points": "broker_point_count",
-        "tp_distance_pips": "pip_count",
-        "tp_distance_pct": "percent",
+        "spread_points": UNIT_BROKER_POINTS,
+        "spread_pips": UNIT_PIPS,
+        "sl_distance_points": UNIT_BROKER_POINTS,
+        "sl_distance_pips": UNIT_PIPS,
+        "sl_distance_pct": UNIT_PERCENT,
+        "tp_distance_points": UNIT_BROKER_POINTS,
+        "tp_distance_pips": UNIT_PIPS,
+        "tp_distance_pct": UNIT_PERCENT,
     }
 
     validation_error: Optional[Dict[str, Any]] = None

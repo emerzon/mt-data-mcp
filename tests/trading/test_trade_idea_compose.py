@@ -702,3 +702,76 @@ def test_trade_idea_compose_partial_failure_when_volatility_fails() -> None:
     assert idea["partial_failure"] is True
     assert "volatility" in idea["failed_sections"]
     assert idea["direction"] == "long"
+
+
+def test_trade_idea_forced_direction_uses_conformal_forecast_stack(monkeypatch) -> None:
+    conformal_requests: list[Any] = []
+
+    def fake_call_tool(tool, **kwargs):
+        name = tool.__name__
+        if name == "trade_session_context":
+            return _session()
+        if name == "forecast_conformal_intervals":
+            conformal_requests.append(kwargs["request"])
+            forecast = _forecast()
+            forecast.update(
+                {
+                    "interval_method": "rolling_residual_quantiles",
+                    "ci_alpha": 0.05,
+                    "ci_status": "available",
+                    "ci_available": True,
+                }
+            )
+            return forecast
+        if name == "forecast_generate":
+            raise AssertionError("forced direction must not use point forecast_generate")
+        if name == "forecast_volatility_estimate":
+            return _volatility()
+        if name == "forecast_barrier_prob":
+            return _barriers()
+        if name == "trade_risk_analyze":
+            return _sizing()
+        if name == "trade_place":
+            return _preview()
+        raise AssertionError(f"unexpected default section tool: {name}")
+
+    monkeypatch.setattr(ideas_module, "call_tool_sync_structured", fake_call_tool)
+
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD", direction="long")
+    )
+
+    assert len(conformal_requests) == 1
+    assert idea["forecast"]["ci_alpha"] == 0.05
+    assert idea["forecast"]["interval_method"] == "rolling_residual_quantiles"
+
+
+def test_trade_idea_barrier_widths_scale_from_horizon_volatility() -> None:
+    captured: Dict[str, Any] = {}
+
+    def call(name: str, kwargs: Dict[str, Any]) -> Any:
+        captured[name] = kwargs
+        if name == "barriers":
+            payload = _barriers()
+            payload["tp_pct"] = kwargs["take_profit_pct"]
+            payload["sl_pct"] = kwargs["stop_loss_pct"]
+            return payload
+        mapping = {
+            "session": _session(),
+            "forecast": _forecast(),
+            "volatility": _volatility(),
+            "sizing": _sizing(),
+            "preview": _preview(),
+        }
+        return mapping[name]
+
+    idea = run_trade_idea_compose(
+        TradeIdeaComposeRequest(symbol="EURUSD", direction="long"),
+        call_section=call,
+    )
+
+    assert captured["barriers"]["take_profit_pct"] == pytest.approx(0.42)
+    assert captured["barriers"]["stop_loss_pct"] == pytest.approx(0.63)
+    assert idea["barriers"]["barrier_source"] == "volatility_scaled"
+    assert idea["barriers"]["tp_pct"] == pytest.approx(0.42)
+    assert idea["barriers"]["sl_pct"] == pytest.approx(0.63)

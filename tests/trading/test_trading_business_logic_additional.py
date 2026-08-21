@@ -678,8 +678,8 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["quote_context"]["usable_for_live_trading"] is True
     assert result["quote_context"]["freshness_state"] == "live"
     assert result["quote_context"]["quote_timezone"] == "UTC"
-    assert result["units"]["sl_distance_points"] == "broker_point_count"
-    assert result["units"]["sl_distance_pips"] == "pip_count"
+    assert result["units"]["sl_distance_points"] == "broker_points"
+    assert result["units"]["sl_distance_pips"] == "pips"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 
