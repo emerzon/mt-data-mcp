@@ -137,6 +137,13 @@ When `rv_timeframe` differs from the requested forecast timeframe, target times
 are aligned to actual MT5 candle opens for the requested timeframe; `data_as_of`
 continues to identify the latest high-frequency model input.
 
+Horizon is measured in requested-timeframe bars after the last **completed**
+bar at the cutoff. An intra-bar `as_of` (for example 13:55 on an H4 chart)
+therefore forecasts the currently forming H4 candle as `horizon=1`, whether
+the estimator is EWMA on H4 closes or HAR-RV on M5 returns. Methods that
+cannot produce that common window fail instead of silently shifting the
+target.
+
 **When to use:** When you need the most accurate volatility forecasts and have access to intraday data.
 
 ---

@@ -13,6 +13,7 @@ from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
+    unknown_mapping_keys_error,
     unsupported_timeframe_seconds_error,
 )
 from ..utils.denoise import apply_denoise, effective_denoise_base_col
@@ -239,7 +240,9 @@ def get_volatility_methods_data() -> Dict[str, Any]:
         "available": True,
         "requires": [],
         "description": "Theta method applied to the volatility proxy.",
-        "params": [],
+        "params": [
+            {"name": "alpha", "type": "float", "default": 0.2, "description": "SES smoothing factor blended with the Theta trend."},
+        ],
     })
 
     methods.append({
@@ -257,6 +260,19 @@ def get_volatility_methods_data() -> Dict[str, Any]:
     })
 
     return {"methods": methods}
+
+
+def _volatility_allowed_param_keys(method: str) -> set[str]:
+    method_l = str(method or "").strip().lower()
+    for item in get_volatility_methods_data().get("methods") or []:
+        if str(item.get("method") or "").strip().lower() != method_l:
+            continue
+        return {
+            str(param.get("name"))
+            for param in (item.get("params") or [])
+            if str(param.get("name") or "").strip()
+        }
+    return set()
 
 
 def _forecast_method_supports(method: str) -> Dict[str, bool]:
@@ -620,6 +636,12 @@ def _volatility_input_context(
         if forecast_grid_anchor_epoch is not None
         else last_epoch
     )
+    grid_last_epoch = last_epoch
+    if (
+        observation_timeframe != str(timeframe)
+        and forecast_grid_anchor_epoch is not None
+    ):
+        grid_last_epoch = float(forecast_grid_anchor_epoch)
     observed_times = (
         df.get("time") if observation_timeframe == str(timeframe) else None
     )
@@ -630,7 +652,7 @@ def _volatility_input_context(
     )
     forecast_epochs = (
         _next_volatility_times_on_grid(
-            last_epoch,
+            grid_last_epoch,
             grid_anchor_epoch,
             tf_secs,
             max(1, int(horizon)),
@@ -1058,26 +1080,31 @@ def _requested_timeframe_grid_anchor(
         3,
         as_of=as_of,
         end=end,
-        timeframe=None,
+        timeframe=timeframe,
     )
     if fetch_error:
         return None, fetch_error
     if rates is None or len(rates) == 0:
         return None, f"No {timeframe} candles were available to resolve the forecast grid."
     try:
-        epochs = pd.to_numeric(pd.DataFrame(rates)["time"], errors="coerce")
+        frame = pd.DataFrame(rates)
+        epochs = pd.to_numeric(frame["time"], errors="coerce")
         epochs = epochs[np.isfinite(epochs)]
     except (KeyError, TypeError, ValueError):
         return None, f"Returned {timeframe} candles did not contain usable timestamps."
     if epochs.empty:
         return None, f"Returned {timeframe} candles did not contain usable timestamps."
-    not_after_input = epochs[epochs <= float(observed_last_epoch)]
-    reference = (
-        not_after_input.iloc[-1]
-        if not not_after_input.empty
-        else epochs.iloc[-1]
+    cutoff_epoch = float(observed_last_epoch)
+    close_epochs = epochs.map(
+        lambda epoch: bar_close_epoch(float(epoch), timeframe)
     )
-    return float(reference), None
+    completed = epochs[close_epochs <= cutoff_epoch]
+    if completed.empty:
+        return None, (
+            f"No completed {timeframe} candles were available at the "
+            "observation cutoff."
+        )
+    return float(completed.iloc[-1]), None
 
 
 def _drop_forming_live_bar(
@@ -1206,18 +1233,15 @@ def forecast_volatility(  # noqa: C901
         # Parse method params: accept dict, JSON string, or k=v pairs
         __stage = 'parse_params'
         p = parse_kv_or_json(params)
+        param_error = unknown_mapping_keys_error(
+            p,
+            _volatility_allowed_param_keys(method_l),
+            subject=f"{method_l} params",
+        )
+        if param_error is not None:
+            return param_error
 
         if method_l == "ewma":
-            allowed_ewma_params = {"halflife", "lambda_", "lookback"}
-            unknown_ewma_params = sorted(set(p) - allowed_ewma_params)
-            if unknown_ewma_params:
-                return {
-                    "error": (
-                        "Unknown EWMA parameter(s): "
-                        f"{', '.join(unknown_ewma_params)}. Use one of: "
-                        f"{', '.join(sorted(allowed_ewma_params))}."
-                    )
-                }
             try:
                 lookback_value = int(p.get("lookback", 1500))
             except (TypeError, ValueError):

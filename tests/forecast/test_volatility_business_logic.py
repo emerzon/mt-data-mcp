@@ -190,6 +190,75 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert "sqrt-time scaling" in full["volatility_interpretation"]["volatility_horizon_annualized"]
 
 
+def test_unknown_volatility_params_are_rejected_before_fetch(monkeypatch):
+    monkeypatch.setattr(
+        vol,
+        "_fetch_mt5_rates_guarded",
+        lambda *_args, **_kwargs: pytest.fail("unknown params must not fetch"),
+    )
+
+    rolling = vol.forecast_volatility(
+        "EURUSD", "H1", 4, method="rolling_std", params={"windwo": 10}
+    )
+    garch = vol.forecast_volatility(
+        "EURUSD", "H1", 3, method="garch", params={"fit_barz": 300}
+    )
+
+    assert rolling["error_code"] == "unknown_parameter"
+    assert rolling["unknown_keys"] == ["windwo"]
+    assert "window" in (rolling.get("suggestions") or {}).get("windwo", [])
+    assert garch["error_code"] == "unknown_parameter"
+    assert garch["unknown_keys"] == ["fit_barz"]
+
+
+def test_har_rv_and_ewma_share_completed_bar_horizon_window(monkeypatch):
+    h4_09 = datetime(2026, 8, 20, 9, 0, tzinfo=timezone.utc).timestamp()
+    h4_13 = datetime(2026, 8, 20, 13, 0, tzinfo=timezone.utc).timestamp()
+    m5_last = datetime(2026, 8, 20, 13, 50, tzinfo=timezone.utc).timestamp()
+    h4_rates = [
+        {"time": datetime(2026, 8, 20, 5, 0, tzinfo=timezone.utc).timestamp()},
+        {"time": h4_09},
+        {"time": h4_13},
+    ]
+    monkeypatch.setattr(
+        vol,
+        "_fetch_mt5_rates_guarded",
+        lambda *_args, **_kwargs: (h4_rates, None),
+    )
+
+    anchor, error = vol._requested_timeframe_grid_anchor(
+        "EURUSD",
+        object(),
+        timeframe="H4",
+        observed_last_epoch=m5_last,
+    )
+    assert error is None
+    assert anchor == h4_09
+
+    ewma = vol._volatility_input_context(
+        pd.DataFrame({"time": [h4_09 - 4 * 3600, h4_09]}),
+        symbol="EURUSD",
+        timeframe="H4",
+        observed_timeframe="H4",
+        returns_used=10,
+        live_window=False,
+        horizon=1,
+    )
+    har = vol._volatility_input_context(
+        pd.DataFrame({"time": [m5_last - 300, m5_last]}),
+        symbol="EURUSD",
+        timeframe="H4",
+        observed_timeframe="M5",
+        returns_used=10,
+        live_window=False,
+        horizon=1,
+        forecast_grid_anchor_epoch=h4_09,
+    )
+    assert ewma["forecast_window"]["start"] == "2026-08-20T13:00Z"
+    assert har["forecast_window"]["start"] == ewma["forecast_window"]["start"]
+    assert har["forecast_window"]["end"] == ewma["forecast_window"]["end"]
+
+
 def test_forecast_volatility_estimate_preserves_canonical_fields():
     def fake_forecast_volatility(**_kwargs):
         return {

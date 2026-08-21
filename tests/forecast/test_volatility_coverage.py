@@ -1365,7 +1365,7 @@ class TestParamsParsing:
             r = forecast_volatility("EURUSD", "H1", 1, method="ewma",
                                     params="{extra:}")
             assert "error" in r
-            assert "Unknown EWMA parameter" in r["error"]
+            assert r["error_code"] == "unknown_parameter"
             assert "extra" in r["error"]
 
     def test_brace_stray_token(self):
@@ -1388,7 +1388,7 @@ class TestParamsParsing:
             r = forecast_volatility("EURUSD", "H1", 1, method="ewma",
                                     params="{lookback=300, extra: 5, junk}")
             assert "error" in r
-            assert "Unknown EWMA parameter" in r["error"]
+            assert r["error_code"] == "unknown_parameter"
             assert "extra" in r["error"]
 
     def test_comma_separated_kv_pairs_without_spaces(self):
@@ -1739,9 +1739,9 @@ class TestHarRvSecondSection:
         with _mock_env(rates_side_effect=[std]):
             r = forecast_volatility("EURUSD", "H1", 5, method="ewma",
                                     params={"lambda": custom_lam})
-        assert r["error"] == (
-            "Unknown EWMA parameter(s): lambda. Use one of: halflife, lambda_, lookback."
-        )
+        assert r["error_code"] == "unknown_parameter"
+        assert r["unknown_keys"] == ["lambda"]
+        assert "lambda_" in r["valid_keys"]
 
     def test_second_section_ensure_error(self):
         """_ensure_symbol_ready error in the HAR-RV intraday fetch returns an error."""
@@ -2107,7 +2107,7 @@ class TestHarRvBlock:
             )
 
         assert error is None
-        assert _format_time_minimal(anchor) == "2026-08-17T01:00Z"
+        assert _format_time_minimal(anchor) == "2026-08-16T21:00Z"
 
     @pytest.mark.parametrize(
         ("timeframe", "grid_anchor", "expected_targets"),
