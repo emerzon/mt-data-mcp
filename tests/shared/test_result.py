@@ -153,3 +153,8 @@ class TestInferResultSuccess:
 
         assert infer_result_success({"success": True}) is True
         assert infer_result_success({"error": "bad"}) is False
+
+    def test_ok_false_payload_is_failure(self):
+        from mtdata.core.execution_logging import infer_result_success
+
+        assert infer_result_success(Ok({"success": False, "error": "timeout"})) is False

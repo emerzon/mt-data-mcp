@@ -24,7 +24,9 @@ def infer_result_success(result: Any) -> bool:
         Ok = ()  # type: ignore[assignment,misc]
         Err = ()  # type: ignore[assignment,misc]
     if isinstance(result, Ok):
-        return True
+        if result.value is None:
+            return True
+        return infer_result_success(result.value)
     if isinstance(result, Err):
         return False
 
@@ -166,10 +168,13 @@ def _pop_operation(operation: str) -> Optional[str]:
 def _failure_log_fields(result: Any) -> dict[str, Any]:
     """Extract bounded, non-payload diagnostics from a structured failure."""
     try:
-        from ..shared.result import Err
+        from ..shared.result import Err, Ok
     except Exception:  # pragma: no cover - package always ships shared.result
         Err = ()  # type: ignore[assignment,misc]
+        Ok = ()  # type: ignore[assignment,misc]
 
+    if isinstance(result, Ok):
+        return _failure_log_fields(result.value)
     if isinstance(result, Err):
         source: dict[str, Any] = {
             "error": result.message,
