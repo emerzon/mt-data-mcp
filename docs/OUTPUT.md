@@ -128,10 +128,15 @@ searches unrelated nested objects for a matching key. A mixed projection keeps
 the resolved values and sets `output_fields_status=partial`. If no requested
 path resolves, the response sets `success=false`,
 `error_code=output_fields_unresolved`, and `output_fields_status=failed`; the
-CLI exits `1`. `valid_output_fields` lists paths that can be used to retry.
-Declared row paths remain resolvable through an empty collection, so a flat
-account can return `items=[]` for `trade_get_open --output-fields items.symbol`
-without reporting `items.symbol` as unresolved.
+CLI exits `1`. `valid_output_fields` lists paths present in the current
+response, including compact rows. It does not advertise full-only diagnostics
+such as `items.raw` after compact shaping has already removed them; retry
+those with `--detail full --output-fields`. Declared row paths remain
+resolvable through an empty collection, so a flat account can return
+`items=[]` for `trade_get_open --output-fields items.symbol` without reporting
+`items.symbol` as unresolved. Strategy-attribution fields such as
+`items.magic` and `items.comment` stay in compact `trade_get_open` rows so
+`--output-fields` can select them without a detail override.
 
 Field selection is authoritative across formats. JSON and TOON retain the same
 selected keys; TOON may still apply the requested numeric precision, but it

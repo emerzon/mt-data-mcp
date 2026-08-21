@@ -231,6 +231,8 @@ def _project_open_position_rows(payload: Dict[str, Any], *, request: Any) -> Non
         "swap",
         "profit",
         "usable_for_live_trading",
+        "magic",
+        "comment",
     )
     payload["items"] = [
         {key: item[key] for key in compact_fields if key in item}

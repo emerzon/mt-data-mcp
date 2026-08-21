@@ -208,9 +208,11 @@ When some requested paths resolve, the usable values are retained and
 `output_fields_status=partial` makes the incomplete projection explicit. When
 none resolve, the response has `success=false`,
 `error_code=output_fields_unresolved`, and the CLI exits `1`. Use
-`valid_output_fields` to retry with the returned shape. Stable declared row
-paths, including the trade-read `items.*` fields, remain valid when their
-collection is empty.
+`valid_output_fields` to retry with paths present in this response. Compact
+detail can omit diagnostics such as `trade_history` `items.raw`; those
+retries need `--detail full`. Compact `trade_get_open` rows keep `magic` and
+`comment`, so strategy-attribution projection does not require full detail.
+Stable declared row paths remain valid when their collection is empty.
 
 When `--output-fields` is set, JSON and TOON retain the same selected keys.
 Without it, default TOON may still compact the payload; use `--json` for the

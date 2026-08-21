@@ -22,13 +22,12 @@ def test_output_fields_partial_projection_is_explicit() -> None:
 
     result = _select_output_fields(payload, "symbol,details.missing")
 
-    assert result == {
-        "success": True,
-        "symbol": "EURUSD",
-        "unresolved_output_fields": ["details.missing"],
-        "valid_output_fields": ["details"],
-        "output_fields_status": "partial",
-    }
+    assert result["success"] is True
+    assert result["symbol"] == "EURUSD"
+    assert result["unresolved_output_fields"] == ["details.missing"]
+    assert result["valid_output_fields"] == ["details"]
+    assert result["output_fields_status"] == "partial"
+    assert "detail full" in result["remediation"]
 
 
 def test_output_fields_total_miss_returns_structured_error() -> None:
@@ -45,7 +44,9 @@ def test_output_fields_total_miss_returns_structured_error() -> None:
         "output_fields_status": "failed",
         "remediation": (
             "Choose one or more paths from valid_output_fields and retry "
-            "--output-fields."
+            "--output-fields. valid_output_fields lists paths present in this "
+            "response; compact detail omits some diagnostics, so retry with "
+            "--detail full if a declared field is absent."
         ),
     }
 
@@ -65,6 +66,30 @@ def test_output_fields_resolves_declared_path_through_empty_collection() -> None
     )
 
     assert result == {"success": True, "count": 0, "items": []}
+
+
+def test_output_fields_does_not_advertise_absent_compact_row_paths() -> None:
+    payload = {
+        "success": True,
+        "count": 1,
+        "items": [{"ticket": 1, "symbol": "EURUSD", "magic": 7, "comment": "audit"}],
+    }
+
+    result = _select_output_fields(
+        payload,
+        "items.ticket,items.magic,items.comment,items.raw",
+        tool_name="trade_history",
+    )
+
+    assert result["items"] == [
+        {"ticket": 1, "magic": 7, "comment": "audit"}
+    ]
+    assert result["unresolved_output_fields"] == ["items.raw"]
+    assert "items.magic" in result["valid_output_fields"]
+    assert "items.comment" in result["valid_output_fields"]
+    assert "items.raw" not in result["valid_output_fields"]
+    assert result["output_fields_status"] == "partial"
+    assert "detail full" in result["remediation"]
 
 
 def test_output_fields_rejects_unknown_path_through_empty_collection() -> None:

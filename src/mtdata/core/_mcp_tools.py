@@ -1356,14 +1356,20 @@ def _select_output_fields(
     # paths are surfaced so projection typos cannot silently discard data.
     if unresolved:
         selected["unresolved_output_fields"] = unresolved
-        selected["valid_output_fields"] = sorted(
-            {
-                *(str(key) for key in value if key not in preserved_keys),
-                *declared_paths,
-            }
+        selected["valid_output_fields"] = _available_output_fields(
+            value,
+            declared_paths=declared_paths,
+            preserved_keys=preserved_keys,
+        )
+        remediation = (
+            "Choose one or more paths from valid_output_fields and retry "
+            "--output-fields. valid_output_fields lists paths present in this "
+            "response; compact detail omits some diagnostics, so retry with "
+            "--detail full if a declared field is absent."
         )
         if resolved_count:
             selected["output_fields_status"] = "partial"
+            selected["remediation"] = remediation
         elif value.get("success") is not False and not bool(value.get("error")):
             selected.update(
                 {
@@ -1374,13 +1380,45 @@ def _select_output_fields(
                     ),
                     "error_code": "output_fields_unresolved",
                     "output_fields_status": "failed",
-                    "remediation": (
-                        "Choose one or more paths from valid_output_fields and "
-                        "retry --output-fields."
-                    ),
+                    "remediation": remediation,
                 }
             )
     return selected
+
+
+def _available_output_fields(
+    value: Dict[str, Any],
+    *,
+    declared_paths: frozenset[str],
+    preserved_keys: frozenset[str],
+) -> list[str]:
+    available = {
+        str(key) for key in value if key not in preserved_keys
+    }
+    for name in _row_collection_names(value):
+        rows = value.get(name)
+        if not isinstance(rows, list):
+            continue
+        nested_keys = {
+            str(key)
+            for row in rows
+            if isinstance(row, dict)
+            for key in row
+        }
+        for key in nested_keys:
+            available.add(f"{name}.{key}")
+    for path in declared_paths:
+        parts = tuple(part for part in path.split(".") if part)
+        if not parts:
+            continue
+        _filtered, matched = _filter_output_path(
+            value,
+            parts,
+            declared_paths=declared_paths,
+        )
+        if matched:
+            available.add(path)
+    return sorted(available)
 
 
 def _callable_accepts_kwarg(func: Any, name: str) -> bool:

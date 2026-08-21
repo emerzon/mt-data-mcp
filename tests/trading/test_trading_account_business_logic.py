@@ -1398,6 +1398,8 @@ def test_compact_open_position_projection_omits_quote_diagnostics() -> None:
                 "tp": 1.12,
                 "profit": 10.0,
                 "usable_for_live_trading": True,
+                "magic": 42,
+                "comment": "audit-cli",
                 "quote_source": "mt5.copy_ticks_range",
                 "stream_tick_time_epoch": 1_700_000_000.0,
                 "lot_definition": "1 broker lot = 100000 contract units",
@@ -1422,7 +1424,11 @@ def test_compact_open_position_projection_omits_quote_diagnostics() -> None:
         "tp",
         "profit",
         "usable_for_live_trading",
+        "magic",
+        "comment",
     }
+    assert row["magic"] == 42
+    assert row["comment"] == "audit-cli"
     assert "quote_source" not in row
 
 
