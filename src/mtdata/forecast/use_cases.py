@@ -1920,20 +1920,6 @@ def _barrier_optimize_unit_context(payload: Dict[str, Any]) -> Tuple[str, str]:
     return "percent", "pct"
 
 
-def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
-    return any(
-        getattr(request, field_name, None) is not None
-        for field_name in (
-            "tp_abs",
-            "sl_abs",
-            "tp_pct",
-            "sl_pct",
-            "tp_ticks",
-            "sl_ticks",
-        )
-    )
-
-
 def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Optional[str]:
     supplied_tp_sl_fields = [
         field_name

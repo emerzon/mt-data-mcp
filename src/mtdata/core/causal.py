@@ -131,21 +131,6 @@ _TRANSFORM_LEGEND: Dict[str, Dict[str, str]] = {
     },
 }
 
-_CORRELATION_METHOD_LEGEND: Dict[str, Dict[str, str]] = {
-    "pearson": {
-        "description": "Pearson linear correlation",
-        "measures": "Linear relationship strength and direction",
-        "range": "-1 (perfect negative) to +1 (perfect positive)",
-        "sensitive_to": "Outliers and non-linear relationships",
-    },
-    "spearman": {
-        "description": "Spearman rank correlation",
-        "measures": "Monotonic relationship (rank-based)",
-        "range": "-1 (perfect negative) to +1 (perfect positive)",
-        "sensitive_to": "Non-linear but monotonic relationships; robust to outliers",
-    },
-}
-
 _COINTEGRATION_TREND_LEGEND: Dict[str, Dict[str, str]] = {
     "c": {
         "description": "Constant only",

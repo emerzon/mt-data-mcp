@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  getHistory,
   getMethods,
   getPivots,
   getSupportResistance,
@@ -30,36 +29,6 @@ import {
   type PivotMethod,
   type SupportResistanceControls,
 } from '../lib/overlayParams'
-
-// ============================================================================
-// Chart Data Hook
-// ============================================================================
-
-export type UseChartDataOptions = {
-  symbol: string
-  timeframe: string
-  limit: number
-  end?: string
-  denoise?: DenoiseSpecUI
-}
-
-export function useChartData(options: UseChartDataOptions) {
-  const { symbol, timeframe, limit, end, denoise } = options
-
-  const query = useQuery({
-    queryKey: ['history', symbol, timeframe, limit, end, JSON.stringify(denoise ?? {})],
-    queryFn: () => getHistory({ symbol, timeframe, limit, end, denoise }),
-    enabled: !!symbol,
-    staleTime: 30000,
-  })
-
-  return {
-    bars: query.data?.data ?? [],
-    isLoading: query.isFetching,
-    error: query.error ? getErrorMessage(query.error) : null,
-    refetch: query.refetch,
-  }
-}
 
 // ============================================================================
 // Forecast Methods Hook

@@ -313,7 +313,6 @@ from ..unified_params import add_global_args_to_parser
 ToolInfo = Dict[str, Any]
 
 CLI_PROGRAM = "mtdata-cli"
-PACKAGE_NAME = "mtdata"
 _SHELL_SESSION_DEPTH = 0
 _INTERACTIVE_SHELL_SESSION_DEPTH = 0
 _BACKGROUND_COMMAND_REMEDIATION = (
@@ -914,7 +913,6 @@ def _resolve_param_kwargs(
         debug=_debug,
         is_literal_origin=_is_literal_origin,
         unwrap_optional_type=_unwrap_optional_type,
-        is_typed_dict_type=_is_typed_dict_type,
         get_origin=get_origin,
         get_args=get_args,
         is_mapping_annotation=_annotation_is_mapping_type,
@@ -1365,7 +1363,6 @@ def create_command_function(
         normalize_cli_list_value=_normalize_cli_list_value,
         parse_kv_string=_parse_kv_string,
         unwrap_optional_type=_unwrap_optional_type,
-        is_typed_dict_type=_is_typed_dict_type,
         is_mapping_annotation=_annotation_is_mapping_type,
         invoke_tool_function=_invoke_cli_tool_function,
     )

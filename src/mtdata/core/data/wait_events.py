@@ -47,7 +47,6 @@ _BOUNDARY_CANDLE_LOOKBACK_BARS = 3
 _ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS = 5.0
 _ORDER_STATE_EVENT_TYPES = {"order_created", "pending_near_fill"}
 _POSITION_STATE_EVENT_TYPES = {"position_opened", "position_closed", "stop_threat"}
-_ORDER_POSITION_EVENT_TYPES = _ORDER_STATE_EVENT_TYPES | _POSITION_STATE_EVENT_TYPES
 _HISTORY_DEAL_EVENT_TYPES = {"order_filled", "position_opened", "position_closed", "tp_hit", "sl_hit"}
 _HISTORY_ORDER_EVENT_TYPES = {"order_cancelled"}
 _WAIT_EVENT_IDENTITY_FIELDS = ("symbol", "ticket", "order_ticket", "position_ticket")

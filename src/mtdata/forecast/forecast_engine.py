@@ -85,20 +85,6 @@ from .forecast_registry import (
 )
 from .target_builder import build_target_series, resolve_alias_base
 
-_ENSEMBLE_BASE_METHODS = (
-    'naive',
-    'drift',
-    'seasonal_naive',
-    'theta',
-    'fourier_ols',
-    'ses',
-    'holt',
-    'holt_winters_add',
-    'holt_winters_mul',
-    'arima',
-    'sarima',
-)
-
 logger = logging.getLogger(__name__)
 _normalize_weights = _normalize_weights_impl
 

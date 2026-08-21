@@ -715,17 +715,6 @@ def _resolve_existing_symbol_net(
     return None, 0.0
 
 
-def _resolve_existing_symbol_side(
-    *,
-    symbol: str,
-    existing_positions: Optional[List[Any]],
-) -> Optional[str]:
-    side, _net = _resolve_existing_symbol_net(
-        symbol=symbol, existing_positions=existing_positions
-    )
-    return side
-
-
 def _account_uses_hedging(account_info: Any) -> bool:
     """Return whether MT5 reports retail hedging rather than netting mode."""
     margin_mode = getattr(account_info, "margin_mode", None)

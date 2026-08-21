@@ -47,7 +47,6 @@ class _OrderSubmitOutcome(TypedDict):
 _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2, 2.4)
 _TRADE_TICK_MAX_AGE_SECONDS = 10.0
 _POSITION_DEAL_LOOKUP_WINDOW_SECONDS = 30
-_DEFAULT_ORDER_MAGIC = 234000
 _TRADE_DECISION_LOCK = threading.RLock()
 logger = logging.getLogger(__name__)
 

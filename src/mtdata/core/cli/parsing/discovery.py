@@ -1251,7 +1251,6 @@ def resolve_param_kwargs(
     debug: Callable[[str], None],
     is_literal_origin: Callable[[Any], bool],
     unwrap_optional_type: Callable[[Any], Tuple[Any, Any]],
-    is_typed_dict_type: Callable[[Any], bool],
     get_origin: Callable[[Any], Any],
     get_args: Callable[[Any], Tuple[Any, ...]],
     is_mapping_annotation: Callable[[Any], bool],

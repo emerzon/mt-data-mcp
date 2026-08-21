@@ -9,13 +9,6 @@ if TYPE_CHECKING:
 FAILURE_DETAIL_LIMIT = 12
 
 
-def clear_dispatch_error(dispatch_method: Any) -> None:
-    try:
-        dispatch_method._last_error = None
-    except Exception:
-        pass
-
-
 def build_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
     return {
         "method": str(method_name),

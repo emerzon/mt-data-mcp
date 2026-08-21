@@ -221,7 +221,6 @@ def create_command_function(  # noqa: C901
     normalize_cli_list_value: Callable[[Any], Any],
     parse_kv_string: Callable[[str], Optional[Dict[str, Any]]],
     unwrap_optional_type: Callable[[Any], Tuple[Any, Any]],
-    is_typed_dict_type: Callable[[Any], bool],
     is_mapping_annotation: Callable[[Any], bool],
     invoke_tool_function: Optional[Callable[..., Any]] = None,
 ) -> Callable[[Any], int]:

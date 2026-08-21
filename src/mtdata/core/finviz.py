@@ -63,7 +63,6 @@ from .output_contract import (
 
 logger = logging.getLogger(__name__)
 
-_FINVIZ_SCREEN_FILTERS_EXAMPLE = '{"Exchange":"NASDAQ","Sector":"Technology"}'
 _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
     "summary": (
         "Company",
@@ -241,10 +240,6 @@ def _attach_finviz_symbol_identity(
     out["requested_symbol"] = str(requested_symbol)
     out["finviz_ticker"] = finviz_ticker
     return out
-
-
-def _finviz_data_fetched_at() -> str:
-    return format_datetime_utc(datetime.now(timezone.utc))
 
 
 def _attach_finviz_fetch_timestamp(payload: Dict[str, Any]) -> Dict[str, Any]:

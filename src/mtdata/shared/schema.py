@@ -601,7 +601,6 @@ _SIMPLIFY_METHODS = (
 SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
 SimplifyMethodLiteral = Literal[_SIMPLIFY_METHODS]  # type: ignore
 EncodeSchemaLiteral = Literal['envelope', 'delta']  # type: ignore
-SymbolicSchemaLiteral = Literal['sax']  # type: ignore
 
 class SimplifySpec(TypedDict, total=False):
     # Common

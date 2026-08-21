@@ -165,16 +165,6 @@ _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
 }
 
 
-def _tick_reference_price(tick: Any) -> Optional[float]:
-    if tick is None:
-        return None
-    bid = _positive_float_attr(tick, "bid")
-    ask = _positive_float_attr(tick, "ask")
-    if bid is not None and ask is not None:
-        return (bid + ask) / 2.0
-    return _positive_float_attr(tick, "last", "bid", "ask")
-
-
 def _resolve_reference_quote(
     gateway: Any,
     symbol: str,

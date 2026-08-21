@@ -18,7 +18,6 @@ from ..shared.annotations import get_runtime_annotations, get_runtime_signature
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES,
     OUTPUT_EXTRAS,
-    PUBLIC_OUTPUT_PARAMS,
 )
 from ..shared.tool_categories import tool_catalog_category
 from ..utils.coercion import UNPARSED_BOOL, coerce_scalar, parse_bool_like
@@ -37,7 +36,6 @@ from .request_context import ensure_request_id_scope
 
 _ORIG_TOOL_DECORATOR: Any = None
 _REGISTRY_UNSET = object()
-_PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
 _MARKET_DEPTH_FETCH_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 _TOOL_CATALOG_SCHEMA_VERSION = "1.0"
 logger = logging.getLogger(__name__)

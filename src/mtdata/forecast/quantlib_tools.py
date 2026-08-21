@@ -421,19 +421,6 @@ def price_barrier_option_quantlib(
     }
 
 
-def _barrier_option_geometry_error(
-    *,
-    barrier_type: str,
-    spot: float,
-    barrier: float,
-) -> Optional[str]:
-    if str(barrier_type).startswith("up_") and barrier <= spot:
-        return "For an up barrier option, barrier must be above spot."
-    if str(barrier_type).startswith("down_") and barrier >= spot:
-        return "For a down barrier option, barrier must be below spot."
-    return None
-
-
 def _price_knocked_in_as_vanilla(
     *,
     ql: Any,

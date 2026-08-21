@@ -76,34 +76,14 @@ textarea:focus-visible {
   @apply outline-none ring-2 ring-sky-500 ring-offset-2 ring-offset-slate-900;
 }
 
-/* Modal backdrop */
-.modal-backdrop {
-  @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm;
-}
-
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out;
-}
-
-.animate-slide-up {
-  animation: slideUp 0.2s ease-out;
 }
 
 /* Loading spinner */
@@ -120,30 +100,8 @@ textarea:focus-visible {
   @apply bg-emerald-600/20 text-emerald-400 border border-emerald-600/30;
 }
 
-.badge-warning {
-  @apply bg-amber-600/20 text-amber-400 border border-amber-600/30;
-}
-
-.badge-error {
-  @apply bg-rose-600/20 text-rose-400 border border-rose-600/30;
-}
-
 .badge-info {
   @apply bg-sky-600/20 text-sky-400 border border-sky-600/30;
-}
-
-/* Tooltip */
-[data-tooltip] {
-  @apply relative;
-}
-
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs text-slate-200 bg-slate-800 rounded-md whitespace-nowrap opacity-0 pointer-events-none transition-opacity duration-150 z-50;
-}
-
-[data-tooltip]:hover::after {
-  @apply opacity-100;
 }
 
 /* Toolbar button */

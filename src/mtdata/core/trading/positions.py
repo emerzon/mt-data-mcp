@@ -1105,20 +1105,6 @@ def _normalize_trade_history_row(
     }
 
 
-def _normalize_trade_history_items(
-    items: List[Any],
-    *,
-    history_kind: Optional[str],
-) -> List[Dict[str, Any]]:
-    normalized: List[Dict[str, Any]] = []
-    for item in items:
-        if isinstance(item, dict):
-            normalized.append(
-                _normalize_trade_history_row(item, history_kind=history_kind)
-            )
-    return normalized
-
-
 def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str, Any]:
     echo: Dict[str, Any] = {}
     if history_kind is not None:

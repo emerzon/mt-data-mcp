@@ -37,7 +37,6 @@ _OPTIONS_QUOTE_FUTURE_TOLERANCE_SECONDS = 30.0
 _OPTION_CONTRACT_STALE_AFTER_SECONDS = 900.0
 _US_EQUITY_OPTIONS_TZ = ZoneInfo("America/New_York")
 _US_EQUITY_OPTIONS_CLOSE = _dt.time(16, 0)
-_TRADIER_DOCS_URL = "https://documentation.tradier.com/"
 _YAHOO_AUTH_REMEDIATION = (
     "Run options_provider_status for configuration details. Yahoo options is "
     "anonymous best-effort data and may reject requests; for reliable chains set "

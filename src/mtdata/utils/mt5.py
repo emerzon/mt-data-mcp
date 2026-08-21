@@ -540,10 +540,6 @@ def _valid_cached_timestamp_mode(symbol: Optional[str] = None) -> Optional[str]:
     return None
 
 
-def _cached_timestamp_mode() -> str:
-    return _valid_cached_timestamp_mode() or _MT5_TIMESTAMP_MODE_NATIVE
-
-
 def _timestamp_mode_from_tick(
     tick: Any,
     *,

@@ -2,8 +2,6 @@
 // Core Data Types
 // ============================================================================
 
-export type Timeframe = string
-
 export type Instrument = {
   symbol: string
   group?: string

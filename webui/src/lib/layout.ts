@@ -54,8 +54,3 @@ export function radarPanelPlacementClass(bp: LayoutBreakpoint): string {
 export function toolbarUsesOverflowMenu(bp: LayoutBreakpoint): boolean {
   return bp === 'mobile' || bp === 'tablet'
 }
-
-/** Touch-friendly min size for primary toolbar controls on compact layouts. */
-export function toolbarControlMinClass(bp: LayoutBreakpoint): string {
-  return bp === 'mobile' ? 'min-h-11 min-w-11' : ''
-}

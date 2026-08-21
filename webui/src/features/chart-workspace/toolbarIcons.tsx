@@ -40,14 +40,6 @@ export function SRIcon() {
   )
 }
 
-export function DenoiseIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-    </svg>
-  )
-}
-
 export function IndicatorIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -57,14 +49,6 @@ export function IndicatorIcon() {
         strokeWidth={2}
         d="M4 19l4-6 4 3 8-10"
       />
-    </svg>
-  )
-}
-
-export function LinesIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
     </svg>
   )
 }

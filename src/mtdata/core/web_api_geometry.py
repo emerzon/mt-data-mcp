@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .error_envelope import build_error_payload
 from .output_contract import apply_output_verbosity
 from .tool_calling import call_tool_sync_structured
 from .web_api_handlers import _http_error, _http_status_for_error
@@ -229,7 +228,3 @@ def get_exposure_response(
         _raise_tool_error(pending, operation="get_exposure", default_code="exposure_failed")
     payload = compact_exposure_payload(symbol=symbol, positions=positions, pending=pending)
     return apply_output_verbosity(payload, detail="compact", tool_name="trade_get_open")
-
-
-def geometry_tool_error_payload(message: str, *, code: str) -> Dict[str, Any]:
-    return build_error_payload(message, code=code, operation="web_api_geometry")

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gc
-import importlib.util as _importlib_util
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -29,9 +28,6 @@ class PretrainedMethod(ForecastMethod):
     @property
     def supports_features(self) -> Dict[str, bool]:
         return {"price": True, "return": True, "volatility": True, "ci": True}
-
-
-_HAS_TIMESFM = _importlib_util.find_spec('timesfm') is not None
 
 
 def _stringify_exception_chain(error: BaseException) -> str:

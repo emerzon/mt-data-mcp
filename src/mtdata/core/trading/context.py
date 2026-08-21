@@ -47,7 +47,6 @@ def _sanitize_trade_session_section_error(
     section: Any,
     *,
     label: str,
-    include_count: bool = False,
 ) -> tuple[Any, bool]:
     if not isinstance(section, dict):
         return section, False
@@ -652,12 +651,10 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         open_res, open_failed = _sanitize_trade_session_section_error(
             open_res,
             label="open positions",
-            include_count=True,
         )
         pending_res, pending_failed = _sanitize_trade_session_section_error(
             pending_res,
             label="pending orders",
-            include_count=True,
         )
         partial_failure = any(
             (account_failed, quote_failed, open_failed, pending_failed)

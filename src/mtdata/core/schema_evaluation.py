@@ -10,7 +10,7 @@ from __future__ import annotations
 import inspect
 import os
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 from pydantic import BaseModel
 
@@ -619,9 +619,3 @@ def format_schema_evaluation(report: SchemaEvaluationReport) -> str:
             f"{finding.severity.upper():7} {finding.code:34} {location}: {finding.message}"
         )
     return "\n".join(lines)
-
-
-def iter_error_codes(report: SchemaEvaluationReport) -> Iterable[str]:
-    """Return error codes for compact test assertions."""
-
-    return (item.code for item in report.errors)

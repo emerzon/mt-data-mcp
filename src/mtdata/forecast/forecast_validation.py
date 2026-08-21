@@ -3,7 +3,7 @@ Forecast validation utilities and error handling.
 """
 
 import difflib
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 
@@ -14,7 +14,6 @@ from .forecast_methods import (
     get_forecast_method_names,
     get_forecast_methods_snapshot,
     get_method_requirements,
-    validate_method_params,
 )
 
 
@@ -448,56 +447,6 @@ def check_method_dependencies(method: str) -> List[str]:
                 missing = True
             if missing:
                 errors.append(f"Missing required package: {pkg}")
-
-    return errors
-
-
-def validate_forecast_request(
-    symbol: str,
-    timeframe: TimeframeLiteral,
-    method: ForecastMethodLiteral,
-    horizon: int,
-    lookback: Optional[int] = None,
-    params: Optional[Dict[str, Any]] = None,
-    ci_alpha: Optional[float] = 0.05,
-    quantity: Literal['price', 'return', 'volatility'] = 'price',
-    denoise: Optional[DenoiseSpec] = None,
-    features: Optional[Dict[str, Any]] = None,
-    dimred_method: Optional[str] = None,
-    dimred_params: Optional[Dict[str, Any]] = None,
-    target_spec: Optional[Dict[str, Any]] = None,
-) -> List[str]:
-    """Comprehensive validation of forecast request parameters."""
-    errors = []
-
-    # Basic parameter validation
-    errors.extend(validate_timeframe(timeframe))
-    errors.extend(validate_method(method))
-    errors.extend(validate_horizon(horizon))
-    errors.extend(validate_lookback(lookback))
-    errors.extend(validate_ci_alpha(ci_alpha))
-    errors.extend(validate_quantity_method_combination(quantity, method))
-
-    # Advanced parameter validation
-    errors.extend(validate_denoise_spec(denoise))
-    errors.extend(validate_features_spec(features))
-    errors.extend(validate_dimred_spec(dimred_method, dimred_params))
-    errors.extend(validate_target_spec(target_spec))
-
-    # Method-specific validation
-    if params:
-        p = params if isinstance(params, dict) else {}
-        seasonality = p.get('seasonality')
-        if seasonality is not None:
-            try:
-                seasonality = int(seasonality)
-            except (ValueError, TypeError):
-                seasonality = None
-        errors.extend(validate_seasonality_for_method(method, seasonality))
-        errors.extend(validate_method_params(method, p))
-
-    # Check dependencies
-    errors.extend(check_method_dependencies(method))
 
     return errors
 

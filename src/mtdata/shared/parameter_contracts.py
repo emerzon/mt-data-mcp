@@ -18,13 +18,6 @@ OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
         "all",
     }
 )
-PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "output_fields"})
-OUTPUT_EXTRAS_HELP: Final[str] = (
-    "Comma-separated richer output sections such as "
-    f"{', '.join(sorted(OUTPUT_EXTRAS))}. Use "
-    f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
-)
-
 PARAMETER_HELP: Final[dict[str, str]] = {
     "symbol": "Trading symbol (e.g. EURUSD).",
     "symbols": "Comma-separated trading symbols (e.g. EURUSD,GBPUSD).",

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from ..forecast.exceptions import ForecastError
 from ..utils.denoise import DenoiseCausalityError
@@ -115,83 +114,6 @@ def tool_safety_meta(name: str) -> Dict[str, Any]:
             "Confirm explicitly before running."
         )
     return meta
-
-
-def _annotation_label(annotation: Any) -> str:
-    if annotation is inspect.Parameter.empty:
-        return "any"
-    if isinstance(annotation, type):
-        return annotation.__name__
-    text = str(annotation)
-    text = text.replace("typing.", "").replace("NoneType", "None")
-    return text
-
-
-def _append_output_control_fields(fields: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Advertise structured-output controls accepted by generic invoke."""
-    names = {str(field.get("name") or "") for field in fields}
-    out = list(fields)
-    controls = (
-        {
-            "name": "output_fields",
-            "required": False,
-            "default": None,
-            "type": "str | list[str] | None",
-            "description": "Output fields to keep, as names or dotted paths.",
-        },
-    )
-    out.extend(control for control in controls if control["name"] not in names)
-    return out
-
-
-def build_parameter_fields(func: Any) -> List[Dict[str, Any]]:
-    """Build UI-friendly parameter field descriptors from a tool callable."""
-    target = unwrap_tool_callable(func)
-    try:
-        signature = inspect.signature(target)
-    except Exception:
-        return []
-
-    params = list(signature.parameters.values())
-    fields: List[Dict[str, Any]] = []
-
-    if len(params) == 1:
-        annotation = params[0].annotation
-        try:
-            if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
-                for name, field in annotation.model_fields.items():
-                    required = field.is_required()
-                    default = None if required else field.default
-                    if default is not None and str(type(default).__name__) == "PydanticUndefinedType":
-                        default = None
-                    fields.append(
-                        {
-                            "name": name,
-                            "required": required,
-                            "default": default if default is not None and default is not ... else None,
-                            "type": _annotation_label(field.annotation),
-                            "description": str(field.description or "") or None,
-                        }
-                    )
-                return _append_output_control_fields(fields)
-        except Exception:
-            pass
-
-    for param in params:
-        if param.name.startswith("__"):
-            continue
-        required = param.default is inspect.Parameter.empty
-        default = None if required else param.default
-        fields.append(
-            {
-                "name": param.name,
-                "required": required,
-                "default": default,
-                "type": _annotation_label(param.annotation),
-                "description": None,
-            }
-        )
-    return _append_output_control_fields(fields)
 
 
 def _enrich_catalog_row(row: Dict[str, Any], *, include_fields: bool = False) -> Dict[str, Any]:

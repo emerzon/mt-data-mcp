@@ -257,20 +257,6 @@ def _normalize_timezone_display(
     return None
 
 
-def _format_market_time(value: Any, display: str) -> Any:
-    if display != "utc":
-        return value
-    if not isinstance(value, str) or not value:
-        return value
-    try:
-        dt = datetime.fromisoformat(value)
-    except ValueError:
-        return value
-    if dt.tzinfo is None:
-        return value
-    return format_datetime_utc(dt)
-
-
 def _apply_market_timezone_display(
     status: Dict[str, Any],
     *,
