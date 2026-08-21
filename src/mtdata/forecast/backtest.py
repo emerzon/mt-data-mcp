@@ -566,10 +566,16 @@ def _compute_performance_metrics(
     if enough_trades and std_ret > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
         sharpe = float((avg_return / std_ret) * math.sqrt(trades_per_year))
 
-    equity = np.cumprod(1.0 + arr)
-    peak = np.maximum.accumulate(equity)
-    drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
-    max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float('nan')
+    if arr.size == 0:
+        equity = arr
+        max_drawdown = float("nan")
+    else:
+        # Start from initial capital so a first-trade loss is included in
+        # peak-to-trough drawdown. Cumulative return still uses terminal equity.
+        equity = np.concatenate(([1.0], np.cumprod(1.0 + arr)))
+        peak = np.maximum.accumulate(equity)
+        drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
+        max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float("nan")
 
     downside = np.minimum(arr, 0.0)
     downside_dev = float(np.sqrt(np.mean(downside ** 2))) if downside.size > 0 else 0.0

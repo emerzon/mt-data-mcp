@@ -144,6 +144,17 @@ class TestComputePerformanceMetrics:
         """Test with returns that would cause negative equity."""
         m = _compute_performance_metrics([-0.5, -0.5], "H1", 12, 0.0)
         assert "max_drawdown" in m
+        assert m["max_drawdown"] == pytest.approx(0.75)
+
+    def test_first_trade_loss_is_included_in_max_drawdown(self):
+        m = _compute_performance_metrics([-0.01], "H1", 1, 0.0)
+        assert m["cumulative_return"] == pytest.approx(-0.01)
+        assert m["max_drawdown"] == pytest.approx(0.01)
+
+    def test_single_positive_return_has_zero_drawdown(self):
+        m = _compute_performance_metrics([0.01], "H1", 1, 0.0)
+        assert m["cumulative_return"] == pytest.approx(0.01)
+        assert m["max_drawdown"] == pytest.approx(0.0)
 
     def test_inf_filtered(self):
         m = _compute_performance_metrics([float("inf"), 0.01], "H1", 12, 0.0)
