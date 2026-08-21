@@ -979,11 +979,19 @@ def _resolve_live_trade_risk_entry(
     if direction_norm == "long":
         if ask is not None:
             return ask, f"{source_prefix}_ask", quote_context
+        if live_quote:
+            quote_context["required_quote_side"] = "ask"
+            quote_context["quote_side_missing"] = True
+            return None, None, quote_context
         if bid is not None:
             return bid, f"{source_prefix}_bid_fallback", quote_context
     elif direction_norm == "short":
         if bid is not None:
             return bid, f"{source_prefix}_bid", quote_context
+        if live_quote:
+            quote_context["required_quote_side"] = "bid"
+            quote_context["quote_side_missing"] = True
+            return None, None, quote_context
         if ask is not None:
             return ask, f"{source_prefix}_ask_fallback", quote_context
 
@@ -1021,7 +1029,7 @@ def _validate_trade_risk_levels(
         )
 
     if direction == "long":
-        if stop_loss > entry:
+        if stop_loss >= entry:
             return _error(
                 code="invalid_sl_for_direction",
                 field="stop_loss",
@@ -1038,7 +1046,7 @@ def _validate_trade_risk_levels(
                 value=take_profit,
             )
         return None
-    if stop_loss < entry:
+    if stop_loss <= entry:
         return _error(
             code="invalid_sl_for_direction",
             field="stop_loss",
@@ -5211,6 +5219,24 @@ def run_trade_risk_analyze(  # noqa: C901
                 )
                 if live_quote_context:
                     result["quote_context"] = live_quote_context
+                if live_quote_context.get("quote_side_missing"):
+                    required_side = str(
+                        live_quote_context.get("required_quote_side") or "quote"
+                    )
+                    result["position_sizing_error"] = _build_position_sizing_error(
+                        code="required_quote_side_missing",
+                        field="entry",
+                        reason=(
+                            "Live risk sizing needs the "
+                            f"{required_side} price; the quote is one-sided."
+                        ),
+                        remediation=(
+                            "Refresh the quote and retry when both bid and ask "
+                            "are available."
+                        ),
+                        details={"required_quote_side": required_side},
+                    )
+                    return result
                 if live_entry is not None:
                     request.entry = float(live_entry)
                     entry_source = live_entry_source or "live_tick"
@@ -5543,6 +5569,25 @@ def run_trade_risk_analyze(  # noqa: C901
                     if directional_quote_context:
                         live_quote_context = directional_quote_context
                         result["quote_context"] = directional_quote_context
+                    if directional_quote_context.get("quote_side_missing"):
+                        required_side = str(
+                            directional_quote_context.get("required_quote_side")
+                            or "quote"
+                        )
+                        result["position_sizing_error"] = _build_position_sizing_error(
+                            code="required_quote_side_missing",
+                            field="entry",
+                            reason=(
+                                "Live risk sizing needs the "
+                                f"{required_side} price; the quote is one-sided."
+                            ),
+                            remediation=(
+                                "Refresh the quote and retry when both bid and "
+                                "ask are available."
+                            ),
+                            details={"required_quote_side": required_side},
+                        )
+                        return result
                     if directional_entry is not None:
                         request.entry = float(directional_entry)
                         entry_source = directional_source or "live_tick"

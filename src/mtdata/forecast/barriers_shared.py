@@ -1212,13 +1212,11 @@ def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[flo
     if direction_norm == "long":
         if ask is not None:
             return ask, "live_tick_ask"
-        if bid is not None:
-            return bid, "live_tick_bid_fallback"
-    else:
+        return None, None
+    if direction_norm == "short":
         if bid is not None:
             return bid, "live_tick_bid"
-        if ask is not None:
-            return ask, "live_tick_ask_fallback"
+        return None, None
 
     if bid is not None and ask is not None:
         return 0.5 * (bid + ask), "live_tick_mid"

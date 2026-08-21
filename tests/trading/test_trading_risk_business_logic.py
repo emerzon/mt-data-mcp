@@ -17,6 +17,7 @@ from mtdata.core.trading.use_cases import (
     _floor_volume_steps,
     _resolve_live_trade_risk_entry,
     _resolve_trade_risk_direction,
+    _validate_trade_risk_levels,
     _validate_trading_symbol,
     run_trade_risk_analyze,
 )
@@ -1059,8 +1060,8 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
         )
 
     err = out["position_sizing_error"]
-    assert err["code"] == "non_positive_sl_distance"
-    assert err["reason"] == "SL distance must be greater than 0"
+    assert err["code"] == "invalid_sl_for_direction"
+    assert "below entry" in err["reason"]
     assert "Unable to infer trade direction" not in err["reason"]
 
 
@@ -1083,6 +1084,43 @@ def test_trade_risk_analyze_returns_structured_direction_error_when_inference_is
     assert err["field"] == "direction"
     assert err["remediation"] == "Provide direction='long' or direction='short'."
     assert err["stop_loss"] == 100.0
+
+
+def test_validate_trade_risk_levels_rejects_stop_equal_to_entry() -> None:
+    assert _validate_trade_risk_levels(
+        direction="long",
+        entry=1.1,
+        stop_loss=1.1,
+        take_profit=1.2,
+    )["code"] == "invalid_sl_for_direction"
+    assert _validate_trade_risk_levels(
+        direction="short",
+        entry=1.1,
+        stop_loss=1.1,
+        take_profit=1.0,
+    )["code"] == "invalid_sl_for_direction"
+
+
+def test_live_risk_entry_refuses_missing_ask_for_long(monkeypatch) -> None:
+    tick = SimpleNamespace(bid=1.1, ask=None, time=1_800_000_000)
+    gateway = SimpleNamespace(symbol_info_tick=lambda _symbol: tick)
+    monkeypatch.setattr(
+        "mtdata.core.trading.use_cases.resolve_quote_tick",
+        lambda *_args, **_kwargs: (tick, {"quote_source": "mt5.symbol_info_tick"}),
+    )
+    monkeypatch.setattr(
+        "mtdata.core.trading.use_cases.build_trade_quote_context",
+        lambda *_args, **_kwargs: {"usable_for_live_trading": True, "bid": 1.1},
+    )
+
+    entry, source, context = _resolve_live_trade_risk_entry(
+        gateway=gateway, symbol="EURUSD", direction="long"
+    )
+
+    assert entry is None
+    assert source is None
+    assert context.get("quote_side_missing") is True
+    assert context.get("required_quote_side") == "ask"
 
 
 def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
