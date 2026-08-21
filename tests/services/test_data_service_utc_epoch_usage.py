@@ -194,6 +194,19 @@ def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
     assert query["resolved_end"] == "2026-08-13T20:59:59.999999Z"
 
 
+def test_daily_date_only_bounds_fail_without_broker_timezone() -> None:
+    with patch.object(data_service.mt5_config, "get_server_tz", return_value=None):
+        data_service.mt5_config.time_offset_minutes = 0
+        parsed, error = data_service._parse_fetch_datetime_arg(
+            "2026-08-13",
+            timeframe="D1",
+        )
+
+    assert parsed is None
+    assert error is not None
+    assert "MT5_SERVER_TZ" in error
+
+
 def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
     broker_tz = ZoneInfo("Europe/Nicosia")
     fixed_now = datetime(2026, 8, 13, 12, tzinfo=timezone.utc)
@@ -291,9 +304,16 @@ def test_weekly_range_safety_budget_does_not_overflow_datetime() -> None:
         captured.update(start=start, end=end)
         return rates
 
-    with patch(
-        "mtdata.services.data_service._mt5_copy_rates_range",
-        side_effect=_copy_rates,
+    with (
+        patch(
+            "mtdata.services.data_service._mt5_copy_rates_range",
+            side_effect=_copy_rates,
+        ),
+        patch.object(
+            data_service.mt5_config,
+            "get_server_tz",
+            return_value=ZoneInfo("Europe/Nicosia"),
+        ),
     ):
         out_rates, out_err = data_service._fetch_rates_with_warmup(
             symbol="EURUSD",

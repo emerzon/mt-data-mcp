@@ -18,6 +18,22 @@ from ..services.data_service import (
     _parse_candle_calendar_bound,
     _trim_calendar_bars_to_session_dates,
 )
+
+
+def _calendar_bound_or_raise(
+    value: Optional[str],
+    *,
+    timeframe: Optional[str],
+    end_bound: bool,
+) -> Optional[datetime]:
+    try:
+        return _parse_candle_calendar_bound(
+            value,
+            timeframe=timeframe,
+            end_bound=end_bound,
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.symbols import (
     FOREX_CURRENCY_CODES,
@@ -1333,7 +1349,7 @@ def fetch_history(
         raise RuntimeError(err)
     try:
         if start:
-            calendar_from = _parse_candle_calendar_bound(
+            calendar_from = _calendar_bound_or_raise(
                 start,
                 timeframe=timeframe,
                 end_bound=False,
@@ -1341,7 +1357,7 @@ def fetch_history(
             from_dt = calendar_from or _parse_start_datetime(start)
             if not from_dt:
                 raise RuntimeError("Invalid start time.")
-            calendar_to = _parse_candle_calendar_bound(
+            calendar_to = _calendar_bound_or_raise(
                 end,
                 timeframe=timeframe,
                 end_bound=True,
@@ -1358,7 +1374,7 @@ def fetch_history(
             rates = _mt5_copy_rates_range(symbol, mt5_tf, from_dt, to_dt)
         elif as_of or end:
             to_dt = _parse_as_of_bound(as_of, timeframe=timeframe) if as_of else (
-                _parse_candle_calendar_bound(
+                _calendar_bound_or_raise(
                     end,
                     timeframe=timeframe,
                     end_bound=True,
@@ -1395,7 +1411,7 @@ def fetch_history(
     # Manual truncation if an upper bound was provided.
     if (as_of or end) and not df.empty and 'time' in df.columns:
         to_dt = _parse_as_of_bound(as_of, timeframe=timeframe) if as_of else (
-            _parse_candle_calendar_bound(
+            _calendar_bound_or_raise(
                 end,
                 timeframe=timeframe,
                 end_bound=True,
@@ -1472,7 +1488,7 @@ def _parse_as_of_bound(
     if not value:
         return None
     if timeframe:
-        calendar_bound = _parse_candle_calendar_bound(
+        calendar_bound = _calendar_bound_or_raise(
             value,
             timeframe=timeframe,
             end_bound=True,

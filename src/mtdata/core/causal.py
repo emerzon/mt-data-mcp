@@ -411,28 +411,31 @@ def _resolve_history_window(
     if range_error is not None:
         code = str(range_error.get("error_code") or "invalid_date_range")
         return None, None, f"{code}: {range_error['error']}"
-    start_dt = (
-        _parse_candle_calendar_bound(
-            start,
-            timeframe=timeframe,
-            end_bound=False,
+    try:
+        start_dt = (
+            _parse_candle_calendar_bound(
+                start,
+                timeframe=timeframe,
+                end_bound=False,
+            )
+            or _parse_start_datetime(start)
+            if start
+            else None
         )
-        or _parse_start_datetime(start)
-        if start
-        else None
-    )
+        end_dt = (
+            _parse_candle_calendar_bound(
+                end,
+                timeframe=timeframe,
+                end_bound=True,
+            )
+            or _parse_end_datetime(end)
+            if end
+            else None
+        )
+    except ValueError as exc:
+        return None, None, str(exc)
     if start and start_dt is None:
         return None, None, "Invalid start time."
-    end_dt = (
-        _parse_candle_calendar_bound(
-            end,
-            timeframe=timeframe,
-            end_bound=True,
-        )
-        or _parse_end_datetime(end)
-        if end
-        else None
-    )
     if end and end_dt is None:
         return None, None, "Invalid end time."
     if start_dt is not None and start_dt.tzinfo is not None:

@@ -1008,11 +1008,14 @@ def _parse_fetch_datetime_arg(
     end_bound: bool = False,
     timeframe: Optional[str] = None,
 ) -> tuple[Optional[datetime], Optional[str]]:
-    parsed = _parse_candle_calendar_bound(
-        value,
-        timeframe=timeframe,
-        end_bound=end_bound,
-    )
+    try:
+        parsed = _parse_candle_calendar_bound(
+            value,
+            timeframe=timeframe,
+            end_bound=end_bound,
+        )
+    except ValueError as exc:
+        return None, str(exc)
     if parsed is None:
         parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
     if parsed is None:
@@ -1032,7 +1035,30 @@ def _broker_calendar_timezone() -> Any:
         broker_tz = mt5_config.get_server_tz()
     except Exception:
         broker_tz = None
-    return broker_tz or dt_timezone.utc
+    if broker_tz is not None:
+        return broker_tz
+    try:
+        static_offset_minutes = int(getattr(mt5_config, "time_offset_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        static_offset_minutes = 0
+    if static_offset_minutes:
+        return dt_timezone(timedelta(minutes=static_offset_minutes))
+    return None
+
+
+def _missing_broker_session_timezone_error(
+    timeframe: Optional[str],
+    value: Optional[str],
+) -> Optional[str]:
+    if timeframe not in {"D1", "W1", "MN1"} or not _is_calendar_query_bound(value):
+        return None
+    if _broker_calendar_timezone() is not None:
+        return None
+    return (
+        f"{timeframe} date-only and calendar bounds need MT5_SERVER_TZ so they "
+        "resolve broker-local session days. Set MT5_SERVER_TZ (for example "
+        "Europe/Nicosia) or pass an explicit UTC timestamp."
+    )
 
 
 def _parse_candle_calendar_bound(
@@ -1044,8 +1070,16 @@ def _parse_candle_calendar_bound(
     """Resolve D1/W1/MN1 calendar labels at broker-local midnight."""
     if timeframe not in {"D1", "W1", "MN1"} or not _is_calendar_query_bound(value):
         return None
-    text = str(value or "").strip()
+    tz_error = _missing_broker_session_timezone_error(timeframe, value)
+    if tz_error:
+        raise ValueError(tz_error)
     broker_tz = _broker_calendar_timezone()
+    if broker_tz is None:
+        raise ValueError(
+            _missing_broker_session_timezone_error(timeframe, value)
+            or "Broker session timezone is not configured."
+        )
+    text = str(value or "").strip()
     if _is_iso_date_only(text):
         local_date = datetime.strptime(text, "%Y-%m-%d").date()
         local_bound = datetime.combine(
@@ -1549,6 +1583,8 @@ def _trim_calendar_bars_to_session_dates(
     ISO date-only and natural calendar-period bounds use this overlap rule.
     """
     broker_tz = _broker_calendar_timezone()
+    if broker_tz is None:
+        return df.iloc[0:0]
 
     mask = pd.Series(True, index=df.index, dtype=bool)
     epoch_column = "__epoch" if "__epoch" in df.columns else "time"
