@@ -140,6 +140,82 @@ def test_candle_metadata_labels_client_offset_representation(time_value: str) ->
     assert result["raw_timestamp_mode"] == "server_clock"
 
 
+def test_compact_candle_metadata_keeps_only_client_timezone_distinction() -> None:
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="AAPL.NAS", limit=1),
+        gateway=_gateway(),
+        fetch_candles_impl=lambda **_: {
+            "success": True,
+            "candles": 1,
+            "time_basis": "utc",
+            "timestamp_mode": "server_clock",
+            "timezone": "America/New_York",
+            "data": [{"time": "2026-07-15T09:30:00-04:00", "close": 200.0}],
+        },
+    )
+
+    assert result["timestamp_format"] == "iso_offset"
+    assert result["timezone"] == "America/New_York"
+    assert result["time_basis"] == "utc"
+    assert "timestamp_mode" not in result
+    assert "public_timestamp_mode" not in result
+    assert "timestamp_timezone" not in result
+
+
+def test_compact_utc_candle_metadata_has_one_representation_contract() -> None:
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="EURUSD", limit=1),
+        gateway=_gateway(),
+        fetch_candles_impl=lambda **_: {
+            "success": True,
+            "candles": 1,
+            "time_basis": "utc",
+            "timestamp_mode": "native_utc",
+            "timezone": "UTC",
+            "data": [{"time": "2026-08-19T00:00:00Z", "close": 1.1}],
+        },
+    )
+
+    timestamp_keys = {
+        "timezone",
+        "time_basis",
+        "timestamp_format",
+        "timestamp_mode",
+        "public_timestamp_mode",
+        "timestamp_timezone",
+    }
+    assert {
+        key: result[key] for key in timestamp_keys if key in result
+    } == {"timezone": "UTC", "timestamp_format": "iso_utc"}
+
+
+def test_compact_empty_tick_metadata_has_one_representation_contract() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=1),
+        gateway=_gateway(),
+        fetch_ticks_impl=lambda **_: {
+            "success": True,
+            "count": 0,
+            "timezone": "UTC",
+            "data": [],
+            "empty": True,
+            "empty_reason": "no_ticks_in_range",
+        },
+    )
+
+    timestamp_keys = {
+        "timezone",
+        "time_basis",
+        "timestamp_format",
+        "timestamp_mode",
+        "public_timestamp_mode",
+        "timestamp_timezone",
+    }
+    assert {
+        key: result[key] for key in timestamp_keys if key in result
+    } == {"timezone": "UTC", "timestamp_format": "iso_utc"}
+
+
 def test_compact_candles_omit_operator_diagnostics() -> None:
     request = DataFetchCandlesRequest(symbol="EURUSD", limit=2)
     result = run_data_fetch_candles(

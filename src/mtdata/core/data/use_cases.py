@@ -1147,6 +1147,7 @@ def _compact_candles_payload(
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
     _attach_candle_timestamp_metadata(compact)
+    _collapse_compact_timestamp_metadata(compact)
     if compact_time_normalization not in (None, ""):
         compact["time_normalization"] = compact_time_normalization
     for key in (
@@ -1233,6 +1234,39 @@ def _timestamp_representation(value: Any) -> Optional[tuple[str, str, str]]:
     if offset == timedelta(0):
         return "iso_utc", "utc", "UTC"
     return "iso_offset", "client_timezone", "client_timezone"
+
+
+def _collapse_compact_timestamp_metadata(payload: Dict[str, Any]) -> None:
+    """Keep only timestamp distinctions not implied by the serialized format."""
+    timestamp_format = str(payload.get("timestamp_format") or "").strip().lower()
+    implied_mode = {
+        "epoch_seconds": "utc",
+        "iso_utc": "utc",
+        "iso_offset": "client_timezone",
+    }.get(timestamp_format)
+    if implied_mode is None:
+        return
+
+    timestamp_mode = str(payload.get("timestamp_mode") or "").strip().lower()
+    public_mode = str(payload.get("public_timestamp_mode") or "").strip().lower()
+    if timestamp_mode == implied_mode:
+        payload.pop("timestamp_mode", None)
+    if public_mode == implied_mode:
+        payload.pop("public_timestamp_mode", None)
+
+    time_basis = str(payload.get("time_basis") or "").strip().lower()
+    if time_basis == implied_mode:
+        payload.pop("time_basis", None)
+
+    timestamp_timezone = str(payload.get("timestamp_timezone") or "").strip()
+    timezone_name = str(payload.get("timezone") or "").strip()
+    implied_timezone = "UTC" if implied_mode == "utc" else timezone_name
+    if (
+        timestamp_timezone
+        and implied_timezone
+        and timestamp_timezone.casefold() == implied_timezone.casefold()
+    ):
+        payload.pop("timestamp_timezone", None)
 
 
 def _normalize_public_candle_timestamp_mode(
@@ -1880,6 +1914,8 @@ def _run_data_fetch_ticks_impl(
             result,
             requested_format=str(request.timestamp_format),
         )
+        if str(request.detail or "compact").strip().lower() != "full":
+            _collapse_compact_timestamp_metadata(result)
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(
         result,

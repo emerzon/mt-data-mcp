@@ -220,6 +220,23 @@ mtdata-cli tools_list --category forecast --limit 20 --offset 20 --json
 
 ---
 
+## Market-data timestamps
+
+For candle and tick rows, `timestamp_format` is the authoritative description
+of the serialized `time` value. `iso_utc` means an ISO 8601 value with a UTC
+offset, `iso_offset` means an ISO 8601 value in the named `timezone`, and
+`epoch_seconds` means Unix seconds in UTC.
+
+Compact responses keep `timestamp_format` and `timezone`. They include
+`time_basis`, `timestamp_mode`, `public_timestamp_mode`, or
+`timestamp_timezone` only when a value is not implied by those two fields. For
+example, client-timezone display retains `time_basis: utc` because the source
+instant was normalized to UTC before display conversion. Use `detail=full` for
+the complete timestamp provenance, including `raw_timestamp_mode` when the MT5
+clock required normalization.
+
+---
+
 ## Percentage units
 
 Fields whose names end in `_pct` are scaled percent values: `1.0` means `1%`.

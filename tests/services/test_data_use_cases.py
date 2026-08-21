@@ -1889,7 +1889,7 @@ def test_compact_candles_always_names_forming_candle_status():
     assert result["forming_candle_status"] == "none"
 
 
-def test_compact_server_clock_candles_keep_concise_utc_disclosure():
+def test_compact_server_clock_candles_collapse_implied_utc_metadata():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=1)
 
     result = run_data_fetch_candles(
@@ -1908,10 +1908,11 @@ def test_compact_server_clock_candles_keep_concise_utc_disclosure():
         },
     )
 
-    assert result["timestamp_mode"] == "utc"
-    assert result["public_timestamp_mode"] == "utc"
+    assert result["timestamp_format"] == "iso_utc"
+    assert "timestamp_mode" not in result
+    assert "public_timestamp_mode" not in result
     assert "raw_timestamp_mode" not in result
-    assert result["time_basis"] == "utc"
+    assert "time_basis" not in result
     assert "time_normalization" not in result
 
 
@@ -2529,9 +2530,6 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "data_age_metric": "last_tick_age_seconds",
             "data_stale": True,
             "timestamp_format": "iso_utc",
-            "timestamp_mode": "utc",
-            "public_timestamp_mode": "utc",
-            "timestamp_timezone": "UTC",
             "units": {
             "bid": "absolute_price",
             "ask": "absolute_price",
