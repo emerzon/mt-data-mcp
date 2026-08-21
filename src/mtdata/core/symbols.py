@@ -1010,6 +1010,29 @@ def _find_symbol_suggestions(
     )
 
 
+def _visible_market_watch_note(
+    *,
+    visible_count: int,
+    broker_symbol_count: int,
+    filtered_total: int,
+    filters: Optional[Dict[str, Any]] = None,
+) -> str:
+    note = (
+        "Showing visible Market Watch symbols only "
+        f"({visible_count} of {broker_symbol_count} unfiltered)"
+    )
+    if filters:
+        filter_text = ", ".join(
+            f"{key}={value}"
+            for key, value in filters.items()
+            if value not in (None, "")
+        )
+        if filter_text:
+            note += f"; {filtered_total} match {filter_text}"
+    note += "; use universe=all or search_term for the broker catalog."
+    return note
+
+
 @mcp.tool()
 def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
@@ -1317,10 +1340,11 @@ def symbols_list(  # noqa: C901
                     out["visible_count"] = visible_count
                     out["broker_symbol_count"] = broker_symbol_count
                     if broker_symbol_count > visible_count:
-                        out["note"] = (
-                            "Showing visible Market Watch symbols only "
-                            f"({visible_count} of {broker_symbol_count}); "
-                            "use universe=all or search_term for the broker catalog."
+                        out["note"] = _visible_market_watch_note(
+                            visible_count=visible_count,
+                            broker_symbol_count=broker_symbol_count,
+                            filtered_total=total_count,
+                            filters=filters,
                         )
                 if not normalized_search_term:
                     out["sort"] = "market_overview"
@@ -1394,10 +1418,11 @@ def symbols_list(  # noqa: C901
                 result["visible_count"] = visible_count
                 result["broker_symbol_count"] = broker_symbol_count
                 if broker_symbol_count > visible_count:
-                    result["note"] = (
-                        "Showing visible Market Watch symbols only "
-                        f"({visible_count} of {broker_symbol_count}); "
-                        "use universe=all or search_term for the broker catalog."
+                    result["note"] = _visible_market_watch_note(
+                        visible_count=visible_count,
+                        broker_symbol_count=broker_symbol_count,
+                        filtered_total=total_count,
+                        filters=filters,
                     )
             if not normalized_search_term:
                 result["sort"] = "market_overview"
@@ -2572,6 +2597,41 @@ _MARKET_SCAN_UNITS = {
     "bar_stale_after_seconds": "seconds",
     "bar_age_hours": "hours",
 }
+
+
+def _attach_market_scan_rank_gap_warning(
+    payload: Dict[str, Any],
+    rows: List[Dict[str, Any]],
+) -> None:
+    if str(payload.get("ranking_basis") or "") != "completed_bar_metric":
+        return
+    max_gap = 0.0
+    for row in rows:
+        close = _market_scan_float(row.get("close"))
+        mid = _market_scan_float(row.get("mid"))
+        if mid is None:
+            bid = _market_scan_float(row.get("bid"))
+            ask = _market_scan_float(row.get("ask"))
+            if bid is not None and ask is not None:
+                mid = (bid + ask) / 2.0
+        if close is None or mid is None or mid <= 0:
+            continue
+        max_gap = max(max_gap, abs(close - mid) / mid)
+    if max_gap < 0.0015:
+        return
+    warning = (
+        "Ranking uses completed-bar close (price_change_pct). Live quotes diverge "
+        "from that close; use --rank-by abs_live_price_change_pct for executable "
+        "prices."
+    )
+    existing = payload.get("warnings")
+    if isinstance(existing, list):
+        if warning not in existing:
+            payload["warnings"] = [*existing, warning]
+    elif existing:
+        payload["warnings"] = [existing, warning]
+    else:
+        payload["warnings"] = [warning]
 
 
 def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -5274,6 +5334,7 @@ def market_scan(  # noqa: C901
                     + "."
                 )
             out.update(freshness_summary)
+            _attach_market_scan_rank_gap_warning(out, table_payload["rows"])
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:
                 out["units"] = units

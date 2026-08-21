@@ -341,6 +341,7 @@ def _run_data_fetch_candles_impl(
             request=request,
             gateway=gateway,
         )
+        _attach_forming_indicator_warning(result, request=request)
         result = attach_mt5_source(result, gateway=gateway)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
@@ -354,6 +355,36 @@ def _run_data_fetch_candles_impl(
             out.pop("canonical_source", None)
         return out
     return result
+
+
+def _attach_forming_indicator_warning(
+    payload: Dict[str, Any],
+    *,
+    request: DataFetchCandlesRequest,
+) -> None:
+    if payload.get("error") or not bool(getattr(request, "include_incomplete", False)):
+        return
+    if request.indicators in (None, "", [], {}):
+        return
+    data = payload.get("data")
+    if not isinstance(data, list) or not data:
+        return
+    last = data[-1]
+    if not isinstance(last, dict) or last.get("bar_state") != "forming":
+        return
+    payload["indicators_include_forming_bar"] = True
+    warning = (
+        "Indicator values on the latest row include the current forming bar "
+        "and can change before that bar closes."
+    )
+    existing = payload.get("warnings")
+    if isinstance(existing, list):
+        if warning not in existing:
+            payload["warnings"] = [*existing, warning]
+    elif existing:
+        payload["warnings"] = [existing, warning]
+    else:
+        payload["warnings"] = [warning]
 
 
 def _attach_forming_candle_update_freshness(
@@ -529,7 +560,7 @@ def _normalize_candle_query_error(
         "start_datetime must be before end_datetime" in normalized
         or "start must be before or equal to end" in normalized
     ):
-        error_code = "data_fetch_candles_invalid_date_range"
+        error_code = "invalid_date_range"
         remediation = "Set start to a timestamp earlier than or equal to end."
     elif "in the future" in normalized and "start" in normalized:
         error_code = "data_fetch_candles_future_date_range"

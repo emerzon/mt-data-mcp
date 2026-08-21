@@ -5,7 +5,12 @@ import os
 import time
 from typing import Any, Dict, Literal, Optional
 
-from ..shared.market_units import forex_points_per_pip
+from ..shared.market_units import (
+    UNIT_BROKER_POINTS,
+    UNIT_PERCENT,
+    UNIT_PIPS,
+    forex_points_per_pip,
+)
 from ..shared.schema import DetailLiteral
 from ..utils.coercion import round_finite
 from ..utils.freshness import (
@@ -65,8 +70,8 @@ _MARKET_DEPTH_BOOK_UNITS = {
 _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
 _MARKET_DEPTH_SPREAD_UNITS = {
     "spread": "absolute_price",
-    "spread_points": "broker_points",
-    "spread_pct": "percent (1.0 = 1%)",
+    "spread_points": UNIT_BROKER_POINTS,
+    "spread_pct": UNIT_PERCENT,
     "spread_cost_per_lot": "account_currency_per_broker_lot_estimate",
 }
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
@@ -165,6 +170,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "data_stale",
         "usable_for_live_trading",
         "usable_for_live_trading_basis",
+        "related_live_symbols",
         "live_max_age_seconds",
         "stale_after_seconds",
         "timestamp_ahead_of_wall_clock",
@@ -905,8 +911,8 @@ def market_ticker(  # noqa: C901
                     "last": "absolute_price",
                     "point": "price_increment",
                     "spread": "absolute_price",
-                    "spread_points": "broker_points",
-                    "spread_pct": "percent (1.0 = 1%)",
+                    "spread_points": UNIT_BROKER_POINTS,
+                    "spread_pct": UNIT_PERCENT,
                     "spread_cost_per_lot": "currency_per_lot_estimate",
                 },
             }
@@ -945,7 +951,7 @@ def market_ticker(  # noqa: C901
                 if pricing_basis == "per_1_lot_estimate":
                     out["pricing_basis_units"] = "broker_lot"
             if spread_pips is not None:
-                out["units"]["spread_pips"] = "pips"
+                out["units"]["spread_pips"] = UNIT_PIPS
             if tick_volume not in (None, 0):
                 out["tick_volume"] = tick_volume
             if spread_cost_per_lot is not None and spread_cost_currency:
@@ -988,6 +994,13 @@ def market_ticker(  # noqa: C901
                 quote_source_conflict=out.get("quote_source_conflict"),
                 point=point,
             )
+            if out.get("usable_for_live_trading") is False or out.get("data_stale") is True:
+                related_live_symbols = find_live_extended_session_symbols(
+                    mt5_gateway,
+                    resolved_symbol,
+                )
+                if related_live_symbols:
+                    out["related_live_symbols"] = related_live_symbols
             diagnostics = {
                 "source": out.get("quote_source", "mt5.symbol_info_tick"),
                 "cache_used": False,
@@ -1077,6 +1090,7 @@ def market_ticker(  # noqa: C901
                     "freshness_reason",
                     "usable_for_live_trading",
                     "usable_for_live_trading_basis",
+                    "related_live_symbols",
                     "live_max_age_seconds",
                     "timestamp_ahead_of_wall_clock",
                     "timestamp_in_future",

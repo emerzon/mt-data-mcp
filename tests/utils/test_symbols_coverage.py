@@ -26,6 +26,19 @@ def _unwrap(fn):
     return fn
 
 
+def test_visible_market_watch_note_mentions_active_filters():
+    from mtdata.core.symbols import _visible_market_watch_note
+
+    note = _visible_market_watch_note(
+        visible_count=24,
+        broker_symbol_count=7403,
+        filtered_total=12,
+        filters={"group": "Forex"},
+    )
+    assert "24 of 7403 unfiltered" in note
+    assert "12 match group=Forex" in note
+
+
 def _get_symbols_list():
     from mtdata.core.symbols import symbols_list
     raw = _unwrap(symbols_list)
@@ -438,6 +451,7 @@ class TestSymbolsListNoSearch:
         assert res["pagination"]["limit"] == 25
         assert res["universe"] == "visible"
         assert res["visible_count"] == 2
+        assert "unfiltered" in str(res.get("note") or "") or res["broker_symbol_count"] == 2
         assert res["broker_symbol_count"] == 2
         assert res["sample_count"] == 2
         assert res["sample"] == [

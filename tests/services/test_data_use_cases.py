@@ -11,6 +11,7 @@ from mtdata.core.data.requests import (
     DataFetchTicksRequest,
 )
 from mtdata.core.data.use_cases import (
+    _attach_forming_indicator_warning,
     _compact_tick_row,
     run_data_fetch_candles,
     run_data_fetch_ticks,
@@ -34,6 +35,28 @@ def test_run_data_fetch_candles_logs_finish_event(caplog):
         "event=finish operation=data_fetch_candles success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_forming_indicator_warning_is_attached_for_incomplete_bar():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=3,
+        include_incomplete=True,
+        indicators="rsi_14",
+    )
+    payload = {
+        "success": True,
+        "data": [
+            {"time": "2026-08-20T20:00:00Z", "close": 1.16, "bar_state": "closed"},
+            {"time": "2026-08-20T21:00:00Z", "close": 1.17, "bar_state": "forming", "rsi_14": 64.4},
+        ],
+    }
+
+    _attach_forming_indicator_warning(payload, request=request)
+
+    assert payload["indicators_include_forming_bar"] is True
+    assert any("forming bar" in str(item) for item in payload["warnings"])
 
 
 def test_run_data_fetch_candles_passes_allow_stale_to_service():
@@ -102,7 +125,7 @@ def test_candle_and_tick_results_share_broker_source_context() -> None:
         ),
         (
             "start_datetime must be before end_datetime",
-            "data_fetch_candles_invalid_date_range",
+            "invalid_date_range",
         ),
         (
             "start datetime 2099-01-01 is in the future; no historical data is available for future dates.",
