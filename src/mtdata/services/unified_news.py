@@ -434,6 +434,9 @@ class NewsItem:
             payload["source_timezone"] = self.source_timezone
         if self.scheduled_at is not None:
             payload["scheduled_at"] = self.scheduled_at.isoformat()
+        reference_date = self.metadata.get("reference_date") if self.metadata else None
+        if isinstance(reference_date, str) and reference_date.strip():
+            payload["reference_date"] = reference_date.strip()
         if self.metadata:
             payload["metadata"] = self.metadata
         return payload
@@ -596,6 +599,34 @@ def _maybe_parse_finviz_datetime(value: Any) -> Optional[datetime]:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ZoneInfo("America/New_York"))
     return parsed.astimezone(timezone.utc)
+
+
+def _economic_reference_date(
+    item: Dict[str, Any],
+    scheduled_at: Optional[datetime],
+) -> Optional[str]:
+    existing = item.get("reference_date")
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    match = re.fullmatch(
+        r"\s*(\d{1,2})/(\d{1,2})\s*",
+        str(item.get("reference") or ""),
+    )
+    if match is None or scheduled_at is None:
+        return None
+    try:
+        month, day = int(match.group(1)), int(match.group(2))
+        event_date = scheduled_at.astimezone(ZoneInfo(FINVIZ_CALENDAR_TIMEZONE)).date()
+        candidates = [
+            datetime(year, month, day).date()
+            for year in (event_date.year - 1, event_date.year, event_date.year + 1)
+        ]
+    except ValueError:
+        return None
+    return min(
+        candidates,
+        key=lambda candidate: abs((candidate - event_date).days),
+    ).isoformat()
 
 
 def _normalize_event_for(value: Any) -> str:
@@ -1802,6 +1833,8 @@ class FinvizNewsSource:
                     2: "medium",
                     3: "high",
                 }.get(raw_importance if isinstance(raw_importance, int) else None, "")
+                scheduled_at = _maybe_parse_finviz_datetime(item.get("date"))
+                reference_date = _economic_reference_date(item, scheduled_at)
                 summary_parts = []
                 for display_key, item_key in (
                     ("Actual", "actual"),
@@ -1810,6 +1843,8 @@ class FinvizNewsSource:
                     ("Category", "category"),
                     ("Reference", "reference"),
                 ):
+                    if display_key == "Reference" and reference_date:
+                        continue
                     value = _safe_text(item.get(item_key))
                     if value:
                         summary_parts.append(f"{display_key}: {value}")
@@ -1818,27 +1853,30 @@ class FinvizNewsSource:
                     "medium": NewsPriority.MEDIUM,
                     "low": NewsPriority.LOW,
                 }.get(impact, NewsPriority.MEDIUM)
+                metadata: Dict[str, Any] = {
+                    "event_for": event_for,
+                    "raw_event_for": raw_event_for or None,
+                    "impact": impact,
+                    "provider_timezone": "America/New_York",
+                    "source_rank": rank,
+                    "search_text": " ".join(
+                        _safe_text(item.get(key))
+                        for key in ("event", "ticker", "category", "reference")
+                    ),
+                }
+                if reference_date:
+                    metadata["reference_date"] = reference_date
                 out.append(
                     NewsItem(
                         title=f"{release}{f' ({event_for})' if event_for else ''}",
                         provider=self.name,
                         source="Finviz Economic Calendar",
                         kind="economic_event",
-                        scheduled_at=_maybe_parse_finviz_datetime(item.get("date")),
+                        scheduled_at=scheduled_at,
                         summary=" | ".join(summary_parts) or None,
                         category="economic_calendar",
                         priority=priority,
-                        metadata={
-                            "event_for": event_for,
-                            "raw_event_for": raw_event_for or None,
-                            "impact": impact,
-                            "provider_timezone": "America/New_York",
-                            "source_rank": rank,
-                            "search_text": " ".join(
-                                _safe_text(item.get(key))
-                                for key in ("event", "ticker", "category", "reference")
-                            ),
-                        },
+                        metadata=metadata,
                     )
                 )
             return out

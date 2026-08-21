@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -1645,6 +1646,53 @@ def test_fetch_unified_news_keeps_future_macro_events_out_of_related_bucket(monk
 
     assert [item["title"] for item in result["upcoming_events"]] == ["CPI (USD)"]
     assert result["related_news"] == []
+
+
+def test_fetch_unified_news_exposes_structured_reference_date(monkeypatch) -> None:
+    future_time = datetime.now(timezone.utc) + timedelta(hours=6)
+
+    monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
+    monkeypatch.setattr(svc, "get_forex_performance", lambda: {"success": True, "pairs": []})
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda limit=100, page=1, impact=None, date_from=None, date_to=None: {
+            "success": True,
+            "items": [
+                {
+                    "date": future_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "event": "CPI",
+                    "ticker": "USD",
+                    "importance": 3,
+                    "category": "Consumer Price Index CPI",
+                    "reference": "08/22",
+                    "actual": "3.2%",
+                    "forecast": "3.1%",
+                    "previous": "3.0%",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(svc, "get_mt5_news", lambda **_kwargs: {"success": True, "news": []})
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("USDJPY")
+
+    event = result["upcoming_events"][0]
+    event_date = future_time.astimezone(ZoneInfo("America/New_York")).date()
+    expected = min(
+        (
+            datetime(year, 8, 22).date()
+            for year in (event_date.year - 1, event_date.year, event_date.year + 1)
+        ),
+        key=lambda candidate: abs((candidate - event_date).days),
+    ).isoformat()
+    assert event["reference_date"] == expected
+    assert "Reference:" not in (event.get("summary") or "")
+    assert "Actual: 3.2%" in event["summary"]
 
 
 def test_fetch_unified_news_caps_upcoming_events_bucket_at_twenty(monkeypatch) -> None:
