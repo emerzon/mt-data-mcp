@@ -292,6 +292,43 @@ def _clean_stationarity_warning(text: Any) -> str:
     return raw
 
 
+def _kpss_critical_key(alpha: float) -> Optional[str]:
+    """Map a significance level to the Statsmodels KPSS critical-value label."""
+    mapping = ((0.01, "1%"), (0.025, "2.5%"), (0.05, "5%"), (0.1, "10%"))
+    for level, label in mapping:
+        if abs(float(alpha) - level) < 1e-12:
+            return label
+    return None
+
+
+def _kpss_is_stationary(
+    *,
+    p_value: float,
+    statistic: float,
+    critical_values: Any,
+    alpha: float,
+    bound_warning: Optional[str] = None,
+) -> bool:
+    """Decide KPSS stationarity. H0 is stationarity; reject at p <= alpha.
+
+    Statsmodels censors lookup-table p-values at 0.01/0.10, so a displayed
+    p-value equal to alpha can hide a stronger rejection. Prefer the matching
+    critical value, then honor bound-direction warnings, then use p > alpha.
+    """
+    crit_key = _kpss_critical_key(alpha)
+    if crit_key and isinstance(critical_values, dict) and crit_key in critical_values:
+        try:
+            return float(statistic) <= float(critical_values[crit_key])
+        except (TypeError, ValueError):
+            pass
+    warning_low = str(bound_warning or "").lower()
+    if "smaller than the reported" in warning_low and float(p_value) <= float(alpha):
+        return False
+    if "greater than the reported" in warning_low and float(p_value) >= float(alpha):
+        return True
+    return float(p_value) > float(alpha)
+
+
 @mcp.tool()
 def stationarity_test(
     symbol: str,
@@ -379,6 +416,8 @@ def stationarity_test(
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
                 result = kpss(series.to_numpy(), regression=trend, nlags="auto")
+            kpss_warnings = [_clean_stationarity_warning(item) for item in caught]
+            critical_values = _critical_values(result[3])
             rows.append(
                 {
                     "test": "kpss",
@@ -386,12 +425,18 @@ def stationarity_test(
                     "p_value": float(result[1]),
                     "lags": int(result[2]),
                     "samples": int(len(series)),
-                    "stationary": bool(float(result[1]) >= alpha),
+                    "stationary": _kpss_is_stationary(
+                        p_value=float(result[1]),
+                        statistic=float(result[0]),
+                        critical_values=critical_values,
+                        alpha=alpha,
+                        bound_warning=" ".join(kpss_warnings),
+                    ),
                     "null_hypothesis": "stationary",
-                    **({"critical_values": _critical_values(result[3])} if detail_mode == "full" else {}),
+                    **({"critical_values": critical_values} if detail_mode == "full" else {}),
                 }
             )
-            warnings_out.extend(_clean_stationarity_warning(item) for item in caught)
+            warnings_out.extend(kpss_warnings)
         if "pp" in requested:
             try:
                 from arch.unitroot import PhillipsPerron

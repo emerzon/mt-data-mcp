@@ -220,6 +220,74 @@ def test_stationarity_test_preserves_small_p_value(monkeypatch):
     assert result["items"][0]["p_value"] > 0.0
 
 
+def test_kpss_boundary_p_value_is_not_stationary():
+    assert diagnostics._kpss_is_stationary(
+        p_value=0.01,
+        statistic=2.328755,
+        critical_values={"1%": 0.216, "5%": 0.146},
+        alpha=0.01,
+        bound_warning=(
+            "KPSS p-value is approximate: the test statistic falls outside the "
+            "lookup table, so the actual p-value is smaller than the reported value."
+        ),
+    ) is False
+
+
+def test_kpss_p_value_equal_to_alpha_rejects_stationarity():
+    assert diagnostics._kpss_is_stationary(
+        p_value=0.05,
+        statistic=0.5,
+        critical_values=None,
+        alpha=0.05,
+    ) is False
+
+
+def test_kpss_p_value_above_alpha_is_stationary():
+    assert diagnostics._kpss_is_stationary(
+        p_value=0.1,
+        statistic=0.1,
+        critical_values={"5%": 0.463},
+        alpha=0.05,
+    ) is True
+
+
+def test_stationarity_test_kpss_censored_bound_is_non_stationary(monkeypatch):
+    from statsmodels.tsa import stattools
+
+    frame = _bars(np.linspace(100.0, 180.0, 200))
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    def _kpss(*_args, **_kwargs):
+        import warnings
+
+        warnings.warn(
+            "The test statistic is outside of the range of p-values available in the "
+            "look-up table. The actual p-value is smaller than the p-value returned.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return (2.328755, 0.01, 12, {"1%": 0.216, "5%": 0.146, "10%": 0.119})
+
+    monkeypatch.setattr(stattools, "kpss", _kpss)
+
+    result = _raw(diagnostics.stationarity_test)(
+        symbol="BTCUSD",
+        tests="kpss",
+        significance=0.01,
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert result["items"][0]["stationary"] is False
+    assert result["conclusion"] == "non_stationary"
+    assert any("smaller than the reported value" in warning for warning in result["warnings"])
+
+
 def test_clean_stationarity_warning_translates_kpss_lookup_warning():
     raw = (
         "The test statistic is outside of the range of p-values available in the "
