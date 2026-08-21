@@ -338,6 +338,14 @@ Candle responses echo the resolved instants and bound modes in `query_applied`.
 For an exact timestamp end, only candles whose close is at or before that
 instant are returned; completed OHLC values from an overlapping bar are never
 included early. Calendar-period ends retain their date/session-label behavior.
+D1/W1/MN1 date-only bounds require `MT5_SERVER_TZ` (or a non-zero
+`MT5_TIME_OFFSET_MINUTES`); they do not silently assume UTC.
+
+Tick `--start`/`--end` date-only values and calendar phrases such as `today`
+always resolve in UTC, not the broker D1 session: `--start 2026-08-14` begins
+at `2026-08-14T00:00:00Z` and `--end 2026-08-14` includes through UTC
+end-of-day. Pass an explicit timestamp when the window must match a broker
+session open.
 When `--start` and `--limit` are combined, candles are returned in ascending
 order from the start bound (first-N). When `--limit` is omitted, range queries
 return a 20-bar page. Follow `pagination.next_cursor` with the original range

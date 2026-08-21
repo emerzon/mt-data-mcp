@@ -2248,7 +2248,8 @@ class TestResolveParamKwargs:
             "default": None,
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="calendar")
-        assert kwargs["help"].startswith("Start date")
+        assert "YYYY-MM-DD" in kwargs["help"]
+        assert "today" in kwargs["help"]
 
     def test_calendar_end_help_is_command_specific(self):
         param = {
@@ -2258,7 +2259,8 @@ class TestResolveParamKwargs:
             "default": None,
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="calendar")
-        assert kwargs["help"].startswith("End date")
+        assert "YYYY-MM-DD" in kwargs["help"]
+        assert "today" in kwargs["help"]
 
     def test_temporal_min_bars_help_describes_group_filter(self):
         param = {

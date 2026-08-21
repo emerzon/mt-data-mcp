@@ -311,8 +311,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Insider activity view when universe=insider: latest, latest buys/sales, "
         "top week buys/sales, or top owner trade/buys/sales."
     ),
-    ("calendar", "start"): "Start date (YYYY-MM-DD).",
-    ("calendar", "end"): "End date (YYYY-MM-DD).",
+    ("calendar", "start"): (
+        "Inclusive start. YYYY-MM-DD or a relative phrase such as today or "
+        "2 days ago."
+    ),
+    ("calendar", "end"): (
+        "Inclusive end. YYYY-MM-DD or a relative phrase such as today or "
+        "2 days ago."
+    ),
     ("calendar", "upcoming"): (
         "When omitted with no start/end, economic calendar defaults to upcoming "
         "unreleased events. Pass false to include already-printed releases."
