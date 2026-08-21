@@ -25,7 +25,7 @@ How we write these pages: [STYLE.md](STYLE.md) (Contributor).
 | I want an AI assistant | [MCP.md](MCP.md) (User) | [TRADING_SAFETY.md](TRADING_SAFETY.md) |
 | Install and confirm MetaTrader 5 | [SETUP.md](SETUP.md) (User) | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Learn the command line safely | [CLI.md](CLI.md) (User) | [GLOSSARY.md](GLOSSARY.md), [SAMPLE-TRADE.md](SAMPLE-TRADE.md) |
-| Find a market / read a quote / news | [MARKET.md](MARKET.md) · [NEWS.md](NEWS.md) (User) | [FINVIZ.md](FINVIZ.md) |
+| Find a market / read a quote / news | [MARKET.md](MARKET.md) · [NEWS.md](NEWS.md) (User) | [FINVIZ.md](FINVIZ.md) (company, screens, calendars) |
 | Build a research workflow | [EXAMPLE.md](EXAMPLE.md) (User) | [REPORTS.md](REPORTS.md), [FORECAST.md](FORECAST.md) |
 | Prepare for trade execution | [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) (User) | [TRADING_SAFETY.md](TRADING_SAFETY.md) |
 | Host or script the API | [WEB_API.md](WEB_API.md) (Operator) | [DEPLOYMENT.md](DEPLOYMENT.md), [ENV_VARS.md](ENV_VARS.md) |
@@ -61,7 +61,7 @@ How we write these pages: [STYLE.md](STYLE.md) (Contributor).
 | Document | Audience | Description |
 |----------|----------|-------------|
 | [MARKET.md](MARKET.md) | User | Symbols, quotes, scans, snapshots, session status |
-| [NEWS.md](NEWS.md) | User | Ranked headlines and economic calendar |
+| [NEWS.md](NEWS.md) | User | Ranked headlines; use `calendar` for the event table |
 | [WAIT_EVENT.md](WAIT_EVENT.md) | User | Pause until a candle closes or an order fills |
 | [FORECAST.md](FORECAST.md) | User | Price forecasts, training, model store |
 | [REPORTS.md](REPORTS.md) | User | Packaged market summaries |
@@ -86,7 +86,7 @@ How we write these pages: [STYLE.md](STYLE.md) (Contributor).
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [FINVIZ.md](FINVIZ.md) | User | US equity fundamentals, screens, Finviz news |
+| [FINVIZ.md](FINVIZ.md) | User | Company dossiers, screens, calendars, delayed cross-asset tables |
 | [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) | User | Options chains and local barrier pricing |
 | [WEB_API.md](WEB_API.md) | Operator | HTTP routes behind the Web UI |
 
@@ -116,7 +116,7 @@ These are **not** tutorials. They track coverage and dependency work.
 |----------|-------------|
 | [WEBUI_GOAL.md](WEBUI_GOAL.md) | Chart-workspace product goal |
 | [WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md) | Route × UI matrix |
-| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 94 tools × UI surface |
+| [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md) | All 83 tools × UI surface |
 | [DEPENDENCY_MIGRATION.md](DEPENDENCY_MIGRATION.md) | Python 3.14 package snapshot |
 | [STYLE.md](STYLE.md) | Docs persona and page contract |
 

@@ -1934,17 +1934,51 @@ class NewsAggregator:
 
     def register_source(self, source: NewsSource) -> None:
         self._sources[source.name] = source
+        from .research.capabilities import NEWS
+        from .research.registry import get_research_registry
+
+        get_research_registry().register(source, capabilities={NEWS})
 
     def get_available_sources(self) -> List[str]:
         return [name for name, source in self._sources.items() if source.is_available()]
 
-    def fetch_news(self, symbol: Optional[str] = None) -> Dict[str, Any]:  # noqa: C901
+    def fetch_news(  # noqa: C901
+        self,
+        symbol: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> Dict[str, Any]:
         bucket_size = _DEFAULT_BUCKET_SIZE
         candidate_limit = bucket_size * _CANDIDATE_MULTIPLIER
         symbol_norm = _normalize_symbol(symbol)
         context = _classify_instrument(symbol_norm) if symbol_norm else None
         embedding_service = get_news_embedding_service()
-        selected_sources = {name: src for name, src in self._sources.items() if src.is_available()}
+        selected_sources = {
+            name: src for name, src in self._sources.items() if src.is_available()
+        }
+        pin = str(source or "auto").strip().lower() or "auto"
+        if pin not in {"auto", "all", ""}:
+            pinned = selected_sources.get(pin)
+            if pinned is None:
+                from .research.errors import (
+                    capability_unsupported_error,
+                    source_unavailable_error,
+                )
+
+                available = list(selected_sources)
+                if pin in self._sources:
+                    return capability_unsupported_error(
+                        capability="news",
+                        source=pin,
+                        available=available,
+                        operation="news",
+                    )
+                return source_unavailable_error(
+                    capability="news",
+                    source=pin,
+                    available=available,
+                    operation="news",
+                )
+            selected_sources = {pin: pinned}
         
         # When a symbol is specified, reduce general news to avoid drowning symbol-relevant news in noise
         general_bucket_size = bucket_size
@@ -2011,12 +2045,12 @@ class NewsAggregator:
                     "remediation": (
                         "Use symbols_list to verify a broker FX or crypto symbol, "
                         "or verify the standard US equity ticker used by the news "
-                        "provider. Use finviz_screen to discover supported equities."
+                        "provider. Use screener to discover supported equities."
                     ),
                     "related_tools": [
                         "symbols_list",
-                        "finviz_screen",
-                        "finviz_news",
+                        "screener",
+                        "news",
                     ],
                 }
             except Exception as exc:
@@ -2171,7 +2205,7 @@ class NewsAggregator:
                 related_selection["preselection_truncated"]
                 and context.asset_class == "equity"
             ):
-                related_selection["raw_continuation_tool"] = "finviz_news"
+                related_selection["raw_continuation_tool"] = "news"
 
             impact_pool = _score_then_dedupe_items(
                 list(related_candidates) + list(general_pool),
@@ -2310,8 +2344,9 @@ class NewsAggregator:
             if context.asset_class == "equity":
                 payload["symbol_news_note"] = (
                     f"No {context.symbol}-specific related news passed relevance gates; "
-                    "general_news remains market-wide. finviz_news can provide raw "
-                    "Finviz-only per-ticker headlines for supported equities."
+                    "general_news remains market-wide. news(view='ticker', "
+                    "source='finviz') can provide raw per-ticker headlines for "
+                    "supported equities."
                 )
             else:
                 payload["symbol_news_note"] = (
@@ -2339,11 +2374,14 @@ def get_news_aggregator() -> NewsAggregator:
     return _news_aggregator
 
 
-def fetch_unified_news(symbol: Optional[str] = None) -> Dict[str, Any]:
+def fetch_unified_news(
+    symbol: Optional[str] = None,
+    source: Optional[str] = None,
+) -> Dict[str, Any]:
     """Fetch general news and, when requested, instrument-related news."""
 
     aggregator = get_news_aggregator()
-    return aggregator.fetch_news(symbol=symbol)
+    return aggregator.fetch_news(symbol=symbol, source=source)
 
 
 def register_news_source(source: NewsSource) -> None:

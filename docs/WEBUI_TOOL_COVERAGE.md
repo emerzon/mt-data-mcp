@@ -7,6 +7,8 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 
 | Tool | Category | Surface | Frontend path | Confirm | Notes |
 |---|---|---|---|---|---|
+| `asset_performance` | market | generic_runner | tools-runner/generic | no | Delayed forex/crypto/futures/insider context, not live quotes |
+| `calendar` | news | generic_runner | tools-runner/generic | no | Provider-agnostic event table; Finviz is the current structured source |
 | `causal_discover_signals` | research | generic_runner | tools-runner/generic | no |  |
 | `cointegration_test` | research | generic_runner | tools-runner/generic | no |  |
 | `confluence_levels` | research | dedicated_ui | chart-workspace/confluence-overlay | no |  |
@@ -16,21 +18,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `data_fetch_ticks` | data | generic_runner | tools-runner/generic | no |  |
 | `denoise_describe` | methods | dedicated_ui | chart-workspace/denoise-modal | no |  |
 | `denoise_list_methods` | methods | dedicated_ui | chart-workspace/denoise-modal | no |  |
-| `finviz_calendar` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_crypto` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_description` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_earnings` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_filters_list` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_forex` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_fundamentals` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_futures` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_insider` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_insider_activity` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_market_news` | news | generic_runner | tools-runner/generic | no |  |
-| `finviz_news` | news | generic_runner | tools-runner/generic | no |  |
-| `finviz_peers` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_ratings` | market | generic_runner | tools-runner/generic | no |  |
-| `finviz_screen` | market | generic_runner | tools-runner/generic | no |  |
+| `equity_profile` | research | generic_runner | tools-runner/generic | no | US-issuer dossier; Finviz-backed |
 | `forecast_backtest_run` | forecast | dedicated_ui | forecast-panel/backtest | no |  |
 | `forecast_barrier_optimize` | forecast | generic_runner | tools-runner/generic | no |  |
 | `forecast_barrier_prob` | forecast | generic_runner | tools-runner/generic | no |  |
@@ -75,6 +63,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `portfolio_risk_decompose` | trading | generic_runner | tools-runner/generic | no |  |
 | `regime_detect` | pattern_regime | generic_runner | tools-runner/generic | no |  |
 | `report_generate` | report | generic_runner | tools-runner/generic | no |  |
+| `screener` | research | generic_runner | tools-runner/generic | no | Equity screen + filter catalog |
 | `seasonality_detect` | research | generic_runner | tools-runner/generic | no |  |
 | `stationarity_test` | research | generic_runner | tools-runner/generic | no |  |
 | `strategy_backtest` | forecast | generic_runner | tools-runner/generic | no |  |
@@ -109,7 +98,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 - **generic_runner** — discoverable and invocable from the SPA Tools runner (schema-driven form).
 - **intentional_omit** — visible with a rationale but not invocable from the SPA. Long-running tuning remains available through CLI/MCP; mutations use confirm gates instead.
 
-**Total tools in inventory:** 94 (includes env-gated market_depth_fetch even when disabled).
+**Total tools in inventory:** 83 (includes env-gated market_depth_fetch even when disabled).
 
 Source of truth for runtime catalog: `GET /api/v1/tools` (bootstraps MCP tools).
 Classification helpers: `mtdata.core.web_api_tools`.

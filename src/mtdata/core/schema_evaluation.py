@@ -62,11 +62,11 @@ class SchemaEvaluationReport:
         }
 
 
-_EXPECTED_DEFAULT_TOOL_COUNT = 93
-_EXPECTED_GATED_TOOL_COUNT = 94
+_EXPECTED_DEFAULT_TOOL_COUNT = 82
+_EXPECTED_GATED_TOOL_COUNT = 83
 _OUTPUT_CONTROLS = frozenset({"json", "output_fields"})
 _LEGACY_OUTPUT_CONTROLS = frozenset({"extras"})
-_FINVIZ_DOMAIN_FIELDS = frozenset({"finviz_fundamentals"})
+_FINVIZ_DOMAIN_FIELDS = frozenset({"equity_profile"})
 
 # These are intentional breaking migrations.  Keeping them here makes the scan
 # catch accidental reintroduction of aliases after the implementation is

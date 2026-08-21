@@ -5,14 +5,15 @@
 See what is happening around a market — headlines and scheduled economic
 releases — without opening a separate news terminal.
 
-The everyday command is `news`. It merges Finviz, MetaTrader 5 calendar items,
-and CNBC when that extra is installed, then ranks the mix. Use the
-`finviz_news` family only when you need raw Finviz pages, blogs, or provider
-pagination.
+The everyday command is `news`. It merges Finviz, MetaTrader 5, and CNBC when
+that extra is installed, then ranks the mix. Pass `--source finviz` (or
+`mt5` / `ycnbc`) to pin one adapter. Use `--view ticker` or `--view market`
+for a raw provider page. For a filterable event table — impact, currency,
+country, date range — use `calendar` instead of ranked news buckets.
 
 **Dense terms:** [Finviz](GLOSSARY.md#finviz)
 
-**Related:** [Finviz reference](FINVIZ.md) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Env vars (optional embeddings)](ENV_VARS.md#news-embeddings) (Operator)
+**Related:** [Company and calendar context](FINVIZ.md) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Env vars (optional embeddings)](ENV_VARS.md#news-embeddings) (Operator)
 
 ---
 
@@ -66,8 +67,9 @@ The related-news selector reserves up to five of the newest direct-symbol
 headlines before filling the remaining internal selection by relevance. Full
 detail exposes `related_selection`, including whether that selection was
 truncated. For the complete provider-ordered US-equity page, continue with
-`finviz_news SYMBOL`; public `news` limits paginate the selected multi-source
-feed rather than the raw provider candidate pool.
+`news SYMBOL --view ticker --source finviz`; public unified `news` limits
+paginate the selected multi-source feed rather than the raw provider
+candidate pool.
 Calendar rows show both the absolute UTC `scheduled_at` timestamp and the
 convenience `relative_time` label in the default TOON view.
 
@@ -81,13 +83,13 @@ tight cap does not hide the next scheduled release.
 
 ---
 
-## When to use Finviz tools instead
+## When to use a raw provider page or a table
 
 | Need | Tool |
 |------|------|
-| One stock’s Finviz news page | `finviz_news NVDA` |
-| Broad Finviz headlines or blogs | `finviz_market_news` |
-| Economic or earnings calendar only | `finviz_calendar` / `finviz_earnings` |
+| One stock’s provider news page | `news NVDA --view ticker --source finviz` |
+| Broad headlines or blogs | `news --view market --source finviz` |
+| Economic or earnings calendar only | `calendar` / `calendar --kind earnings --view period` |
 | Fundamentals, screeners, insiders | See [FINVIZ.md](FINVIZ.md) |
 
 Finviz US-equity data is delayed about 15–20 minutes. Treat it as research

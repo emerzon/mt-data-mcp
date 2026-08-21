@@ -113,7 +113,7 @@ Run at session start, reconnect, after a major event, after repeated churn, afte
 5. `market_ticker(symbol="{{SYMBOL}}")`
 6. `market_status(symbol="{{SYMBOL}}")`
 7. `news(symbol="{{SYMBOL}}")`
-8. `finviz_calendar(calendar="economic", impact="high", limit=20, detail="compact")`
+8. `calendar(kind="economic", impact="high", limit=20, detail="compact")`
 9. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="H1", limit=180, indicators="ema(20),ema(50),ema(200),rsi(14),macd(12,26,9),adx(14),aroon(14),chop(14),vhf(28),atr(14),mfi(14)")`
 10. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="M15", limit=160, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),aroon(14),chop(14),atr(14),bbands(20,2),kc(20),donchian(20,20),vwap,vwma(20),mfi(14),cmf(20)")`
 11. `data_fetch_candles(symbol="{{SYMBOL}}", timeframe="M5", limit=140, include_spread=True, indicators="ema(20),ema(50),rsi(14),macd(12,26,9),adx(14),chop(14),atr(14),natr(14),supertrend(7,3),bbands(20,2),donchian(20,20),vwap,vwma(20),mfi(14),obv,cmf(20),efi(13),pvo(12,26,9)")`
@@ -343,7 +343,7 @@ Playbook fields:
 
 `news_spread_shock`:
 - Trigger: spread jumps, market status changes, high-impact economic news is within the event caution/red window, quote freshness weakens, tick quality degrades, or broker constraints/rejections appear.
-- Required tools: `market_status`, `news`, `finviz_calendar(calendar="economic", impact="high", limit=20, detail="compact")`, `market_ticker`, `data_fetch_ticks`, `trade_get_open`, `trade_get_pending`, and `trade_account_info` if margin or execution readiness may have changed.
+- Required tools: `market_status`, `news`, `calendar(kind="economic", impact="high", limit=20, detail="compact")`, `market_ticker`, `data_fetch_ticks`, `trade_get_open`, `trade_get_pending`, and `trade_account_info` if margin or execution readiness may have changed.
 - Allowed actions: protect first, cancel tight or event-exposed pending orders, widen no-trade zones, harvest if available, tighten only where safe, close or hedge defensively, map post-event levels, and wait for spread normalization.
 - Blocked actions: expanding grids, adding recovery legs, opening dual grids, placing tight TPs/SLs, pre-positioning just before a release, or relying on stale candle structure.
 - Risk style: no new risk unless it reduces exposure, immediate spread-aware anti-sweep recheck, shorter time stops, smaller hedge size, and conservative verification after every action.
@@ -351,7 +351,7 @@ Playbook fields:
 
 `event_volatility_harvest`:
 - Trigger: a high-impact economic release has just occurred or is active, spread has normalized enough to trade, M1/M5/ticks show a tradable post-event sweep/reclaim or breakout/retest, and the action is explicitly designed to harvest volatility rather than guess the event outcome.
-- Required tools: `finviz_calendar(calendar="economic", impact="high", limit=20, detail="compact")`, `news(symbol="{{SYMBOL}}")`, `market_status(symbol="{{SYMBOL}}")`, `market_ticker(symbol="{{SYMBOL}}")`, `data_fetch_ticks(symbol="{{SYMBOL}}", limit=200, detail="summary")`, M1/M5 candles with spread, S/R map, M1 or M5 `forecast_volatility_estimate`, and `trade_risk_analyze`.
+- Required tools: `calendar(kind="economic", impact="high", limit=20, detail="compact")`, `news(symbol="{{SYMBOL}}")`, `market_status(symbol="{{SYMBOL}}")`, `market_ticker(symbol="{{SYMBOL}}")`, `data_fetch_ticks(symbol="{{SYMBOL}}", limit=200, detail="summary")`, M1/M5 candles with spread, S/R map, M1 or M5 `forecast_volatility_estimate`, and `trade_risk_analyze`.
 - Allowed actions: very small tactical scalp, fast rescue-harvest, post-release breakout-retest entry, post-release sweep-reclaim entry, defensive hedge that can also profit from headwind volatility, or quick close/harvest of existing legs.
 - Blocked actions: entering before the release to predict direction, adding full-grid exposure during the first chaotic spread spike, holding event scalps as swing trades, placing pending orders directly around the release price, or using dual grids while spread is unstable.
 - Risk style: minimum practical leg count and lot size, wider anti-sweep buffers, quick partial/full harvests, short M1/M5 time stop, no stale pendings through the event, and immediate simplification if spread expands again.
@@ -609,7 +609,7 @@ Before any market order, pending order, scale-in, recovery add, hedge, dual-grid
 1. Confirm the active Scenario Playbook and tactic: `single_shot`, `staged_grid`, `recovery_grid`, `rescue_harvest`, `tactical_hedge`, `dual_grid`, `simplify`, or `close`.
 2. Refresh exposure with `trade_get_open` and `trade_get_pending`.
 3. Refresh quote with `market_ticker`.
-4. Refresh event context with `market_status`, `news`, and `finviz_calendar(calendar="economic", impact="high", limit=20, detail="compact")` when stale, when the event window is unknown, or when the action's time stop could overlap a `120` minute high-impact event window.
+4. Refresh event context with `market_status`, `news`, and `calendar(kind="economic", impact="high", limit=20, detail="compact")` when stale, when the event window is unknown, or when the action's time stop could overlap a `120` minute high-impact event window.
 5. Refresh account readiness with `trade_account_info(detail="full")` if not fresh.
 6. Refresh symbol constraints with `symbols_describe(symbol="{{SYMBOL}}", detail="full")` if not fresh.
 7. Refresh M15 and M5 structure with the standard packs.
@@ -651,9 +651,9 @@ Give-up actions, in order of preference:
 6. close or flatten the campaign
 
 ## Event and News Gates
-- `news(symbol="{{SYMBOL}}")`, `market_status(symbol="{{SYMBOL}}")`, and `finviz_calendar(calendar="economic", impact="high", limit=20, detail="compact")` are mandatory at session start and before a fresh grid campaign.
+- `news(symbol="{{SYMBOL}}")`, `market_status(symbol="{{SYMBOL}}")`, and `calendar(kind="economic", impact="high", limit=20, detail="compact")` are mandatory at session start and before a fresh grid campaign.
 - Treat high-impact economic events as relevant when they affect either currency in an FX pair, USD for USD-quoted crypto/metals/indices/CFDs, the symbol's country/sector, or broad risk appetite.
-- When symbol metadata exposes a relevant currency, prefer a filtered follow-up such as `finviz_calendar(calendar="economic", impact="high", currency="USD", limit=20, detail="compact")`; otherwise use the global high-impact calendar and classify relevance manually.
+- When symbol metadata exposes a relevant currency, prefer a filtered follow-up such as `calendar(kind="economic", impact="high", currency="USD", limit=20, detail="compact")`; otherwise use the global high-impact calendar and classify relevance manually.
 - Refresh the high-impact calendar when the last read is older than `60` minutes, when an event is within `120` minutes, after an event, after abnormal price/spread movement, or before any new grid/recovery/dual-grid campaign.
 - Refresh `news` when the last read is older than `90` minutes while exposure exists, a high-impact event is within `120` minutes, an event just occurred, price moves abnormally, or fresh risk is being considered after a new `PRIMARY_TF` close.
 - Refresh `market_status` near opens, closes, session handoffs, high-impact releases, and after execution anomalies.
@@ -666,7 +666,7 @@ Give-up actions, in order of preference:
 - Do not carry ordinary pending grid orders through a relevant high-impact release unless they are explicitly defensive, spread-buffered, and still valid under all-fill risk.
 - Before the release, prepare by mapping likely sweep levels, invalidation, cancel zones, and post-event playbook switches. Do not pre-position to guess direction.
 - After the release, wait for executable spread and tick quality to normalize before using event volatility; then require a post-event `sweep_reclaim` or `breakout_retest` structure, fast harvest, and short time stop.
-- Use broader `finviz_*` tools when built-in `news` or the economic calendar is thin, asset-specific context is needed, or an equity/sector/crypto/futures/forex drill-down can materially change aggression or holding risk.
+- Use broader `calendar, equity_profile, screener, and asset_performance` tools when built-in `news` or the economic calendar is thin, asset-specific context is needed, or an equity/sector/crypto/futures/forex drill-down can materially change aggression or holding risk.
 
 ## Tool Access Catalog
 All available tools may be used when they answer the active decision. Use them through the tiered policy above.
@@ -734,20 +734,20 @@ Regime, labels, indicators, patterns, causal, and relationships:
 
 News, Finviz, options, and reports:
 - `news`
-- `finviz_news`
-- `finviz_market_news`
-- `finviz_calendar`
-- `finviz_forex`
-- `finviz_crypto`
-- `finviz_futures`
-- `finviz_fundamentals`
-- `finviz_description`
-- `finviz_insider`
-- `finviz_insider_activity`
-- `finviz_ratings`
-- `finviz_peers`
-- `finviz_screen`
-- `finviz_earnings`
+- `news`
+- `news`
+- `calendar`
+- `asset_performance`
+- `asset_performance`
+- `asset_performance`
+- `equity_profile`
+- `equity_profile`
+- `equity_profile`
+- `asset_performance`
+- `equity_profile`
+- `equity_profile`
+- `screener`
+- `calendar`
 - `options_expirations`
 - `options_chain`
 - `options_barrier_price`

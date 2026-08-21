@@ -42,7 +42,7 @@ Mode selection policy:
 Use these tools for the classifier:
 1. `trade_account_info`
 2. `market_ticker(symbol="{{SYMBOL}}")`
-3. `finviz_calendar(calendar="economic", impact="high", limit=20)`
+3. `calendar(kind="economic", impact="high", limit=20)`
 4. `data_fetch_candles` on the candidate structural timeframe(s) using the mode classifier pack:
    `adx(14),chop(14),er(10),natr(14),aroon(14),squeeze_pro`
 5. `regime_detect` on the proposed `PRIMARY_TF` when uncertain
@@ -262,7 +262,7 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 4. `trade_get_pending(symbol="{{SYMBOL}}")`
 5. `market_ticker(symbol="{{SYMBOL}}")`
 6. `market_status(region="all")`
-7. `finviz_calendar(calendar="economic", impact="high", limit=20)`
+7. `calendar(kind="economic", impact="high", limit=20)`
 8. `news(symbol="{{SYMBOL}}")`
 9. Resolve the active ladder:
    - if `PRIMARY_TF` and `EXECUTION_TF` were user-pinned, keep them and derive `HIGHER_TF`
@@ -273,10 +273,10 @@ Run at session start, after reconnect, after a major event, or after repeated ex
 13. `support_resistance_levels(symbol="{{SYMBOL}}", timeframe="auto")`
 14. `forecast_list_methods(detail="compact")`
 15. Optional secondary context drill-down when the unified reads are thin or asset-specific detail matters:
-   - equities: `finviz_news(symbol="{{SYMBOL}}")`
-   - FX: `finviz_forex()` plus `finviz_market_news(...)` when needed
-   - crypto: `finviz_crypto()` plus `finviz_market_news(...)` when needed
-   - futures/commodities: `finviz_futures()` plus `finviz_market_news(...)` when needed
+   - equities: `news(symbol="{{SYMBOL}}")`
+   - FX: `asset_performance()` plus `news(...)` when needed
+   - crypto: `asset_performance()` plus `news(...)` when needed
+   - futures/commodities: `asset_performance()` plus `news(...)` when needed
 
 If an uncommon indicator call fails, use `indicators_list(search_term="...")` or `indicators_describe(name="...")` once to correct the syntax.
 If `HIGHER_TF` data is stale or unavailable:
@@ -324,11 +324,11 @@ Do not rerun `market_status` or `news` every loop by default if the last context
   - a major event just occurred
   - price makes an abnormal move that may be news-driven
   - 3 fresh loops have passed while you still have open exposure, pending exposure, or an active entry thesis
-- `finviz_calendar` is mandatory at session start and again when:
+- `calendar` is mandatory at session start and again when:
   - a major event is within 60 minutes
   - a major event just occurred
   - price makes an abnormal move that may be news-driven
-- `finviz_calendar(calendar="economic", impact="high", limit=20)` is the default structured event-calendar read. Use it together with `news(...)`, not as a replacement for it.
+- `calendar(kind="economic", impact="high", limit=20)` is the default structured event-calendar read. Use it together with `news(...)`, not as a replacement for it.
 - Use asset-class Finviz tools as secondary drill-down only when you need extra detail beyond `news(...)`.
 - If a high-impact event is within 30 minutes, either reduce aggression, simplify risk, or use a deliberate breakout/pending plan. Do not drift into the event passively.
 

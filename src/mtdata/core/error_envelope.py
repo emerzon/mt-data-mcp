@@ -22,24 +22,40 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
     },
     "finviz_unsupported_symbol": {
         "remediation": (
-            "Finviz equity tools require a US equity ticker. Use news or MT5 "
+            "Equity-profile tools require a US equity ticker. Use news or MT5 "
             "market-data tools for broker, FX, and crypto symbols; use "
-            "finviz_crypto or finviz_forex for Finviz market snapshots."
+            "asset_performance for delayed forex/crypto/futures context."
         ),
         "related_tools": [
             "news",
             "data_fetch_candles",
-            "finviz_crypto",
-            "finviz_forex",
+            "asset_performance",
         ],
     },
     "news_symbol_unavailable": {
         "remediation": (
             "Use symbols_list to verify a broker FX or crypto symbol, or verify "
             "the standard US equity ticker used by the news provider. Use "
-            "finviz_screen to discover supported equity tickers."
+            "screener to discover supported equity tickers."
         ),
-        "related_tools": ["symbols_list", "finviz_screen", "finviz_news"],
+        "related_tools": ["symbols_list", "screener", "news"],
+    },
+    "research_source_unavailable": {
+        "remediation": (
+            "Pass source=auto to use every available adapter, or pick a name "
+            "from valid_values.source."
+        ),
+        "related_tools": ["news", "calendar"],
+    },
+    "research_capability_unsupported": {
+        "remediation": (
+            "Use source=auto, or pin a source listed in valid_values.source."
+        ),
+        "related_tools": ["news", "calendar"],
+    },
+    "calendar_invalid_view": {
+        "remediation": "Use view=period only with kind=earnings, or switch to view=range.",
+        "related_tools": ["calendar", "news"],
     },
     "options_unsupported_symbol": {
         "remediation": (
@@ -129,15 +145,18 @@ def _default_error_guidance(
     code_text = str(code or "").strip().lower()
     operation_text = str(operation or "").strip().lower()
     if code_text in {"symbol_not_found", "finviz_symbol_not_found"} and (
-        operation_text.startswith("finviz_")
+        operation_text
+        in {"equity_profile", "screener", "asset_performance", "news", "calendar"}
+        or operation_text.startswith("finviz_")
         or code_text == "finviz_symbol_not_found"
     ):
         return {
             "remediation": (
-                "Verify the standard US equity ticker used by Finviz; do not use "
-                "an MT5 broker suffix. Use finviz_screen to discover provider tickers."
+                "Verify the standard US equity ticker used by the research "
+                "provider; do not use an MT5 broker suffix. Use screener to "
+                "discover provider tickers."
             ),
-            "related_tools": ["finviz_screen"],
+            "related_tools": ["screener"],
         }
     if code_text in _ERROR_GUIDANCE:
         return dict(_ERROR_GUIDANCE[code_text])

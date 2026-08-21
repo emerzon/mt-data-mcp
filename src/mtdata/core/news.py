@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
 
 from pydantic import Field
 
+from ..services.research.payload import stamp_provider
 from ..services.unified_news import fetch_unified_news
 from ..shared.schema import DetailLiteral
 from ..utils.time import format_datetime_utc, format_relative_time
@@ -353,9 +354,9 @@ def normalize_news_output(
             out["provider_failures"] = provider_failures
         out["hint"] = (
             "No headline or event rows were selected from the queried providers. "
-            "Use finviz_market_news for a raw broad-market Finviz feed."
+            "Use news(view='market', source='finviz') for a raw broad-market feed."
         )
-        out["related_tools"] = ["finviz_market_news"]
+        out["related_tools"] = ["news", "calendar"]
     return out
 
 
@@ -610,14 +611,35 @@ def news(
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
     limit_per_bucket: Optional[int] = None,
+    source: Annotated[
+        Literal["auto", "finviz", "mt5", "ycnbc"],
+        Field(description="Adapter pin. auto merges every available source."),
+    ] = "auto",
+    view: Annotated[
+        Literal["unified", "ticker", "market"],
+        Field(
+            description=(
+                "unified ranks mixed sources. ticker and market return a raw "
+                "provider page."
+            )
+        ),
+    ] = "unified",
+    news_type: Annotated[
+        Literal["news", "blogs"],
+        Field(description="Headline vs blog slice for view=market."),
+    ] = "news",
+    page: Annotated[
+        int,
+        Field(ge=1, description="One-based page for ticker and market views."),
+    ] = 1,
 ) -> Dict[str, Any]:
     """
     Fetch important general news and, optionally, symbol-relevant news.
 
     This is the preferred trader-facing news tool. It merges Finviz, MT5, and
     CNBC sources when available, then ranks and buckets headlines by relevance,
-    market impact, and event timing. Use Finviz-specific news tools only when
-    you need raw provider pagination, URLs, blogs, or Finviz-only rows.
+    market impact, and event timing. Pass ``source`` to pin one adapter.
+    Use ``view="ticker"`` or ``view="market"`` for a raw provider page.
 
     With no symbol, returns the most important recent general news from all
     available sources.
@@ -661,6 +683,17 @@ def news(
         defaults to five items per bucket; pass this value to override it.
     offset : int, optional
         Number of ranked bucket-order items to skip before applying limit.
+    source : {"auto", "finviz", "mt5", "ycnbc"}, optional
+        Adapter pin. ``auto`` (default) merges every available source. Pin
+        ``finviz``, ``mt5``, or ``ycnbc`` to query one provider.
+    view : {"unified", "ticker", "market"}, optional
+        ``unified`` (default) ranks mixed sources. ``ticker`` needs a symbol
+        and returns that provider's equity page. ``market`` returns the
+        provider's broad headline/blog page.
+    news_type : {"news", "blogs"}, optional
+        Market-view slice.
+    page : int, optional
+        Provider page for ticker and market views.
 
     Returns
     -------
@@ -735,8 +768,44 @@ def news(
         else limit_per_bucket_value
     )
 
+    def _fetch_raw_provider_page() -> Dict[str, Any]:
+        from .finviz import finviz_market_news, finviz_news
+
+        pin = str(source or "auto").strip().lower() or "auto"
+        if pin not in {"auto", "finviz"}:
+            return build_error_payload(
+                f"view='{view}' is only served by the finviz adapter.",
+                code="research_capability_unsupported",
+                operation="news",
+                details={"source": pin, "view": view},
+            )
+        if view == "ticker":
+            if symbol in (None, ""):
+                return {
+                    "success": False,
+                    "error": "view='ticker' requires a symbol.",
+                    "error_code": "news_symbol_required",
+                    "operation": "news",
+                }
+            payload = finviz_news(
+                symbol=str(symbol),
+                limit=int(effective_limit or 20),
+                page=int(page),
+                detail=detail_mode,  # type: ignore[arg-type]
+            )
+        else:
+            payload = finviz_market_news(
+                news_type=news_type,
+                limit=int(effective_limit or 20),
+                page=int(page),
+                detail=detail_mode,  # type: ignore[arg-type]
+            )
+        return stamp_provider(payload, provider="finviz")
+
     def _run() -> Dict[str, Any]:
-        raw = fetch_unified_news(symbol=symbol)
+        if view in {"ticker", "market"}:
+            return _fetch_raw_provider_page()
+        raw = fetch_unified_news(symbol=symbol, source=source)
         if isinstance(raw, dict) and raw.get("success") is False:
             return raw
         out = _apply_news_limit(
@@ -768,5 +837,7 @@ def news(
         limit=effective_limit,
         offset=offset_value,
         limit_per_bucket=effective_limit_per_bucket,
+        source=source,
+        view=view,
         func=_run,
     )

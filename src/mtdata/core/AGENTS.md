@@ -1,6 +1,6 @@
 # core/ — API-Facing Layer
 
-All 93 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
+All 82 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
 
 ## FILE MAP
 
@@ -19,7 +19,11 @@ All 93 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `regime/` | — | Regime detection (HMM + rule-based) |
 | `temporal.py` | 1531 | Temporal/seasonal analysis tools |
 | `causal.py` | 3528 | Causal analysis tools |
-| `finviz.py` | 3919 | Finviz fundamentals/screening tools |
+| `calendar.py` | — | Provider-agnostic economic/earnings calendar |
+| `equity_profile.py` | — | US-issuer dossier |
+| `screener.py` | — | Equity screener |
+| `asset_performance.py` | — | Delayed cross-asset performance context |
+| `finviz.py` | — | Internal Finviz adapters (not MCP-catalogued) |
 | `indicators.py` | 743 | Indicator computation tools |
 | `market_depth.py` | 914 | Market depth tools |
 | `market_snapshot.py` | — | Unified market snapshot tools |

@@ -14,6 +14,11 @@ from mtdata.bootstrap.tools import cli_tool_module_names
         ("forecast_task_status", "mtdata.core.forecast_tasks"),
         ("trade_session_context", "mtdata.core.trading"),
         ("support_resistance_levels", "mtdata.core.pivot"),
+        ("calendar", "mtdata.core.calendar"),
+        ("news", "mtdata.core.news"),
+        ("equity_profile", "mtdata.core.equity_profile"),
+        ("screener", "mtdata.core.screener"),
+        ("asset_performance", "mtdata.core.asset_performance"),
     ],
 )
 def test_cli_tool_module_names_routes_command_families(command: str, module: str) -> None:

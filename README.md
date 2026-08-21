@@ -68,7 +68,7 @@ Optional guardrails (allowed symbols, max volume, max risk % of equity) are docu
 | **Strategy & risk** | Simple rule backtests; VaR/CVaR, stress, position sizing | `strategy_backtest`, `trade_var_cvar_calculate` |
 | **Trade ideas** | One preview-only research idea: forecast, barriers, size, dry-run | `trade_idea_compose` |
 | **Trading** | Place/manage orders with guardrails when you opt in | `trade_place`, `trade_close` |
-| **News & fundamentals** | Ranked news/calendar; Finviz equity screens | `news`, `finviz_screen` |
+| **News & fundamentals** | Ranked news/calendar; equity screens and issuer dossiers | `news`, `calendar`, `screener` |
 | **Options** | Chains + QuantLib barrier pricing | `options_chain`, `options_barrier_price` |
 | **Reports** | [Packaged research-style summaries](docs/REPORTS.md) | `report_generate` |
 

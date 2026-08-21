@@ -513,4 +513,4 @@ Once candles list and a simple forecast run:
 4. [MARKET.md](MARKET.md) · [NEWS.md](NEWS.md)
 5. [LIMITATIONS.md](LIMITATIONS.md) — Caveats before deep integrations
 
-Also useful later: [FINVIZ.md](FINVIZ.md) · [TEMPORAL.md](TEMPORAL.md) · [FORECAST.md](FORECAST.md)
+Also useful later: [FINVIZ.md](FINVIZ.md) (company, screens, calendars) · [TEMPORAL.md](TEMPORAL.md) · [FORECAST.md](FORECAST.md)

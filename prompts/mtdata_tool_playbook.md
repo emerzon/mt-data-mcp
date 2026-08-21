@@ -129,15 +129,17 @@ restart.
 ## Asset Context Routing
 
 - Always start with `news(symbol=SYMBOL)`; it unifies general, calendar, and
-  symbol-relevant context when providers are available.
-- US equities: add `finviz_news`, `finviz_calendar(calendar="earnings")`, and
-  `finviz_fundamentals` only when company-specific context can alter the hold.
+  symbol-relevant context when providers are available. Pin `source` only when
+  one adapter is required.
+- US equities: add `calendar(kind="earnings")` and `equity_profile` only
+  when company-specific context can alter the hold.
   Use options tools only after `options_provider_status` passes.
-- FX: add `finviz_calendar(calendar="economic")` and `finviz_forex` when
-  currency or macro context is missing from `news`.
-- Futures, metals, and indices: add `finviz_futures` and the economic calendar.
-- Crypto: add `finviz_crypto`; treat exchange availability as distinct from
-  the broker symbol's tradability and spread.
+- FX: add `calendar(kind="economic")` and `asset_performance(universe="forex")`
+  when currency or macro context is missing from `news`.
+- Futures, metals, and indices: add `asset_performance(universe="futures")`
+  and `calendar(kind="economic")`.
+- Crypto: add `asset_performance(universe="crypto")`; treat exchange
+  availability as distinct from the broker symbol's tradability and spread.
 - Finviz is a context provider, not the executable quote source. Provider
   timestamps and symbol mappings can differ from MT5.
 
@@ -183,21 +185,10 @@ restart.
 
 | Tool | Mode | Call when | Parse and use |
 |---|---:|---|---|
-| `finviz_calendar` | R/G | Checking economic, earnings, or dividend events. | Read event type, date/time, impact, country/currency/symbol, estimate/actual fields, pagination, and provider warnings. Normalize provider time before applying a blackout. |
-| `finviz_crypto` | R/G | Adding broad crypto performance context. | Read ranked rows, performance horizons, quote age, and provider status. Do not substitute it for the MT5 symbol quote. |
-| `finviz_description` | R/G | Confirming a US company's business exposure. | Read description and symbol mapping. This is slow-changing context, not an entry signal. |
-| `finviz_earnings` | R/G | Fast review of upcoming US earnings. | Read company, symbol, date/session, estimates when present, page, and freshness. Confirm symbol relevance and timing. |
-| `finviz_filters_list` | R/G | Building a valid Finviz screen. | Read filter names, accepted values, pagination, and search results. Use returned values exactly. |
-| `finviz_forex` | R/G | Broad currency-pair performance context. | Read pair rows and performance fields. Resolve naming differences before relating a row to an MT5 symbol. |
-| `finviz_fundamentals` | R/G | A US equity hold depends on valuation, quality, growth, or balance-sheet context. | Read requested category/fields, values, missing fields, and provider timestamp. Fundamentals do not time an intraday entry. |
-| `finviz_futures` | R/G | Broad futures, metals, commodity, or index context. | Read contract rows and performance/change fields. Provider instruments may not match the broker CFD exactly. |
-| `finviz_insider` | R/G | Reviewing company-specific reported insider transactions. | Read transaction date, filing date, insider role, side, value/shares, pagination, and freshness. Filing latency prevents using it as a micro trigger. |
-| `finviz_insider_activity` | R/G | Surveying market-wide reported insider activity. | Read option/filter, rows, dates, sides, values, and pagination. Use as background only. |
-| `finviz_market_news` | R/G | Unified `news` is thin or a broad market narrative needs a provider fallback. | Read headline rows, source, publication time, link, news/blog type, and page. Deduplicate and check age. |
-| `finviz_news` | R/G | A US equity needs ticker-specific headline context. | Read ticker mapping, headline, publication time, source, and pagination. Confirm material claims elsewhere when execution depends on them. |
-| `finviz_peers` | R/G | Comparing a US equity with direct peers or finding hedge candidates. | Read peer symbols, count, and mapping. Peer status does not imply high or stable return correlation. |
-| `finviz_ratings` | R/G | Recent analyst actions may explain a move or overnight risk. | Read action, firm, rating/target fields, date, and extras. Ratings are contextual and can be stale. |
-| `finviz_screen` | R-heavy/G | Researching a bounded US equity candidate universe. | Read filters, view, ordered rows, page, and provider limits. Screening on current data followed by historical testing can introduce selection bias. |
+| `calendar` | R/G | Checking economic, earnings, or dividend events. | Preferred structured event table. Read event type, date/time, impact, country/currency/symbol, estimate/actual fields, pagination, `providers_used`, and provider warnings. Pin `source` only when you need one adapter. Normalize provider time before applying a blackout. |
+| `equity_profile` | R/G | A US equity hold depends on fundamentals, description, ratings, peers, or insider context. | Read `sections`, values, missing fields, mapping, pagination, and provider timestamp. Slow-changing context, not an intraday trigger. |
+| `screener` | R-heavy/G | Researching a bounded US equity candidate universe, or listing valid filters. | Read filters, view, ordered rows, page, and provider limits. Use returned filter names exactly. Screening on current data followed by historical testing can introduce selection bias. |
+| `asset_performance` | R/G | Broad forex, crypto, futures, or market-wide insider context. | Read ranked rows, performance horizons, quote age, and `quote_role`. Do not substitute it for an MT5 executable quote. |
 | `market_scan` | R-heavy | Filtering a specified MT5 universe on price, spread, volume, RSI, or SMA state. | Read flat rows, ranking field/order, filters, offsets, timeframe, and failed symbols. Recheck any candidate with symbol-specific tools. |
 | `market_status` | R | Session boot, reopen/close boundaries, or before new risk. | With a symbol read status, reason, `is_tradable`, `can_open_new_positions`, trade mode, and tick freshness. Region-only status is context, not symbol tradability. |
 | `market_ticker` | R | Every executable-price decision and post-action verification. | Read bid, ask, mid/last, spread and cost fields, digits, quote time, age, stale flag, and freshness. This is the executable reference, subject to slippage. |

@@ -8,9 +8,9 @@ ToolInfo = Dict[str, Any]
 
 
 _OPTIONAL_POSITIONAL_PARAMS: set[tuple[str, str]] = {
-    ("finviz_forex", "symbol"),
-    ("finviz_news", "symbol"),
+    ("asset_performance", "symbol"),
     ("news", "symbol"),
+    ("equity_profile", "symbol"),
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
     ("market_relative_strength", "symbols"),
@@ -47,7 +47,7 @@ _POSITIONAL_ONLY_OPTIONAL_PARAMS: set[tuple[str, str]] = set()
 
 _SEARCH_ALIAS_COMMANDS = frozenset(
     {
-        "finviz_filters_list",
+        "screener",
         "forecast_list_methods",
         "indicators_list",
         "symbols_list",
@@ -302,22 +302,21 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_get_pending", "magic"): "MT5 magic number filter for pending orders from one strategy or EA. Omit for all magic numbers.",
     ("trade_close", "magic"): "Standalone strategy scope for matching objects in the selected target class. Omit for all magic numbers.",
     ("wait_event", "magic"): "MT5 magic number filter for account events from one strategy or EA. Omit for all magic numbers.",
-    ("finviz_screen", "filters"): "Filter key=value pairs, operator aliases like beta_under=1, Finviz shorthand, or JSON object. Examples: 'country=USA,marketcap=mega', 'pe_under=15,beta_under=1', 'cap_largeover,exch_nyse', '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
-    ("finviz_screen", "limit"): "Max screener results to return on this page.",
-    ("finviz_screen", "order"): "Finviz sort key. Use --order=-marketcap for descending or --order=price for ascending.",
-    ("finviz_news", "limit"): "Max news items to return on this page.",
-    ("finviz_insider", "limit"): "Max insider trades to return on this page.",
-    ("finviz_insider_activity", "option"): (
-        "Insider activity view: latest, latest buys/sales, top week "
-        "buys/sales, or top owner trade/buys/sales."
+    ("screener", "filters"): "Filter key=value pairs, operator aliases like beta_under=1, Finviz shorthand, or JSON object. Examples: 'country=USA,marketcap=mega', 'pe_under=15,beta_under=1', 'cap_largeover,exch_nyse', '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
+    ("screener", "limit"): "Max screener results to return on this page.",
+    ("screener", "order"): "Sort key. Use --order=-marketcap for descending or --order=price for ascending.",
+    ("equity_profile", "limit"): "Max insider, ratings, or peer rows to return.",
+    ("asset_performance", "option"): (
+        "Insider activity view when universe=insider: latest, latest buys/sales, "
+        "top week buys/sales, or top owner trade/buys/sales."
     ),
-    ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
-    ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
-    ("finviz_calendar", "upcoming"): (
+    ("calendar", "start"): "Start date (YYYY-MM-DD).",
+    ("calendar", "end"): "End date (YYYY-MM-DD).",
+    ("calendar", "upcoming"): (
         "When omitted with no start/end, economic calendar defaults to upcoming "
         "unreleased events. Pass false to include already-printed releases."
     ),
-    ("finviz_earnings", "include_elapsed"): (
+    ("calendar", "include_elapsed"): (
         "Include earnings already released in the selected period. Defaults to "
         "false; after the US cash close this can empty this-week results."
     ),
@@ -448,12 +447,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Underlying symbol for listed options, e.g. AAPL or SPX. SPX resolves "
         "to Yahoo's ^SPX identifier when Yahoo is effective."
     ),
-    ("finviz_fundamentals", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
-    ("finviz_description", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
-    ("finviz_news", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
-    ("finviz_insider", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
-    ("finviz_ratings", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
-    ("finviz_peers", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
+    ("equity_profile", "symbol"): "US equity ticker, e.g. AAPL or TSLA.",
     ("options_heston_calibrate", "calendar"): (
         "QuantLib calendar name used by calibration helpers, such as UnitedStates.NYSE or NullCalendar."
     ),
@@ -774,11 +768,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("denoise_list_methods", "causality"): (
         "Filter methods by causal real-time support or zero-phase offline support."
     ),
-    ("finviz_filters_list", "filter_name"): (
-        "Exact Finviz screener filter name to describe; omit it to list filters."
+    ("screener", "filter_name"): (
+        "Exact screener filter name to describe; omit it to list filters."
     ),
-    ("finviz_fundamentals", "fields"): (
-        "Comma-separated Finviz fundamental fields to return; this selects domain "
+    ("equity_profile", "fields"): (
+        "Comma-separated fundamental fields to return; this selects domain "
         "data and is distinct from output_fields projection."
     ),
     ("forecast_barrier_optimize", "same_bar_policy"): (
@@ -1042,7 +1036,7 @@ def _split_visible_and_hidden_flags(*flags: str) -> tuple[tuple[str, ...], tuple
 
 def should_expose_cli_param(*, cmd_name: Optional[str], param_name: str) -> bool:
     """Return whether a function parameter should surface as a user CLI argument."""
-    if str(cmd_name or "") == "finviz_calendar" and str(param_name or "") in {"date_from", "date_to"}:
+    if str(cmd_name or "") == "calendar" and str(param_name or "") in {"date_from", "date_to"}:
         return False
     if str(cmd_name or "") == "wait_event" and str(param_name or "") == "instrument":
         return False

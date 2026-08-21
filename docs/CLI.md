@@ -498,10 +498,19 @@ and fees are allocated by closed volume. Check `entry_cost_coverage` and
 These averages are useful for journal review, but they are not Kelly inputs
 because they are not normalized to a consistent stake or unit of risk.
 
-### News
+### News, calendar, and company context
 | Command | Description |
 |---------|-------------|
-| `news` | Ranked headlines + calendar — see [NEWS.md](NEWS.md) |
+| `news` | Ranked headlines + event buckets. Pin `source` or use `view=ticker` / `view=market` for a raw provider page. See [NEWS.md](NEWS.md). |
+| `calendar` | Filterable economic / earnings / dividend table (`--kind`, `--view period` for this-week earnings). |
+| `equity_profile` | US-issuer dossier (`--sections` summary, description, ratings, peers, insider). |
+| `screener` | Equity screen, or `--list-filters true` for the filter catalog. |
+| `asset_performance` | Delayed forex/crypto/futures/insider context (`--universe`). Not a live broker quote. |
+
+These four table/dossier commands currently use Finviz as the research adapter.
+Exchange tickers such as `AAPL` are accepted; broker suffixes such as
+`AAPL.NAS` are normalized and reported as `requested_symbol` / `finviz_ticker`.
+Full examples: [FINVIZ.md](FINVIZ.md) (User). Everyday headlines: [NEWS.md](NEWS.md).
 
 ### Advanced MT5-native analytics
 
@@ -523,37 +532,6 @@ See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) for data requirements, exampl
 | Command | Description |
 |---------|-------------|
 | `temporal_analyze` | Analyze returns, volatility, and volume by time period (day of week, hour, month) |
-
-### Fundamental Data (Finviz)
-
-Finviz commands use exchange tickers such as `AAPL`; MT5 commands use the
-connected broker's symbol identifiers, which may be suffixed (for example
-`AAPL.NAS` or `AAPL.NAS-24`). Stock-specific Finviz commands accept recognized
-broker suffixes and expose both `requested_symbol` and the normalized
-`finviz_ticker`. The reverse mapping remains explicit because several broker
-contracts can match one ticker: pass a bare Finviz ticker to an MT5 tool and use
-its structured `details.did_you_mean` candidates to choose the intended
-contract.
-
-| Command | Description |
-|---------|-------------|
-| `finviz_fundamentals` | Get company fundamental metrics (P/E, EPS, market cap, etc.) |
-| `finviz_description` | Get company business description |
-| `finviz_news` | Get stock-specific or general market news |
-| `finviz_market_news` | Get broad market headlines or blog posts |
-| `finviz_insider` | Get insider trading activity for a stock |
-| `finviz_insider_activity` | Get market-wide insider trading activity |
-| `finviz_ratings` | Get analyst ratings history |
-| `finviz_peers` | Find peer companies |
-| `finviz_screen` | Screen stocks using Finviz filters |
-| `finviz_filters_list` | List valid screener filters and accepted values (pair with `finviz_screen`) |
-| `finviz_forex` | Get forex pairs performance snapshot |
-| `finviz_crypto` | Get cryptocurrency performance snapshot |
-| `finviz_futures` | Get futures market performance snapshot |
-| `finviz_calendar` | Get economic, earnings, or dividends calendar |
-| `finviz_earnings` | Get upcoming earnings announcements |
-
-See [FINVIZ.md](FINVIZ.md) for detailed examples.
 
 ### Options & QuantLib
 | Command | Description |

@@ -1,0 +1,255 @@
+"""Provider-agnostic US-issuer research dossier."""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated, Any, Dict, Literal, Optional
+
+from pydantic import Field
+
+from ..services.research.capabilities import EQUITY_PROFILE
+from ..services.research.payload import stamp_provider
+from ..services.research.registry import get_research_registry
+from ..shared.schema import DetailLiteral
+from ._mcp_instance import mcp
+from .execution_logging import run_logged_operation
+
+logger = logging.getLogger(__name__)
+
+ResearchSourcePin = Literal["auto", "finviz", "mt5"]
+_FUNDAMENTAL_SECTIONS = frozenset(
+    {
+        "summary",
+        "valuation",
+        "performance",
+        "technical",
+        "dividends",
+        "ownership",
+        "profile",
+        "all",
+    }
+)
+_EXTRA_SECTIONS = frozenset({"description", "ratings", "peers", "insider"})
+_VALID_SECTIONS = _FUNDAMENTAL_SECTIONS | _EXTRA_SECTIONS
+_DEFAULT_SECTIONS = ("summary",)
+
+
+class FinvizEquityProfileSource:
+    """Finviz-backed issuer dossier adapter."""
+
+    name = "finviz"
+
+    def is_available(self) -> bool:
+        return True
+
+    def fetch_profile(
+        self,
+        *,
+        symbol: str,
+        sections: tuple[str, ...],
+        detail: str,
+        fields: Optional[str],
+        limit: int,
+        offset: int,
+        page: int,
+    ) -> Dict[str, Any]:
+        from . import finviz as finviz_impl
+
+        payloads: Dict[str, Any] = {}
+        fund_sections = [item for item in sections if item in _FUNDAMENTAL_SECTIONS]
+        if fund_sections:
+            category = fund_sections[0] if len(fund_sections) == 1 else "all"
+            payloads["fundamentals"] = finviz_impl.finviz_fundamentals(
+                symbol,
+                detail=detail,  # type: ignore[arg-type]
+                category=category,
+                fields=fields,
+            )
+        if "description" in sections:
+            payloads["description"] = finviz_impl.finviz_description(
+                symbol,
+                detail=detail,  # type: ignore[arg-type]
+            )
+        if "ratings" in sections:
+            payloads["ratings"] = finviz_impl.finviz_ratings(
+                symbol,
+                detail="full" if detail == "full" else "compact",
+                limit=limit,
+                offset=offset,
+            )
+        if "peers" in sections:
+            payloads["peers"] = finviz_impl.finviz_peers(
+                symbol,
+                detail=detail,  # type: ignore[arg-type]
+                limit=limit,
+                offset=offset,
+            )
+        if "insider" in sections:
+            payloads["insider"] = finviz_impl.finviz_insider(
+                symbol,
+                limit=limit,
+                page=page,
+                detail=detail,  # type: ignore[arg-type]
+            )
+        return payloads
+
+
+def _ensure_equity_profile_sources() -> None:
+    registry = get_research_registry()
+    if "finviz" not in registry.known_names(EQUITY_PROFILE):
+        registry.register(
+            FinvizEquityProfileSource(),
+            capabilities={EQUITY_PROFILE},
+        )
+
+
+def _parse_sections(value: Optional[str]) -> tuple[str, ...] | Dict[str, Any]:
+    if value is None or str(value).strip() == "":
+        return _DEFAULT_SECTIONS
+    parts = []
+    for raw in str(value).replace(";", ",").split(","):
+        item = raw.strip().lower()
+        if not item:
+            continue
+        if item not in _VALID_SECTIONS:
+            return {
+                "success": False,
+                "error": (
+                    "sections must contain only: "
+                    + ", ".join(sorted(_VALID_SECTIONS))
+                ),
+                "error_code": "equity_profile_invalid_sections",
+                "operation": "equity_profile",
+                "valid_values": {"sections": sorted(_VALID_SECTIONS)},
+            }
+        if item not in parts:
+            parts.append(item)
+    return tuple(parts or _DEFAULT_SECTIONS)
+
+
+def _first_error(payloads: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for payload in payloads.values():
+        if isinstance(payload, dict) and (
+            payload.get("success") is False or payload.get("error")
+        ):
+            return payload
+    return None
+
+
+def _compose_profile(
+    payloads: Dict[str, Any],
+    *,
+    sections: tuple[str, ...],
+    provider: str,
+) -> Dict[str, Any]:
+    error = _first_error(payloads)
+    if error is not None:
+        return stamp_provider(error, provider=provider)
+    if len(payloads) == 1:
+        only = next(iter(payloads.values()))
+        out = stamp_provider(only, provider=provider)
+        if isinstance(out, dict):
+            out["sections"] = list(sections)
+        return out
+    out: Dict[str, Any] = {
+        "success": True,
+        "sections": list(sections),
+        "provider": provider,
+        "providers_used": [provider],
+    }
+    for key, payload in payloads.items():
+        if isinstance(payload, dict):
+            out[key] = payload
+            if out.get("symbol") in (None, "") and payload.get("symbol"):
+                out["symbol"] = payload["symbol"]
+            if (
+                out.get("requested_symbol") in (None, "")
+                and payload.get("requested_symbol")
+            ):
+                out["requested_symbol"] = payload["requested_symbol"]
+    return out
+
+
+@mcp.tool()
+def equity_profile(
+    symbol: str,
+    sections: Annotated[
+        str,
+        Field(
+            description=(
+                "Comma-separated dossier slices: summary, valuation, "
+                "performance, technical, dividends, ownership, profile, all, "
+                "description, ratings, peers, insider."
+            )
+        ),
+    ] = "summary",
+    fields: Annotated[
+        Optional[str],
+        Field(description="Optional fundamentals field projection."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(ge=1, description="Row cap for ratings, peers, and insider."),
+    ] = 5,
+    offset: Annotated[
+        int,
+        Field(ge=0, description="Row offset for ratings and peers."),
+    ] = 0,
+    page: Annotated[
+        int,
+        Field(ge=1, description="One-based page for insider rows."),
+    ] = 1,
+    detail: DetailLiteral = "compact",
+    source: Annotated[
+        ResearchSourcePin,
+        Field(
+            description="Adapter pin. auto uses every source that can serve this query."
+        ),
+    ] = "auto",
+) -> Dict[str, Any]:
+    """Fetch a US-issuer research dossier from available sources.
+
+    Default compact output is a fundamentals summary. Add ``sections`` for
+    description, analyst ratings, peers, or insider trades. Finviz is the
+    current adapter; ``source="mt5"`` returns a capability error.
+    """
+
+    def _run() -> Dict[str, Any]:
+        parsed = _parse_sections(sections)
+        if isinstance(parsed, dict):
+            return parsed
+        _ensure_equity_profile_sources()
+        adapters, error = get_research_registry().resolve_or_error(
+            EQUITY_PROFILE,
+            source,
+            operation="equity_profile",
+        )
+        if error is not None:
+            return error
+        adapter = adapters[0]
+        payloads = adapter.fetch_profile(
+            symbol=symbol,
+            sections=parsed,
+            detail=str(detail or "compact"),
+            fields=fields,
+            limit=int(limit),
+            offset=int(offset),
+            page=int(page),
+        )
+        return _compose_profile(
+            payloads,
+            sections=parsed,
+            provider=str(adapter.name),
+        )
+
+    return run_logged_operation(
+        logger,
+        operation="equity_profile",
+        symbol=symbol,
+        sections=sections,
+        source=source,
+        func=_run,
+    )
+
+
+_ensure_equity_profile_sources()

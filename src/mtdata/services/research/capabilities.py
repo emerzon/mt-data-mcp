@@ -1,0 +1,17 @@
+"""Capability identifiers for research sources."""
+
+from __future__ import annotations
+
+from typing import Final
+
+NEWS: Final = "news"
+CALENDAR: Final = "calendar"
+EQUITY_PROFILE: Final = "equity_profile"
+SCREENER: Final = "screener"
+PERFORMANCE: Final = "asset_performance"
+
+RESEARCH_CAPABILITIES: Final[frozenset[str]] = frozenset(
+    {NEWS, CALENDAR, EQUITY_PROFILE, SCREENER, PERFORMANCE}
+)
+
+PREFERRED_SOURCE_ORDER: Final[tuple[str, ...]] = ("finviz", "mt5", "ycnbc")
