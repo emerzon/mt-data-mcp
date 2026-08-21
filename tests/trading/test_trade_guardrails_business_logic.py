@@ -173,6 +173,7 @@ def test_wrong_side_pending_stop_is_classified_as_risk_increasing():
 def test_preview_trade_guardrails_projects_demo_request_for_live_account():
     config = TradeGuardrailsConfig(
         enabled=True,
+        ignore_on_demo=True,
         blocked_symbols=["BTCUSD"],
     )
 
@@ -197,7 +198,11 @@ def test_preview_trade_guardrails_projects_demo_request_for_live_account():
     ]
 
     allowed_preview = preview_trade_guardrails(
-        TradeGuardrailsConfig(enabled=True, max_volume_by_symbol={"BTCUSD": 0.1}),
+        TradeGuardrailsConfig(
+            enabled=True,
+            ignore_on_demo=True,
+            max_volume_by_symbol={"BTCUSD": 0.1},
+        ),
         symbol="BTCUSD",
         volume=0.1,
         side="BUY",
@@ -628,7 +633,7 @@ def test_wallet_risk_rejects_wrong_side_candidate_stop_loss():
     assert "stop_loss_wrong_side" in result["violations"][0]
 
 
-def test_evaluate_trade_guardrails_allows_demo_account_by_default():
+def test_evaluate_trade_guardrails_blocks_demo_account_by_default():
     config = TradeGuardrailsConfig(
         enabled=True,
         blocked_symbols=["BTCUSD"],
@@ -659,7 +664,8 @@ def test_evaluate_trade_guardrails_allows_demo_account_by_default():
         symbol_info_resolver=lambda _symbol: symbol_info,
     )
 
-    assert result is None
+    assert result is not None
+    assert result["guardrail_rule"] == "symbol_policy"
 
 
 def test_evaluate_trade_guardrails_kill_switch_blocks_demo_account():
@@ -833,6 +839,7 @@ def test_run_trade_place_dry_run_projects_demo_guardrails_for_live_account(
     restore_trade_guardrails,
 ):
     trade_guardrails_config.enabled = True
+    trade_guardrails_config.ignore_on_demo = True
     trade_guardrails_config.max_volume_by_symbol = {"BTCUSD": 0.01}
 
     with patch(
@@ -976,7 +983,7 @@ def test_reduce_only_blocks_trade_place_when_margin_mode_is_unknown():
     assert result["error_code"] == "margin_mode_unknown"
 
 
-def test_run_trade_place_live_ignores_static_guardrails_for_demo_account(
+def test_run_trade_place_live_applies_static_guardrails_on_demo_account(
     restore_trade_guardrails,
 ):
     trade_guardrails_config.enabled = True
@@ -1004,9 +1011,9 @@ def test_run_trade_place_live_ignores_static_guardrails_for_demo_account(
             safe_int_ticket=lambda value: value,
         )
 
-    assert result["success"] is True
-    assert result.get("guardrail_blocked") is not True
-    place_market_order.assert_called_once()
+    assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "symbol_policy"
+    place_market_order.assert_not_called()
 
 
 def test_run_trade_place_dry_run_exposes_allowlist_samples(restore_trade_guardrails):

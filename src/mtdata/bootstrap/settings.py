@@ -267,7 +267,7 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
         self._reload_lock = threading.Lock()
         self._policy_version = 0
         self.enabled = False
-        self.ignore_on_demo = True
+        self.ignore_on_demo = False
         self.trading_enabled = True
         self.allowed_symbols: list[str] = []
         self.blocked_symbols: list[str] = []
@@ -298,7 +298,7 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
             self.enabled = _env_bool("MTDATA_TRADE_GUARDRAILS_ENABLED", default=False)
             self.ignore_on_demo = _env_bool(
                 "MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO",
-                default=True,
+                default=False,
             )
             self.trading_enabled = _env_bool("MTDATA_TRADING_ENABLED", default=True)
             self.allowed_symbols = [

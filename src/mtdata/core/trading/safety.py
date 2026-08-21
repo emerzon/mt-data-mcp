@@ -42,7 +42,7 @@ class TradeGuardrailsConfig(BaseModel):
     """Top-level trade guardrail configuration."""
 
     enabled: bool = False
-    ignore_on_demo: bool = True
+    ignore_on_demo: bool = False
     trading_enabled: bool = True
     allowed_symbols: List[str] = Field(default_factory=list)
     blocked_symbols: List[str] = Field(default_factory=list)

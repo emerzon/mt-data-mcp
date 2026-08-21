@@ -237,7 +237,7 @@ eligible to switch to `--dry-run false`.
 
 ## Account guardrails
 
-Guardrails are optional pre-trade controls that reject risky orders **before** they reach MT5. They are evaluated when `MTDATA_TRADE_GUARDRAILS_ENABLED=1` **or** whenever any individual guardrail variable is set (demo accounts are skipped when `MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO=true`).
+Guardrails are optional pre-trade controls that reject risky orders **before** they reach MT5. They are evaluated when `MTDATA_TRADE_GUARDRAILS_ENABLED=1` **or** whenever any individual guardrail variable is set. They apply on demo accounts by default; set `MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO=true` only when you intentionally want demo to skip those caps.
 
 Guardrails span several layers:
 
