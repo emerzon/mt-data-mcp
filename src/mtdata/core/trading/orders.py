@@ -959,7 +959,16 @@ def _attach_comment_response_metadata(
     *,
     comment_sanitization: Optional[Dict[str, Any]],
     comment_truncation: Optional[Dict[str, Any]],
+    applied_comment: Optional[str] = None,
+    requested_comment: Optional[str] = None,
 ) -> None:
+    if "comment" in out:
+        out["broker_message"] = out.get("comment")
+    if applied_comment is not None:
+        out["comment"] = applied_comment
+        out["applied_comment"] = applied_comment
+    if requested_comment is not None:
+        out["requested_comment"] = requested_comment
     if comment_sanitization:
         out["comment_sanitization"] = comment_sanitization
         warnings_out.append(
@@ -1715,6 +1724,8 @@ def _place_market_order(  # noqa: C901
                 warnings_out,
                 comment_sanitization=comment_sanitization,
                 comment_truncation=comment_truncation,
+                applied_comment=request_comment,
+                requested_comment=comment,
             )
             if protection_status is not None:
                 out["protection_status"] = protection_status
@@ -1982,18 +1993,25 @@ def _place_pending_order(  # noqa: C901
             retcode = _order_result_value(result, "retcode")
             submission_status = validation._trade_execution_status(mt5, retcode)
             pending_created = submission_status in {"complete", "queued"}
+            deal = _order_result_value(result, "deal")
+            raw_price = _order_result_value(result, "price")
+            raw_bid = _order_result_value(result, "bid")
+            raw_ask = _order_result_value(result, "ask")
+            unfilled = pending_created and deal in (0, 0.0, None)
             out: Dict[str, Any] = {
                 "success": pending_created,
-                "execution_status": "complete" if pending_created else submission_status,
+                "execution_status": "accepted" if pending_created else submission_status,
                 "submission_status": submission_status,
+                "fill_status": "not_filled" if pending_created else None,
+                "order_status": "working" if pending_created else None,
                 "retcode": retcode,
                 "retcode_name": mt5.retcode_name(retcode),
-                "deal": _order_result_value(result, "deal"),
+                "deal": deal,
                 "order": _order_result_value(result, "order"),
                 "volume": _order_result_value(result, "volume"),
-                "price": _order_result_value(result, "price"),
-                "bid": _order_result_value(result, "bid"),
-                "ask": _order_result_value(result, "ask"),
+                "price": None if unfilled and raw_price in (0, 0.0) else raw_price,
+                "bid": None if unfilled and raw_bid in (0, 0.0) else raw_bid,
+                "ask": None if unfilled and raw_ask in (0, 0.0) else raw_ask,
                 "requested_price": float(norm_price),
                 "requested_sl": float(norm_sl) if norm_sl is not None else None,
                 "requested_tp": float(norm_tp) if norm_tp is not None else None,
@@ -2011,6 +2029,8 @@ def _place_pending_order(  # noqa: C901
                 warnings_out,
                 comment_sanitization=comment_sanitization,
                 comment_truncation=comment_truncation,
+                applied_comment=request_comment,
+                requested_comment=comment,
             )
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts

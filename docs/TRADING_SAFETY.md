@@ -75,12 +75,15 @@ for the demo account while `live_projection.blocked` and `would_block_live`
 show what the same request would do on a live account. A projected live block
 makes the dry-run preview ineligible (`preview_ok=false`).
 
-Trade previews also report `requested_comment`, `applied_comment`, and
-`comment_max_length`. MT5-bound comments use a conservative ASCII subset and
-are capped at 31 characters for place, modify, and cancel requests, or 24
-characters for position-close requests. When a supplied comment changes, the
-preview includes structured sanitization or truncation metadata and a warning.
-For `target=all_exposure`, `comment_previews` shows the separate close and
+Trade previews and live submissions report `requested_comment` and
+`applied_comment` for the outbound order tag. Live broker status text from
+`MqlTradeResult.comment` is `broker_message`; `comment` keeps the applied tag
+in both dry-run and live responses. MT5-bound comments use a conservative
+ASCII subset and are capped at 31 characters for place and cancel requests, or
+24 characters for position-close requests. `trade_modify` cannot retag an
+existing ticket. When a supplied comment changes, the preview includes
+structured sanitization or truncation metadata and a warning. For
+`target=all_exposure`, `comment_previews` shows the separate close and
 pending-cancel forms because their limits differ.
 
 **What a dry run *does* check:** required fields, order-type validity,
@@ -162,9 +165,10 @@ mtdata-cli trade_place EURUSD --volume 0.10 --order-type BUY_STOP_LIMIT \
 Modifies an existing order/position by ticket.
 
 At least one of `price`, `stop_limit_price`, `stop_loss`, `take_profit`,
-`expiration`, or `comment` must be supplied. An explicit value that already
+or `expiration` must be supplied. An explicit value that already
 matches the live object is a successful idempotent no-change request; omitting
-every modification field is an error.
+every modification field is an error. MT5 does not support changing an existing
+ticket's comment; set the comment at place or close time.
 
 | Flag | Default | Notes |
 |------|---------|-------|
@@ -174,7 +178,6 @@ every modification field is an error.
 | `--stop-loss` | — | New stop-loss |
 | `--take-profit` | — | New take-profit |
 | `--expiration` | — | New future pending-order expiry, or literal `GTC` |
-| `--comment` | — | Updated comment |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts |
 | `--dry-run` | `true` | Preview by default; set `false` explicitly for a live modification |
 

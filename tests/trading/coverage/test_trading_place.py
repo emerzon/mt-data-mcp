@@ -1110,6 +1110,29 @@ class TestPlacePendingOrder:
         assert request["type_filling"] == mt5.ORDER_FILLING_RETURN
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_accepted_pending_order_is_not_a_fill(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(
+            deal=0, price=0.0, bid=0.0, ask=0.0, comment="Request executed"
+        )
+        from mtdata.core.trading import _place_pending_order
+
+        result = _place_pending_order(
+            "EURUSD", 0.01, "BUY_LIMIT", price=1.09, comment="audit-pending"
+        )
+
+        assert result["success"] is True
+        assert result["execution_status"] == "accepted"
+        assert result["fill_status"] == "not_filled"
+        assert result["order_status"] == "working"
+        assert result["price"] is None
+        assert result["bid"] is None
+        assert result["ask"] is None
+        assert result["applied_comment"] == "audit-pending"
+        assert result["broker_message"] == "Request executed"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_rejects_stale_tick_before_pending_submission(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

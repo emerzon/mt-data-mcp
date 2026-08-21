@@ -221,6 +221,13 @@ class TestTradeModify:
         )
         mock_pend.assert_not_called()
 
+    def test_comment_modifications_are_rejected(self):
+        out = trade_modify(ticket=100, comment="retag", __cli_raw=True)
+
+        assert out["success"] is False
+        assert out["error_code"] == "unsupported_field"
+        assert "comment" in out["unsupported_fields"]
+
     @patch("mtdata.core.trading._modify_pending_order")
     @patch("mtdata.core.trading._modify_position")
     def test_position_not_found_falls_back_to_pending(self, mock_pos, mock_pend):

@@ -1396,6 +1396,7 @@ def _execute_single_close(  # noqa: C901
     request = None
     last_send_error = None
     close_comment_fallback = None
+    applied_close_comment = None
     attempts: List[Dict[str, Any]] = []
 
     price_changed_codes = {
@@ -1416,6 +1417,7 @@ def _execute_single_close(  # noqa: C901
             )
             close_type = close_type_sell if is_buy_position else close_type_buy
             close_comment = comments._normalize_close_trade_comment(comment, default="mtdata close")
+            applied_close_comment = close_comment
 
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
@@ -1627,6 +1629,7 @@ def _execute_single_close(  # noqa: C901
         "filled_volume": filled_volume,
         "price": result.price,
         "comment": result.comment,
+        "broker_message": result.comment,
         "open_price": open_price,
         "close_price": close_exec_price,
         "pnl": realized_pnl,
@@ -1645,6 +1648,14 @@ def _execute_single_close(  # noqa: C901
         ),
         "attempts": attempts,
     }
+    if applied_close_comment is not None:
+        res_dict["comment"] = applied_close_comment
+        res_dict["applied_comment"] = applied_close_comment
+    if comment is not None:
+        try:
+            res_dict["requested_comment"] = str(comment).strip()
+        except Exception:
+            res_dict["requested_comment"] = ""
     if is_partial_fill:
         res_dict["partial_fill"] = True
     if isinstance(close_comment_fallback, dict):

@@ -258,7 +258,13 @@ class TradeModifyRequest(BaseModel):
     stop_loss: Optional[Union[int, float]] = None
     take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
-    comment: Optional[str] = None
+    comment: Optional[str] = Field(
+        default=None,
+        description=(
+            "Not supported. MT5 cannot retag an existing ticket; set the "
+            "comment when placing or closing instead."
+        ),
+    )
     dry_run: bool = Field(
         default=True,
         description=(

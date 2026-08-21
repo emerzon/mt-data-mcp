@@ -2810,13 +2810,29 @@ def run_trade_modify(
         )
         return result
 
+    if "comment" in request.model_fields_set and request.comment is not None:
+        return _finish(
+            {
+                "success": False,
+                "error_code": "unsupported_field",
+                "error": (
+                    "trade_modify cannot change broker comments on positions or "
+                    "pending orders."
+                ),
+                "remediation": (
+                    "Set the comment when placing or closing the order. MT5 does "
+                    "not support retagging an existing ticket via trade_modify."
+                ),
+                "ticket": request.ticket,
+                "unsupported_fields": ["comment"],
+            }
+        )
     mutable_fields = {
         "price",
         "stop_limit_price",
         "stop_loss",
         "take_profit",
         "expiration",
-        "comment",
     }
     if not (request.model_fields_set & mutable_fields):
         return _finish(
@@ -2825,7 +2841,7 @@ def run_trade_modify(
                 "error_code": "no_modification_fields",
                 "error": (
                     "trade_modify requires at least one field to change: price, "
-                    "stop_limit_price, stop_loss, take_profit, expiration, or comment."
+                    "stop_limit_price, stop_loss, take_profit, or expiration."
                 ),
                 "remediation": (
                     "Provide at least one modification field. Price and expiration "
