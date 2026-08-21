@@ -37,12 +37,15 @@ def test_cross_correlation_identifies_first_symbol_lead(monkeypatch):
     assert result["success"] is True
     assert result["best"]["lag"] == 3
     assert result["best"]["leader"] == "LEFT"
+    assert result["best"]["inference_valid"] is False
+    assert "significant" not in result["best"]
+    assert "ci95_low" not in result["best"]
     assert result["context"]["lag_tests"] == 17
     assert result["context"]["significance_correction"] == "bonferroni_across_lags"
     assert result["context"]["ci_per_lag_confidence"] > 0.95
     assert result["context"]["alignment_ok"] is True
     assert result["context"]["aligned_fraction"] == 1.0
-    assert "warnings" not in result
+    assert any("price-level" in warning for warning in result["warnings"])
 
 
 def test_cross_correlation_warns_when_symbol_sessions_have_low_overlap(monkeypatch):
@@ -116,8 +119,8 @@ def test_cross_correlation_measures_alignment_against_longer_series(monkeypatch)
 def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
     index = pd.date_range("2025-01-01", periods=80, freq="h")
     series = {
-        "LEFT": pd.Series(np.arange(80, dtype=float), index=index),
-        "RIGHT": pd.Series(np.arange(80, dtype=float), index=index),
+        "LEFT": pd.Series(np.arange(80, dtype=float) + 100.0, index=index),
+        "RIGHT": pd.Series(np.arange(80, dtype=float) + 100.0, index=index),
     }
     observed: dict[str, float] = {}
 
@@ -135,7 +138,7 @@ def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
     monkeypatch.setattr(causal, "_block_bootstrap_correlation_ci", _ci)
     result = _raw(causal.cross_correlation)(
         symbols="LEFT,RIGHT",
-        transform="level",
+        transform="log_return",
         max_lag=2,
         min_overlap=20,
     )

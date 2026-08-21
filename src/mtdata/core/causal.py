@@ -2377,9 +2377,12 @@ def causal_discover_signals(  # noqa: C901
                         "samples": len(subset),
                         "period_start": period_start,
                         "period_end": period_end,
-                        "significant": bool(best_p < significance),
                     }
                 )
+                if transform_value in {"log_return", "pct", "diff"}:
+                    rows[-1]["significant"] = bool(best_p < significance)
+                else:
+                    rows[-1]["inference_valid"] = False
         if requested_anchor and not any(
             row.get("effect") == requested_anchor or row.get("cause") == requested_anchor
             for row in rows
@@ -2392,6 +2395,7 @@ def causal_discover_signals(  # noqa: C901
                 details=pair_skips or None,
             )
         pair_correction_factor = max(1, len(rows))
+        inference_supported = transform_value in {"log_return", "pct", "diff"}
         for row in rows:
             lag_adjusted = float(row["p_value"])
             row["p_value_lag_adjusted"] = lag_adjusted
@@ -2399,13 +2403,23 @@ def causal_discover_signals(  # noqa: C901
             row["pair_tests_run"] = pair_correction_factor
             row["p_value_correction"] = "bonferroni_across_lags_and_pairs"
             row["significance_basis"] = "p_value_global_bonferroni_adjusted"
-            row["significant"] = bool(float(row["p_value"]) < significance)
+            if inference_supported:
+                row["significant"] = bool(float(row["p_value"]) < significance)
+            else:
+                row.pop("significant", None)
+                row["inference_valid"] = False
         rows_sorted = sorted(
             rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
         )
         significant_rows = [
             row for row in rows_sorted if bool(row.get("significant"))
         ]
+        if not inference_supported:
+            warnings_out.append(
+                "Inferential Granger p-values are not treated as significant for "
+                "price-level transforms; use log_return, pct, or diff, or "
+                "cointegration_test for level relationships."
+            )
         pair_sample_counts = [int(row["samples"]) for row in rows]
         undirected_pairs_tested = len(
             {
@@ -3253,15 +3267,27 @@ def cross_correlation(  # noqa: C901
             confidence=per_lag_confidence,
         )
         best_item = dict(best)
+        inference_supported = transform_value in {"log_return", "pct", "diff"}
         best_item.update(
             {
                 "leader": symbol_list[0] if int(best["lag"]) > 0 else symbol_list[1] if int(best["lag"]) < 0 else None,
                 "follower": symbol_list[1] if int(best["lag"]) > 0 else symbol_list[0] if int(best["lag"]) < 0 else None,
-                "ci95_low": round(ci_low, 6) if ci_low is not None else None,
-                "ci95_high": round(ci_high, 6) if ci_high is not None else None,
-                "significant": bool(ci_low is not None and ci_high is not None and (ci_low > 0.0 or ci_high < 0.0)),
             }
         )
+        if inference_supported:
+            best_item.update(
+                {
+                    "ci95_low": round(ci_low, 6) if ci_low is not None else None,
+                    "ci95_high": round(ci_high, 6) if ci_high is not None else None,
+                    "significant": bool(
+                        ci_low is not None
+                        and ci_high is not None
+                        and (ci_low > 0.0 or ci_high < 0.0)
+                    ),
+                }
+            )
+        else:
+            best_item["inference_valid"] = False
         out: Dict[str, Any] = {
             "success": True,
             "symbols": symbol_list,
@@ -3292,8 +3318,17 @@ def cross_correlation(  # noqa: C901
             },
             "meta": _causal_contract_meta(meta),
         }
+        warnings_out: List[str] = []
         if alignment_warning is not None:
-            out["warnings"] = [alignment_warning]
+            warnings_out.append(alignment_warning)
+        if not inference_supported:
+            warnings_out.append(
+                "Correlation confidence intervals are suppressed for price-level "
+                "transforms; use log_return, pct, or diff for inferential "
+                "lead/lag analysis."
+            )
+        if warnings_out:
+            out["warnings"] = warnings_out
         if detail_mode == "full":
             out["items"] = rows
             out["count"] = len(rows)

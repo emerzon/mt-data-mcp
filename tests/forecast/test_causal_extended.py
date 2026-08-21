@@ -768,6 +768,32 @@ class TestCausalDiscoverSignals:
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_level_transform_does_not_publish_significance(self, mock_fetch, mock_granger):
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 80), index=idx),
+            "B": pd.Series(np.linspace(2.0, 3.0, 80), index=idx),
+        }
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
+            series_map[symbol],
+            None,
+        )
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.005, 10, 1)}, None),
+            2: ({"ssr_ftest": (1.0, 0.006, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()("A,B", max_lag=2, transform="level", normalize=False)
+
+        assert result["success"] is True
+        assert all("significant" not in item for item in result["items"])
+        assert all(item.get("inference_valid") is False for item in result["items"])
+        assert result["summary"]["counts"]["significant_links"] == 0
+        assert any("price-level" in warning for warning in result.get("warnings") or [])
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch(
         "mtdata.core.causal._expand_symbols_for_group_path",
         return_value=(["A", "B"], None, "Forex\\Majors"),
