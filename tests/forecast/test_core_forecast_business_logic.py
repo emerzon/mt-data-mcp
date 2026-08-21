@@ -2134,7 +2134,12 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
     assert optuna["history_tail_count"] == 1
 
     hints = forecast_use_cases.run_forecast_optimize_hints(
-        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframes=["H1"], detail="summary"),
+        ForecastOptimizeHintsRequest(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            detail="summary",
+            fitness_metric="avg_rmse",
+        ),
         optimize_hints_impl=fake_hints,
     )
     assert hints["detail"] == "summary"
@@ -2148,6 +2153,7 @@ def test_forecast_optimize_hints_rejects_unknown_method_before_search():
             symbol="EURUSD",
             timeframes=["H1"],
             methods=["theta", "not_a_method"],
+            fitness_metric="avg_rmse",
         ),
         optimize_hints_impl=lambda **kwargs: pytest.fail("search must not start"),
     )

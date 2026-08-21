@@ -104,6 +104,16 @@ def test_backtest_requests_reject_invalid_slippage(value) -> None:
         StrategyBacktestRequest(symbol="EURUSD", slippage_bps=value)
 
 
+def test_tune_requests_accept_positive_lookback() -> None:
+    for factory in (
+        ForecastTuneGeneticRequest,
+        ForecastTuneOptunaRequest,
+        ForecastOptimizeHintsRequest,
+    ):
+        req = factory(symbol="EURUSD", lookback=50)
+        assert req.lookback == 50
+
+
 @pytest.mark.parametrize(
     "factory",
     [

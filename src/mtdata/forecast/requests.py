@@ -443,6 +443,15 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     as_of: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
+    lookback: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Training bars available at each rolling-origin anchor. When set, "
+            "tuning uses a fixed window matching forecast_generate lookback. "
+            "When omitted, candidate backtests use the expanding ~400-bar default."
+        ),
+    )
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(
         20,
@@ -535,6 +544,15 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     as_of: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
+    lookback: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Training bars available at each rolling-origin anchor. When set, "
+            "tuning uses a fixed window matching forecast_generate lookback. "
+            "When omitted, candidate backtests use the expanding ~400-bar default."
+        ),
+    )
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(
         20,
@@ -713,6 +731,15 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     as_of: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
+    lookback: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Training bars available at each rolling-origin anchor. When set, "
+            "the search uses a fixed window matching forecast_generate lookback. "
+            "When omitted, candidate backtests use the expanding ~400-bar default."
+        ),
+    )
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
     spacing: int = Field(
         20,
@@ -743,8 +770,10 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     fitness_metric: str = Field(
         "composite",
         description=(
-            "Optimization objective. Composite uses trading metrics when available "
-            "and falls back to forecast accuracy for flat backtests."
+            "Optimization objective. Composite trading fitness requires at least "
+            "30 backtest anchors (--steps 30) so each candidate can produce a "
+            "comparable trade sample. Use avg_rmse or another accuracy metric "
+            "for cheaper five-step searches."
         ),
     )
     fitness_weights: Optional[Dict[str, float]] = None

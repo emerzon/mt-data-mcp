@@ -188,6 +188,22 @@ class TestForecastOptimizeHintsRequest:
         assert req.top_n == 5
         assert req.timeframes == ["H1", "H4", "D1", "W1"]
         assert req.slippage_bps == 0.0
+        assert req.steps == 5
+        assert req.lookback is None
+
+
+def test_optimize_hints_rejects_default_composite_with_five_steps():
+    from mtdata.forecast.use_cases import run_forecast_optimize_hints
+
+    result = run_forecast_optimize_hints(
+        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframes=["H1"]),
+        optimize_hints_impl=lambda **kwargs: pytest.fail("search must not start"),
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "insufficient_tuning_sample"
+    assert result["minimum_steps"] == 30
+    assert "avg_rmse" in result["remediation"]
 
     def test_rejects_population_below_two(self):
         with pytest.raises(ValueError, match="greater than or equal to 2"):

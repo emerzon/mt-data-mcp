@@ -333,7 +333,7 @@ mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
 
 ### Configuration Search (`forecast_optimize_hints`)
 
-Broader than single-method tuning: `forecast_optimize_hints` runs a genetic search across **timeframes, methods, and method-specific parameters at once**, returning the top-N configurations ranked by a composite trading-fitness score. Comparable trading fitness requires at least 30 simulated trades; smaller or unavailable samples fall back to a separately labeled forecast-accuracy tier. Each hint exposes its trade count and reliability. Use it to answer *"which timeframe/method/params should I even start from?"* before drilling in with `forecast_tune_genetic` / `forecast_tune_optuna`.
+Broader than single-method tuning: `forecast_optimize_hints` runs a genetic search across **timeframes, methods, and method-specific parameters at once**, returning the top-N configurations ranked by a composite trading-fitness score. Composite fitness needs at least 30 rolling-origin anchors (`--steps 30`) so each candidate can produce a comparable trade sample. The default `--steps 5` is rejected for `composite`; raise `--steps` or pass `--fitness-metric avg_rmse` for a cheaper accuracy search. Pass `--lookback` to tune a fixed rolling window that matches `forecast_generate`. Use it to answer *"which timeframe/method/params should I even start from?"* before drilling in with `forecast_tune_genetic` / `forecast_tune_optuna`.
 
 ```bash
 mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
@@ -345,9 +345,10 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 | `--timeframes` | `H1 H4 D1 W1` | Timeframes to search (space- or comma-separated) |
 | `--methods` | fast classical baselines | Methods to search; neural/foundation methods must be requested explicitly and may initialize or download large models |
 | `--horizon` | 12 | Bars forecast after each backtest anchor |
-| `--steps` | 5 | Rolling-origin backtest anchors per candidate |
+| `--steps` | 5 | Rolling-origin backtest anchors per candidate; composite fitness requires 30 |
+| `--lookback` | unset | Optional fixed training window matching `forecast_generate` |
 | `--population` / `--generations` | 8 / 5 | Genetic search population and generation counts |
-| `--fitness-metric` | `composite` | Objective; `composite` uses trading metrics at 30+ trades, otherwise a non-comparable accuracy fallback |
+| `--fitness-metric` | `composite` | Objective; `composite` requires `--steps 30` (or greater) |
 | `--top-n` | 5 | Number of ranked configurations to return |
 
 ---

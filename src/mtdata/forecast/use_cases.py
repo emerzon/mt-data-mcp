@@ -3008,6 +3008,7 @@ def _analysis_time_kwargs(request: Any) -> Dict[str, Any]:
             "as_of": getattr(request, "as_of", None),
             "start": getattr(request, "start", None),
             "end": getattr(request, "end", None),
+            "lookback": getattr(request, "lookback", None),
         }.items()
         if value not in (None, "")
     }
@@ -3391,7 +3392,14 @@ def _validate_tuning_sample(metric: Any, steps: int) -> Optional[Dict[str, Any]]
         "metric": metric_key,
         "steps": int(steps),
         "minimum_steps": MIN_ANNUALIZED_TUNING_TRADES,
-        "remediation": f"Retry with --steps {MIN_ANNUALIZED_TUNING_TRADES} or greater.",
+        "remediation": (
+            f"Retry with --steps {MIN_ANNUALIZED_TUNING_TRADES} or greater"
+            + (
+                ", or pass --fitness-metric avg_rmse for a cheaper accuracy search."
+                if metric_key == "composite"
+                else "."
+            )
+        ),
     }
 
 
