@@ -172,11 +172,45 @@ def _annotation_has_metadata(ptype: Any) -> bool:
     return False
 
 
+_NULL_CLI_TOKENS = frozenset({"none", "null"})
+
+
+def _annotation_allows_none(ptype: Any) -> bool:
+    origin = get_origin(ptype)
+    if origin is Annotated:
+        args_t = get_args(ptype)
+        return bool(args_t) and _annotation_allows_none(args_t[0])
+    if _is_union_origin(origin):
+        return any(member is type(None) for member in get_args(ptype))
+    return False
+
+
+def _nullable_cli_scalar(inner: Any):
+    """Wrap a scalar argparse converter so documented none/null tokens become None."""
+
+    def _parse(value: Any) -> Any:
+        if isinstance(value, str) and value.strip().casefold() in _NULL_CLI_TOKENS:
+            return None
+        if inner in (int, float, str):
+            return inner(value)
+        return inner(value)
+
+    _parse.__name__ = getattr(inner, "__name__", "value")
+    return _parse
+
+
 def _validated_cli_scalar(ptype: Any, base_type: type):
     """Build an argparse scalar converter that preserves Annotated bounds."""
     adapter = TypeAdapter(ptype)
 
     def _parse(value: str) -> Any:
+        if isinstance(value, str) and value.strip().casefold() in _NULL_CLI_TOKENS:
+            try:
+                return adapter.validate_python(None)
+            except ValidationError as exc:
+                errors = exc.errors()
+                message = str(errors[0].get("msg") or exc) if errors else str(exc)
+                raise argparse.ArgumentTypeError(message) from exc
         try:
             return adapter.validate_python(value)
         except ValidationError as exc:
@@ -894,6 +928,12 @@ def _resolve_param_kwargs(
             and _annotation_has_metadata(ptype)
         ):
             kwargs["type"] = _validated_cli_scalar(ptype, base_type)
+        elif (
+            not is_mapping
+            and base_type in (int, float, str)
+            and _annotation_allows_none(ptype)
+        ):
+            kwargs["type"] = _nullable_cli_scalar(kwargs.get("type") or base_type)
     except Exception:
         pass
     return kwargs, is_mapping

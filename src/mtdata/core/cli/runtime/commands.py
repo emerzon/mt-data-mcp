@@ -5,7 +5,12 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from ....utils.coercion import coerce_cli_scalar, split_top_level_csv
+from ....utils.coercion import (
+    UNPARSED_BOOL,
+    coerce_cli_scalar,
+    parse_bool_like,
+    split_top_level_csv,
+)
 from ...error_envelope import build_error_payload
 from ..catalog import display_program_name
 
@@ -372,6 +377,11 @@ def create_command_function(  # noqa: C901
                 # argparse.SUPPRESS is used for omission-sensitive defaults. Do
                 # not reconstruct those values here: request validators rely on
                 # model_fields_set to distinguish omission from an explicit flag.
+                # Required positional-or-option aliases also use SUPPRESS, so
+                # treat a missing required parameter as a usage error instead of
+                # skipping it until the tool raises TypeError.
+                if param.get("required"):
+                    missing_required.append(param_name)
                 continue
             arg_value = (
                 getattr(args, option_alias_name)
@@ -394,12 +404,6 @@ def create_command_function(  # noqa: C901
                 symbols = [str(value).strip() for value in arg_value if str(value).strip()]
                 arg_value = ",".join(symbols) or None
 
-            if param.get("type") is bool and isinstance(arg_value, str):
-                if arg_value.lower() == "true":
-                    arg_value = True
-                elif arg_value.lower() == "false":
-                    arg_value = False
-
             try:
                 ptype = param.get("type")
                 base_type, origin = unwrap_optional_type(ptype)
@@ -407,8 +411,16 @@ def create_command_function(  # noqa: C901
                 is_mapping = is_mapping_annotation(ptype)
                 is_list_like = origin in (list, tuple)
             except Exception:
+                ptype = param.get("type")
+                base_type = ptype
+                origin = None
                 is_mapping = False
                 is_list_like = False
+
+            if base_type is bool and isinstance(arg_value, str):
+                parsed_bool = parse_bool_like(arg_value)
+                if parsed_bool is not UNPARSED_BOOL and parsed_bool is not None:
+                    arg_value = bool(parsed_bool)
 
             if is_mapping and arg_value == "__PRESENT__":
                 arg_value = {}
@@ -549,6 +561,10 @@ def create_command_function(  # noqa: C901
                 continue
             if arg_value is not None:
                 kwargs[param_name] = arg_value
+            elif param.get("default") is not None:
+                # Explicit none/null for an optional with a non-None default
+                # (for example --max-distance-pct none) must reach the tool.
+                kwargs[param_name] = None
 
         if missing_required:
             missing_text = ", ".join(missing_required)

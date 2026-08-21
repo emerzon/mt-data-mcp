@@ -1230,6 +1230,68 @@ class TestCreateCommandFunction:
         assert "request_id" in output
         mock_fn.assert_not_called()
 
+    def test_missing_required_symbol_when_argparse_omits_attribute(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="symbols_describe")
+        args = argparse.Namespace(json=False, verbose=False)
+        status = cmd_fn(args)
+        output = capsys.readouterr().out
+        assert status == 2
+        assert "cli_missing_required" in output
+        assert "symbol" in output
+        assert "symbols_describe()" not in output
+        mock_fn.assert_not_called()
+
+    def test_annotated_boolean_false_token_becomes_python_false(self, capsys):
+        from typing import Annotated, Optional
+
+        from pydantic import Field
+
+        captured: dict[str, Any] = {}
+
+        def calendar_like(
+            upcoming: Annotated[
+                Optional[bool],
+                Field(description="Keep unreleased economic events only."),
+            ] = None,
+            include_elapsed: Annotated[
+                bool,
+                Field(description="Include already-released earnings."),
+            ] = False,
+            list_filters: Annotated[
+                bool,
+                Field(description="List filters instead of screening."),
+            ] = False,
+            **_kwargs: Any,
+        ):
+            captured["upcoming"] = upcoming
+            captured["include_elapsed"] = include_elapsed
+            captured["list_filters"] = list_filters
+            return {"success": True, **captured}
+
+        info = get_function_info(calendar_like)
+        cmd_fn = create_command_function(info, cmd_name="calendar")
+        args = argparse.Namespace(
+            upcoming="false",
+            include_elapsed="false",
+            list_filters="false",
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 0
+        assert captured == {
+            "upcoming": False,
+            "include_elapsed": False,
+            "list_filters": False,
+        }
+
     def test_trade_place_missing_required_warns_about_live_orders(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
@@ -1401,6 +1463,31 @@ class TestCreateCommandFunction:
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert "extra" not in call_kwargs
+
+    def test_explicit_none_reaches_optional_with_non_none_default(self, capsys):
+        mock_fn = MagicMock(return_value={"success": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "max_distance_pct",
+                    "type": Optional[float],
+                    "required": False,
+                    "default": 5.0,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="support_resistance_levels")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            max_distance_pct=None,
+            json=False,
+            verbose=False,
+        )
+        status = cmd_fn(args)
+        assert status == 0
+        assert mock_fn.call_args.kwargs["max_distance_pct"] is None
 
     def test_mapping_present_sentinel(self, capsys):
         mock_fn = MagicMock(return_value="ok")

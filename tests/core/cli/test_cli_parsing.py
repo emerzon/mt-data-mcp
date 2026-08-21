@@ -12,10 +12,11 @@ import re
 import sys
 import types
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from unittest.mock import MagicMock, call, patch
 
 import pytest
+from pydantic import Field
 
 from mtdata.core.data.requests import DataFetchCandlesRequest
 from mtdata.core.patterns_requests import PatternsDetectRequest
@@ -885,6 +886,47 @@ class TestAddDynamicArguments:
         assert args.set_overrides == ["params.beta=0.2"]
         assert "--set" in help_text
         assert "--params-params" not in help_text
+
+    def test_nullable_float_accepts_none_and_null_tokens(self):
+        parser = argparse.ArgumentParser()
+
+        def levels(
+            max_distance_pct: Annotated[Optional[float], Field(ge=0.0)] = 5.0,
+        ):
+            return max_distance_pct
+
+        func_info = get_function_info(levels)
+        add_dynamic_arguments(parser, func_info, cmd_name="support_resistance_levels")
+        assert parser.parse_args(["--max-distance-pct", "none"]).max_distance_pct is None
+        assert parser.parse_args(["--max-distance-pct", "NULL"]).max_distance_pct is None
+        assert parser.parse_args(["--max-distance-pct", "2.5"]).max_distance_pct == 2.5
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--max-distance-pct", "-1"])
+
+    def test_annotated_bool_parser_accepts_false_token(self):
+        parser = argparse.ArgumentParser()
+
+        def calendar_like(
+            upcoming: Annotated[Optional[bool], Field(description="Keep unreleased.")] = None,
+        ):
+            return upcoming
+
+        func_info = get_function_info(calendar_like)
+        add_dynamic_arguments(parser, func_info, cmd_name="calendar")
+        args = parser.parse_args(["--upcoming", "false"])
+        assert args.upcoming == "false"
+
+    def test_omitted_required_symbol_alias_has_no_namespace_attribute(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="symbols_describe")
+        args = parser.parse_args([])
+        assert not hasattr(args, "symbol")
+        assert not hasattr(args, "_cli_option_symbol")
 
     def test_first_required_param_accepts_flag_alias(self):
         parser = argparse.ArgumentParser()

@@ -61,7 +61,7 @@ mtdata-cli support_resistance_levels EURUSD --timeframe auto --detail standard -
 | `tolerance_pct` | `0.15` | Price-cluster tolerance in percentage points (`0.15` = 0.15%) when grouping touches into one level. |
 | `min_touches` | `2` | Minimum tests before a price qualifies as a level. |
 | `max_levels` | `4` | Maximum levels to return. |
-| `max_distance_pct` | `5.0` | Keep levels within this % of current price; pass `None` for all. |
+| `max_distance_pct` | `5.0` | Keep levels within this % of current price; pass `none`/`null` (CLI) or `None` (Python) for all. |
 | `volume_weighting` | `off` | Set `auto` to weight touches by traded volume. |
 | `reaction_bars` | `6` | Bars after a test used to measure bounce strength. |
 | `adx_period` | `14` | ADX period for pre-test trend-strength weighting. |
@@ -99,7 +99,7 @@ mtdata-cli confluence_levels EURUSD --min-source-families 2 --max-levels 5 --jso
 | `tolerance_points` | — | Broker-point count; overrides `tolerance_pct`. On five-digit EURUSD, `10 × point(0.00001) = 0.0001` price width. |
 | `min_touches` | `2` | Minimum touches for the S/R component. |
 | `max_levels` | `5` | Maximum confluence zones to return. |
-| `max_distance_pct` | `5.0` | Keep zones within this % of current price; pass `None` for all. |
+| `max_distance_pct` | `5.0` | Keep zones within this % of current price; pass `none`/`null` (CLI) or `None` (Python) for all. |
 | `min_source_families` | `1` | Require this many independent families per zone (use `2` for stricter confluence). |
 | `pivot_method` | — | Restrict pivots to one method (`classic`, `fibonacci`, …). |
 | `volume_weighting` | `off` | Set `auto` to volume-weight the S/R component. |
