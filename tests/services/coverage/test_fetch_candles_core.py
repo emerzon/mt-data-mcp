@@ -20,6 +20,7 @@ from mtdata.services.data_service import fetch_candles
 from ._helpers import (
     _CACHED_INFO,
     _DS,
+    _DS_ERRORS,
     _ESTIMATE_WARMUP,
     _GUARD,
     _MT5_CONFIG,
@@ -858,7 +859,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
-    @patch("mtdata.services.data_service._collect_session_gaps", return_value=([], "Session gap diagnostics unavailable."))
+    @patch("mtdata.services.data_service.candles._collect_session_gaps", return_value=([], "Session gap diagnostics unavailable."))
     @patch(_GUARD, _mock_symbol_guard)
     def test_session_gap_diagnostic_failure_is_surfaced(
         self,
@@ -958,6 +959,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM, return_value=None)
     @patch(_CACHED_INFO, return_value=None)
+    @patch(f"{_DS_ERRORS}.get_symbol_info_cached", new=lambda *args, **kwargs: None)
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)

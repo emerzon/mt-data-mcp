@@ -8,6 +8,7 @@ import pytest
 
 from mtdata.core.regime import api as regime_api
 from mtdata.core.regime import api as regime_mod
+from mtdata.core.regime import detect as regime_detect_mod
 from mtdata.core.regime.api import (
     _build_all_method_comparison,
     _consolidate_payload,
@@ -160,7 +161,7 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     monkeypatch.setattr(regime_api, "_fetch_history", lambda *args, **kwargs: _downtrend_df(120))
     monkeypatch.setattr(regime_api, "_regime_connection_error", lambda: None)
     monkeypatch.setattr(
-        regime_api,
+        regime_detect_mod,
         "_build_all_method_comparison",
         lambda results: {
             "methods_run": sorted(results.keys()),
@@ -243,7 +244,7 @@ def test_regime_detect_all_reports_runtime_diagnostics_for_partial_results(monke
     monkeypatch.setattr(regime_api, "_fetch_history", lambda *args, **kwargs: _downtrend_df(120))
     monkeypatch.setattr(regime_api, "_regime_connection_error", lambda: None)
     monkeypatch.setattr(
-        regime_api,
+        regime_detect_mod,
         "_build_all_method_comparison",
         lambda results: {"methods_run": sorted(results.keys())},
     )
@@ -296,7 +297,7 @@ def test_regime_detect_all_promotes_excluded_successful_voter(monkeypatch) -> No
     )
     monkeypatch.setattr(regime_api, "_regime_connection_error", lambda: None)
     monkeypatch.setattr(
-        regime_api,
+        regime_detect_mod,
         "_build_all_method_comparison",
         lambda results: {"methods_run": sorted(results.keys())},
     )
@@ -853,7 +854,7 @@ def test_gmm_reports_distinct_method_and_common_reliability() -> None:
         patch("mtdata.core.regime.api.resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
         patch(
-            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.detect.fit_gaussian_mixture_1d",
             return_value=(weights, mu, sigma, gamma, None),
             create=True,
         ),
@@ -892,7 +893,7 @@ def test_ensemble_rejects_bocpd_change_point_votes() -> None:
         patch("mtdata.core.regime.api._fetch_history", return_value=history),
         patch("mtdata.core.regime.api.resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.api.call_tool_sync_structured") as call_tool,
+        patch("mtdata.core.regime.detect.call_tool_sync_structured") as call_tool,
     ):
         out = raw(
             symbol="TEST",
@@ -940,9 +941,9 @@ def test_ensemble_discloses_kurtosis_state_count_heuristic() -> None:
         patch("mtdata.core.regime.api._fetch_history", return_value=history),
         patch("mtdata.core.regime.api.resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.api._finite_raw_kurtosis", return_value=4.0),
+        patch("mtdata.core.regime.ensemble._finite_raw_kurtosis", return_value=4.0),
         patch(
-            "mtdata.core.regime.api.call_tool_sync_structured",
+            "mtdata.core.regime.detect.call_tool_sync_structured",
             side_effect=fake_call_tool,
         ),
     ):
@@ -993,7 +994,7 @@ def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:
         patch("mtdata.core.regime.api._fetch_history", return_value=history),
         patch("mtdata.core.regime.api.resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.api.call_tool_sync_structured", side_effect=fake_call_tool),
+        patch("mtdata.core.regime.detect.call_tool_sync_structured", side_effect=fake_call_tool),
     ):
         out = raw(
             symbol="TEST",

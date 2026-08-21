@@ -74,7 +74,7 @@ def test_live_risk_entry_uses_reconciled_stream_quote(monkeypatch) -> None:
         ],
     )
     monkeypatch.setattr(
-        "mtdata.core.trading.use_cases.time.time", lambda: 1_800_000_001.0
+        "mtdata.core.trading.use_cases.risk.time.time", lambda: 1_800_000_001.0
     )
 
     entry, source, context = _resolve_live_trade_risk_entry(
@@ -1105,11 +1105,11 @@ def test_live_risk_entry_refuses_missing_ask_for_long(monkeypatch) -> None:
     tick = SimpleNamespace(bid=1.1, ask=None, time=1_800_000_000)
     gateway = SimpleNamespace(symbol_info_tick=lambda _symbol: tick)
     monkeypatch.setattr(
-        "mtdata.core.trading.use_cases.resolve_quote_tick",
+        "mtdata.core.trading.use_cases.risk.resolve_quote_tick",
         lambda *_args, **_kwargs: (tick, {"quote_source": "mt5.symbol_info_tick"}),
     )
     monkeypatch.setattr(
-        "mtdata.core.trading.use_cases.build_trade_quote_context",
+        "mtdata.core.trading.use_cases.risk.build_trade_quote_context",
         lambda *_args, **_kwargs: {"usable_for_live_trading": True, "bid": 1.1},
     )
 

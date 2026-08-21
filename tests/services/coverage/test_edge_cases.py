@@ -31,7 +31,10 @@ from ._helpers import (
     _PARSE_START,
     _RATES_FROM,
     _RESOLVE_CTZ,
+    _TICKS_CACHED_INFO,
+    _TICKS_GUARD,
     _TICKS_RANGE,
+    _TICKS_RESOLVE_CTZ,
     _UTC,
     _make_rates,
     _make_ticks,
@@ -135,9 +138,9 @@ class TestEdgeCases(unittest.TestCase):
     # ------------------------------------------------------------------ #
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_single_tick_summary(self, mock_ctz, mock_info, mock_ticks):
         mock_ticks.return_value = _make_ticks(1)
         result = fetch_ticks('EURUSD', limit=1, format='summary')
@@ -145,9 +148,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(result['count'], 1)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_flags_included(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(5)
         for i, t in enumerate(ticks):
@@ -161,9 +164,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(result["flags_legend"]["1"], ["unknown_1"])
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_volume_real_cv_computed(self, mock_ctz, mock_info, mock_ticks):
         """Real volume stats include coefficient of variation."""
         ticks = _make_ticks(20)
@@ -175,9 +178,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('cv', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_volume_top10_share(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         for i, t in enumerate(ticks):
@@ -188,9 +191,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('top10_share', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_volume_half_ratio(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         for i, t in enumerate(ticks):
@@ -201,9 +204,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('half_ratio', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_vwap_mid(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         for i, t in enumerate(ticks):
@@ -214,9 +217,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('vwap_mid', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=MagicMock())
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_spike95(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         for i, t in enumerate(ticks):
@@ -228,9 +231,9 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('spike95_share', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
-    @patch(_RESOLVE_CTZ, return_value=None)
-    @patch(_GUARD, _mock_symbol_guard)
+    @patch(_TICKS_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_TICKS_RESOLVE_CTZ, return_value=None)
+    @patch(_TICKS_GUARD, _mock_symbol_guard)
     def test_ticks_corr_abs_mid_change(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20, step=2.0)
         for i, t in enumerate(ticks):

@@ -1090,7 +1090,7 @@ def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> Non
 
 def test_collect_new_account_history_rows_advances_poll_cursor(monkeypatch) -> None:
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.account,
         "_to_server_query_dt",
         lambda dt: wait_events_mod._normalize_utc_datetime(dt),
     )
@@ -1140,7 +1140,7 @@ def test_seed_account_history_keys_tags_server_window_as_utc(monkeypatch) -> Non
     calls = []
 
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.account,
         "_to_server_query_dt",
         lambda dt: (dt - timedelta(hours=2)).astimezone(timezone.utc),
     )
@@ -1169,7 +1169,7 @@ def test_fetch_market_ticks_range_tags_server_window_as_utc(monkeypatch) -> None
     captured = {}
 
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.ticks,
         "_to_server_query_dt",
         lambda dt: (dt - timedelta(hours=3)).astimezone(timezone.utc),
     )
@@ -1278,7 +1278,7 @@ def test_merge_market_ticks_dedupes_rows_with_missing_volume_fields() -> None:
     assert len(merged) == 1
 
 def test_merge_market_ticks_keeps_older_existing_keys_in_seen_set(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 1)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_BUFFER_EXTRA_TICKS", 1)
 
     existing = wait_events_mod._normalize_tick_rows(
         [
@@ -1329,8 +1329,8 @@ def test_merge_market_ticks_keeps_older_existing_keys_in_seen_set(monkeypatch) -
     assert [tick["time_msc"] for tick in merged] == [100000, 101000, 102000, 103000]
 
 def test_trim_market_ticks_keeps_rows_at_or_after_time_cutoff(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 0)
-    monkeypatch.setattr(wait_events_mod, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_BUFFER_EXTRA_TICKS", 0)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
 
     observed_at = datetime(2026, 3, 15, 12, 0, 10, tzinfo=timezone.utc)
     base_epoch = int(observed_at.timestamp()) - 9
@@ -1345,8 +1345,8 @@ def test_trim_market_ticks_keeps_rows_at_or_after_time_cutoff(monkeypatch) -> No
     assert [tick["epoch"] for tick in trimmed] == [float(base_epoch + idx) for idx in range(4, 10)]
 
 def test_trim_market_ticks_still_honors_keep_tick_floor(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_MARKET_BUFFER_EXTRA_TICKS", 1)
-    monkeypatch.setattr(wait_events_mod, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_BUFFER_EXTRA_TICKS", 1)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_ESTIMATED_SECONDS_PER_TICK", 2.0)
 
     observed_at = datetime(2026, 3, 15, 12, 0, 10, tzinfo=timezone.utc)
     base_epoch = int(observed_at.timestamp()) - 9
@@ -1361,7 +1361,7 @@ def test_trim_market_ticks_still_honors_keep_tick_floor(monkeypatch) -> None:
     assert [tick["epoch"] for tick in trimmed] == [float(base_epoch + idx) for idx in range(5, 10)]
 
 def test_market_tick_retention_error_reports_clear_cap_failure(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
 
     error = wait_events_mod._market_tick_retention_error(
         symbol="EURUSD",

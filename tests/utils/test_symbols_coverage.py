@@ -1,4 +1,4 @@
-"""Tests for core/symbols.py — symbols_list, _list_symbol_groups, symbols_describe.
+"""Tests for core/symbols/ — symbols_list, _list_symbol_groups, symbols_describe.
 
 Covers lines 20-199 by mocking MT5.
 """
@@ -44,7 +44,7 @@ def _get_symbols_list():
     raw = _unwrap(symbols_list)
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+        with patch("mtdata.core.symbols.catalog.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
@@ -55,16 +55,16 @@ def _get_symbols_describe():
     raw = _unwrap(symbols_describe)
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+        with patch("mtdata.core.symbols.catalog.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
 
 
 _MT5 = "mtdata.core.symbols.mt5"
-_GROUP_PATH = "mtdata.core.symbols._extract_group_path_util"
-_TABLE = "mtdata.core.symbols._table_from_rows"
-_NORM_LIMIT = "mtdata.core.symbols._normalize_limit"
+_GROUP_PATH = "mtdata.core.symbols.catalog._extract_group_path_util"
+_TABLE = "mtdata.core.symbols.catalog._table_from_rows"
+_NORM_LIMIT = "mtdata.core.symbols.catalog._normalize_limit"
 
 
 def test_mt5_source_provenance_identifies_broker_without_account_number():
@@ -834,7 +834,7 @@ class TestSymbolsListModes:
         res = fn(list_mode="invalid")
         assert res == {"error": "list_mode must be 'symbols' or 'groups'."}
 
-    @patch("mtdata.core.symbols._list_symbol_groups", return_value={"headers": ["group"], "data": []})
+    @patch("mtdata.core.symbols.catalog._list_symbol_groups", return_value={"headers": ["group"], "data": []})
     def test_groups_mode(self, mock_lsg):
         fn = _get_symbols_list()
         res = fn(list_mode="groups")
@@ -1234,7 +1234,7 @@ class TestSymbolsDescribe:
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
 
-    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
+    @patch("mtdata.core.symbols.catalog._resolve_client_tz", return_value=None)
     @patch("mtdata.core.symbols.time.time", return_value=1700000301.0)
     @patch(f"{_MT5}.symbol_info")
     def test_default_describe_uses_compact_detail(self, mock_info, mock_time, mock_tz):
@@ -1263,7 +1263,7 @@ class TestSymbolsDescribe:
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
 
-    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
+    @patch("mtdata.core.symbols.catalog._resolve_client_tz", return_value=None)
     @patch("mtdata.core.symbols.time.time", return_value=1_700_000_100.0)
     @patch(f"{_MT5}.copy_ticks_range")
     @patch(f"{_MT5}.symbol_info_tick")
@@ -1333,7 +1333,7 @@ class TestSymbolsDescribe:
             "end": "current_quote",
         }
 
-    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
+    @patch("mtdata.core.symbols.catalog._resolve_client_tz", return_value=None)
     @patch("mtdata.core.symbols.time.time", return_value=1_700_000_100.0)
     @patch(f"{_MT5}.copy_ticks_range", return_value=[])
     @patch(f"{_MT5}.symbol_info_tick")

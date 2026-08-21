@@ -16,20 +16,20 @@ All 82 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `denoise.py` | — | Denoising catalog tools |
 | `trading/` | — | Trading tool entry points |
 | `patterns.py` | 1484 | Pattern detection tools |
-| `regime/` | — | Regime detection (HMM + rule-based) |
+| `regime/` | — | Regime detection: `api.py` (MCP entry), `detect.py` (method bodies), `ensemble.py`, `summarize.py`, `payload.py`, `smoothing.py` |
 | `temporal.py` | 1531 | Temporal/seasonal analysis tools |
-| `causal.py` | 3528 | Causal analysis tools |
+| `causal/` | — | Causal analysis tools (discover, correlation, cross, cointegration) |
 | `calendar.py` | — | Provider-agnostic economic/earnings calendar |
 | `equity_profile.py` | — | US-issuer dossier |
 | `screener.py` | — | Equity screener |
 | `asset_performance.py` | — | Delayed cross-asset performance context |
-| `finviz.py` | — | Internal Finviz adapters (not MCP-catalogued) |
+| `finviz/` | — | Internal Finviz adapters (not MCP-catalogued): news, calendar, screen, fundamentals, insider, markets |
 | `indicators.py` | 743 | Indicator computation tools |
 | `market_depth.py` | 914 | Market depth tools |
 | `market_snapshot.py` | — | Unified market snapshot tools |
 | `market_status.py` | — | Market/session status tools |
 | `options.py` | — | Options and QuantLib tools |
-| `symbols.py` | 3994 | Symbol listing/search tools |
+| `symbols/` | — | Symbol listing/search/scan tools |
 | `labels.py` | 883 | Labeling tools |
 | `pivot.py` | 1081 | Pivot point tools |
 | `volume_profile.py` | — | Volume profile tools |
@@ -41,7 +41,7 @@ All 82 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `trading/use_cases.py` | 5902 | Orchestration layer |
+| `trading/use_cases/` | — | Orchestration layer (place, modify, close, history, query, risk) |
 | `trading/orders.py` | 1569 | Order placement/modification |
 | `trading/execution.py` | 2194 | Execution logic |
 | `trading/positions.py` | 1573 | Position queries |
@@ -100,6 +100,7 @@ All 82 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 | `patterns_use_cases.py` | Pattern detection orchestration |
 | `data/requests.py` | Data request models |
 | `data/use_cases.py` | Data fetch orchestration |
+| `data/wait_events/` | Wait-event engine (compile, loop, account, market, boundary, ticks) |
 | `mt5_gateway.py` | MT5 connection management |
 
 ## CONVENTIONS

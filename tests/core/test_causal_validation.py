@@ -6,6 +6,14 @@ import pandas as pd
 import pytest
 
 from mtdata.core import causal
+from mtdata.core.causal import common, cointegration, correlation, cross, discover
+
+_TOOL_MODULES = {
+    "causal_discover_signals": discover,
+    "correlation_matrix": correlation,
+    "cross_correlation": cross,
+    "cointegration_test": cointegration,
+}
 
 
 def test_history_window_resolves_daily_labels_in_broker_timezone():
@@ -38,7 +46,9 @@ def test_causal_tools_reject_future_ranges_before_connecting(tool, kwargs):
     while hasattr(raw, "__wrapped__"):
         raw = raw.__wrapped__
 
-    with patch.object(causal, "_causal_connection_error") as connect:
+    with patch.object(
+        _TOOL_MODULES[tool.__name__], "_causal_connection_error"
+    ) as connect:
         result = raw(start="2100-01-01", end="2100-01-02", **kwargs)
 
     assert result["success"] is False
@@ -60,7 +70,7 @@ def test_correlation_matrix_identifies_malformed_range_bound(start, end, field):
     while hasattr(raw, "__wrapped__"):
         raw = raw.__wrapped__
 
-    with patch.object(causal, "_causal_connection_error") as connect:
+    with patch.object(correlation, "_causal_connection_error") as connect:
         result = raw(
             symbols="EURUSD,GBPUSD",
             start=start,
@@ -76,7 +86,7 @@ def test_correlation_matrix_identifies_malformed_range_bound(start, end, field):
 
 @pytest.mark.parametrize("significance", [0.0, 1.0, -0.1, 2.0, float("nan"), float("inf")])
 def test_causal_discovery_rejects_invalid_significance_before_connecting(significance):
-    with patch.object(causal, "_causal_connection_error") as connect:
+    with patch.object(discover, "_causal_connection_error") as connect:
         result = causal.causal_discover_signals.__wrapped__(
             symbols="EURUSD,GBPUSD",
             significance=significance,
@@ -102,10 +112,11 @@ def test_causal_tools_reject_duplicate_only_explicit_symbol_lists(tool):
     while hasattr(raw, "__wrapped__"):
         raw = raw.__wrapped__
 
+    module = _TOOL_MODULES[tool.__name__]
     with (
-        patch.object(causal, "_causal_connection_error", return_value=None),
-        patch.object(causal, "create_mt5_gateway"),
-        patch.object(causal, "_expand_symbols_for_group") as expand,
+        patch.object(module, "_causal_connection_error", return_value=None),
+        patch.object(module, "create_mt5_gateway", create=True),
+        patch.object(module, "_expand_symbols_for_group", create=True) as expand,
     ):
         result = raw(symbols="EURUSD,EURUSD")
 
@@ -122,9 +133,9 @@ def test_causal_discovery_fails_when_requested_lag_prevents_all_tests():
     right = pd.Series([value**2 + 1 for value in range(1, 51)], index=index, dtype=float)
 
     with (
-        patch.object(causal, "_causal_connection_error", return_value=None),
+        patch.object(discover, "_causal_connection_error", return_value=None),
         patch.object(
-            causal,
+            discover,
             "_fetch_series_for_window",
             side_effect=[(left, None), (right, None)],
         ),
@@ -152,8 +163,8 @@ def test_fetch_series_excludes_forming_bar_by_default():
     ]
 
     with (
-        patch.object(causal, "_ensure_symbol_ready", return_value=None),
-        patch.object(causal, "_mt5_copy_rates_from", return_value=rates),
+        patch.object(common, "_ensure_symbol_ready", return_value=None),
+        patch.object(common, "_mt5_copy_rates_from", return_value=rates),
     ):
         closed, error = causal._fetch_series(
             "EURUSD",

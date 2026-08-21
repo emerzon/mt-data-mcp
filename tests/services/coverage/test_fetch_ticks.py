@@ -17,14 +17,14 @@ from zoneinfo import ZoneInfo
 from mtdata.services.data_service import fetch_ticks
 
 from ._helpers import (
-    _CACHED_INFO,
-    _DS,
-    _GUARD,
+    _DS_TICKS as _DS,
     _NOW_TS,
-    _PARSE_START,
-    _RESOLVE_CTZ,
-    _SIMPLIFY_EXT,
+    _TICKS_CACHED_INFO as _CACHED_INFO,
+    _TICKS_GUARD as _GUARD,
+    _TICKS_PARSE_START as _PARSE_START,
     _TICKS_RANGE,
+    _TICKS_RESOLVE_CTZ as _RESOLVE_CTZ,
+    _TICKS_SIMPLIFY_EXT as _SIMPLIFY_EXT,
     _UTC,
     _make_ticks,
     _mock_symbol_guard,

@@ -16,6 +16,8 @@ from mtdata.core import forecast as cf
 from mtdata.core import options as opt
 from mtdata.forecast import barriers_shared
 from mtdata.forecast import use_cases as forecast_use_cases
+from mtdata.forecast.use_cases import compact as forecast_compact
+from mtdata.forecast.use_cases import sktime_index as forecast_sktime_index
 from mtdata.forecast.exceptions import ForecastError, ModelCompatibilityError
 from mtdata.forecast.requests import (
     ForecastBacktestRequest,
@@ -97,17 +99,17 @@ def test_forecast_model_mismatch_has_structured_identity_details() -> None:
 
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_registered_sktime_forecasters",
         lambda: {},
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_load_sktime_forecaster_index",
         lambda: {},
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_discover_sktime_forecasters",
         lambda: {
             "thetaforecaster": ("ThetaForecaster", "sktime.forecasting.theta.ThetaForecaster"),
@@ -129,7 +131,7 @@ def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
 
 def test_resolve_registered_sktime_class_skips_recursive_discovery(monkeypatch):
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_registered_sktime_forecasters",
         lambda: {
             "naiveforecaster": (
@@ -139,12 +141,12 @@ def test_resolve_registered_sktime_class_skips_recursive_discovery(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_load_sktime_forecaster_index",
         lambda: {},
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_discover_sktime_forecasters",
         lambda: pytest.fail("recursive discovery must not run for an exact class"),
     )
@@ -157,12 +159,12 @@ def test_resolve_registered_sktime_class_skips_recursive_discovery(monkeypatch):
 
 def test_resolve_sktime_class_reuses_persistent_index(monkeypatch):
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_registered_sktime_forecasters",
         lambda: {},
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_load_sktime_forecaster_index",
         lambda: {
             "ararforecaster": (
@@ -172,7 +174,7 @@ def test_resolve_sktime_class_reuses_persistent_index(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_discover_sktime_forecasters",
         lambda: pytest.fail("persistent exact lookup must not rediscover sktime"),
     )
@@ -186,7 +188,7 @@ def test_resolve_sktime_class_reuses_persistent_index(monkeypatch):
 def test_sktime_forecaster_index_round_trip(tmp_path, monkeypatch):
     index_path = tmp_path / "sktime-index.json"
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_sktime_forecaster_index_path",
         lambda: index_path,
     )
@@ -205,7 +207,7 @@ def test_sktime_forecaster_index_round_trip(tmp_path, monkeypatch):
 def test_discover_sktime_forecasters_filters_test_and_non_forecaster_modules(monkeypatch):
     cf._clear_discover_sktime_forecasters_cache()
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_sktime_index,
         "_store_sktime_forecaster_index",
         lambda _mapping: None,
     )
@@ -495,7 +497,7 @@ def test_forecast_generate_native_theta_suppresses_duplicate_interval_guidance(m
 
 def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
-    monkeypatch.setattr(forecast_use_cases, "_symbol_price_currency", lambda _symbol: "USD")
+    monkeypatch.setattr(forecast_compact, "_symbol_price_currency", lambda _symbol: "USD")
     monkeypatch.setattr(
         cf,
         "_forecast_impl",
@@ -815,7 +817,7 @@ def test_forecast_generate_combines_sample_and_history_policy_trust(monkeypatch)
 
 def test_run_forecast_generate_adds_available_methods_to_invalid_error(monkeypatch):
     monkeypatch.setattr(
-        forecast_use_cases,
+        forecast_compact,
         "get_forecast_methods_snapshot",
         lambda: {
             "methods": [

@@ -784,7 +784,7 @@ def test_run_trade_place_dry_run_evaluates_wallet_risk_with_estimated_fill(
     )
     with (
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.account_info",
             return_value=SimpleNamespace(
                 trade_mode=2,
                 equity=10_000.0,
@@ -793,15 +793,15 @@ def test_run_trade_place_dry_run_evaluates_wallet_risk_with_estimated_fill(
             ),
         ),
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.positions_get",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.positions_get",
             return_value=[],
         ),
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.orders_get",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.orders_get",
             return_value=[],
         ),
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.symbol_info",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.symbol_info",
             return_value=symbol_info,
         ),
     ):
@@ -843,7 +843,7 @@ def test_run_trade_place_dry_run_projects_demo_guardrails_for_live_account(
     trade_guardrails_config.max_volume_by_symbol = {"BTCUSD": 0.01}
 
     with patch(
-        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+        "mtdata.core.trading.use_cases.place.mt5_adapter.account_info",
         return_value=SimpleNamespace(trade_mode=0),
     ):
         result = run_trade_place(
@@ -917,11 +917,11 @@ def test_run_trade_place_reduce_only_uses_open_positions(restore_trade_guardrail
 
     with (
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.account_info",
             return_value=SimpleNamespace(trade_mode=1, margin_mode=0),
         ),
         patch(
-            "mtdata.core.trading.use_cases.mt5_adapter.positions_get",
+            "mtdata.core.trading.use_cases.place.mt5_adapter.positions_get",
             return_value=existing,
         ),
     ):
@@ -991,7 +991,7 @@ def test_run_trade_place_live_applies_static_guardrails_on_demo_account(
     place_market_order = MagicMock(return_value={"success": True})
 
     with patch(
-        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+        "mtdata.core.trading.use_cases.place.mt5_adapter.account_info",
         return_value=SimpleNamespace(trade_mode=0),
     ):
         result = run_trade_place(

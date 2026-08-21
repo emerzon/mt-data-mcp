@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 import mtdata.core.causal as causal
+from mtdata.core.causal import cointegration, cross
 
 
 def _raw(tool):
@@ -19,9 +20,9 @@ def test_cross_correlation_identifies_first_symbol_lead(monkeypatch):
         "LEFT": pd.Series(left, index=index),
         "RIGHT": pd.Series(right, index=index),
     }
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cross, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cross,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )
@@ -55,9 +56,9 @@ def test_cross_correlation_warns_when_symbol_sessions_have_low_overlap(monkeypat
         "LEFT": pd.Series(np.arange(100, dtype=float), index=left_index),
         "RIGHT": pd.Series(np.arange(100, dtype=float), index=right_index),
     }
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cross, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cross,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )
@@ -89,9 +90,9 @@ def test_cross_correlation_measures_alignment_against_longer_series(monkeypatch)
         "LEFT": pd.Series(np.arange(100, dtype=float), index=left_index),
         "RIGHT": pd.Series(np.arange(80, dtype=float), index=right_index),
     }
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cross, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cross,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )
@@ -124,9 +125,9 @@ def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
     }
     observed: dict[str, float] = {}
 
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cross, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cross,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )
@@ -135,7 +136,7 @@ def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
         observed["confidence"] = confidence
         return -0.01, 0.01
 
-    monkeypatch.setattr(causal, "_block_bootstrap_correlation_ci", _ci)
+    monkeypatch.setattr(cross, "_block_bootstrap_correlation_ci", _ci)
     result = _raw(causal.cross_correlation)(
         symbols="LEFT,RIGHT",
         transform="log_return",
@@ -161,9 +162,9 @@ def test_cointegration_johansen_reports_positive_rank(monkeypatch):
         "AAA": pd.Series(base, index=index),
         "BBB": pd.Series(linked, index=index),
     }
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cointegration, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cointegration,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )
@@ -190,9 +191,9 @@ def test_cointegration_corrects_significance_across_tested_pairs(monkeypatch):
     }
     p_values = iter((0.02, 0.03, 0.9))
 
-    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(cointegration, "_causal_connection_error", lambda: None)
     monkeypatch.setattr(
-        causal,
+        cointegration,
         "_fetch_series_for_window",
         lambda symbol, *args, **kwargs: (series[symbol], None),
     )

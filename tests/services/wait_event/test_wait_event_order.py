@@ -646,7 +646,7 @@ def test_run_wait_event_ignores_replayed_preexisting_order_history() -> None:
 
 def test_run_wait_event_advances_history_poll_cursors_per_stream(monkeypatch) -> None:
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.account,
         "_to_server_query_dt",
         lambda dt: wait_events_mod._normalize_utc_datetime(dt),
     )

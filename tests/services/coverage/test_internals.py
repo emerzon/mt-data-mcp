@@ -84,7 +84,7 @@ def test_recent_tick_chunks_overlap_without_duplicate_boundary_ticks(monkeypatch
         ]
 
     monkeypatch.setattr(
-        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        "mtdata.services.data_service.ticks._fetch_ticks_range_with_retry",
         fake_fetch,
     )
 
@@ -105,7 +105,7 @@ def test_forward_tick_filter_treats_naive_query_bounds_as_utc(monkeypatch) -> No
     tick_epoch = start.replace(tzinfo=timezone.utc).timestamp() + 60.0
 
     monkeypatch.setattr(
-        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        "mtdata.services.data_service.ticks._fetch_ticks_range_with_retry",
         lambda symbol, from_date, to_date: [{"time": tick_epoch}],
     )
 
@@ -138,7 +138,7 @@ def test_forward_tick_fetch_encloses_fractional_bounds_then_filters_exactly(
         ]
 
     monkeypatch.setattr(
-        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        "mtdata.services.data_service.ticks._fetch_ticks_range_with_retry",
         fake_fetch,
     )
 
@@ -176,7 +176,7 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
         return [{"time": 100.0}, {"time": 200.0}]
 
     monkeypatch.setattr(
-        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        "mtdata.services.data_service.errors._mt5_copy_rates_from_pos",
         fake_copy_rates_from_pos,
     )
 
@@ -225,7 +225,7 @@ def test_candle_query_context_expands_natural_calendar_periods() -> None:
 
 def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        "mtdata.services.data_service.errors._mt5_copy_rates_from_pos",
         lambda *args, **kwargs: None,
     )
 
@@ -244,7 +244,7 @@ def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
 
 def test_no_data_context_does_not_label_continuous_crypto_weekend(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        "mtdata.services.data_service.errors._mt5_copy_rates_from_pos",
         lambda *args, **kwargs: None,
     )
 
@@ -1067,7 +1067,7 @@ if __name__ == '__main__':
 def test_live_bar_reference_uses_wall_clock_when_tick_is_stale(monkeypatch):
     from mtdata.services import data_service
 
-    monkeypatch.setattr(data_service, "_utc_epoch_seconds", lambda _value: 1_000.0)
+    monkeypatch.setattr(data_service.candles, "_utc_epoch_seconds", lambda _value: 1_000.0)
     monkeypatch.setattr(
         data_service.mt5,
         "symbol_info_tick",

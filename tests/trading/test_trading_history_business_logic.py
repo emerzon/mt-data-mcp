@@ -171,7 +171,7 @@ def test_trade_history_flags_future_broker_fill_timestamp() -> None:
 
     with (
         patch("mtdata.core.trading.account._use_client_tz", lambda: False),
-        patch("mtdata.core.trading.use_cases.time.time", return_value=1_700_000_000.0),
+        patch("mtdata.core.trading.use_cases.history.time.time", return_value=1_700_000_000.0),
     ):
         out = trade_history(history_kind="deals", __cli_raw=True)
     if prev is not None:
@@ -288,7 +288,7 @@ def test_trade_history_cursor_rejects_filter_mismatch_and_expiry() -> None:
     try:
         with (
             patch("mtdata.core.trading.account._use_client_tz", lambda: False),
-            patch("mtdata.core.trading.use_cases.time.time", return_value=1_000.0),
+            patch("mtdata.core.trading.use_cases.history.time.time", return_value=1_000.0),
         ):
             first = trade_history(history_kind="deals", limit=1, __cli_raw=True)
         cursor = first["pagination"]["next_cursor"]
@@ -302,7 +302,7 @@ def test_trade_history_cursor_rejects_filter_mismatch_and_expiry() -> None:
             )
         with (
             patch("mtdata.core.trading.account._use_client_tz", lambda: False),
-            patch("mtdata.core.trading.use_cases.time.time", return_value=4_601.0),
+            patch("mtdata.core.trading.use_cases.history.time.time", return_value=4_601.0),
         ):
             expired = trade_history(
                 history_kind="deals",

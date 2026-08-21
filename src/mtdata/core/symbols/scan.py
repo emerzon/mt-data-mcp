@@ -1,35 +1,43 @@
+"""Market-scan and top-markets MCP tools."""
 
 import logging
 import math
 import re
 import time
-from difflib import SequenceMatcher
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
 
 from pydantic import Field
 
-from ..shared.constants import (
-    DEFAULT_ROW_LIMIT,
+from ...shared.constants import (
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
-from ..shared.market_units import forex_points_per_pip
-from ..shared.schema import DetailLiteral, TimeframeLiteral
-from ..shared.symbols import FOREX_CURRENCY_CODES as _FOREX_CURRENCY_CODES
-from ..shared.validators import invalid_timeframe_error
-from ..utils.freshness import (
+from ...shared.market_units import forex_points_per_pip
+from ...shared.schema import (
+    DetailLiteral,
+    TimeframeLiteral,
+)
+from ...shared.validators import invalid_timeframe_error
+from ...utils.freshness import (
     QUOTE_STALE_SECONDS,
     closed_session_context,
     format_age_seconds,
     format_freshness_label,
 )
-from ..utils.market_metadata import (
+from ...utils.market_metadata import (
     FRESHNESS_ANCHOR_WALL_CLOCK,
     FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
     TICK_VOLUME_SEMANTICS,
     build_tick_freshness_context,
 )
-from ..utils.mt5 import (
+from ...utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
     _symbol_ready_guard,
@@ -37,2015 +45,61 @@ from ..utils.mt5 import (
     account_currency_from_gateway,
     ensure_mt5_connection_or_raise,
     mt5,
-    resolve_broker_symbol_name,
 )
-from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
-from ..utils.quote import (
+from ...utils.quote import (
     compute_spread_metrics,
     enforce_quote_execution_readiness,
     resolve_quote_tick,
     tick_epoch,
     tick_value,
 )
-from ..utils.symbol import (
-    _extract_group_path as _extract_group_path_util,
-)
-from ..utils.symbol import (
+from ...utils.symbol import _extract_group_path as _extract_group_path_util
+from ...utils.symbol import (
     _normalize_group_path_query,
-    symbol_shorthand_rank,
-    symbol_suggestions_from_gateway,
 )
-from ..utils.time import (
+from ...utils.time import (
     _format_time_explicit,
-    _format_time_explicit_local,
-    _resolve_client_tz,
     bar_close_epoch,
 )
-from ..utils.utils import (
+from ...utils.utils import (
     _normalize_limit,
     _table_from_rows,
 )
-from ._mcp_instance import mcp
-from .error_envelope import build_error_payload
-from .execution_logging import run_logged_operation
-from .mt5_gateway import create_mt5_gateway
-from .output_contract import (
+from .._mcp_instance import mcp
+from ..error_envelope import build_error_payload
+from ..execution_logging import run_logged_operation
+from ..mt5_gateway import create_mt5_gateway
+from ..output_contract import (
     attach_collection_contract,
     build_pagination_meta,
-    normalize_output_detail,
     normalize_output_verbosity_detail,
-    resolve_output_contract,
 )
-from .runtime_metadata import build_mt5_source_provenance
+from ..runtime_metadata import build_mt5_source_provenance
+from .classify import (
+    _case_insensitive_sort_key,
+    _clean_broker_text,
+    _normalize_symbol_category_filter,
+    _symbol_category,
+    _symbol_suggestion_from_info,
+)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("mtdata.core.symbols")
 
-
-def _clean_broker_text(value: Any) -> Any:
-    """Replace invalid Unicode surrogate code points in broker metadata."""
-    if not isinstance(value, str):
-        return value
-    return re.sub(r"[\ud800-\udfff]", "\ufffd", value)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
+
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
+
 _TOP_MARKETS_MAX_CANDIDATES = 250
+
 _TOP_MARKETS_DEFAULT_SCAN_BUDGET_SECONDS = 30.0
+
 _MARKET_SCAN_MAX_CANDIDATES = _TOP_MARKETS_MAX_CANDIDATES
-_FOREX_SEARCH_PAIR_PRIORITY = {
-    pair: idx
-    for idx, pair in enumerate(
-        (
-            "EURUSD",
-            "GBPUSD",
-            "USDJPY",
-            "USDCHF",
-            "AUDUSD",
-            "USDCAD",
-            "NZDUSD",
-            "EURGBP",
-            "EURJPY",
-            "EURCHF",
-            "EURAUD",
-            "EURCAD",
-            "GBPJPY",
-            "GBPCHF",
-        )
-    )
-}
-_SYMBOL_DEFAULT_CATEGORY_PRIORITY = {
-    "indices": 2,
-    "commodities": 3,
-    "crypto": 4,
-    "stocks": 5,
-    "etfs": 6,
-    "bonds": 7,
-    "other": 8,
-}
-
-
-def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
-    text = str(value or "").strip()
-    return text.casefold(), text
-
-
-def _normalize_symbol_search_term(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    pair_match = re.fullmatch(r"([A-Za-z]{2,5})\s*/\s*([A-Za-z]{2,5})", text)
-    if pair_match:
-        return f"{pair_match.group(1)}{pair_match.group(2)}".upper()
-    return text
-
-
-def _nonempty_symbol_string(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _client_timezone_label(client_tz: Any) -> str:
-    if client_tz is None:
-        return "UTC"
-    return (
-        getattr(client_tz, "key", None)
-        or getattr(client_tz, "zone", None)
-        or str(client_tz)
-    )
-
-
-_SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
-    {
-        "bidlow",
-        "bidhigh",
-        "asklow",
-        "askhigh",
-        "session_open",
-        "session_close",
-    }
-)
-
-_SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
-    "name",
-    "description",
-    "path",
-    "bank",
-    "currency_base",
-    "currency_profit",
-    "currency_margin",
-    "digits",
-    "point",
-    "bidlow",
-    "bidhigh",
-    "asklow",
-    "askhigh",
-    "price_change",
-    "session_open",
-    "session_close",
-    "price_change_pct",
-    "trade_mode",
-    "trade_exemode",
-    "trade_calc_mode",
-    "order_mode",
-    "expiration_mode",
-    "filling_mode",
-    "trade_contract_size",
-    "trade_tick_size",
-    "trade_tick_value",
-    "trade_tick_value_profit",
-    "trade_tick_value_loss",
-    "margin_initial",
-    "margin_maintenance",
-    "trade_stops_level",
-    "trade_freeze_level",
-    "volume_min",
-    "volume_max",
-    "volume_step",
-    "volume_limit",
-    "swap_mode",
-    "swap_long",
-    "swap_short",
-    "swap_rollover3days",
-    "spread_float",
-    "ticks_bookdepth",
-    "time",
-    "select",
-)
-
-_SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
-    "name",
-    "description",
-    "currency_base",
-    "currency_base_inferred",
-    "currency_base_warning",
-    "currency_profit",
-    "time",
-    "quote_status",
-    "quote_source",
-    "quote_source_state",
-    "quote_source_conflict",
-    "data_stale",
-    "data_age_seconds",
-    "stale_after_seconds",
-    "freshness",
-    "freshness_state",
-    "freshness_reason",
-    "usable_for_live_trading",
-    "usable_for_live_trading_basis",
-    "timestamp_ahead_of_wall_clock",
-    "timestamp_in_future",
-    "timestamp_skew_seconds",
-    "timestamp_skew_tolerance_seconds",
-    "timestamp_warning",
-    "market_status",
-    "market_status_reason",
-    "note",
-    "warning",
-    "price_change_pct",
-    "price_change_pct_unit",
-    "price_change_basis",
-    "price_change_current_price_field",
-    "price_change_period",
-    "bid",
-    "ask",
-    "last",
-    "mid",
-    "spread",
-    "spread_points",
-    "spread_pips",
-    "spread_pct",
-    "spread_valid",
-    "spread_quality",
-    "digits",
-    "point",
-    "trade_contract_size",
-    "trade_tick_size",
-    "trade_tick_value",
-    "trade_stops_level",
-    "trade_freeze_level",
-    "volume_min",
-    "volume_max",
-    "volume_step",
-    "volume_limit",
-    "trade_mode_label",
-    "trade_exemode_label",
-    "trade_calc_mode_label",
-    "order_mode_labels",
-    "filling_mode_labels",
-    "spread_is_floating",
-    "swap_mode_label",
-    "swap_long",
-    "swap_short",
-)
-
-_SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
-    "name",
-    "description",
-    "currency_base",
-    "currency_base_inferred",
-    "currency_base_warning",
-    "currency_profit",
-    "time",
-    "freshness",
-    "freshness_state",
-    "freshness_reason",
-    "usable_for_live_trading",
-    "quote_source",
-    "quote_source_state",
-    "market_status",
-    "market_status_reason",
-    "note",
-    "warning",
-    "price_change_pct",
-    "price_change_pct_unit",
-    "price_change_basis",
-    "price_change_current_price_field",
-    "price_change_period",
-    "bid",
-    "ask",
-    "last",
-    "mid",
-    "spread",
-    "spread_points",
-    "spread_pips",
-    "spread_pct",
-    "spread_valid",
-    "spread_quality",
-    "trade_mode_label",
-    "order_mode_labels",
-)
-
-_COMMON_CRYPTO_BASES = (
-    "BTC",
-    "ETH",
-    "SOL",
-    "XRP",
-    "LTC",
-    "BCH",
-    "ADA",
-    "DOT",
-    "DOGE",
-    "BNB",
-    "AVAX",
-    "LINK",
-    "XLM",
-    "TRX",
-    "UNI",
-    "USDC",
-    "USDT",
-)
-
-_SYMBOL_SEARCH_MODES = frozenset(
-    {"auto", "name", "description", "group", "exact", "all"}
-)
-
-_SYMBOL_SEARCH_FIELDS: Dict[str, List[str]] = {
-    "auto": ["symbol", "description", "group"],
-    "name": ["symbol"],
-    "description": ["description"],
-    "group": ["group"],
-    "exact": ["symbol"],
-    "all": ["symbol", "description", "group"],
-}
-
-_SYMBOL_SEARCH_REASON_RANK: Dict[str, int] = {
-    "exact_name": 0,
-    "name_prefix": 1,
-    "name_contains": 2,
-    "description_contains": 3,
-    "group_contains": 4,
-    "matched": 9,
-}
-
-_METAL_SEARCH_ALIASES = {
-    "GOLD": "XAU",
-    "XAU": "XAU",
-    "SILVER": "XAG",
-    "XAG": "XAG",
-}
-_METAL_QUOTE_PRIORITY = {
-    "USD": 0,
-    "EUR": 1,
-    "GBP": 2,
-    "JPY": 3,
-    "CHF": 4,
-    "AUD": 5,
-    "CAD": 6,
-}
-
-_SYMBOL_CATEGORY_ALIASES = {
-    "fx": "forex",
-    "forex": "forex",
-    "crypto": "crypto",
-    "cryptos": "crypto",
-    "index": "indices",
-    "indices": "indices",
-    "commodity": "commodities",
-    "commodities": "commodities",
-    "stock": "stocks",
-    "stocks": "stocks",
-    "equity": "stocks",
-    "equities": "stocks",
-    "bond": "bonds",
-    "bonds": "bonds",
-    "etf": "etfs",
-    "etfs": "etfs",
-}
-
-
-def _normalize_symbol_category_filter(value: Optional[str]) -> Optional[str]:
-    text = str(value or "").strip().lower().replace("-", "_")
-    if not text:
-        return None
-    return _SYMBOL_CATEGORY_ALIASES.get(text)
-
-
-def _symbol_name_letters(symbol: Any) -> str:
-    return re.sub(r"[^A-Z]", "", str(getattr(symbol, "name", "") or "").upper())
-
-
-def _symbol_forex_pair(symbol: Any) -> Optional[str]:
-    pair = _symbol_name_letters(symbol)[:6]
-    if (
-        len(pair) == 6
-        and pair[:3] in _FOREX_CURRENCY_CODES
-        and pair[3:] in _FOREX_CURRENCY_CODES
-    ):
-        return pair
-    return None
-
-
-def _symbol_crypto_match(symbol: Any, text: str) -> bool:
-    tokens = set(re.findall(r"[a-z0-9]+", text.casefold()))
-    if tokens.intersection(base.casefold() for base in _COMMON_CRYPTO_BASES):
-        return True
-    if tokens.intersection({"crypto", "cryptos", "cryptocurrency", "cryptocurrencies"}):
-        return True
-
-    letters = _symbol_name_letters(symbol)
-    quote_tokens = set(_FOREX_CURRENCY_CODES).union({"USDT", "USDC"})
-    for base in _COMMON_CRYPTO_BASES:
-        base_text = str(base or "").upper()
-        if not base_text or not letters.startswith(base_text):
-            continue
-        suffix = letters[len(base_text):]
-        if suffix in quote_tokens:
-            return True
-    return False
-
-
-def _symbol_category(symbol: Any) -> str:
-    name = str(getattr(symbol, "name", "") or "")
-    path = str(_extract_group_path_util(symbol) or "")
-    description = str(getattr(symbol, "description", "") or "")
-    text = f"{name} {path} {description}".casefold()
-    pair_prefix = _symbol_forex_pair(symbol)
-
-    if pair_prefix or "forex" in path.casefold():
-        return "forex"
-    if any(token in text for token in ("bond", "treasury", "bund", "gilt")):
-        return "bonds"
-    if "etf" in text:
-        return "etfs"
-    if any(token in text for token in ("stock", "stocks", "share", "shares", "equity")):
-        return "stocks"
-    if _symbol_crypto_match(symbol, text):
-        return "crypto"
-    if any(token in text for token in ("index", "indices", "nasdaq", "dow", "dax")):
-        return "indices"
-    if any(
-        token in text
-        for token in (
-            "commodity",
-            "commodities",
-            "metal",
-            "metals",
-            "energy",
-            "energies",
-            "gold",
-            "silver",
-            "oil",
-            "brent",
-            "copper",
-            "platinum",
-            "palladium",
-            "xau",
-            "xag",
-            "xpt",
-            "xpd",
-            "xcu",
-        )
-    ):
-        return "commodities"
-    return "other"
-
-
-def _symbol_group_matches(symbol: Any, group_filter: Optional[str]) -> bool:
-    if not group_filter:
-        return True
-    group_path = _normalize_group_path_query(_extract_group_path_util(symbol))
-    return group_filter.casefold() in group_path.casefold()
-
-
-def _symbol_currency_match_basis(
-    symbol: Any,
-    currency_filter: Optional[str],
-) -> Optional[str]:
-    if not currency_filter:
-        return "not_filtered"
-    target = currency_filter.upper()
-    for attr in ("currency_base", "currency_profit", "currency_margin"):
-        value = str(getattr(symbol, attr, "") or "").upper()
-        if value == target:
-            return f"reported_{attr.removeprefix('currency_')}"
-    inferred_base = _infer_symbol_base_from_name(
-        getattr(symbol, "name", ""),
-        getattr(symbol, "currency_profit", ""),
-    )
-    if _symbol_category(symbol) == "crypto" and inferred_base == target:
-        return "inferred_base_from_crypto_pair"
-    return None
-
-
-def _symbol_currency_matches(symbol: Any, currency_filter: Optional[str]) -> bool:
-    return _symbol_currency_match_basis(symbol, currency_filter) is not None
-
-
-def _currency_filter_basis_summary(rows: List[Dict[str, Any]]) -> str:
-    bases = {
-        str(row.get("currency_match_basis") or "")
-        for row in rows
-        if row.get("currency_match_basis")
-    }
-    if not bases:
-        return "no_returned_matches"
-    if all(basis.startswith("reported_") for basis in bases):
-        return "broker_reported_currency"
-    if all(basis.startswith("inferred_") for basis in bases):
-        return "asset_aware_inference"
-    return "mixed_reported_and_inferred"
-
-
-def _symbol_search_match_reason(symbol: Any, search_term: str, search_mode: str) -> str:
-    query = search_term.casefold()
-    name = str(getattr(symbol, "name", "") or "")
-    description = str(getattr(symbol, "description", "") or "")
-    group = str(_extract_group_path_util(symbol) or "")
-    name_folded = name.casefold()
-
-    if search_mode == "exact":
-        return "exact_name"
-    if search_mode in {"auto", "all", "name"} and name_folded == query:
-        return "exact_name"
-    if search_mode in {"auto", "all", "name"}:
-        if name_folded.startswith(query):
-            return "name_prefix"
-        if query in name_folded:
-            return "name_contains"
-    if search_mode in {"auto", "all", "description"} and query in description.casefold():
-        return "description_contains"
-    if search_mode in {"auto", "all", "group"} and query in group.casefold():
-        return "group_contains"
-    return "matched"
-
-
-def _symbol_search_sort_key(
-    symbol: Any,
-    search_term: str,
-    search_mode: str,
-) -> tuple[int, int, int, int, str, str]:
-    reason = _symbol_search_match_reason(symbol, search_term, search_mode)
-    metal_rank = _symbol_search_metal_rank(symbol, search_term)
-    forex_rank = _symbol_search_forex_rank(symbol, search_term)
-    reason_rank = _SYMBOL_SEARCH_REASON_RANK.get(reason, 9)
-    if forex_rank < 100 or metal_rank < 100:
-        reason_rank = min(reason_rank, _SYMBOL_SEARCH_REASON_RANK["name_prefix"])
-    return (
-        reason_rank,
-        metal_rank,
-        forex_rank,
-        symbol_shorthand_rank(symbol, search_term),
-        *_case_insensitive_sort_key(getattr(symbol, "name", "")),
-    )
-
-
-def _symbol_search_forex_rank(symbol: Any, search_term: str) -> int:
-    query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
-    if len(query) != 3 or query not in _FOREX_CURRENCY_CODES:
-        return 100
-    pair = _symbol_forex_pair(symbol)
-    if not pair or query not in (pair[:3], pair[3:]):
-        return 100
-    return _FOREX_SEARCH_PAIR_PRIORITY.get(pair, 50)
-
-
-def _symbol_default_list_sort_key(symbol: Any) -> tuple[int, int, str, str]:
-    """Rank a no-filter symbol overview without fetching live market data."""
-    pair = _symbol_forex_pair(symbol)
-    if pair in _FOREX_SEARCH_PAIR_PRIORITY:
-        return 0, _FOREX_SEARCH_PAIR_PRIORITY[pair], *_case_insensitive_sort_key(
-            getattr(symbol, "name", "")
-        )
-    if pair:
-        return 1, 0, *_case_insensitive_sort_key(getattr(symbol, "name", ""))
-    category_rank = _SYMBOL_DEFAULT_CATEGORY_PRIORITY.get(_symbol_category(symbol), 9)
-    return category_rank, 0, *_case_insensitive_sort_key(getattr(symbol, "name", ""))
-
-
-def _symbol_top_match(
-    rows: List[Dict[str, Any]], search_term: str
-) -> Optional[Dict[str, Any]]:
-    if not rows or not isinstance(rows[0], dict):
-        return None
-    row = rows[0]
-    reason = row.get("match_reason")
-    if reason not in {"exact_name", "name_prefix"}:
-        return None
-    if reason == "name_prefix":
-        query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
-
-        def _semantic_rank(candidate: Dict[str, Any]) -> int:
-            symbol_name = re.sub(
-                r"[^A-Z]", "", str(candidate.get("symbol") or "").upper()
-            )
-            if query in _FOREX_CURRENCY_CODES and len(symbol_name) >= 6:
-                return _FOREX_SEARCH_PAIR_PRIORITY.get(symbol_name[:6], 50)
-            metal_base = _METAL_SEARCH_ALIASES.get(query)
-            if metal_base and symbol_name.startswith(metal_base):
-                quote = symbol_name[len(metal_base) : len(metal_base) + 3]
-                return _METAL_QUOTE_PRIORITY.get(quote, 50)
-            return 0
-
-        first_rank = _semantic_rank(row)
-        if any(
-            candidate.get("match_reason") == reason
-            and _semantic_rank(candidate) == first_rank
-            for candidate in rows[1:]
-        ):
-            return None
-    out = {
-        "symbol": row.get("symbol"),
-        "match_reason": reason,
-    }
-    group = row.get("group")
-    if group not in (None, ""):
-        out["group"] = group
-    return out
-
-
-def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]:
-    context: Dict[str, Any] = {
-        "term": search_term,
-        "mode": search_mode,
-        "fields": _SYMBOL_SEARCH_FIELDS.get(
-            search_mode,
-            ["symbol", "description", "group"],
-        ),
-        "match": (
-            "case_insensitive_equality"
-            if search_mode == "exact"
-            else "case_insensitive_substring"
-        ),
-    }
-    if search_mode in {"auto", "all"}:
-        context["ranking"] = [
-            "exact_name",
-            "name_prefix",
-            "name_contains",
-            "description_contains",
-            "group_contains",
-        ]
-    return context
-
-
-def _symbol_search_normalized_from(
-    raw_search_term: Optional[str],
-    search_term: Optional[str],
-) -> Optional[str]:
-    raw = str(raw_search_term or "").strip()
-    normalized = str(search_term or "").strip()
-    if raw and normalized and raw != normalized:
-        return raw
-    return None
-
-
-def _symbol_search_context_for_request(
-    search_term: str,
-    search_mode: str,
-    *,
-    raw_search_term: Optional[str],
-) -> Dict[str, Any]:
-    context = _symbol_search_context(search_term, search_mode)
-    normalized_from = _symbol_search_normalized_from(raw_search_term, search_term)
-    if normalized_from:
-        context["normalized_from"] = normalized_from
-    return context
-
-
-def _symbol_search_suggestions(
-    all_symbols: List[Any],
-    search_term: str,
-    *,
-    limit: int = 5,
-) -> List[Dict[str, Any]]:
-    query = str(search_term or "").strip().casefold()
-    if not query:
-        return []
-    scored: List[tuple[float, str, Any]] = []
-    for symbol in all_symbols:
-        name = str(getattr(symbol, "name", "") or "")
-        if not name:
-            continue
-        name_folded = name.casefold()
-        if query in name_folded:
-            score = 1.0
-        else:
-            score = SequenceMatcher(None, query, name_folded).ratio()
-        if score >= 0.55:
-            scored.append((score, name, symbol))
-    scored.sort(key=lambda item: (-item[0], *_case_insensitive_sort_key(item[1])))
-    return [
-        _symbol_suggestion_from_info(symbol)
-        for _, _, symbol in scored[: max(1, int(limit))]
-    ]
-
-
-def _symbols_empty_search_context(
-    all_symbols: List[Any],
-    search_term: str,
-    search_mode: str,
-) -> Dict[str, Any]:
-    context: Dict[str, Any] = {
-        "message": (
-            f"No symbols matched '{search_term}'. "
-            "Try search_mode=all for broader matching or check spelling."
-        ),
-        "universe_size": len(all_symbols),
-    }
-    suggestions = _symbol_search_suggestions(all_symbols, search_term)
-    if suggestions:
-        context["suggestions"] = suggestions
-    if search_mode == "all":
-        context["message"] = (
-            f"No symbols matched '{search_term}'. "
-            "Check spelling or inspect broker groups with list_mode=groups."
-        )
-    return context
-
-
-def _symbols_from_groups(
-    groups: Dict[str, List[Any]],
-    group_names: List[str],
-) -> List[Any]:
-    matched: List[Any] = []
-    for group_name in group_names:
-        matched.extend(groups[group_name])
-    return matched
-
-
-def _match_symbols_for_search(
-    all_symbols: List[Any],
-    search_term: str,
-    search_mode: str,
-) -> List[Any]:
-    search_upper = search_term.upper()
-    groups: Dict[str, List[Any]] = {}
-    symbol_name_matches: List[Any] = []
-    description_matches: List[Any] = []
-    all_field_matches: List[Any] = []
-
-    for symbol in all_symbols:
-        group_path = _extract_group_path_util(symbol)
-        groups.setdefault(group_path, []).append(symbol)
-
-        symbol_name = str(getattr(symbol, "name", "") or "")
-        description = str(getattr(symbol, "description", "") or "")
-        name_hit = search_upper in symbol_name.upper()
-        description_hit = search_upper in description.upper()
-        group_hit = search_upper in str(group_path or "").upper()
-
-        if search_mode == "exact":
-            if symbol_name.upper() == search_upper:
-                symbol_name_matches.append(symbol)
-        elif name_hit:
-            symbol_name_matches.append(symbol)
-        if description_hit:
-            description_matches.append(symbol)
-        if name_hit or description_hit or group_hit:
-            all_field_matches.append(symbol)
-
-    matching_groups = [
-        group_name
-        for group_name in groups.keys()
-        if search_upper in group_name.upper()
-    ]
-
-    if search_mode in {"exact", "name"}:
-        return symbol_name_matches
-    if search_mode == "description":
-        return description_matches
-    if search_mode == "group":
-        return _symbols_from_groups(groups, matching_groups)
-    if search_mode in {"auto", "all"}:
-        return all_field_matches
-
-
-_COMMON_QUOTE_CURRENCIES = (
-    "USD",
-    "USDT",
-    "USDC",
-    "EUR",
-    "GBP",
-    "JPY",
-    "CHF",
-    "AUD",
-    "CAD",
-    "NZD",
-)
-
-
-def _copy_symbol_describe_field(
-    out: Dict[str, Any],
-    source: Dict[str, Any],
-    field: str,
-) -> bool:
-    if field not in source:
-        return False
-    value = source.get(field)
-    if value is None:
-        return False
-    if isinstance(value, str) and value == "":
-        return False
-    if isinstance(value, list) and not value:
-        return False
-    out[field] = value
-    return True
-
-
-def _normalize_spread_float_field(payload: Dict[str, Any]) -> None:
-    if "spread_float" not in payload:
-        return
-    value = payload.pop("spread_float")
-    if isinstance(value, bool):
-        payload["spread_is_floating"] = value
-    elif value is not None:
-        payload["spread_is_floating"] = bool(value)
-
-
-def _infer_symbol_base_from_name(symbol_name: Any, quote_currency: Any) -> Optional[str]:
-    name = re.sub(r"[^A-Z0-9]", "", str(symbol_name or "").upper())
-    quote = str(quote_currency or "").strip().upper()
-    if not name or quote not in _COMMON_QUOTE_CURRENCIES:
-        return None
-    if not name.endswith(quote):
-        return None
-    base = name[: -len(quote)]
-    for crypto_base in _COMMON_CRYPTO_BASES:
-        if base == crypto_base or base.endswith(crypto_base):
-            return crypto_base
-    return None
-
-
-def _add_symbol_currency_diagnostics(symbol_data: Dict[str, Any]) -> None:
-    currency_base = str(symbol_data.get("currency_base") or "").strip().upper()
-    currency_profit = str(symbol_data.get("currency_profit") or "").strip().upper()
-    if not currency_base or not currency_profit or currency_base != currency_profit:
-        return
-    inferred_base = _infer_symbol_base_from_name(
-        symbol_data.get("name") or symbol_data.get("symbol"),
-        currency_profit,
-    )
-    if not inferred_base or inferred_base == currency_base:
-        return
-    symbol_data["currency_base_inferred"] = inferred_base
-    symbol_data["currency_base_warning"] = (
-        "MT5 reports identical currency_base and currency_profit; verify broker metadata."
-    )
-
-
-def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, Any]:
-    compact: Dict[str, Any] = {}
-    for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
-        _copy_symbol_describe_field(compact, symbol_data, field)
-
-    raw_margin_fields = {
-        "margin_initial": "broker_margin_initial_raw",
-        "margin_maintenance": "broker_margin_maintenance_raw",
-    }
-    for source, target in raw_margin_fields.items():
-        if source in symbol_data:
-            compact[target] = symbol_data[source]
-    if any(target in compact for target in raw_margin_fields.values()):
-        compact["margin_fields_note"] = (
-            "Raw broker symbol template values, not cash required for an order. "
-            "Actual margin depends on account leverage and instrument rules; use "
-            "trade_place dry-run for an order-specific margin estimate."
-        )
-
-    _apply_symbol_currency_diagnostics(compact)
-
-    if "time_epoch" in symbol_data:
-        compact["time_epoch"] = symbol_data["time_epoch"]
-    return compact
-
-
-def _summary_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, Any]:
-    summary: Dict[str, Any] = {}
-    for field in _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS:
-        _copy_symbol_describe_field(summary, symbol_data, field)
-
-    _apply_symbol_currency_diagnostics(summary)
-    return summary
-
-
-def _apply_symbol_currency_diagnostics(payload: Dict[str, Any]) -> None:
-    inferred_base = payload.get("currency_base_inferred")
-    reported_base = payload.get("currency_base")
-    if inferred_base and payload.get("currency_base_warning"):
-        payload["currency_base_reported"] = reported_base
-        payload["currency_base_source"] = "reported_by_mt5"
-        payload["currency_base_inference_source"] = "inferred_from_symbol_name"
-
-
-def _attach_symbol_currency_anomaly_summary(
-    payload: Dict[str, Any],
-    *,
-    anomalies: List[Dict[str, Any]],
-) -> None:
-    anomaly_count = len(anomalies)
-    if anomaly_count <= 0:
-        return
-    payload["currency_metadata_anomaly_count"] = int(anomaly_count)
-    payload["currency_metadata_anomalies"] = anomalies[:20]
-    if anomaly_count > 20:
-        payload["currency_metadata_anomalies_truncated"] = True
-    named_symbols = ", ".join(
-        str(item.get("symbol"))
-        for item in anomalies[:5]
-        if item.get("symbol")
-    )
-    payload["warnings"] = [
-        f"{int(anomaly_count)} symbol(s) have broker currency metadata that "
-        f"conflicts with the symbol name: {named_symbols}."
-    ]
-    payload["trust"] = "verify_broker_metadata"
-
-
-def _symbol_search_metal_rank(symbol: Any, search_term: str) -> int:
-    query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
-    base = _METAL_SEARCH_ALIASES.get(query)
-    if base is None:
-        return 100
-    letters = _symbol_name_letters(symbol)
-    if not letters.startswith(base) or len(letters) < len(base) + 3:
-        return 100
-    quote = letters[len(base) : len(base) + 3]
-    return _METAL_QUOTE_PRIORITY.get(quote, 50)
-
-
-def _symbol_session_type(
-    *,
-    name: Any,
-    group: Any = None,
-    description: Any = None,
-) -> Optional[str]:
-    text = " ".join(
-        str(value or "").upper()
-        for value in (name, group, description)
-        if value not in (None, "")
-    )
-    if any(token in text for token in ("-24", "24HR", "24/5", "24H")):
-        return "extended_24h"
-    if "." in str(name or "") and any(token in text for token in ("STOCK", "CFD")):
-        return "regular"
-    return None
-
-
-def _symbol_suggestion_from_info(symbol_info: Any) -> Dict[str, Any]:
-    group = _extract_group_path_util(symbol_info)
-    description = getattr(symbol_info, "description", None)
-    suggestion: Dict[str, Any] = {
-        "symbol": _clean_broker_text(getattr(symbol_info, "name", None)),
-        "group": _clean_broker_text(group),
-    }
-    if description not in (None, ""):
-        suggestion["description"] = _clean_broker_text(description)
-    session_type = _symbol_session_type(
-        name=getattr(symbol_info, "name", None),
-        group=group,
-        description=description,
-    )
-    if session_type is not None:
-        suggestion["session_type"] = session_type
-    return {key: value for key, value in suggestion.items() if value not in (None, "")}
-
-
-def _symbol_list_optional_attr(symbol_info: Any, attr: str) -> Any:
-    try:
-        if attr not in dir(symbol_info):
-            return None
-        value = getattr(symbol_info, attr)
-    except Exception:
-        return None
-    if callable(value) or value is None:
-        return None
-    if isinstance(value, str) and not value.strip():
-        return None
-    return _clean_broker_text(value)
-
-
-def _find_symbol_suggestions(
-    mt5_gateway: Any,
-    query: str,
-    *,
-    limit: int = 5,
-) -> List[Dict[str, Any]]:
-    return symbol_suggestions_from_gateway(
-        mt5_gateway,
-        query,
-        limit=limit,
-    )
-
-
-def _visible_market_watch_note(
-    *,
-    visible_count: int,
-    broker_symbol_count: int,
-    filtered_total: int,
-    filters: Optional[Dict[str, Any]] = None,
-) -> str:
-    note = (
-        "Showing visible Market Watch symbols only "
-        f"({visible_count} of {broker_symbol_count} unfiltered)"
-    )
-    if filters:
-        filter_text = ", ".join(
-            f"{key}={value}"
-            for key, value in filters.items()
-            if value not in (None, "")
-        )
-        if filter_text:
-            note += f"; {filtered_total} match {filter_text}"
-    note += "; use universe=all or search_term for the broker catalog."
-    return note
-
-
-@mcp.tool()
-def symbols_list(  # noqa: C901
-    search_term: Optional[str] = None,
-    limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
-    offset: Annotated[int, Field(ge=0)] = 0,
-    list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
-    universe: Optional[Literal["visible", "all"]] = None,  # type: ignore
-    group: Optional[str] = None,
-    currency: Optional[str] = None,
-    category: Optional[str] = None,
-    search_mode: Literal[  # type: ignore
-        "auto",
-        "name",
-        "description",
-        "group",
-        "exact",
-        "all",
-    ] = "auto",
-    detail: DetailLiteral = "compact",  # type: ignore
-) -> Dict[str, Any]:
-    """List symbols or symbol groups.
-
-    Search is case-insensitive. Slashed pairs such as EUR/USD are normalized to
-    broker-style concatenated symbols such as EURUSD. Auto mode searches symbol,
-    description, and group fields, then ranks exact/prefix/name matches before
-    description and group matches.
-
-    Without a search term, omitting universe lists Market Watch symbols. When a
-    search term is present, omitting universe searches the broker catalog. An
-    explicit universe="visible" or universe="all" is always honored. The
-    unfiltered overview ranks FX majors, other FX pairs, then broad asset
-    categories before symbol name. Use group, currency, and category to filter
-    the resulting symbol set.
-    """
-    raw_search_term = str(search_term or "").strip() or None
-    normalized_search_term = _normalize_symbol_search_term(search_term)
-    group_filter = _normalize_group_path_query(group) if group else None
-    currency_filter = str(currency or "").strip().upper() or None
-    category_filter = _normalize_symbol_category_filter(category)
-    detail_mode = normalize_output_detail(detail, default="compact")
-    search_mode_value = str(search_mode or "auto").strip().lower()
-    universe_value = (
-        str(universe).strip().lower() if universe is not None else None
-    )
-    effective_universe = universe_value or (
-        "all" if normalized_search_term else "visible"
-    )
-
-    def _run() -> Dict[str, Any]:  # noqa: C901
-        try:
-            if limit is not None:
-                try:
-                    if int(limit) <= 0:
-                        return {"error": "limit must be a positive integer when provided."}
-                except (TypeError, ValueError):
-                    return {"error": "limit must be a positive integer when provided."}
-            mt5_gateway = create_mt5_gateway(
-                adapter=mt5,
-                ensure_connection_impl=ensure_mt5_connection_or_raise,
-            )
-            mt5_gateway.ensure_connection()
-            source = build_mt5_source_provenance(mt5_gateway)
-            mode = str(list_mode or "symbols").strip().lower()
-            if mode not in ("symbols", "groups"):
-                return {"error": "list_mode must be 'symbols' or 'groups'."}
-            if universe_value is not None and universe_value not in {"visible", "all"}:
-                return {"error": "universe must be 'visible' or 'all'."}
-            if category and not category_filter:
-                return {
-                    "error": (
-                        "category must be one of forex, crypto, indices, "
-                        "commodities, stocks, bonds, or etfs."
-                    )
-                }
-            if search_mode_value not in _SYMBOL_SEARCH_MODES:
-                return {
-                    "error": (
-                        "search_mode must be one of auto, name, description, "
-                        "group, exact, or all."
-                    )
-                }
-            if mode == "groups":
-                if search_mode_value in {"name", "description"}:
-                    return {
-                        "error": (
-                            "list_mode='groups' searches group paths only; use "
-                            "search_mode=auto, group, exact, or all."
-                        )
-                    }
-                return _list_symbol_groups(
-                    search_term=normalized_search_term,
-                    limit=limit,
-                    offset=offset,
-                    mt5_gateway=mt5_gateway,
-                    detail=detail_mode,
-                    universe=effective_universe,
-                    group=group_filter,
-                    currency=currency_filter,
-                    category=category_filter,
-                    search_mode=search_mode_value,
-                    source=source,
-                )
-
-            matched_symbols = []
-            search_universe: List[Any] = []
-            with _symbol_visibility_snapshot_guard():
-                all_symbols = mt5_gateway.symbols_get()
-            if all_symbols is None:
-                return {"error": f"Failed to get symbols: {mt5_gateway.last_error()}"}
-            all_symbols_list = list(all_symbols)
-            broker_symbol_count = len(all_symbols_list)
-            visible_count = sum(
-                1
-                for symbol in all_symbols_list
-                if bool(getattr(symbol, "visible", False))
-            )
-            if normalized_search_term:
-                search_universe = all_symbols_list
-                matched_symbols = _match_symbols_for_search(
-                    search_universe,
-                    normalized_search_term,
-                    search_mode_value,
-                )
-            else:
-                matched_symbols = all_symbols_list
-
-            if normalized_search_term:
-                matched_symbols = sorted(
-                    matched_symbols,
-                    key=lambda symbol: _symbol_search_sort_key(
-                        symbol,
-                        normalized_search_term,
-                        search_mode_value,
-                    ),
-                )
-            else:
-                matched_symbols = sorted(
-                    matched_symbols,
-                    key=_symbol_default_list_sort_key,
-                )
-            only_visible = effective_universe == "visible"
-            symbol_list = []
-            for symbol in matched_symbols:
-                if only_visible and not symbol.visible:
-                    continue
-                if not _symbol_group_matches(symbol, group_filter):
-                    continue
-                if not _symbol_currency_matches(symbol, currency_filter):
-                    continue
-                symbol_category = _symbol_category(symbol)
-                if category_filter and symbol_category != category_filter:
-                    continue
-                row = {
-                    "symbol": _clean_broker_text(symbol.name),
-                    "group": _clean_broker_text(_extract_group_path_util(symbol)),
-                    "description": _clean_broker_text(symbol.description),
-                    "in_marketwatch": bool(getattr(symbol, "visible", False)),
-                    "session_type": _symbol_session_type(
-                        name=symbol.name,
-                        group=_extract_group_path_util(symbol),
-                        description=symbol.description,
-                    ),
-                }
-                if currency_filter:
-                    row["currency_match_basis"] = _symbol_currency_match_basis(
-                        symbol,
-                        currency_filter,
-                    )
-                if category_filter:
-                    row["category"] = symbol_category
-                if normalized_search_term:
-                    row["match_reason"] = _symbol_search_match_reason(
-                        symbol,
-                        normalized_search_term,
-                        search_mode_value,
-                    )
-                for attr in (
-                    "currency_base",
-                    "currency_profit",
-                    "digits",
-                ):
-                    value = _symbol_list_optional_attr(symbol, attr)
-                    if value is not None:
-                        row[attr] = value
-                spread_is_floating = _symbol_list_optional_attr(symbol, "spread_float")
-                if spread_is_floating is not None:
-                    row["spread_is_floating"] = bool(spread_is_floating)
-                _add_symbol_currency_diagnostics(row)
-                _apply_symbol_currency_diagnostics(row)
-                symbol_list.append(row)
-
-            limit_value = _normalize_limit(limit)
-            try:
-                offset_value = int(offset or 0)
-            except Exception:
-                return {"error": "offset must be a non-negative integer."}
-            if offset_value < 0:
-                return {"error": "offset must be >= 0."}
-            total_count = len(symbol_list)
-            currency_anomalies = [
-                {
-                    "symbol": row.get("symbol"),
-                    "field": "currency_base",
-                    "issue": "reported_base_matches_profit_but_name_implies_different_base",
-                    "reported": row.get("currency_base_reported")
-                    or row.get("currency_base"),
-                    "inferred": row.get("currency_base_inferred"),
-                    "currency_profit": row.get("currency_profit"),
-                }
-                for row in symbol_list
-                if row.get("currency_base_warning")
-            ]
-            filters = {}
-            if group_filter:
-                filters["group"] = group_filter
-            if currency_filter:
-                filters["currency"] = currency_filter
-            if category_filter:
-                filters["category"] = category_filter
-            top_match = (
-                _symbol_top_match(symbol_list, normalized_search_term)
-                if normalized_search_term
-                else None
-            )
-            ambiguous_match = bool(
-                normalized_search_term
-                and not top_match
-                and len(symbol_list) > 1
-                and symbol_list[0].get("match_reason") == "name_prefix"
-                and symbol_list[1].get("match_reason") == "name_prefix"
-            )
-            if offset_value:
-                symbol_list = symbol_list[offset_value:]
-            if limit_value:
-                symbol_list = symbol_list[:limit_value]
-            returned_symbol_names = {
-                str(row.get("symbol"))
-                for row in symbol_list
-                if row.get("symbol") is not None
-            }
-            currency_anomalies = [
-                anomaly
-                for anomaly in currency_anomalies
-                if str(anomaly.get("symbol")) in returned_symbol_names
-            ]
-            if detail_mode == "summary":
-                out = {
-                    "success": True,
-                    "list_mode": "symbols",
-                    "count": len(symbol_list),
-                    "search_term": normalized_search_term,
-                    "search_mode": search_mode_value,
-                    "universe": effective_universe,
-                }
-                if filters:
-                    out["filters"] = filters
-                sample = []
-                for row in symbol_list[:5]:
-                    sample.append(
-                        {
-                            key: row.get(key)
-                            for key in (
-                                "symbol",
-                                "group",
-                                "description",
-                                "category",
-                                "match_reason",
-                                "currency_base",
-                                "currency_base_reported",
-                                "currency_base_inferred",
-                                "currency_base_source",
-                                "currency_base_inference_source",
-                                "currency_base_warning",
-                                "currency_match_basis",
-                            )
-                            if row.get(key) is not None
-                        }
-                    )
-                if sample:
-                    out["sample"] = sample
-                    out["sample_count"] = len(sample)
-                if normalized_search_term:
-                    out["search"] = _symbol_search_context_for_request(
-                        normalized_search_term,
-                        search_mode_value,
-                        raw_search_term=raw_search_term,
-                    )
-                    if top_match:
-                        out["top_match"] = top_match
-                    elif ambiguous_match:
-                        out["ambiguous_match"] = True
-                        out["match_candidates"] = [
-                            row.get("symbol") for row in symbol_list[:5]
-                        ]
-                    out["universe_size"] = len(search_universe)
-                    if total_count == 0:
-                        out.update(
-                            _symbols_empty_search_context(
-                                search_universe,
-                                normalized_search_term,
-                                search_mode_value,
-                            )
-                        )
-                elif effective_universe == "visible":
-                    out["visible_count"] = visible_count
-                    out["broker_symbol_count"] = broker_symbol_count
-                    if broker_symbol_count > visible_count:
-                        out["note"] = _visible_market_watch_note(
-                            visible_count=visible_count,
-                            broker_symbol_count=broker_symbol_count,
-                            filtered_total=total_count,
-                            filters=filters,
-                        )
-                if not normalized_search_term:
-                    out["sort"] = "market_overview"
-                out["pagination"] = build_pagination_meta(
-                    total=total_count,
-                    returned=len(symbol_list),
-                    offset=offset_value,
-                    limit=limit_value,
-                )
-                if currency_filter:
-                    out["currency_filter_basis"] = _currency_filter_basis_summary(
-                        symbol_list
-                    )
-                _attach_symbol_currency_anomaly_summary(
-                    out,
-                    anomalies=currency_anomalies,
-                )
-                out["source"] = source
-                return out
-            headers = ["symbol", "group", "description"]
-            if category_filter:
-                headers.append("category")
-            if normalized_search_term:
-                headers.append("match_reason")
-            for optional_header in (
-                "currency_base",
-                "currency_base_reported",
-                "currency_base_inferred",
-                "currency_base_source",
-                "currency_base_inference_source",
-                "currency_base_warning",
-                "currency_match_basis",
-                "currency_profit",
-                "digits",
-                "spread_is_floating",
-            ):
-                if any(s.get(optional_header) is not None for s in symbol_list):
-                    headers.append(optional_header)
-            if any(s.get("session_type") for s in symbol_list):
-                headers.append("session_type")
-            if detail_mode in {"standard", "full"}:
-                headers.append("in_marketwatch")
-            rows = [[s.get(header) for header in headers] for s in symbol_list]
-            result = _table_from_rows(headers, rows)
-            result["universe"] = effective_universe
-            if filters:
-                result["filters"] = filters
-            if normalized_search_term:
-                result["search"] = _symbol_search_context_for_request(
-                    normalized_search_term,
-                    search_mode_value,
-                    raw_search_term=raw_search_term,
-                )
-                if top_match:
-                    result["top_match"] = top_match
-                elif ambiguous_match:
-                    result["ambiguous_match"] = True
-                    result["match_candidates"] = [
-                        row.get("symbol") for row in symbol_list[:5]
-                    ]
-                result["universe_size"] = len(search_universe)
-                if total_count == 0:
-                    result.update(
-                        _symbols_empty_search_context(
-                            search_universe,
-                            normalized_search_term,
-                            search_mode_value,
-                            )
-                        )
-            elif effective_universe == "visible":
-                result["visible_count"] = visible_count
-                result["broker_symbol_count"] = broker_symbol_count
-                if broker_symbol_count > visible_count:
-                    result["note"] = _visible_market_watch_note(
-                        visible_count=visible_count,
-                        broker_symbol_count=broker_symbol_count,
-                        filtered_total=total_count,
-                        filters=filters,
-                    )
-            if not normalized_search_term:
-                result["sort"] = "market_overview"
-            result["pagination"] = build_pagination_meta(
-                total=total_count,
-                returned=len(symbol_list),
-                offset=offset_value,
-                limit=limit_value,
-            )
-            if currency_filter:
-                result["currency_filter_basis"] = _currency_filter_basis_summary(
-                    symbol_list
-                )
-            _attach_symbol_currency_anomaly_summary(
-                result,
-                anomalies=currency_anomalies,
-            )
-            result["source"] = source
-            return attach_collection_contract(
-                result,
-                collection_kind="table",
-                rows=result.get("data"),
-                include_contract_meta=False,
-            )
-        except MT5ConnectionError as exc:
-            return {"error": str(exc)}
-        except Exception as exc:
-            return {"error": f"Error getting symbols: {str(exc)}"}
-
-    return run_logged_operation(
-        logger,
-        operation="symbols_list",
-        search_term=normalized_search_term,
-        limit=limit,
-        offset=offset,
-        list_mode=list_mode,
-        universe=effective_universe,
-        group=group_filter,
-        currency=currency_filter,
-        category=category_filter,
-        search_mode=search_mode_value,
-        detail=detail_mode,
-        func=_run,
-    )
-
-def _list_symbol_groups(
-    search_term: Optional[str] = None,
-    limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
-    offset: Annotated[int, Field(ge=0)] = 0,
-    mt5_gateway: Any = None,
-    detail: DetailLiteral = "compact",  # type: ignore
-    universe: str = "visible",
-    group: Optional[str] = None,
-    currency: Optional[str] = None,
-    category: Optional[str] = None,
-    search_mode: str = "auto",
-    source: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """List group paths as a tabular result with a single column: group."""
-    try:
-        gateway = mt5_gateway or create_mt5_gateway(
-            adapter=mt5,
-            ensure_connection_impl=ensure_mt5_connection_or_raise,
-        )
-        # Get all symbols first
-        with _symbol_visibility_snapshot_guard():
-            all_symbols = gateway.symbols_get()
-        if all_symbols is None:
-            return {"error": f"Failed to get symbols: {gateway.last_error()}"}
-        
-        universe_value = str(universe or "visible").strip().lower()
-        group_filter = _normalize_group_path_query(group) if group else None
-        currency_filter = str(currency or "").strip().upper() or None
-        category_filter = _normalize_symbol_category_filter(category)
-        search_mode_value = str(search_mode or "auto").strip().lower()
-        filtered_symbols = [
-            symbol
-            for symbol in list(all_symbols)
-            if (universe_value == "all" or bool(getattr(symbol, "visible", False)))
-            and _symbol_group_matches(symbol, group_filter)
-            and _symbol_currency_matches(symbol, currency_filter)
-            and (not category_filter or _symbol_category(symbol) == category_filter)
-        ]
-
-        # Collect unique groups and compact discovery metadata.
-        groups = {}
-        for symbol in filtered_symbols:
-            group_path = _extract_group_path_util(symbol)
-            if group_path not in groups:
-                groups[group_path] = {
-                    "symbol_count": 0,
-                    "visible_count": 0,
-                    "sample_symbols": [],
-                }
-            group_meta = groups[group_path]
-            group_meta["symbol_count"] += 1
-            if bool(getattr(symbol, "visible", False)):
-                group_meta["visible_count"] += 1
-            symbol_name = str(getattr(symbol, "name", "") or "").strip()
-            if symbol_name and len(group_meta["sample_symbols"]) < 3:
-                group_meta["sample_symbols"].append(symbol_name)
-        
-        # Filter by search term if provided
-        filtered_items = list(groups.items())
-        if search_term:
-            q = search_term.strip().lower()
-            if search_mode_value == "exact":
-                filtered_items = [
-                    (key, value)
-                    for key, value in filtered_items
-                    if q == str(key or "").lower()
-                ]
-            else:
-                filtered_items = [
-                    (key, value)
-                    for key, value in filtered_items
-                    if q in str(key or "").lower()
-                ]
-
-        group_search_note = (
-            f"No group path matches '{search_term}'. Group listing filters by group "
-            "path, not symbol name; omit list_mode=groups to search symbols by name."
-            if search_term and not filtered_items
-            else None
-        )
-
-        # Sort groups by count (most symbols first)
-        filtered_items.sort(
-            key=lambda item: (
-                -item[1]["symbol_count"],
-                *_case_insensitive_sort_key(item[0]),
-            )
-        )
-
-        # Apply limit
-        limit_value = _normalize_limit(limit)
-        try:
-            offset_value = int(offset or 0)
-        except Exception:
-            return {"error": "offset must be a non-negative integer."}
-        if offset_value < 0:
-            return {"error": "offset must be >= 0."}
-        total_count = len(filtered_items)
-        if offset_value:
-            filtered_items = filtered_items[offset_value:]
-        if limit_value:
-            filtered_items = filtered_items[:limit_value]
-
-        detail_mode = normalize_output_detail(detail, default="compact")
-        if detail_mode == "summary":
-            out = {
-                "success": True,
-                "list_mode": "groups",
-                "count": len(filtered_items),
-                "search_term": search_term,
-                "search_mode": search_mode_value,
-                "universe": universe_value,
-                "pagination": build_pagination_meta(
-                    total=total_count,
-                    returned=len(filtered_items),
-                    offset=offset_value,
-                    limit=limit_value,
-                ),
-            }
-            if group_search_note:
-                out["note"] = group_search_note
-            filters = {
-                key: value
-                for key, value in {
-                    "group": group_filter,
-                    "currency": currency_filter,
-                    "category": category_filter,
-                }.items()
-                if value
-            }
-            if filters:
-                out["filters"] = filters
-            out["source"] = source or build_mt5_source_provenance(gateway)
-            return out
-        rows = [
-            [
-                name,
-                meta["symbol_count"],
-                meta["visible_count"],
-                meta["sample_symbols"],
-            ]
-            for name, meta in filtered_items
-        ]
-        result = _table_from_rows(
-            ["group", "symbol_count", "visible_count", "sample_symbols"],
-            rows,
-        )
-        result["list_mode"] = "groups"
-        result["universe"] = universe_value
-        result["search_mode"] = search_mode_value
-        filters = {
-            key: value
-            for key, value in {
-                "group": group_filter,
-                "currency": currency_filter,
-                "category": category_filter,
-            }.items()
-            if value
-        }
-        if filters:
-            result["filters"] = filters
-        result["source"] = source or build_mt5_source_provenance(gateway)
-        result["pagination"] = build_pagination_meta(
-            total=total_count,
-            returned=len(filtered_items),
-            offset=offset_value,
-            limit=limit_value,
-        )
-        if group_search_note:
-            result["note"] = group_search_note
-        return attach_collection_contract(
-            result,
-            collection_kind="table",
-            rows=result.get("data"),
-            include_contract_meta=False,
-        )
-    except Exception as e:
-        return {"error": f"Error getting symbol groups: {str(e)}"}
-
-@mcp.tool()
-def symbols_describe(  # noqa: C901
-    symbol: str,
-    detail: DetailLiteral = "compact",
-) -> Dict[str, Any]:
-    """Return symbol information for `symbol`.
-    
-    Parameters:
-    -----------
-    symbol : str
-        Trading symbol (e.g., "EURUSD")
-    detail : str, optional (default="compact")
-        Output verbosity level:
-        - "summary": Symbol identity, currencies, quote freshness, and session/trade labels
-        - "compact": Essential identity, status, volume, and contract fields
-        - "standard": Same concise field set as compact for this single-symbol metadata tool
-        - "full": Complete metadata including all trading modes, swap details, and session times
-    Returns:
-    --------
-    dict
-        Symbol identifier plus requested detail fields
-    """
-    def _run() -> Dict[str, Any]:  # noqa: C901
-        try:
-            contract = resolve_output_contract(
-                detail=detail,
-                default_detail="compact",
-            )
-            mt5_gateway = create_mt5_gateway(
-                adapter=mt5,
-                ensure_connection_impl=ensure_mt5_connection_or_raise,
-            )
-            mt5_gateway.ensure_connection()
-            resolved_symbol = resolve_broker_symbol_name(
-                symbol,
-                gateway=mt5_gateway,
-            )
-            symbol_info = mt5_gateway.symbol_info(resolved_symbol)
-            if symbol_info is None:
-                suggestions = _find_symbol_suggestions(mt5_gateway, symbol)
-                details: Dict[str, Any] = {
-                    "symbol": symbol,
-                    "search_hint": f"Use symbols_list(search_term='{symbol}') to browse matching broker symbols.",
-                }
-                details["did_you_mean"] = suggestions
-                return build_error_payload(
-                    f"Symbol '{symbol}' not found in MT5 terminal.",
-                    code="symbol_not_found",
-                    operation="symbols_describe",
-                    details=details,
-                )
-
-            enum_specs = {
-                "trade_mode": {"prefixes": ("SYMBOL_TRADE_MODE_",), "bitmask": False},
-                "trade_exemode": {"prefixes": ("SYMBOL_TRADE_EXECUTION_",), "bitmask": False},
-                "trade_calc_mode": {"prefixes": ("SYMBOL_CALC_MODE_",), "bitmask": False},
-                "swap_mode": {"prefixes": ("SYMBOL_SWAP_MODE_",), "bitmask": False},
-                "expiration_mode": {"prefixes": ("SYMBOL_EXPIRATION_",), "bitmask": True},
-                "order_mode": {"prefixes": ("SYMBOL_ORDER_",), "bitmask": True},
-            }
-
-            client_tz = _resolve_client_tz()
-            if client_tz is None:
-                time_formatter = _format_time_explicit
-            else:
-                time_formatter = _format_time_explicit_local
-
-            symbol_data = {}
-            quote_timestamp_available: Optional[bool] = None
-            available_attrs = set(dir(symbol_info))
-            for attr in _SYMBOL_DESCRIBE_FIELDS:
-                if attr not in available_attrs:
-                    continue
-                try:
-                    value = getattr(symbol_info, attr)
-                except Exception:
-                    continue
-                if callable(value):
-                    continue
-                if value is None:
-                    continue
-                if isinstance(value, str) and value == "":
-                    continue
-                if isinstance(value, str):
-                    value = _clean_broker_text(value)
-                if attr == "time":
-                    try:
-                        from ..utils.mt5 import _mt5_epoch_to_utc
-
-                        epoch = float(value)
-                        if not math.isfinite(epoch) or epoch <= 0.0:
-                            quote_timestamp_available = False
-                            symbol_data.update(
-                                {
-                                    "quote_status": "unavailable",
-                                    "data_stale": True,
-                                    "freshness": "unavailable, no quote timestamp",
-                                    "warning": (
-                                        "MT5 has not initialized quote data for this symbol."
-                                    ),
-                                }
-                            )
-                            continue
-                        utc_epoch = _mt5_epoch_to_utc(epoch)
-                        quote_timestamp_available = True
-                        symbol_data["quote_status"] = "available"
-                        if contract.shape_detail == "full":
-                            symbol_data["time_epoch"] = utc_epoch
-                        symbol_data["time"] = time_formatter(utc_epoch)
-                        symbol_data.update(
-                            {
-                                key: value
-                                for key, value in _quote_staleness_fields(
-                                    utc_epoch,
-                                    symbol=(
-                                        _nonempty_symbol_string(
-                                            getattr(symbol_info, "name", None)
-                                        )
-                                        or symbol
-                                    ),
-                                ).items()
-                                if key
-                                in {
-                                    "data_age_seconds",
-                                    "data_age",
-                                    "data_stale",
-                                    "freshness",
-                                    "stale_after_seconds",
-                                    "market_status",
-                                    "market_status_reason",
-                                    "market_status_source",
-                                    "note",
-                                    "warning",
-                                }
-                            }
-                        )
-                    except Exception:
-                        if contract.shape_detail == "full":
-                            symbol_data["time_epoch"] = value
-                        symbol_data["time"] = str(value)
-                else:
-                    if attr in _SYMBOL_DESCRIBE_PRICE_FIELDS:
-                        digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
-                        value = _market_scan_round(_market_scan_float(value), digits=digits)
-                    symbol_data[attr] = value
-
-                if attr == "filling_mode":
-                    # SYMBOL_FILLING_MODE is a bitmask whose numeric domain is
-                    # distinct from ORDER_FILLING_* request enum values.
-                    labels = [
-                        label
-                        for flag, label in ((1, "FOK"), (2, "IOC"), (4, "BOC"))
-                        if int(value) & flag
-                    ]
-                    if labels:
-                        symbol_data["filling_mode_labels"] = labels
-                        symbol_data["filling_mode_label"] = ", ".join(labels)
-                    continue
-
-                spec = enum_specs.get(attr)
-                if not spec:
-                    continue
-                prefixes = spec.get("prefixes", ())
-                is_bitmask = bool(spec.get("bitmask"))
-                if is_bitmask:
-                    labels = []
-                    for prefix in prefixes:
-                        labels = decode_mt5_bitmask_labels(mt5_gateway, value, prefix=prefix)
-                        if labels:
-                            break
-                    if labels:
-                        symbol_data[f"{attr}_labels"] = labels
-                        symbol_data[f"{attr}_label"] = ", ".join(labels)
-                else:
-                    label = None
-                    for prefix in prefixes:
-                        label = decode_mt5_enum_label(mt5_gateway, value, prefix=prefix)
-                        if label:
-                            break
-                    if label:
-                        symbol_data[f"{attr}_label"] = label
-
-            if quote_timestamp_available is False:
-                symbol_data.setdefault("quote_status", "unavailable")
-                symbol_data.setdefault("data_stale", True)
-                symbol_data.setdefault("freshness", "unavailable, no quote timestamp")
-                symbol_data.setdefault(
-                    "warning",
-                    "MT5 has not initialized quote data for this symbol.",
-                )
-                symbol_data.pop("price_change", None)
-
-            # ``symbol_info.time`` is a cached terminal metadata field and can
-            # disagree with the executable tick stream. Reconcile the quote in
-            # the same way as market_ticker before publishing freshness.
-            try:
-                raw_tick = mt5_gateway.symbol_info_tick(resolved_symbol)
-            except Exception:
-                raw_tick = None
-            tick_query_epoch = float(time.time())
-            resolved_tick, quote_source = resolve_quote_tick(
-                mt5_gateway,
-                resolved_symbol,
-                raw_tick,
-                now_epoch=tick_query_epoch,
-                stale_after_seconds=_MARKET_SCAN_STALE_QUOTE_SECONDS,
-            )
-            resolved_tick_epoch = tick_epoch(resolved_tick)
-            if resolved_tick_epoch is not None:
-                quote_timestamp_available = True
-                for key in (
-                    "data_age_seconds",
-                    "data_age",
-                    "data_stale",
-                    "freshness",
-                    "freshness_state",
-                    "freshness_reason",
-                    "usable_for_live_trading",
-                    "usable_for_live_trading_basis",
-                    "stale_after_seconds",
-                    "market_status",
-                    "market_status_reason",
-                    "market_status_source",
-                    "note",
-                    "warning",
-                    "timestamp_ahead_of_wall_clock",
-                    "timestamp_in_future",
-                    "timestamp_skew_seconds",
-                    "timestamp_skew_tolerance_seconds",
-                    "timestamp_warning",
-                ):
-                    symbol_data.pop(key, None)
-                symbol_data["quote_status"] = "available"
-                if contract.shape_detail == "full":
-                    symbol_data["time_epoch"] = resolved_tick_epoch
-                symbol_data["time"] = time_formatter(resolved_tick_epoch)
-                symbol_data.update(
-                    _quote_staleness_fields(
-                        resolved_tick_epoch,
-                        symbol=resolved_symbol,
-                    )
-                )
-                symbol_data.update(quote_source)
-                digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
-                point = _market_scan_float(getattr(symbol_info, "point", None))
-                tick_size = _market_scan_float(
-                    getattr(symbol_info, "trade_tick_size", None)
-                )
-                bid = _market_scan_float(tick_value(resolved_tick, "bid"))
-                ask = _market_scan_float(tick_value(resolved_tick, "ask"))
-                last = _market_scan_float(tick_value(resolved_tick, "last"))
-                points_per_pip = _market_scan_points_per_pip(
-                    symbol_info,
-                    point=point or 0.0,
-                    digits=digits,
-                )
-                spread_metrics = compute_spread_metrics(
-                    bid,
-                    ask,
-                    point=point,
-                    points_per_pip=points_per_pip,
-                    tick_size=tick_size,
-                )
-                if bid is not None and bid > 0:
-                    symbol_data["bid"] = _market_scan_round(bid, digits=digits)
-                if ask is not None and ask > 0:
-                    symbol_data["ask"] = _market_scan_round(ask, digits=digits)
-                if last is not None and last > 0:
-                    symbol_data["last"] = _market_scan_round(last, digits=digits)
-                for field, precision in (
-                    ("mid", digits + 1),
-                    ("spread", digits),
-                    ("spread_points", 4),
-                    ("spread_pips", 4),
-                    ("spread_pct", 6),
-                ):
-                    value = spread_metrics.get(field)
-                    if value is not None:
-                        symbol_data[field] = _market_scan_round(value, digits=precision)
-                symbol_data["spread_valid"] = bool(spread_metrics["spread_valid"])
-                symbol_data["spread_quality"] = spread_metrics["spread_quality"]
-                enforce_quote_execution_readiness(
-                    symbol_data,
-                    bid=bid,
-                    ask=ask,
-                    quote_source_conflict=symbol_data.get("quote_source_conflict"),
-                )
-
-            price_change_value = (
-                _market_scan_float(symbol_data.get("price_change"))
-                if quote_timestamp_available is not False
-                else None
-            )
-            refreshed_price = None
-            refreshed_price_field = None
-            if resolved_tick_epoch is not None:
-                for field in ("bid", "last", "mid"):
-                    candidate = _market_scan_float(symbol_data.get(field))
-                    if candidate is not None and candidate > 0.0:
-                        refreshed_price = candidate
-                        refreshed_price_field = field
-                        break
-            previous_close = _market_scan_float(symbol_data.get("session_close"))
-            if (
-                refreshed_price is not None
-                and previous_close is not None
-                and abs(previous_close) > 1e-12
-            ):
-                symbol_data["price_change_pct"] = _market_scan_round(
-                    ((refreshed_price - previous_close) / abs(previous_close)) * 100.0,
-                    digits=6,
-                )
-                symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
-                symbol_data["price_change_basis"] = (
-                    "previous_trading_day_close_to_refreshed_quote"
-                )
-                symbol_data["price_change_current_price_field"] = refreshed_price_field
-                symbol_data["price_change_period"] = {
-                    "start": "previous_trading_day_close",
-                    "end": "current_quote",
-                }
-            elif price_change_value is not None:
-                symbol_data["price_change_pct"] = _market_scan_round(
-                    price_change_value,
-                    digits=6,
-                )
-                symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
-                symbol_data["price_change_basis"] = "broker_reported_price_change"
-                symbol_data["price_change_period"] = {
-                    "start": "previous_trading_day_close",
-                    "end": "broker_symbol_snapshot",
-                }
-            elif quote_timestamp_available is not False:
-                session_open = _market_scan_float(symbol_data.get("session_open"))
-                session_close = _market_scan_float(symbol_data.get("session_close"))
-                if (
-                    session_open is not None
-                    and session_close is not None
-                    and abs(session_open) > 1e-12
-                ):
-                    symbol_data["price_change_pct"] = _market_scan_round(
-                        ((session_close - session_open) / abs(session_open)) * 100.0,
-                        digits=6,
-                    )
-                    symbol_data["price_change_pct_unit"] = "percent (1.0 = 1%)"
-                    symbol_data["price_change_basis"] = "session_open_to_session_close"
-                    symbol_data["price_change_period"] = "broker_current_session"
-            symbol_data.pop("price_change", None)
-
-            _normalize_spread_float_field(symbol_data)
-            _add_symbol_currency_diagnostics(symbol_data)
-            if contract.detail == "summary":
-                symbol_data = _summary_symbol_describe_payload(symbol_data)
-            elif contract.shape_detail == "compact":
-                symbol_data = _compact_symbol_describe_payload(symbol_data)
-
-            symbol_name = _nonempty_symbol_string(symbol_data.pop("name", None))
-            payload = {
-                "success": True,
-                "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
-                "timezone": _client_timezone_label(client_tz),
-                "details": symbol_data,
-                "source": build_mt5_source_provenance(mt5_gateway),
-            }
-            if resolved_symbol != str(symbol or "").strip():
-                payload["symbol_input"] = str(symbol)
-            warning = symbol_data.get("currency_base_warning")
-            if warning not in (None, ""):
-                payload["warnings"] = [warning]
-                payload["trust"] = "verify_broker_metadata"
-            return payload
-        except MT5ConnectionError as exc:
-            return build_error_payload(
-                str(exc),
-                code="mt5_connection_error",
-                operation="symbols_describe",
-            )
-        except Exception as exc:
-            return build_error_payload(
-                f"Error getting symbol info: {str(exc)}",
-                code="symbols_describe_failed",
-                operation="symbols_describe",
-            )
-
-    return run_logged_operation(
-        logger,
-        operation="symbols_describe",
-        symbol=symbol,
-        detail=detail,
-        func=_run,
-    )
-
 
 def _market_scan_is_tradable(symbol: Any) -> bool:
     disabled_trade_mode = getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", None)
     if disabled_trade_mode is None:
         return True
     return getattr(symbol, "trade_mode", None) != disabled_trade_mode
-
 
 def _market_scan_base_row(symbol: Any) -> Dict[str, Any]:
     return {
@@ -2054,7 +108,6 @@ def _market_scan_base_row(symbol: Any) -> Dict[str, Any]:
         "asset_class": _symbol_category(symbol),
         "description": _clean_broker_text(getattr(symbol, "description", None)),
     }
-
 
 def _market_scan_float(value: Any) -> Optional[float]:
     try:
@@ -2065,7 +118,6 @@ def _market_scan_float(value: Any) -> Optional[float]:
         return None
     return out
 
-
 def _market_scan_bar_int(value: Any) -> Optional[int]:
     try:
         out = int(value)
@@ -2073,12 +125,10 @@ def _market_scan_bar_int(value: Any) -> Optional[int]:
         return None
     return out
 
-
 def _market_scan_round(value: Optional[float], digits: int = 6) -> Optional[float]:
     if value is None:
         return None
     return round(float(value), max(0, int(digits)))
-
 
 def _market_scan_points(value: Optional[float]) -> Optional[int | float]:
     rounded = _market_scan_round(value, digits=4)
@@ -2089,13 +139,11 @@ def _market_scan_points(value: Optional[float]) -> Optional[int | float]:
         return int(nearest)
     return rounded
 
-
 def _market_scan_stale_bar_seconds(timeframe: Optional[str]) -> int:
     seconds = TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper())
     if seconds:
         return max(1, int(seconds))
     return int(_MARKET_SCAN_STALE_BAR_SECONDS)
-
 
 def _market_scan_freshness_fields(
     bar_time: Optional[float],
@@ -2159,7 +207,6 @@ def _market_scan_freshness_fields(
         )
     return fields
 
-
 def _quote_staleness_fields(
     tick_time: Optional[float],
     *,
@@ -2194,7 +241,6 @@ def _quote_staleness_fields(
         )
     return fields
 
-
 _MARKET_SCAN_BAR_FRESHNESS_FIELDS = {
     "data_freshness_seconds": "bar_age_seconds",
     "data_freshness_anchor": "bar_freshness_anchor",
@@ -2209,7 +255,6 @@ _MARKET_SCAN_BAR_FRESHNESS_FIELDS = {
     "freshness_policy_relaxed": "bar_freshness_policy_relaxed",
     "stale_warning": "bar_stale_warning",
 }
-
 
 def _market_scan_bar_freshness_fields(
     bar_time: Optional[float],
@@ -2229,7 +274,6 @@ def _market_scan_bar_freshness_fields(
         if input_name in fields
     }
 
-
 def _market_scan_quote_freshness_fields(
     tick_time: Optional[float],
     *,
@@ -2242,7 +286,6 @@ def _market_scan_quote_freshness_fields(
         **_quote_staleness_fields(tick_time, symbol=symbol),
     }
 
-
 def _market_scan_points_per_pip(symbol: Any, *, point: float, digits: int) -> Optional[float]:
     return forex_points_per_pip(
         str(getattr(symbol, "name", "") or ""),
@@ -2250,7 +293,6 @@ def _market_scan_points_per_pip(symbol: Any, *, point: float, digits: int) -> Op
         point=point,
         digits=digits,
     )
-
 
 def _build_market_scan_spread_row(
     symbol: Any,
@@ -2339,7 +381,6 @@ def _build_market_scan_spread_row(
         row["spread_cost_currency"] = spread_cost_currency
     return row, None
 
-
 def _market_scan_completed_rates(
     symbol: str,
     *,
@@ -2403,7 +444,6 @@ def _market_scan_completed_rates(
         if refreshed is not None:
             rates = refreshed
     return rates
-
 
 def _build_market_scan_bar_row(
     symbol: Any,
@@ -2476,7 +516,6 @@ def _build_market_scan_bar_row(
     )
     return row, None
 
-
 def _market_scan_table(
     headers: List[str],
     rows: List[Dict[str, Any]],
@@ -2491,7 +530,6 @@ def _market_scan_table(
         rows=result.get("data"),
         include_contract_meta=include_contract_meta,
     )
-
 
 def _market_scan_contract_table(
     headers: List[str],
@@ -2517,7 +555,6 @@ def _market_scan_contract_table(
         out["columns"] = columns
     return out
 
-
 def _project_market_scan_rows(
     headers: List[str],
     rows: List[Dict[str, Any]],
@@ -2527,7 +564,6 @@ def _project_market_scan_rows(
         out = {header: row.get(header) for header in headers}
         projected.append(out)
     return projected
-
 
 def _compact_market_scan_projection(
     headers: List[str],
@@ -2571,7 +607,6 @@ def _compact_market_scan_projection(
             ]
     return projected_headers, shared
 
-
 _MARKET_SCAN_UNITS = {
     "bid": "price",
     "ask": "price",
@@ -2598,14 +633,12 @@ _MARKET_SCAN_UNITS = {
     "bar_age_hours": "hours",
 }
 
-
 def _market_scan_ranking_basis(rank_by: str) -> str:
     if rank_by in {"live_price_change_pct", "abs_live_price_change_pct"}:
         return "previous_completed_close_to_live_quote_mid"
     if rank_by in {"spread_pct", "spread"}:
         return "live_quote_bid_ask"
     return "completed_bar_metric"
-
 
 def _attach_market_scan_rank_gap_warning(
     payload: Dict[str, Any],
@@ -2642,7 +675,6 @@ def _attach_market_scan_rank_gap_warning(
     else:
         payload["warnings"] = [warning]
 
-
 def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
     seen_fields = {
         str(key)
@@ -2667,7 +699,6 @@ def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
             units["spread_pips"] = "pips (forex_only; omitted when not applicable)"
     return units
 
-
 def _attach_top_markets_units(
     out: Dict[str, Any],
     *row_groups: List[Dict[str, Any]],
@@ -2683,7 +714,6 @@ def _attach_top_markets_units(
         out["units"] = units
     _attach_market_scan_volume_semantics(out, units)
 
-
 def _attach_market_scan_volume_semantics(
     out: Dict[str, Any],
     units: Dict[str, str],
@@ -2691,7 +721,6 @@ def _attach_market_scan_volume_semantics(
     if units.get("tick_volume") == "broker_tick_count":
         out["volume_type"] = "tick_volume"
         out["volume_semantics"] = TICK_VOLUME_SEMANTICS
-
 
 def _market_scan_contract_meta(
     *,
@@ -2710,7 +739,6 @@ def _market_scan_contract_meta(
             key: value for key, value in stats.items() if value is not None
         }
     return out
-
 
 def _market_scan_error(
     message: str,
@@ -2733,13 +761,11 @@ def _market_scan_error(
         out["warnings"] = warnings
     return out
 
-
 def _attach_market_scan_source(payload: Dict[str, Any], gateway: Any = None) -> Dict[str, Any]:
     """Attach broker identity to MT5-backed scan outcomes, including failures."""
     out = dict(payload)
     out["source"] = build_mt5_source_provenance(gateway)
     return out
-
 
 def _market_scan_freshness_summary(
     rows: List[Dict[str, Any]],
@@ -2870,7 +896,6 @@ def _market_scan_freshness_summary(
             out["freshness"] = f"mixed, {closed_count}/{row_count} closed_weekend_snapshot"
     return out
 
-
 def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
     """Keep quote freshness distinct from the bar that supplies scan prices."""
     field_map = {
@@ -2897,7 +922,6 @@ def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
     row["price_as_of"] = row.get("time")
     row["price_freshness"] = row.get("bar_freshness")
 
-
 def _attach_market_scan_live_change(row: Dict[str, Any]) -> None:
     previous_close = _market_scan_float(row.get("previous_close"))
     live_mid = _market_scan_float(row.get("mid"))
@@ -2910,7 +934,6 @@ def _attach_market_scan_live_change(row: Dict[str, Any]) -> None:
     row["live_price_change_basis"] = (
         "previous_completed_close_to_live_quote_mid"
     )
-
 
 def _market_scan_quote_exclusion_reason(row: Dict[str, Any]) -> str:
     if isinstance(row.get("quote_source_conflict"), dict):
@@ -2926,7 +949,6 @@ def _market_scan_quote_exclusion_reason(row: Dict[str, Any]) -> str:
     if freshness_reason:
         return freshness_reason
     return "quote_not_usable_for_live_trading"
-
 
 _TOP_MARKETS_COMPACT_BASE_HEADERS = [
     "symbol",
@@ -3066,7 +1088,6 @@ _TOP_MARKETS_FULL_HEADERS = [
     *_TOP_MARKETS_FULL_BAR_HEADERS,
 ]
 
-
 def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
     if metric == "spread":
         if detail_mode == "compact":
@@ -3090,7 +1111,6 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
         *_TOP_MARKETS_FULL_BAR_HEADERS,
     ]
 
-
 def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
     compact_headers = [
         "rank_category",
@@ -3105,7 +1125,6 @@ def _top_markets_all_headers(*, detail_mode: str) -> List[str]:
         *_TOP_MARKETS_FULL_HEADERS,
     ]
 
-
 def _ranked_top_market_rows(
     ranking: str,
     rows: List[Dict[str, Any]],
@@ -3119,14 +1138,11 @@ def _ranked_top_market_rows(
         for rank, row in enumerate(rows, start=1)
     ]
 
-
 def _top_market_data_source(metric: str, timeframe: str) -> str:
     return "live_tick" if metric == "spread" else f"{timeframe}_bars"
 
-
 def _top_market_data_time_key(metric: str) -> str:
     return "tick_time" if metric == "spread" else "time"
-
 
 def _top_market_rows_with_data_context(
     metric: str,
@@ -3144,7 +1160,6 @@ def _top_market_rows_with_data_context(
         normalized.append(mapped)
     return normalized
 
-
 def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
     text = str(symbols or "").replace(";", ",").replace("\n", ",")
     parsed: List[str] = []
@@ -3159,7 +1174,6 @@ def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
         seen.add(upper)
         parsed.append(name)
     return parsed
-
 
 def _market_scan_group_matches_query(group_path: str, requested: str) -> bool:
     group_normalized = _normalize_group_path_query(group_path).casefold()
@@ -3188,7 +1202,6 @@ def _market_scan_group_matches_query(group_path: str, requested: str) -> bool:
     if not informative_tokens:
         return False
     return informative_tokens.issubset(group_tokens)
-
 
 def _resolve_market_scan_group_path(
     all_symbols: List[Any],
@@ -3227,7 +1240,6 @@ def _resolve_market_scan_group_path(
         suffix = ", ..." if len(available) > 5 else ""
         return [], f"No symbol group matched '{requested}'. Available groups: {preview}{suffix}"
     return [], f"No symbol group matched '{requested}'."
-
 
 def _select_market_scan_symbols(
     all_symbols: List[Any],
@@ -3319,7 +1331,6 @@ def _select_market_scan_symbols(
     )
     return selected, {**selection_meta, "scope": "universe"}, None
 
-
 def _market_scan_compute_rsi(closes: List[float], length: int) -> Optional[float]:
     if length <= 0 or len(closes) < (length + 1):
         return None
@@ -3344,7 +1355,6 @@ def _market_scan_compute_rsi(closes: List[float], length: int) -> Optional[float
 
     relative_strength = avg_gain / avg_loss
     return 100.0 - (100.0 / (1.0 + relative_strength))
-
 
 def _build_market_scan_signal_row(
     symbol: Any,
@@ -3457,7 +1467,6 @@ def _build_market_scan_signal_row(
         row["sma_distance_pct"] = _market_scan_round(sma_distance_pct, digits=6)
     return row, None
 
-
 def _market_scan_missing_required_metric(
     row: Dict[str, Any],
     *,
@@ -3508,7 +1517,6 @@ def _market_scan_missing_required_metric(
             return message
     return None
 
-
 def _market_scan_row_matches_filters(
     row: Dict[str, Any],
     *,
@@ -3555,7 +1563,6 @@ def _market_scan_row_matches_filters(
     if price_vs_sma == "below" and (close_price is None or sma_value is None or close_price >= sma_value):
         return False
     return True
-
 
 def _market_scan_sort_rows(
     rows: List[Dict[str, Any]],
@@ -3622,7 +1629,6 @@ def _market_scan_sort_rows(
         )
     )
 
-
 _RANK_BY_ALIASES = {
     "abs_price_change": "abs_price_change_pct",
     "abs_live_price_change": "abs_live_price_change_pct",
@@ -3637,7 +1643,6 @@ _SYMBOLS_TOP_MARKETS_INTERNAL_RANK_BY = {
     "tick_volume": "volume",
     "spread_pct": "spread",
 }
-
 
 _MARKET_SCAN_RANK_BY_CHOICES = (
     "abs_price_change_pct",
@@ -3655,17 +1660,14 @@ _MARKET_SCAN_RANK_BY_CHOICES = (
     "spread",
 )
 
-
 def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
     raw_value = str(value or "abs_price_change_pct").strip().lower()
     return _RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
-
 
 def _normalize_market_scan_rank_order(value: Any) -> tuple[str, Optional[str]]:
     raw_value = str(value or "auto").strip().lower()
     aliases = {"ascending": "asc", "descending": "desc"}
     return aliases.get(raw_value, raw_value), raw_value
-
 
 def _market_scan_effective_rank_order(
     rank_by: str,
@@ -3682,7 +1684,6 @@ def _market_scan_effective_rank_order(
     if rank_by == "rsi" and rsi_below is not None and rsi_above is None:
         return "asc"
     return "desc"
-
 
 def _market_scan_ranking_label(
     rank_by: str,
@@ -3726,7 +1727,6 @@ def _market_scan_ranking_label(
     if rank_by == "rsi":
         return "lowest_rsi" if order == "asc" else "highest_rsi"
     return str(rank_by)
-
 
 @mcp.tool()
 def symbols_top_markets(  # noqa: C901
@@ -4504,7 +2504,6 @@ def symbols_top_markets(  # noqa: C901
         func=_run,
     )
 
-
 _MARKET_SCAN_PRESETS: Dict[str, Dict[str, Any]] = {
     "oversold": {"rsi_below": 30.0, "min_tick_volume": 1000, "rank_by": "rsi"},
     "overbought": {"rsi_above": 70.0, "min_tick_volume": 1000, "rank_by": "rsi"},
@@ -4513,7 +2512,6 @@ _MARKET_SCAN_PRESETS: Dict[str, Dict[str, Any]] = {
     "gap_up": {"min_gap_pct": 2.0, "rank_by": "gap_pct"},
     "gap_down": {"max_gap_pct": -2.0, "rank_by": "gap_pct"},
 }
-
 
 @mcp.tool()
 def market_scan(  # noqa: C901

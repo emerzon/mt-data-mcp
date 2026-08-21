@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.core import causal as causal_mod
 from mtdata.core.causal import (
     _expand_symbols_for_group,
     _expand_symbols_for_group_path,
@@ -28,7 +27,19 @@ from mtdata.utils.mt5 import MT5ConnectionError
 
 @pytest.fixture(autouse=True)
 def _skip_mt5_connection(monkeypatch):
-    monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", lambda: None)
+    dummy = lambda: None
+    monkeypatch.setattr(
+        "mtdata.core.causal.common.ensure_mt5_connection_or_raise", dummy
+    )
+    monkeypatch.setattr(
+        "mtdata.core.causal.discover.ensure_mt5_connection_or_raise", dummy
+    )
+    monkeypatch.setattr(
+        "mtdata.core.causal.correlation.ensure_mt5_connection_or_raise", dummy
+    )
+    monkeypatch.setattr(
+        "mtdata.core.causal.cointegration.ensure_mt5_connection_or_raise", dummy
+    )
 
 
 def test_pair_overlap_symbols_handles_hyphenated_symbols():
@@ -41,16 +52,16 @@ def test_pair_overlap_symbols_handles_hyphenated_symbols():
 
 
 class TestExpandSymbolsForGroup:
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_symbol_not_found(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = None
         syms, err, gp = _expand_symbols_for_group("BADPAIR")
         assert syms == []
         assert "not found" in err
 
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_symbols_get_none(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
         mock_mt5.symbols_get.return_value = None
@@ -59,8 +70,8 @@ class TestExpandSymbolsForGroup:
         assert syms == []
         assert "Failed to load" in err
 
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_single_member_returns_warning(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
         sym_obj = MagicMock()
@@ -71,8 +82,8 @@ class TestExpandSymbolsForGroup:
         assert len(syms) == 1
         assert "fewer than two" in err
 
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_multiple_members(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
         s1 = MagicMock(); s1.name = "EURUSD"; s1.visible = True
@@ -82,8 +93,8 @@ class TestExpandSymbolsForGroup:
         assert err is None
         assert "EURUSD" in syms and "GBPUSD" in syms
 
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_invisible_non_anchor_skipped(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
         s1 = MagicMock(); s1.name = "EURUSD"; s1.visible = True
@@ -94,8 +105,8 @@ class TestExpandSymbolsForGroup:
         assert "GBPUSD" not in syms
         assert "USDJPY" in syms
 
-    @patch("mtdata.core.causal._extract_group_path_util", return_value="Forex\\Majors")
-    @patch("mtdata.core.causal.mt5")
+    @patch("mtdata.core.causal.common._extract_group_path_util", return_value="Forex\\Majors")
+    @patch("mtdata.core.causal.common.mt5")
     def test_anchor_not_in_list_gets_inserted(self, mock_mt5, mock_gp):
         mock_mt5.symbol_info.return_value = MagicMock()
         s1 = MagicMock(); s1.name = "GBPUSD"; s1.visible = True
@@ -113,7 +124,7 @@ class TestExpandSymbolsForGroupPath:
         sym.group_path = group_path
         return sym
 
-    @patch("mtdata.core.causal._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
+    @patch("mtdata.core.causal.common._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
     def test_exact_match_returns_visible_members(self, _mock_group):
         gateway = MagicMock()
         gateway.symbols_get.return_value = [
@@ -130,7 +141,7 @@ class TestExpandSymbolsForGroupPath:
         assert syms == ["EURUSD", "GBPUSD"]
 
     @patch(
-        "mtdata.core.causal._extract_group_path_util",
+        "mtdata.core.causal.common._extract_group_path_util",
         side_effect=lambda symbol: getattr(symbol, "group_path", None),
     )
     def test_exact_match_accepts_doubled_backslash_path(self, _mock_group):
@@ -146,7 +157,7 @@ class TestExpandSymbolsForGroupPath:
         assert gp == "Forex\\Majors"
         assert syms == ["EURUSD", "GBPUSD"]
 
-    @patch("mtdata.core.causal._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
+    @patch("mtdata.core.causal.common._extract_group_path_util", side_effect=lambda symbol: getattr(symbol, "group_path", None))
     def test_ambiguous_partial_match_returns_error(self, _mock_group):
         gateway = MagicMock()
         gateway.symbols_get.return_value = [
@@ -167,30 +178,30 @@ class TestExpandSymbolsForGroupPath:
 
 
 class TestFetchSeries:
-    @patch("mtdata.core.causal._mt5_copy_rates_from")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value="symbol not ready")
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value="symbol not ready")
     def test_symbol_not_ready(self, mock_ensure, mock_copy):
         series, err = _fetch_series("BAD", None, 100)
         assert err == "symbol not ready"
         assert series.empty
 
-    @patch("mtdata.core.causal.time.sleep")
-    @patch("mtdata.core.causal._mt5_copy_rates_from", return_value=None)
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common.time.sleep")
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from", return_value=None)
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_all_retries_fail(self, mock_ensure, mock_copy, mock_sleep):
         series, err = _fetch_series("EURUSD", None, 100, retries=2, pause=0.0)
         assert "Failed to fetch data" in err
         assert "after 2 retries" in err
 
-    @patch("mtdata.core.causal.time.sleep")
-    @patch("mtdata.core.causal._mt5_copy_rates_from", return_value=None)
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common.time.sleep")
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from", return_value=None)
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_single_retry_message(self, mock_ensure, mock_copy, mock_sleep):
         series, err = _fetch_series("X", None, 100, retries=1, pause=0.0)
         assert "after" not in err
 
-    @patch("mtdata.core.causal._mt5_copy_rates_from")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_success(self, mock_ensure, mock_copy):
         data = np.array([(1000, 1.1, 1.2, 1.0, 1.15, 100, 10, 0),
                          (2000, 1.15, 1.25, 1.05, 1.20, 200, 20, 0)],
@@ -202,16 +213,16 @@ class TestFetchSeries:
         assert len(series) == 2
         assert series.iloc[0] == 1.15
 
-    @patch("mtdata.core.causal.time.sleep")
-    @patch("mtdata.core.causal._mt5_copy_rates_from")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common.time.sleep")
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_empty_df_retries(self, mock_ensure, mock_copy, mock_sleep):
         mock_copy.return_value = np.array([])
         series, err = _fetch_series("X", None, 50, retries=2, pause=0.0)
         assert "Failed" in err
 
-    @patch("mtdata.core.causal._mt5_copy_rates_from")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_truncates_excess_data(self, mock_ensure, mock_copy):
         times = list(range(1000, 1000 + 200))
         closes = [1.1 + i * 0.001 for i in range(200)]
@@ -224,8 +235,8 @@ class TestFetchSeries:
         assert err is None
         assert len(series) == 50
 
-    @patch("mtdata.core.causal._mt5_copy_rates_range")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common._mt5_copy_rates_range")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_explicit_date_range_preserves_all_rows(self, mock_ensure, mock_copy):
         times = list(range(1_700_000_000, 1_700_000_200))
         closes = [1.1 + i * 0.001 for i in range(200)]
@@ -265,8 +276,8 @@ class TestFetchSeries:
         assert err is None
         assert len(series) == 200
 
-    @patch("mtdata.core.causal._mt5_copy_rates_from")
-    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    @patch("mtdata.core.causal.common._mt5_copy_rates_from")
+    @patch("mtdata.core.causal.common._ensure_symbol_ready", return_value=None)
     def test_deduplicates_duplicate_timestamps(self, mock_ensure, mock_copy):
         data = np.array(
             [
@@ -349,7 +360,10 @@ class TestCausalDiscoverSignals:
         def fail_connection():
             raise MT5ConnectionError("Failed to connect to MetaTrader5. Ensure MT5 terminal is running.")
 
-        monkeypatch.setattr(causal_mod, "ensure_mt5_connection_or_raise", fail_connection)
+        monkeypatch.setattr(
+            "mtdata.core.causal.common.ensure_mt5_connection_or_raise",
+            fail_connection,
+        )
 
         result = self._unwrapped()("EURUSD,GBPUSD")
 
@@ -366,15 +380,15 @@ class TestCausalDiscoverSignals:
         assert "Provide at least one symbol" in result["error"]
         assert result["error_code"] == "invalid_input"
 
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
+    @patch("mtdata.core.causal.discover._expand_symbols_for_group", return_value=([], "Symbol X not found", None))
     def test_single_symbol_expand_error(self, mock_expand):
         result = self._unwrapped()("X")
         assert result["success"] is False
         assert "not found" in result["error"]
         assert result["error_code"] == "symbol_group_error"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_insufficient_data(self, mock_fetch):
         mock_fetch.return_value = (pd.Series(dtype=float), "No data")
         result = self._unwrapped()("A,B")
@@ -383,8 +397,8 @@ class TestCausalDiscoverSignals:
         assert result["error_code"] in {"data_fetch_failed", "insufficient_symbols"}
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_partial_fetch_requires_opt_in_and_discloses_directed_tests(
         self,
         mock_fetch,
@@ -436,8 +450,8 @@ class TestCausalDiscoverSignals:
         assert allowed["data_quality"]["allow_partial"] is True
         assert allowed["pairs_tested"] == 2
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_insufficient_overlap_includes_per_symbol_diagnostics(self, mock_fetch):
         idx_a = pd.date_range("2024-01-01", periods=50, freq="h")
         idx_b = pd.date_range("2024-02-01", periods=50, freq="h")
@@ -467,8 +481,8 @@ class TestCausalDiscoverSignals:
         assert stats.get("minimum_samples_required") == 11
         assert stats.get("pair_overlaps", {}).get("BTCUSD-ETHUSD") == 0
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_low_window_bars_error_points_to_aligned_window_not_pair_overlap(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=200, freq="h")
         series_map = {
@@ -498,8 +512,8 @@ class TestCausalDiscoverSignals:
         assert "pair_overlaps: EURUSD-GBPUSD: 200" in details_text
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_limit_caps_returned_causal_rows(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_map = {
@@ -538,8 +552,8 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["request"]["window_bars"] == 500
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_six_symbol_manifest_includes_every_tested_direction(
         self,
         mock_fetch,
@@ -574,8 +588,8 @@ class TestCausalDiscoverSignals:
         ) == 30
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_alignment_detail_includes_pair_bottleneck_when_samples_shrink(self, mock_fetch, mock_granger):
         idx_a = pd.date_range("2024-01-01", periods=100, freq="h")
         idx_b = pd.date_range("2024-01-01", periods=100, freq="h")
@@ -617,8 +631,8 @@ class TestCausalDiscoverSignals:
         assert samples_by_pair[("USDJPY", "EURUSD")] == 75
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_pairwise_alignment_skips_only_pairs_with_no_overlap(self, mock_fetch, mock_granger):
         idx_ab = pd.date_range("2024-01-01", periods=80, freq="h")
         idx_c = pd.date_range("2024-03-01", periods=80, freq="h")
@@ -647,9 +661,9 @@ class TestCausalDiscoverSignals:
         warnings_out = result.get("warnings", [])
         assert any("4 directed pairs were skipped" in warning for warning in warnings_out)
 
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD", "LTCUSD"], None, "Crypto"))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD", "LTCUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_single_symbol_auto_expand_does_not_succeed_without_anchor(self, mock_fetch, _mock_expand):
         idx_anchor = pd.date_range("2024-01-01", periods=80, freq="h")
         idx_peers = pd.date_range("2024-03-01", periods=80, freq="h")
@@ -671,9 +685,9 @@ class TestCausalDiscoverSignals:
         assert result["meta"]["request"]["symbols_input"] == ["BTCUSD"]
         assert result["meta"]["request"]["symbols_expanded"] == ["BTCUSD", "ETHUSD", "LTCUSD"]
 
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_single_symbol_auto_expand_fails_when_anchor_fetch_is_missing(self, mock_fetch, _mock_expand):
         idx_peer = pd.date_range("2024-01-01", periods=80, freq="h")
 
@@ -691,14 +705,14 @@ class TestCausalDiscoverSignals:
         assert "BTCUSD" in result["error"]
         assert "Failed to fetch data for BTCUSD" in " ".join(result.get("warnings", []))
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {})
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {})
     def test_invalid_timeframe(self):
         result = self._unwrapped()("A,B", timeframe="BAD")
         assert result["success"] is False
         assert "Invalid timeframe" in result["error"]
         assert result["error_code"] == "invalid_timeframe"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
     def test_max_lag_zero(self):
         result = self._unwrapped()("A,B", max_lag=0)
         assert result["success"] is False
@@ -706,8 +720,8 @@ class TestCausalDiscoverSignals:
         assert result["error_code"] == "invalid_input"
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_success_returns_structured_payload(self, mock_fetch, mock_granger, caplog):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         base = np.linspace(1.0, 2.0, 80)
@@ -767,8 +781,8 @@ class TestCausalDiscoverSignals:
         )
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_level_transform_does_not_publish_significance(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_map = {
@@ -793,12 +807,12 @@ class TestCausalDiscoverSignals:
         assert any("price-level" in warning for warning in result.get("warnings") or [])
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
     @patch(
-        "mtdata.core.causal._expand_symbols_for_group_path",
+        "mtdata.core.causal.discover._expand_symbols_for_group_path",
         return_value=(["A", "B"], None, "Forex\\Majors"),
     )
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_group_argument_expands_symbols(
         self,
         mock_fetch,
@@ -841,8 +855,8 @@ class TestCausalDiscoverSignals:
         assert "either symbols or group" in result["error"]
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_full_detail_returns_all_tested_pairs(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_map = {
@@ -872,7 +886,7 @@ class TestCausalDiscoverSignals:
         assert {row["significant"] for row in result["items"]} == {False, True}
         assert "pairs" in result
 
-    @patch("mtdata.core.causal._causal_connection_error", return_value={"error": "offline"})
+    @patch("mtdata.core.causal.discover._causal_connection_error", return_value={"error": "offline"})
     def test_standard_detail_alias_uses_compact_output(self, _mock_connection):
         result = self._unwrapped()("A,B", detail="standard")  # type: ignore[arg-type]
 
@@ -895,8 +909,8 @@ class TestCausalDiscoverSignals:
         assert "Valid options" in result["error"]
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_no_significant_links_returns_empty_items_with_message(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_map = {
@@ -940,8 +954,8 @@ class TestCausalDiscoverSignals:
         )
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_granger_stdout_is_suppressed(self, mock_fetch, mock_granger, capsys):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         base = np.linspace(1.0, 2.0, 80)
@@ -968,8 +982,8 @@ class TestCausalDiscoverSignals:
         assert "Granger Causality" not in capsys.readouterr().out
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_best_lag_p_value_is_bonferroni_adjusted(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         base = np.linspace(1.0, 2.0, 80)
@@ -1006,8 +1020,8 @@ class TestCausalDiscoverSignals:
         assert result["summary"]["significance_threshold"] == pytest.approx(0.05)
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_granger_failures_are_surfaced_in_metadata(self, mock_fetch, mock_granger):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         base = np.linspace(1.0, 2.0, 80)
@@ -1038,26 +1052,26 @@ class TestCorrelationMatrix:
             fn = fn.__wrapped__
         return fn
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
     def test_invalid_method(self):
         result = self._unwrapped()("A,B", method="kendall")
         assert result["success"] is False
         assert result["error_code"] == "invalid_method"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
     def test_invalid_transform(self):
         result = self._unwrapped()("A,B", transform="mystery")
         assert result["success"] is False
         assert result["error_code"] == "invalid_transform"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
     def test_min_overlap_too_small(self):
         result = self._unwrapped()("A,B", min_overlap=1)
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
         assert "min_overlap" in result["error"]
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
     def test_window_bars_must_cover_minimum_overlap_window(self):
         result = self._unwrapped()("A,B", window_bars=3, min_overlap=30)
         assert result["success"] is False
@@ -1073,9 +1087,9 @@ class TestCorrelationMatrix:
         assert result["error_code"] == "invalid_input"
         assert "either symbols or group" in result["error"]
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_single_symbol_auto_expands(self, mock_fetch, _mock_expand):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.01, 80)
@@ -1101,8 +1115,8 @@ class TestCorrelationMatrix:
             "group": "Crypto",
         }
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_preprocessing_failure_returns_structured_error(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=3, freq="h")
         series_map = {
@@ -1122,8 +1136,8 @@ class TestCorrelationMatrix:
         assert "Correlation preprocessing failed." in result["error"]
         assert "could not convert string to float" in " ".join(result.get("details", []))
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_success_returns_matrix_and_ranked_pairs(self, mock_fetch, caplog):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.015, 80)
@@ -1183,8 +1197,8 @@ class TestCorrelationMatrix:
             for record in caplog.records
         )
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_compact_detail_omits_matrix_and_row_metadata(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.015, 80)
@@ -1242,8 +1256,8 @@ class TestCorrelationMatrix:
         assert result["context"]["min_overlap"] == 30
         assert result["summary"]["highlights"] == {}
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_limit_caps_output_rows_not_window(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.015, 80)
@@ -1283,8 +1297,8 @@ class TestCorrelationMatrix:
             for left, right in (("A", "B"), ("A", "C"), ("B", "C"))
         )
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_pairwise_overlap_allows_partial_success(self, mock_fetch):
         idx_ab = pd.date_range("2024-01-01", periods=80, freq="h")
         idx_c = pd.date_range("2024-03-01", periods=80, freq="h")
@@ -1311,8 +1325,8 @@ class TestCorrelationMatrix:
         assert result["meta"]["stats"]["pair_overlaps"]["A-C"] == 0
         assert result["meta"]["stats"]["pair_overlaps"]["B-C"] == 0
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_pairwise_window_misalignment_is_flagged(self, mock_fetch):
         base_idx = pd.date_range("2024-01-01", periods=120, freq="h")
         rets = np.linspace(-0.01, 0.01, 120)
@@ -1339,8 +1353,8 @@ class TestCorrelationMatrix:
         )
         assert len({row["period_end"] for row in result["items"]}) > 1
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_partial_fetch_requires_explicit_opt_in_and_discloses_pair_loss(self, mock_fetch):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.01, 80)
@@ -1389,9 +1403,9 @@ class TestCorrelationMatrix:
         assert result["data_quality"]["analysis_family"]["tests_removed"] == 2
         assert any("Failed to fetch data for C" in warning for warning in result["warnings"])
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=(["EURUSD", "GBPUSD"], None, "Forex\\Majors"))
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.correlation._expand_symbols_for_group_path", return_value=(["EURUSD", "GBPUSD"], None, "Forex\\Majors"))
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_group_argument_expands_symbols(self, mock_fetch, _mock_expand):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         rets = np.linspace(-0.01, 0.01, 80)
@@ -1413,7 +1427,7 @@ class TestCorrelationMatrix:
         assert result["meta"]["request"]["symbols_expanded"] == ["EURUSD", "GBPUSD"]
         assert result["summary"]["counts"]["pairs"] == 1
 
-    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=([], "Group 'Forex' matched multiple visible MT5 symbol groups: Forex\\Majors, Forex\\Minors", None))
+    @patch("mtdata.core.causal.correlation._expand_symbols_for_group_path", return_value=([], "Group 'Forex' matched multiple visible MT5 symbol groups: Forex\\Majors, Forex\\Minors", None))
     def test_group_argument_surfaces_resolution_error(self, _mock_expand):
         result = self._unwrapped()(group="Forex")
 
@@ -1421,9 +1435,9 @@ class TestCorrelationMatrix:
         assert result["error_code"] == "symbol_group_error"
         assert "matched multiple visible MT5 symbol groups" in result["error"]
 
-    @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD"], None, "Crypto"))
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_single_symbol_auto_expand_fails_when_anchor_missing(self, mock_fetch, _mock_expand):
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_eth = pd.Series(100.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 80))), index=idx)
@@ -1442,8 +1456,8 @@ class TestCorrelationMatrix:
         assert "BTCUSD" in result["error"]
         assert any("Failed to fetch data for BTCUSD" in warning for warning in result["warnings"])
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.correlation.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_insufficient_overlap_includes_pair_details(self, mock_fetch):
         idx_a = pd.date_range("2024-01-01", periods=50, freq="h")
         idx_b = pd.date_range("2024-02-01", periods=50, freq="h")
@@ -1472,19 +1486,19 @@ class TestCointegrationTest:
             fn = fn.__wrapped__
         return fn
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
     def test_invalid_transform(self):
         result = self._unwrapped()("A,B", transform="returns")
         assert result["success"] is False
         assert result["error_code"] == "invalid_transform"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
     def test_invalid_trend(self):
         result = self._unwrapped()("A,B", trend="bad")
         assert result["success"] is False
         assert result["error_code"] == "invalid_trend"
 
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
     def test_johansen_rejects_unsupported_significance(self):
         result = self._unwrapped()("A,B", method="johansen", significance=0.025)
         assert result["success"] is False
@@ -1503,8 +1517,8 @@ class TestCointegrationTest:
         "statsmodels.tsa.stattools.coint",
         return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]),
     )
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_partial_fetch_requires_opt_in_and_discloses_test_family(
         self,
         mock_fetch,
@@ -1571,7 +1585,7 @@ class TestCointegrationTest:
             "universe_changed": True,
         }
 
-    @patch("mtdata.core.causal._causal_connection_error", return_value=None)
+    @patch("mtdata.core.causal.cointegration._causal_connection_error", return_value=None)
     def test_engle_granger_rejects_degenerate_two_bar_window(self, _mock_connection):
         result = self._unwrapped()(
             "A,B",
@@ -1589,8 +1603,8 @@ class TestCointegrationTest:
         "statsmodels.tsa.stattools.coint",
         return_value=(float("-inf"), 0.0, [-3.9, -3.3, -3.0]),
     )
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_nonfinite_test_statistic_cannot_emit_positive_signal(
         self,
         mock_fetch,
@@ -1621,8 +1635,8 @@ class TestCointegrationTest:
         )
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_window_bars_rejects_larger_min_overlap(self, mock_fetch, _mock_coint):
         idx = pd.date_range("2024-01-01", periods=60, freq="h")
         base = np.cumsum(np.linspace(-0.01, 0.01, 60))
@@ -1645,9 +1659,9 @@ class TestCointegrationTest:
         mock_fetch.assert_not_called()
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._expand_symbols_for_group_path", return_value=(["A", "B"], None, "Forex\\Majors"))
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.cointegration._expand_symbols_for_group_path", return_value=(["A", "B"], None, "Forex\\Majors"))
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_group_argument_returns_cointegrated_pair(self, mock_fetch, _mock_expand, _mock_coint):
         idx = pd.date_range("2024-01-01", periods=120, freq="h")
         base = np.cumsum(np.linspace(-0.01, 0.01, 120))
@@ -1687,8 +1701,8 @@ class TestCointegrationTest:
         assert "window_interpretation" in result["meta"]["stats"]
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_compact_omits_cointegration_window_diagnostics(self, mock_fetch, _mock_coint):
         idx = pd.date_range("2024-01-01", periods=120, freq="h")
         base = np.cumsum(np.linspace(-0.01, 0.01, 120))
@@ -1719,8 +1733,8 @@ class TestCointegrationTest:
         assert "window_interpretation" not in result["meta"].get("stats", {})
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_compact_reports_mismatched_series_alignment(
         self,
         mock_fetch,
@@ -1758,8 +1772,8 @@ class TestCointegrationTest:
         assert "Timestamp alignment discarded more than 5%" in result["warnings"][0]
 
     @patch("statsmodels.tsa.stattools.coint", side_effect=RuntimeError("singular matrix"))
-    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
-    @patch("mtdata.core.causal._fetch_series")
+    @patch("mtdata.core.causal.cointegration.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal.common._fetch_series")
     def test_failures_surface_test_failed_error(self, mock_fetch, _mock_coint):
         idx = pd.date_range("2024-01-01", periods=120, freq="h")
         base = np.cumsum(np.linspace(-0.01, 0.01, 120))

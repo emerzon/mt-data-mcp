@@ -619,7 +619,7 @@ def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch
     gateway = FakeGateway()
     gateway.tick_rows = _ticks(3)
     monkeypatch.setattr(
-        "mtdata.analytics.engines.closed_session_context",
+        "mtdata.analytics.microstructure.closed_session_context",
         lambda *args, **kwargs: {
             "market_status": "closed",
             "market_status_reason": "weekend",
@@ -647,7 +647,7 @@ def test_microstructure_short_explicit_window_has_supported_remediation(
     gateway = FakeGateway()
     gateway.tick_rows = []
     monkeypatch.setattr(
-        "mtdata.analytics.engines.closed_session_context",
+        "mtdata.analytics.microstructure.closed_session_context",
         lambda *args, **kwargs: None,
     )
 
@@ -683,7 +683,7 @@ def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
         rows if start == completed_start else []
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines.closed_session_context",
+        "mtdata.analytics.microstructure.closed_session_context",
         lambda *args, **kwargs: {
             "market_status": "closed",
             "market_status_reason": "weekend",
@@ -691,7 +691,7 @@ def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
         },
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines.standard_weekend_window",
+        "mtdata.analytics.microstructure.standard_weekend_window",
         lambda _now: (
             completed_end,
             datetime(2026, 8, 2, 21, tzinfo=timezone.utc),
@@ -1850,15 +1850,15 @@ def test_strategy_validation_marks_skipped_requested_folds_partial(
 ) -> None:
     gateway = FakeGateway()
     monkeypatch.setattr(
-        "mtdata.analytics.engines._walk_forward_windows",
+        "mtdata.analytics.strategy_validate._walk_forward_windows",
         lambda *args, **kwargs: (fold_windows, []),
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines._builtin_signal",
+        "mtdata.analytics.strategy_validate._builtin_signal",
         lambda close, candidate: pd.Series(1.0, index=close.index),
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines._barrier_returns",
+        "mtdata.analytics.strategy_validate._barrier_returns",
         lambda *args, **kwargs: (
             np.asarray(indices, dtype=int),
             np.full(len(indices), 0.01, dtype=float),
@@ -1901,15 +1901,15 @@ def test_strategy_validation_historical_spread_can_receive_positive_classificati
 ) -> None:
     gateway = FakeGateway()
     monkeypatch.setattr(
-        "mtdata.analytics.engines._bootstrap_mean_ci",
+        "mtdata.analytics.strategy_validate._bootstrap_mean_ci",
         lambda *_args, **_kwargs: (0.001, 0.002),
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines._block_bootstrap_positive_mean_p_value",
+        "mtdata.analytics.strategy_validate._block_bootstrap_positive_mean_p_value",
         lambda *_args, **_kwargs: 0.001,
     )
     monkeypatch.setattr(
-        "mtdata.analytics.engines._builtin_signal",
+        "mtdata.analytics.strategy_validate._builtin_signal",
         lambda close, _candidate: pd.Series(
             np.where(np.arange(len(close)) % 2 == 0, 1.0, -1.0),
             index=close.index,

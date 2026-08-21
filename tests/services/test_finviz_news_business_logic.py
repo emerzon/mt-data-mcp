@@ -17,7 +17,7 @@ def _unwrap(fn):
 
 def test_finviz_news_rejects_pair_style_symbol_before_service_call() -> None:
     raw = _unwrap(finviz_news)
-    with patch("mtdata.core.finviz.get_stock_news") as mock_news:
+    with patch("mtdata.core.finviz.news.get_stock_news") as mock_news:
         out = raw(symbol="BTCUSD", limit=5, page=1)
 
     assert "error" in out
@@ -42,7 +42,7 @@ def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:
 def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     raw = _unwrap(finviz_news)
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(logging.DEBUG,
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(logging.DEBUG,
         logger=core_finviz.logger.name,
     ):
         out = raw(symbol="AAPL", limit=5, page=1)
@@ -74,7 +74,7 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=1, page=2)
 
     assert out["items"][0]["title"] == "Apple launches new chips"
@@ -123,7 +123,7 @@ def test_finviz_news_repairs_mojibake_titles() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value=service_result):
         out = raw(symbol="HPE", limit=5, page=1)
 
     assert out["items"][0]["title"] == "HPE\u2019s stock soars"
@@ -143,7 +143,7 @@ def test_finviz_news_promotes_only_explicit_symbol_evidence() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=2, page=1)
 
     assert [item["kind"] for item in out["items"]] == [
@@ -201,7 +201,7 @@ def test_finviz_news_full_detail_keeps_urls() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=5, page=1, detail="full")
 
     assert out["detail"] == "full"
@@ -220,7 +220,7 @@ def test_finviz_news_summary_detail_omits_items() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=5, page=1, detail="summary")
 
     assert out["detail"] == "summary"
@@ -248,7 +248,7 @@ def test_finviz_market_news_normalizes_items() -> None:
         "items": [{"Title": "Stocks rise", "Source": "AP", "Date": "02:00PM"}],
     }
 
-    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_general_news", return_value=service_result):
         out = raw(news_type="news", limit=5, page=1, detail="full")
 
     assert out["items"][0]["title"] == "Stocks rise"
@@ -298,7 +298,7 @@ def test_finviz_market_news_repairs_double_encoded_titles() -> None:
         ],
     }
 
-    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_general_news", return_value=service_result):
         out = raw(news_type="news", limit=5, page=1, detail="compact")
 
     assert out["items"][0]["title"] == "HPE\u2019s stock soars"
@@ -313,7 +313,7 @@ def test_finviz_market_news_marks_blog_items() -> None:
         "items": [{"Title": "Opinion post", "Source": "Blog", "Date": "02:00PM"}],
     }
 
-    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+    with patch("mtdata.core.finviz.news.get_general_news", return_value=service_result):
         out = raw(news_type="blogs", limit=5, page=1, detail="compact")
 
     assert out["items"][0]["kind"] == "blog"

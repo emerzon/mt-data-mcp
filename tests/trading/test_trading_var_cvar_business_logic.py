@@ -239,7 +239,7 @@ def test_run_trade_var_cvar_excludes_forming_return_by_default(monkeypatch) -> N
         ORDER_TYPE_SELL=1,
     )
     monkeypatch.setattr(
-        "mtdata.core.trading.use_cases._is_last_bar_forming",
+        "mtdata.core.trading.use_cases.risk._is_last_bar_forming",
         lambda *_args, **_kwargs: True,
     )
 

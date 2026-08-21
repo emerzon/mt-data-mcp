@@ -164,7 +164,7 @@ def test_basket_boundary_returns_available_candles_and_failures(monkeypatch) -> 
         "close": 1.15,
     }
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.boundary,
         "_boundary_closed_candle_for_symbol",
         lambda *, symbol, **_kwargs: candle if symbol == "EURUSD" else None,
     )
@@ -201,7 +201,7 @@ def test_symbol_less_boundary_does_not_require_mt5_connection(monkeypatch) -> No
     gateway = BasketGateway()
     request = WaitEventRequest(timeframe="M5")
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.compile,
         "_next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
@@ -214,7 +214,7 @@ def test_symbol_less_boundary_does_not_require_mt5_connection(monkeypatch) -> No
         },
     )
     monkeypatch.setattr(
-        wait_events_mod,
+        wait_events_mod.loop,
         "_sleep_until_next_candle",
         lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
             "timeframe": timeframe,

@@ -12,8 +12,8 @@ from mtdata.services import data_service
 
 def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
     df = pd.DataFrame({"__epoch": [100.0, 200.0, 250.0, 300.0], "close": [1.0, 2.0, 2.5, 3.0]})
-    with patch("mtdata.services.data_service._parse_start_datetime") as mock_parse, patch(
-        "mtdata.services.data_service._utc_epoch_seconds"
+    with patch("mtdata.services.data_service.candles._parse_start_datetime") as mock_parse, patch(
+        "mtdata.services.data_service.candles._utc_epoch_seconds"
     ) as mock_epoch:
         mock_parse.side_effect = [datetime(2025, 1, 1, 0, 0), datetime(2025, 1, 1, 1, 0)]
         mock_epoch.side_effect = [150.0, 250.0]
@@ -134,7 +134,7 @@ def test_daily_date_only_provider_range_starts_at_broker_session_open() -> None:
 
     with (
         patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
-        patch.object(data_service, "_mt5_copy_rates_range", side_effect=copy_rates),
+        patch.object(data_service.candles, "_mt5_copy_rates_range", side_effect=copy_rates),
     ):
         rates, error = data_service._fetch_rates_with_warmup(
             symbol="EURUSD",
@@ -217,7 +217,7 @@ def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
             return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
 
     with (
-        patch.object(data_service, "datetime", FixedDateTime),
+        patch.object(data_service.candles, "datetime", FixedDateTime),
         patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
     ):
         week_start, week_error = data_service._parse_fetch_datetime_arg(
@@ -275,9 +275,9 @@ def test_trim_weekly_and_monthly_date_only_ranges_match_containing_period() -> N
 
 def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
     rates = [{"time": 1000.0}]
-    with patch("mtdata.services.data_service._parse_start_datetime") as mock_parse, patch(
-        "mtdata.services.data_service._utc_epoch_seconds", return_value=1000.0
-    ) as mock_epoch, patch("mtdata.services.data_service._mt5_copy_rates_range", return_value=rates):
+    with patch("mtdata.services.data_service.candles._parse_start_datetime") as mock_parse, patch(
+        "mtdata.services.data_service.candles._utc_epoch_seconds", return_value=1000.0
+    ) as mock_epoch, patch("mtdata.services.data_service.candles._mt5_copy_rates_range", return_value=rates):
         mock_parse.side_effect = [datetime(2025, 1, 1, 0, 0), datetime(2025, 1, 1, 1, 0)]
         out_rates, out_err = data_service._fetch_rates_with_warmup(
             symbol="EURUSD",
@@ -306,7 +306,7 @@ def test_weekly_range_safety_budget_does_not_overflow_datetime() -> None:
 
     with (
         patch(
-            "mtdata.services.data_service._mt5_copy_rates_range",
+            "mtdata.services.data_service.candles._mt5_copy_rates_range",
             side_effect=_copy_rates,
         ),
         patch.object(
@@ -347,14 +347,14 @@ def test_fetch_candles_exposes_time_normalization_metadata() -> None:
     def _fake_fetch(*args, diagnostics=None, **kwargs):
         return rates, None
 
-    with patch("mtdata.services.data_service.get_symbol_info_cached", return_value=MagicMock(digits=5)), patch(
-        "mtdata.services.data_service._symbol_ready_guard",
+    with patch("mtdata.services.data_service.candles.get_symbol_info_cached", return_value=MagicMock(digits=5)), patch(
+        "mtdata.services.data_service.candles._symbol_ready_guard",
         _guard,
     ), patch(
-        "mtdata.services.data_service._fetch_rates_with_warmup",
+        "mtdata.services.data_service.candles._fetch_rates_with_warmup",
         side_effect=_fake_fetch,
     ), patch(
-        "mtdata.services.data_service._resolve_client_tz",
+        "mtdata.services.data_service.candles._resolve_client_tz",
         return_value=None,
     ), patch(
         "mtdata.services.data_service.mt5_config.server_tz_name",

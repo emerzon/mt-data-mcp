@@ -932,7 +932,7 @@ def test_inferred_market_watcher_reports_timeout_when_unmatched() -> None:
 
 def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -970,7 +970,7 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
 def test_wait_event_boundary_respects_duration_cap(monkeypatch) -> None:
     started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1005,7 +1005,7 @@ def test_wait_event_boundary_respects_duration_cap(monkeypatch) -> None:
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1061,7 +1061,7 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
 
 def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1073,7 +1073,7 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
         },
     )
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._sleep_until_next_candle",
+        "mtdata.core.data.wait_events.loop._sleep_until_next_candle",
         lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1125,7 +1125,7 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
 
 def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1137,7 +1137,7 @@ def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) 
         },
     )
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._sleep_until_next_candle",
+        "mtdata.core.data.wait_events.loop._sleep_until_next_candle",
         lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1215,7 +1215,7 @@ def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) 
 
 def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1279,7 +1279,7 @@ def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(
 
 def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1333,7 +1333,7 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
 
 def test_run_wait_event_respects_boundary_when_live_state_changes_after_oversleep(monkeypatch) -> None:
     monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
+        "mtdata.core.data.wait_events.compile._next_candle_wait_payload",
         lambda timeframe, buffer_seconds, now_utc: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
@@ -1418,7 +1418,7 @@ def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
     assert result["polls"] > 1
 
 def test_run_wait_event_returns_error_when_tick_retention_cap_is_exceeded(monkeypatch) -> None:
-    monkeypatch.setattr(wait_events_mod, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
+    monkeypatch.setattr(wait_events_mod.ticks, "_MARKET_TICK_RETENTION_MAX_TICKS", 4)
 
     started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
     base_epoch = int(started.timestamp()) - 3
@@ -1668,7 +1668,7 @@ def test_collect_snapshot_uses_precomputed_market_specs(monkeypatch) -> None:
         captured["market_specs"] = market_specs
         return {"EURUSD": {"last_epoch": observed_at_utc.timestamp(), "ticks": []}}
 
-    monkeypatch.setattr(wait_events_mod, "_refresh_market_state", fake_refresh_market_state)
+    monkeypatch.setattr(wait_events_mod.loop, "_refresh_market_state", fake_refresh_market_state)
 
     market_specs = [{"type": "price_change", "symbol": "EURUSD"}]
     observed_at_utc = datetime(2026, 4, 5, 13, 0, tzinfo=timezone.utc)

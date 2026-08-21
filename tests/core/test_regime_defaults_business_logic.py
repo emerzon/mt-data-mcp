@@ -704,11 +704,11 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.core.regime.api._auto_calibrate_bocpd_params",
+            "mtdata.core.regime.detect._auto_calibrate_bocpd_params",
             return_value=fake_auto,
         ),
         patch(
-            "mtdata.core.regime.api._walkforward_quantile_threshold_calibration",
+            "mtdata.core.regime.detect._walkforward_quantile_threshold_calibration",
             return_value=fake_thr_cal,
         ),
         patch(
@@ -769,11 +769,11 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.core.regime.api._auto_calibrate_bocpd_params",
+            "mtdata.core.regime.detect._auto_calibrate_bocpd_params",
             return_value=fake_auto,
         ),
         patch(
-            "mtdata.core.regime.api._walkforward_quantile_threshold_calibration",
+            "mtdata.core.regime.detect._walkforward_quantile_threshold_calibration",
             return_value=fake_thr_cal,
         ),
         patch(

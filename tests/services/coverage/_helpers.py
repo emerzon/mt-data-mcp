@@ -115,12 +115,15 @@ def _make_ticks(n: int, *, base_ts: float = _NOW_TS, step: float = 1.0) -> list:
 # Patch target constants
 # ---------------------------------------------------------------------------
 
-_DS = 'mtdata.services.data_service'
+_DS_PKG = 'mtdata.services.data_service'
+_DS = f'{_DS_PKG}.candles'
+_DS_TICKS = f'{_DS_PKG}.ticks'
+_DS_ERRORS = f'{_DS_PKG}.errors'
 _GUARD = f'{_DS}._symbol_ready_guard'
 _RATES_FROM = f'{_DS}._mt5_copy_rates_from'
 _RATES_RANGE = f'{_DS}._mt5_copy_rates_range'
-_TICKS_FROM = f'{_DS}._mt5_copy_ticks_from'
-_TICKS_RANGE = f'{_DS}._mt5_copy_ticks_range'
+_TICKS_FROM = f'{_DS_TICKS}._mt5_copy_ticks_from'
+_TICKS_RANGE = f'{_DS_TICKS}._mt5_copy_ticks_range'
 _CACHED_INFO = f'{_DS}.get_symbol_info_cached'
 _RESOLVE_CTZ = f'{_DS}._resolve_client_tz'
 _PARSE_START = f'{_DS}._parse_start_datetime'
@@ -128,6 +131,11 @@ _ESTIMATE_WARMUP = f'{_DS}._estimate_warmup_bars'
 _APPLY_TI = f'{_DS}._apply_ta_indicators'
 _SIMPLIFY_EXT = f'{_DS}._simplify_dataframe_rows_ext'
 _MT5_CONFIG = f'{_DS}.mt5_config'
+_TICKS_GUARD = f'{_DS_TICKS}._symbol_ready_guard'
+_TICKS_CACHED_INFO = f'{_DS_TICKS}.get_symbol_info_cached'
+_TICKS_RESOLVE_CTZ = f'{_DS_TICKS}._resolve_client_tz'
+_TICKS_PARSE_START = f'{_DS_TICKS}._parse_start_datetime'
+_TICKS_SIMPLIFY_EXT = f'{_DS_TICKS}._simplify_dataframe_rows_ext'
 
 # Re-export unittest for convenience so test modules can just import from here
 __all__ = [
@@ -135,9 +143,11 @@ __all__ = [
     '_mt5_mock',
     '_mock_symbol_guard', '_mock_symbol_guard_error',
     '_make_rates', '_make_rates_array', '_make_ticks',
-    '_DS', '_GUARD', '_RATES_FROM', '_RATES_RANGE',
+    '_DS', '_DS_PKG', '_DS_TICKS', '_DS_ERRORS', '_GUARD', '_RATES_FROM', '_RATES_RANGE',
     '_TICKS_FROM', '_TICKS_RANGE', '_CACHED_INFO',
     '_RESOLVE_CTZ', '_PARSE_START', '_ESTIMATE_WARMUP',
     '_APPLY_TI', '_SIMPLIFY_EXT', '_MT5_CONFIG',
+    '_TICKS_GUARD', '_TICKS_CACHED_INFO', '_TICKS_RESOLVE_CTZ',
+    '_TICKS_PARSE_START', '_TICKS_SIMPLIFY_EXT',
     'pd', 'np', 'MagicMock', 'SimpleNamespace', 'unittest',
 ]

@@ -1132,7 +1132,7 @@ class TestFinvizService:
 class TestFinvizTools:
     """Tests for finviz MCP tools."""
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_uses_items_with_snake_case_rows(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1201,7 +1201,7 @@ class TestFinvizTools:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_applies_limit(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1251,7 +1251,7 @@ class TestFinvizTools:
             "more_available": 0,
         }
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_filters_symbol_aliases(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1290,7 +1290,7 @@ class TestFinvizTools:
         assert slash_result["symbol"] == "USDJPY"
         assert slash_result["items"][0]["symbol"] == "USDJPY"
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_rejects_invalid_symbol_without_fetch(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1301,7 +1301,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_forex_invalid_symbol"
         mock_get_forex.assert_not_called()
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_rejects_zero_limit(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1312,7 +1312,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_forex_invalid_limit"
         mock_get_forex.assert_not_called()
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_forex_filters_non_fiat_pairs(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1344,7 +1344,7 @@ class TestFinvizTools:
             },
         ]
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_finviz_market_tools_accept_shared_non_full_details(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -1359,7 +1359,7 @@ class TestFinvizTools:
         assert raw(detail="standard")["detail"] == "compact"
         assert raw(detail="summary")["detail"] == "compact"
 
-    @patch("mtdata.core.finviz.get_crypto_performance")
+    @patch("mtdata.core.finviz.markets.get_crypto_performance")
     def test_finviz_crypto_uses_items_with_snake_case_rows(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto
 
@@ -1397,7 +1397,7 @@ class TestFinvizTools:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_crypto_performance")
+    @patch("mtdata.core.finviz.markets.get_crypto_performance")
     def test_finviz_crypto_numeric_fraction_perf_pct_is_percent(
         self,
         mock_get_crypto,
@@ -1423,7 +1423,7 @@ class TestFinvizTools:
 
         assert result["items"][0]["perf_day_pct"] == 0.91
 
-    @patch("mtdata.core.finviz.get_crypto_performance")
+    @patch("mtdata.core.finviz.markets.get_crypto_performance")
     def test_finviz_crypto_compact_preserves_unavailable_price_status(
         self, mock_get_crypto
     ):
@@ -1454,7 +1454,7 @@ class TestFinvizTools:
             "Finviz omitted a provider-rounded zero price."
         ]
 
-    @patch("mtdata.core.finviz.get_crypto_performance")
+    @patch("mtdata.core.finviz.markets.get_crypto_performance")
     def test_finviz_crypto_compact_maps_wtd_to_week_when_week_missing(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto
 
@@ -1492,7 +1492,7 @@ class TestFinvizTools:
         ]
         assert "perf_wtd_pct" not in result["items"][0]
 
-    @patch("mtdata.core.finviz.get_futures_performance")
+    @patch("mtdata.core.finviz.markets.get_futures_performance")
     def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
         from mtdata.core.finviz import finviz_futures
 
@@ -1531,7 +1531,7 @@ class TestFinvizTools:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_futures_performance")
+    @patch("mtdata.core.finviz.markets.get_futures_performance")
     def test_finviz_futures_numeric_perf_is_already_percent(
         self,
         mock_get_futures,
@@ -1550,7 +1550,7 @@ class TestFinvizTools:
 
         assert result["items"][0]["perf_day_pct"] == 0.93
 
-    @patch("mtdata.core.finviz.get_futures_performance")
+    @patch("mtdata.core.finviz.markets.get_futures_performance")
     def test_finviz_market_tools_accept_full_detail(self, mock_get_futures):
         from mtdata.core.finviz import finviz_futures
 
@@ -1582,7 +1582,7 @@ class TestFinvizTools:
         assert result["meta"]["tool"] == "finviz_futures"
         assert "request" not in result["meta"]
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_rejects_non_equity_symbols_upfront(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1628,7 +1628,7 @@ class TestFinvizTools:
         assert error is None
         assert symbol == "BRK-B"
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_strips_mt5_equity_suffix(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1646,7 +1646,7 @@ class TestFinvizTools:
         assert result["requested_symbol"] == "AAPL.NAS"
         assert result["finviz_ticker"] == "AAPL"
 
-    @patch("mtdata.core.finviz.get_stock_description")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_description")
     def test_finviz_description_normalizes_equity_symbols(self, mock_get_description):
         from mtdata.core.finviz import finviz_description
 
@@ -1659,7 +1659,7 @@ class TestFinvizTools:
         assert result["requested_symbol"] == "AAPL.NAS"
         assert result["finviz_ticker"] == "AAPL"
 
-    @patch("mtdata.core.finviz.get_stock_news")
+    @patch("mtdata.core.finviz.news.get_stock_news")
     def test_finviz_news_rejects_non_equity_symbols_upfront(self, mock_get_news):
         from mtdata.core.finviz import finviz_news
 
@@ -1677,7 +1677,7 @@ class TestFinvizTools:
         assert result["details"] == {"symbol": "BTCUSD", "tool": "finviz_news"}
         assert isinstance(result.get("request_id"), str)
 
-    @patch("mtdata.core.finviz.get_stock_news")
+    @patch("mtdata.core.finviz.news.get_stock_news")
     def test_finviz_news_rejects_zero_limit(self, mock_get_news):
         from mtdata.core.finviz import finviz_news
 
@@ -1688,7 +1688,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_news_invalid_limit"
         mock_get_news.assert_not_called()
 
-    @patch("mtdata.core.finviz.get_stock_news")
+    @patch("mtdata.core.finviz.news.get_stock_news")
     def test_finviz_news_compact_keeps_url_and_provenance(self, mock_get_news):
         from mtdata.core.finviz import finviz_news
 
@@ -1713,7 +1713,7 @@ class TestFinvizTools:
         assert "does not guarantee real-time" in result["freshness_note"]
         assert result["items"][0]["url"] == "https://example.com/story"
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_requires_symbol(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1728,8 +1728,8 @@ class TestFinvizTools:
         assert result["details"] == {"tool": "finviz_fundamentals"}
         assert isinstance(result.get("request_id"), str)
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
-    @patch("mtdata.core.finviz._normalize_equity_symbol", return_value=(None, None))
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.common._normalize_equity_symbol", return_value=(None, None))
     def test_finviz_fundamentals_handles_degenerate_symbol_normalization(
         self,
         mock_normalize,
@@ -1749,7 +1749,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_symbol_invalid"
         assert result["operation"] == "finviz_fundamentals"
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_defaults_to_compact_summary(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1811,7 +1811,7 @@ class TestFinvizTools:
         assert "available_field_count" not in result
         assert "omitted_field_count" not in result
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_full_omits_opaque_freshness_basis(
         self,
         mock_get_fundamentals,
@@ -1834,7 +1834,7 @@ class TestFinvizTools:
         assert result["fundamentals"]["data_delayed"] is True
         assert "freshness_basis" not in result
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_flags_stale_52w_high(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1860,7 +1860,7 @@ class TestFinvizTools:
         assert "high_52w_distance_pct_recomputed" not in fundamentals
         assert "upstream 52-week data may be delayed" in fundamentals["data_quality_warnings"][0]
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_filters_category_and_fields(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -1987,7 +1987,7 @@ class TestFinvizTools:
         ):
             assert units[field] == "percent (1.0 = 1%)"
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_full_omits_redundant_field_echo(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -2009,7 +2009,7 @@ class TestFinvizTools:
         assert result["omitted_field_count"] == 0
         assert "omitted_fields" not in result
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_full_filtered_omits_field_name_list(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -2039,7 +2039,7 @@ class TestFinvizTools:
         assert result["omitted_field_count"] == 2
         assert "omitted_fields" not in result
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_splits_compound_fields(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -2075,7 +2075,7 @@ class TestFinvizTools:
         assert fundamentals["volatility_m_pct"] == 2.09
         assert result["omitted_field_count"] == 0
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_expands_cryptic_metric_keys(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -2119,7 +2119,7 @@ class TestFinvizTools:
         assert "roa" not in fundamentals
         assert "curr_r" not in fundamentals
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_normalizes_mixed_numeric_formats(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals
 
@@ -2160,7 +2160,7 @@ class TestFinvizTools:
             "sales_yoy_ttm_growth_pct": "percent (1.0 = 1%)",
         }
 
-    @patch("mtdata.core.finviz.get_stock_fundamentals")
+    @patch("mtdata.core.finviz.fundamentals.get_stock_fundamentals")
     def test_finviz_fundamentals_canonicalizes_percent_aliases(
         self,
         mock_get_fundamentals,
@@ -2192,7 +2192,7 @@ class TestFinvizTools:
             "eps_next_5y_growth_pct": "percent (1.0 = 1%)",
         }
 
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_finviz_insider_defaults_to_compact_detail(self, mock_get_trades):
         from mtdata.core.finviz import finviz_insider
 
@@ -2221,7 +2221,7 @@ class TestFinvizTools:
         assert result["pagination"]["more_available"] == 0
         assert result["summary"]["buy_transactions"] == 1
 
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_finviz_insider_none_detail_uses_compact(self, mock_get_trades):
         from mtdata.core.finviz import finviz_insider
 
@@ -2242,7 +2242,7 @@ class TestFinvizTools:
         assert result["count"] == 4
         assert result["pagination"]["more_available"] == 0
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_finviz_ratings_structures_price_targets(self, mock_get_ratings):
         from mtdata.core.finviz import finviz_ratings
 
@@ -2282,7 +2282,7 @@ class TestFinvizTools:
         assert full_row["price"] == "$615 -> $625"
         assert full_row["price_target_display"] == "$615 -> $625"
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_finviz_ratings_cleans_mojibake_price_target_arrow(self, mock_get_ratings):
         from mtdata.core.finviz import finviz_ratings
 
@@ -2309,7 +2309,7 @@ class TestFinvizTools:
         assert row["price_target_previous"] == 330.0
         assert row["price_target_new"] == 380.0
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_finviz_ratings_none_detail_uses_compact(self, mock_get_ratings):
         from mtdata.core.finviz import finviz_ratings
 
@@ -2330,7 +2330,7 @@ class TestFinvizTools:
         assert result["pagination"]["total"] == 2
         assert "meta" not in result
 
-    @patch("mtdata.core.finviz.get_stock_peers")
+    @patch("mtdata.core.finviz.insider.get_stock_peers")
     def test_finviz_peers_empty_detail_uses_compact(self, mock_get_peers):
         from mtdata.core.finviz import finviz_peers
 
@@ -2348,7 +2348,7 @@ class TestFinvizTools:
         assert result["pagination"]["total"] == 3
         assert "meta" not in result
 
-    @patch("mtdata.core.finviz.get_insider_activity")
+    @patch("mtdata.core.finviz.insider.get_insider_activity")
     def test_finviz_insider_activity_rejects_invalid_detail(self, mock_get_activity):
         from mtdata.core.finviz import finviz_insider_activity
 
@@ -2360,7 +2360,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_insider_activity_invalid_detail"
         mock_get_activity.assert_not_called()
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_finviz_earnings_expands_cryptic_metric_keys(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings
 
@@ -2407,7 +2407,7 @@ class TestFinvizTools:
         )
         assert "curr_r" not in item
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_finviz_earnings_compact_uses_calendar_focused_rows(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings
 
@@ -2496,7 +2496,7 @@ class TestFinvizTools:
         assert previous_week[0]["earnings_date"] == "2026-12-30"
         assert next_week[0]["earnings_date_year_inferred"] is True
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_finviz_earnings_rejects_invalid_detail(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings
 
@@ -2545,7 +2545,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
 
-    @patch("mtdata.core.finviz.screen_stocks")
+    @patch("mtdata.core.finviz.screen.screen_stocks")
     def test_finviz_screen_reports_effective_provider_limit(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2574,7 +2574,7 @@ class TestFinvizTools:
         def _run_direct(_logger, operation, func, **fields):
             return func()
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(filters="not valid json")
 
         assert "error" in result
@@ -2600,7 +2600,7 @@ class TestFinvizTools:
         def _run_direct(_logger, operation, func, **fields):
             return func()
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(filters='["NASDAQ"]')
 
         assert result["error"].startswith("Invalid filters format.")
@@ -2618,9 +2618,9 @@ class TestFinvizTools:
 
         token_map = {"cap_largeover": ("Market Cap.", "+Large (over $10bln)")}
         with (
-            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct),
             patch(
-                "mtdata.core.finviz._finviz_screen_shorthand_token_map",
+                "mtdata.core.finviz.screen._finviz_screen_shorthand_token_map",
                 return_value=token_map,
             ),
         ):
@@ -2631,7 +2631,7 @@ class TestFinvizTools:
         assert "Unrecognized Finviz shorthand token(s): sec_stock" in result["error"]
         assert result["details"]["invalid_tokens"] == ["sec_stock"]
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_dict_filters(self, mock_screen):
         """Test finviz_screen tool accepts dict filters directly."""
         from mtdata.core.finviz import finviz_screen
@@ -2658,7 +2658,7 @@ class TestFinvizTools:
             ],
         }
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters={"Exchange": "NASDAQ", "Sector": "Technology"},
                 limit=10
@@ -2690,7 +2690,7 @@ class TestFinvizTools:
             }
         ]
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_compact_uses_selected_view_fields(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2716,7 +2716,7 @@ class TestFinvizTools:
             ],
         }
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 view="technical",
@@ -2751,7 +2751,7 @@ class TestFinvizTools:
             }
         ]
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_numeric_sma_fractions_become_percent(
         self, mock_screen
     ):
@@ -2773,7 +2773,7 @@ class TestFinvizTools:
         }
 
         with patch(
-            "mtdata.core.finviz.run_logged_operation",
+            "mtdata.core.finviz.common.run_logged_operation",
             side_effect=lambda _logger, operation, func, **fields: func(),
         ):
             result = finviz_screen(
@@ -2813,7 +2813,7 @@ class TestFinvizTools:
             "return_on_invested_capital"
         ] == "percent (1.0 = 1%)"
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_compact_uses_valuation_fields(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2838,7 +2838,7 @@ class TestFinvizTools:
             ],
         }
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 view="valuation",
@@ -2890,7 +2890,7 @@ class TestFinvizTools:
             "price_to_book": 1.46,
         }
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_defaults_to_20_rows(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2899,7 +2899,7 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 0, "stocks": []}
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(filters={"Exchange": "NASDAQ"})
 
         mock_screen.assert_called_once_with(
@@ -2911,7 +2911,7 @@ class TestFinvizTools:
         )
         assert result["detail"] == "compact"
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_json_string_filters(self, mock_screen):
         """Test finviz_screen tool still accepts JSON string filters."""
         from mtdata.core.finviz import finviz_screen
@@ -2921,7 +2921,7 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 3, "stocks": []}
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters='{"Exchange": "NASDAQ"}',
                 limit=5
@@ -2939,7 +2939,7 @@ class TestFinvizTools:
         assert "available_count" not in result
         assert result["items"] == []
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_colon_filter_string(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2948,9 +2948,9 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 1, "stocks": []}
         with (
-            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct),
             patch(
-                "mtdata.core.finviz._parse_finviz_screen_key_value_filters",
+                "mtdata.core.finviz.screen._parse_finviz_screen_key_value_filters",
                 return_value={"Market Cap.": "Large ($10bln to $200bln)"},
             ) as mock_parse,
         ):
@@ -2966,7 +2966,7 @@ class TestFinvizTools:
         )
         assert result["success"] is True
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_supports_full_detail_meta_and_omitted_count(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -2981,7 +2981,7 @@ class TestFinvizTools:
             ],
         }
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters={"Exchange": "NASDAQ"},
                 limit=1,
@@ -2998,7 +2998,7 @@ class TestFinvizTools:
         assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_screen"
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_finviz_shorthand_filters(self, mock_screen):
         """Test finviz_screen accepts native Finviz screener shorthand filters."""
         from mtdata.core.finviz import finviz_screen
@@ -3008,7 +3008,7 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters="cap_largeover,exch_nyse",
                 limit=5,
@@ -3028,7 +3028,7 @@ class TestFinvizTools:
         assert result["count"] == 0
         assert "available_count" not in result
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_key_value_filters(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -3037,7 +3037,7 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters="country=USA,marketcap=+mega",
                 limit=5,
@@ -3057,7 +3057,7 @@ class TestFinvizTools:
         assert result["count"] == 0
         assert "available_count" not in result
 
-    @patch('mtdata.core.finviz.screen_stocks')
+    @patch('mtdata.core.finviz.screen.screen_stocks')
     def test_finviz_screen_tool_accepts_operator_key_value_filters(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 
@@ -3066,7 +3066,7 @@ class TestFinvizTools:
 
         mock_screen.return_value = {"success": True, "count": 2, "stocks": []}
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters="pe_under=15,beta_under=1",
                 limit=5,
@@ -3090,7 +3090,7 @@ class TestFinvizTools:
         def _run_direct(_logger, operation, func, **fields):
             return func()
 
-        with patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct):
+        with patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct):
             result = finviz_screen(
                 filters="sharpe_above=2,beta_under=1",
                 limit=5,
@@ -3112,8 +3112,8 @@ class TestFinvizTools:
             return func()
 
         with (
-            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
-            patch("mtdata.core.finviz.get_economic_calendar", return_value={"success": True}) as mock_calendar,
+            patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.calendar.get_economic_calendar", return_value={"success": True}) as mock_calendar,
         ):
             result = finviz_calendar(start="2026-01-05", end="2026-01-12")
 
@@ -3130,7 +3130,7 @@ class TestFinvizTools:
         from mtdata.core.finviz import finviz_calendar
 
         with patch(
-            "mtdata.core.finviz.get_economic_calendar",
+            "mtdata.core.finviz.calendar.get_economic_calendar",
             return_value={"success": True, "items": []},
         ) as get_calendar:
             result = finviz_calendar(start="2 days ago", end="today")
@@ -3160,9 +3160,9 @@ class TestFinvizTools:
             ],
         }
         with (
-            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct),
             patch(
-                "mtdata.core.finviz.get_economic_calendar",
+                "mtdata.core.finviz.calendar.get_economic_calendar",
                 return_value=service_result,
             ),
         ):
@@ -3204,9 +3204,9 @@ class TestFinvizTools:
             ],
         }
         with (
-            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch("mtdata.core.finviz.common.run_logged_operation", side_effect=_run_direct),
             patch(
-                "mtdata.core.finviz.get_dividends_calendar_api",
+                "mtdata.core.finviz.calendar.get_dividends_calendar_api",
                 return_value=service_result,
             ),
         ):

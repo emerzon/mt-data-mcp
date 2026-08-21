@@ -1,12 +1,12 @@
 # services/ — Data Access Layer
 
-Thin service layer for external data sources. No business logic — data retrieval only. 14 Python files including the `finviz/` package, plus `research/` for adapter registration.
+Thin service layer for external data sources. No business logic — data retrieval only. Python modules including the `data_service/`, `finviz/`, and `research/` packages.
 
 ## FILE MAP
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `data_service.py` | 3562 | **Single gateway** for all MT5 data: candles, ticks, market depth, symbols, account info |
+| `data_service/` | package | **MT5 history gateway**: candles, ticks. `__init__.py` re-exports the public API; `errors.py` (no-data/weekend/last-error), `candles.py` (warmup, calendar bounds, denoise/indicators, `fetch_candles`), `ticks.py` (flag decode, backward/forward fetch, `fetch_ticks`). `core/data/` stays the MCP/wait-event layer. |
 | `finviz/` | package | Finviz web scraping: fundamentals, screening, news, economic calendar |
 | `research/` | package | Capability registry for news/calendar/profile/screener adapters |
 | `options_service.py` | — | Options chain data retrieval |
@@ -18,12 +18,12 @@ Thin service layer for external data sources. No business logic — data retriev
 
 ## CONVENTIONS
 
-- Services are consumed by `core/` tool modules (`core/data/`, `core/finviz.py`, etc.) — never called directly by end users.
-- `data_service.py` handles MT5 connection init, credential loading from `.env`, and all MetaTrader5 API calls.
+- Services are consumed by `core/` tool modules (`core/data/`, `core/finviz/`, etc.) — never called directly by end users.
+- `data_service/` handles MT5 connection init, credential loading from `.env`, and all MetaTrader5 history API calls.
 - `finviz/` uses the `finvizfinance` library for web scraping — no API key required.
 
 ## ANTI-PATTERNS
 
 - **Never** add business logic (forecasting, pattern detection, etc.) to service files — they are pure data access.
-- **Never** call MT5 API functions outside `data_service.py` or `utils/mt5.py` — centralize connection management.
-- `data_service.py` is the largest file here (3562 lines) — when modifying, ensure MT5 connection guards are preserved.
+- **Never** call MT5 API functions outside `data_service/` or `utils/mt5.py` — centralize connection management.
+- `data_service/` is the MT5 history gateway — when modifying, ensure MT5 connection guards are preserved.

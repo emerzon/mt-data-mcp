@@ -155,7 +155,7 @@ class TestEnsembleRegime:
             }
 
         with patch(
-            "mtdata.core.regime.api.call_tool_sync_structured",
+            "mtdata.core.regime.detect.call_tool_sync_structured",
             side_effect=_sub_result,
         ):
             res = regime_detect(

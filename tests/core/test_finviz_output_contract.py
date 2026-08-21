@@ -249,7 +249,7 @@ class TestFinvizEarningsOutputContract:
     def _unwrapped(self):
         return _unwrap(finviz_earnings)
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_success_returns_flat_normalized_items(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -288,7 +288,7 @@ class TestFinvizEarningsOutputContract:
         assert "meta" not in result
         assert "earnings" not in result
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_full_normalizes_dividend_yield_ratio(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -302,7 +302,7 @@ class TestFinvizEarningsOutputContract:
         assert "dividend" not in result["items"][0]
         assert result["units"]["dividend_yield"] == "percent (1.0 = 1%)"
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_full_includes_metadata(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -332,7 +332,7 @@ class TestFinvizEarningsOutputContract:
         }
         assert result["meta"]["stats"]["truncated"] is False
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_unknown_total_preserves_truncation_and_next_page(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -371,7 +371,7 @@ class TestFinvizEarningsOutputContract:
         } & result.keys()
 
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_full_includes_numeric_market_cap(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -389,7 +389,7 @@ class TestFinvizEarningsOutputContract:
         assert result["items"][0]["market_cap"] == 3_000_000_000_000
         assert result["items"][0]["market_cap_formatted"] == "3T"
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_invalid_period_returns_error_envelope(self, mock_get):
         mock_get.return_value = {
             "error": "Invalid period 'Bad'. Available period: ['This Week']"
@@ -403,7 +403,7 @@ class TestFinvizEarningsOutputContract:
         assert "request" not in result["meta"]
         assert "operation" not in result
 
-    @patch("mtdata.core.finviz.get_earnings_calendar")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar")
     def test_rate_limit_preserves_provider_retry_contract(self, mock_get):
         mock_get.return_value = {
             "success": False,
@@ -424,7 +424,7 @@ class TestFinvizEarningsOutputContract:
 
 
 class TestFinvizCalendarOutputContract:
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_normalizes_top_level_and_item_keys(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -489,7 +489,7 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_earnings_calendar_api")
+    @patch("mtdata.core.finviz.calendar.get_earnings_calendar_api")
     def test_calendar_earnings_normalizes_api_keys(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -600,7 +600,7 @@ class TestFinvizCalendarOutputContract:
         assert result["items"][0]["reference"] == "08/14"
         assert result["items"][0]["reference_date"] == "2026-08-14"
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_maps_known_us_indicator_ids_before_country_filter(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -623,7 +623,7 @@ class TestFinvizCalendarOutputContract:
         }
         assert result["pagination"]["total"] == 4
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_default_limit_selects_nearest_upcoming_events(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -647,7 +647,7 @@ class TestFinvizCalendarOutputContract:
             "more_available": 1,
         }
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_reports_unknown_country_rows_excluded_by_filter(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -671,7 +671,7 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_attributes_known_us_release_names_before_filter(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -699,7 +699,7 @@ class TestFinvizCalendarOutputContract:
             "Industrial Production YoY"
         )
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_compact_drops_internal_fields(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -738,7 +738,7 @@ class TestFinvizCalendarOutputContract:
         ]
         assert result["timezone"] == "UTC"
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_economic_filters_by_currency(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -775,7 +775,7 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_economic_calendar")
+    @patch("mtdata.core.finviz.calendar.get_economic_calendar")
     def test_calendar_full_keeps_internal_fields(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -811,7 +811,7 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_dividends_calendar_api")
+    @patch("mtdata.core.finviz.calendar.get_dividends_calendar_api")
     def test_calendar_dividends_compact_keeps_exdate_and_amounts(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -838,7 +838,7 @@ class TestFinvizCalendarOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_dividends_calendar_api")
+    @patch("mtdata.core.finviz.calendar.get_dividends_calendar_api")
     def test_calendar_dividends_labels_recovered_range_as_partial(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -863,7 +863,7 @@ class TestFinvizCalendarOutputContract:
 
 
 class TestFinvizInsiderActivityOutputContract:
-    @patch("mtdata.core.finviz.get_insider_activity")
+    @patch("mtdata.core.finviz.insider.get_insider_activity")
     def test_compact_normalizes_items_and_summarizes_without_urls(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -937,7 +937,7 @@ class TestFinvizInsiderActivityOutputContract:
         assert result["pagination"]["more_available"] == 0
         assert result["ordering"] == "filed_at_descending"
 
-    @patch("mtdata.core.finviz.get_insider_activity")
+    @patch("mtdata.core.finviz.insider.get_insider_activity")
     def test_compact_deduplicates_before_summary(self, mock_get):
         duplicate = {
             "Ticker": "ATTO",
@@ -964,7 +964,7 @@ class TestFinvizInsiderActivityOutputContract:
         assert result["summary"]["top_purchases"][0]["transactions"] == 1
 
     @pytest.mark.parametrize("option", ["latest sales", "top week sales"])
-    @patch("mtdata.core.finviz.get_insider_activity")
+    @patch("mtdata.core.finviz.insider.get_insider_activity")
     def test_sales_summary_separates_proposals_from_executions(
         self,
         mock_get,
@@ -1010,7 +1010,7 @@ class TestFinvizInsiderActivityOutputContract:
             }
         ]
 
-    @patch("mtdata.core.finviz.get_insider_activity")
+    @patch("mtdata.core.finviz.insider.get_insider_activity")
     def test_full_keeps_all_normalized_rows_including_urls(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1029,7 +1029,7 @@ class TestFinvizInsiderActivityOutputContract:
 
 
 class TestFinvizInsiderOutputContract:
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_compact_normalizes_items(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1066,7 +1066,7 @@ class TestFinvizInsiderOutputContract:
         assert result["pagination"]["returned"] == 4
         assert result["pagination"]["more_available"] == 0
 
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_full_normalizes_items(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1090,7 +1090,7 @@ class TestFinvizInsiderOutputContract:
 
 
 class TestFinvizProgressiveDisclosure:
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_insider_compact_keeps_page_and_adds_counts(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1114,7 +1114,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["pagination"]["returned"] == 4
         assert result["pagination"]["more_available"] == 0
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_compact_returns_latest_rows_and_summary(self, mock_get):
         rows = [
             {"Date": f"2026-01-0{i}", "Outer": "UBS", "Rating": "Buy"}
@@ -1144,7 +1144,7 @@ class TestFinvizProgressiveDisclosure:
             "Use --offset 3 for the next ratings page."
         )
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_limit_controls_returned_rows(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
@@ -1157,7 +1157,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["pagination"]["total"] == 5
         assert result["pagination"]["more_available"] == 3
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_offset_fetches_followup_rows(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
@@ -1180,7 +1180,7 @@ class TestFinvizProgressiveDisclosure:
             "Use --offset 4 for the next ratings page."
         )
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_compact_removes_duplicate_price_target_strings(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1205,7 +1205,7 @@ class TestFinvizProgressiveDisclosure:
         assert "price_target_display" not in row
         assert result["summary"]["latest"] == row
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_full_detail_returns_full_history(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
@@ -1217,7 +1217,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["pagination"]["returned"] == 5
         assert result["pagination"]["more_available"] == 0
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_full_detail_honors_limit(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
@@ -1228,7 +1228,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["pagination"]["returned"] == 1
         assert result["pagination"]["more_available"] == 4
 
-    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    @patch("mtdata.core.finviz.insider.get_stock_insider_trades")
     def test_insider_proposed_sales_are_not_counted_as_executed(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1248,7 +1248,7 @@ class TestFinvizProgressiveDisclosure:
             "executed_sale",
         ]
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_ratings_normalizes_mixed_date_formats(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -1266,7 +1266,7 @@ class TestFinvizProgressiveDisclosure:
             "2026-04-17",
         ]
 
-    @patch("mtdata.core.finviz.get_stock_peers")
+    @patch("mtdata.core.finviz.insider.get_stock_peers")
     def test_peers_compact_returns_top_five_and_counts(self, mock_get):
         peers = ["MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL"]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "peers": peers}
@@ -1288,7 +1288,7 @@ class TestFinvizProgressiveDisclosure:
             "1 more peers available; pass --offset 5."
         )
 
-    @patch("mtdata.core.finviz.get_stock_peers")
+    @patch("mtdata.core.finviz.insider.get_stock_peers")
     def test_peers_limit_controls_returned_rows(self, mock_get):
         peers = ["MSFT", "GOOGL", "META"]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "peers": peers}
@@ -1300,7 +1300,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["pagination"]["total"] == 3
         assert result["pagination"]["more_available"] == 1
 
-    @patch("mtdata.core.finviz.get_stock_peers")
+    @patch("mtdata.core.finviz.insider.get_stock_peers")
     def test_peers_offset_fetches_followup_page(self, mock_get):
         peers = ["MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL"]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "peers": peers}
@@ -1317,7 +1317,7 @@ class TestFinvizProgressiveDisclosure:
             "more_available": 0,
         }
 
-    @patch("mtdata.core.finviz.get_stock_ratings")
+    @patch("mtdata.core.finviz.insider.get_stock_ratings")
     def test_finviz_detail_accepts_standard_alias_as_compact(self, mock_get):
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": []}
 
@@ -1326,7 +1326,7 @@ class TestFinvizProgressiveDisclosure:
         assert result["success"] is True
         assert result["detail"] == "compact"
 
-    @patch("mtdata.core.finviz.get_forex_performance")
+    @patch("mtdata.core.finviz.markets.get_forex_performance")
     def test_forex_includes_normalized_pagination(self, mock_get):
         mock_get.return_value = {
             "success": True,

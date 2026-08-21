@@ -1,0 +1,766 @@
+"""Statistical engines for the advanced MT5-native analytics tools."""
+
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
+import pandas as pd
+from scipy.stats import kurtosis, norm, skew
+
+from ..core.analytics_requests import (
+    StrategyCandidate,
+    StrategyValidateRequest,
+)
+from ..shared.constants import TIMEFRAME_SECONDS
+from ..utils.barriers import normalize_same_bar_policy
+from ..utils.time import format_epoch_utc
+from .engine_common import (
+    _bootstrap_mean_ci,
+    _finite,
+    _rates,
+)
+
+
+def _block_bootstrap_positive_mean_p_value(
+    values: Sequence[float], samples: int, seed: int = 42
+) -> Optional[float]:
+    """One-sided p-value for positive mean under a centered block-bootstrap null."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 5:
+        return None
+    observed = float(np.mean(arr))
+    centered = arr - observed
+    rng = np.random.default_rng(seed)
+    block = max(2, int(round(math.sqrt(len(arr)))))
+    exceed = 0
+    for _ in range(int(samples)):
+        starts = rng.integers(0, len(centered), size=math.ceil(len(centered) / block))
+        draw = np.concatenate(
+            [centered[(start + np.arange(block)) % len(centered)] for start in starts]
+        )[: len(centered)]
+        exceed += int(float(np.mean(draw)) >= observed)
+    return float((exceed + 1) / (int(samples) + 1))
+
+
+
+def _builtin_signal(close: pd.Series, candidate: StrategyCandidate) -> pd.Series:
+    params = candidate.params
+    if candidate.strategy in {"sma_cross", "ema_cross"}:
+        fast = int(params.get("fast_period", 10))
+        slow = int(params.get("slow_period", 30))
+        if fast >= slow:
+            raise ValueError("fast_period must be less than slow_period")
+        if candidate.strategy == "sma_cross":
+            a = close.rolling(fast, min_periods=fast).mean()
+            b = close.rolling(slow, min_periods=slow).mean()
+        else:
+            a = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
+            b = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
+        valid = a.notna() & b.notna()
+        previous_valid = valid.shift(1, fill_value=False)
+        crossed_above = valid & previous_valid & (a > b) & (a.shift(1) <= b.shift(1))
+        crossed_below = valid & previous_valid & (a < b) & (a.shift(1) >= b.shift(1))
+        return pd.Series(
+            np.where(crossed_above, 1.0, np.where(crossed_below, -1.0, 0.0)),
+            index=close.index,
+        ).where(valid)
+    length = int(params.get("rsi_length", 14))
+    oversold = float(params.get("oversold", 30.0))
+    overbought = float(params.get("overbought", 70.0))
+    delta = close.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / length, adjust=False, min_periods=length).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / length, adjust=False, min_periods=length).mean()
+    rsi = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
+    valid = rsi.notna()
+    previous = rsi.shift(1)
+    entered_oversold = valid & previous.notna() & (rsi < oversold) & (previous >= oversold)
+    entered_overbought = valid & previous.notna() & (rsi > overbought) & (previous <= overbought)
+    return pd.Series(
+        np.where(entered_oversold, 1.0, np.where(entered_overbought, -1.0, 0.0)),
+        index=close.index,
+    ).where(valid)
+
+
+
+def _candidate_signal_definition(candidate: StrategyCandidate) -> str:
+    if candidate.type == "forecast_threshold":
+        return "forecast_threshold_anchor"
+    if candidate.strategy in {"sma_cross", "ema_cross"}:
+        return "cross_event"
+    return "zone_entry_event"
+
+
+
+def _candidate_result_identity(
+    candidate: StrategyCandidate,
+    *,
+    include_effective_parameters: bool,
+) -> Dict[str, Any]:
+    identity: Dict[str, Any] = {
+        "id": candidate.id,
+        "type": candidate.type,
+    }
+    effective = dict(candidate.params)
+    if candidate.type == "builtin_strategy":
+        identity["strategy"] = candidate.strategy
+        if candidate.strategy in {"sma_cross", "ema_cross"}:
+            effective.setdefault("fast_period", 10)
+            effective.setdefault("slow_period", 30)
+        else:
+            effective.setdefault("rsi_length", 14)
+            effective.setdefault("oversold", 30.0)
+            effective.setdefault("overbought", 70.0)
+    else:
+        identity["method"] = candidate.method
+        effective.setdefault("lookback", 200)
+        effective.update(
+            {
+                "horizon": int(candidate.horizon),
+                "long_above": float(candidate.long_above),
+                "short_below": float(candidate.short_below),
+            }
+        )
+    if include_effective_parameters:
+        identity["effective_parameters"] = effective
+    return identity
+
+
+
+_MAX_FORECAST_SIGNAL_ANCHORS = 200
+
+
+
+def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str, timeframe: str) -> pd.Series:
+    from ..forecast.forecast import execute_forecast
+
+    signal = pd.Series(np.nan, index=df.index, dtype=float)
+    model_lookback = int(candidate.params.get("lookback", 200))
+    params = {key: value for key, value in candidate.params.items() if key != "lookback"}
+    eligible = list(range(model_lookback, len(df) - candidate.horizon, max(1, candidate.horizon)))
+    if len(eligible) > _MAX_FORECAST_SIGNAL_ANCHORS:
+        eligible = eligible[-_MAX_FORECAST_SIGNAL_ANCHORS:]
+    for idx in eligible:
+        history = df.iloc[: idx + 1].copy()
+        try:
+            result = execute_forecast(
+                symbol=symbol,
+                timeframe=timeframe,
+                method=str(candidate.method),
+                horizon=candidate.horizon,
+                lookback=model_lookback,
+                params=params,
+                quantity="price",
+                prefetched_df=history,
+            )
+            expected = result.get("expected_return")
+            if expected is None:
+                values = (
+                    result.get("forecast_price")
+                    or result.get("forecast")
+                    or result.get("values")
+                    or result.get("predictions")
+                )
+                if isinstance(values, list) and values:
+                    expected = (float(values[-1]) - float(history["close"].iloc[-1])) / float(history["close"].iloc[-1])
+            if expected is not None:
+                value = float(expected)
+                signal.iloc[idx] = 1.0 if value > candidate.long_above else -1.0 if value < candidate.short_below else 0.0
+        except Exception:
+            continue
+    return signal
+
+
+
+def _walk_forward_windows(
+    start_bar: int,
+    end_bar: int,
+    *,
+    n_splits: int,
+    embargo: int,
+) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+    edges = np.linspace(
+        int(start_bar),
+        max(int(start_bar), int(end_bar) + 1),
+        int(n_splits) + 2,
+        dtype=int,
+    )
+    fold_windows: List[Tuple[int, int]] = []
+    embargo_intervals: List[Tuple[int, int]] = []
+    for fold in range(int(n_splits)):
+        block_start = int(edges[fold + 1])
+        test_start = block_start + int(embargo)
+        test_end = int(edges[fold + 2]) - 1
+        if embargo > 0:
+            embargo_intervals.append((block_start, min(test_start - 1, test_end)))
+        fold_windows.append((test_start, test_end))
+    return fold_windows, embargo_intervals
+
+
+
+def _barrier_returns(
+    df: pd.DataFrame,
+    signal: pd.Series,
+    horizon: int,
+    tp_pct: float,
+    sl_pct: float,
+    same_bar_policy: str = "sl_first",
+) -> Tuple[np.ndarray, np.ndarray]:
+    indices: List[int] = []
+    outcomes: List[float] = []
+    tp = float(tp_pct) / 100.0
+    sl = float(sl_pct) / 100.0
+    next_eligible_signal = 0
+    for idx in range(len(df) - horizon):
+        if idx < next_eligible_signal:
+            continue
+        direction = float(signal.iloc[idx]) if pd.notna(signal.iloc[idx]) else 0.0
+        if direction == 0:
+            continue
+        entry_idx = idx + 1
+        entry = float(df["open"].iloc[entry_idx])
+        if not math.isfinite(entry) or entry <= 0.0:
+            entry = float(df["close"].iloc[entry_idx])
+        result = None
+        for step in range(horizon):
+            outcome_idx = entry_idx + step
+            high = float(df["high"].iloc[outcome_idx])
+            low = float(df["low"].iloc[outcome_idx])
+            favorable = (high / entry - 1.0) if direction > 0 else (1.0 - low / entry)
+            adverse = (1.0 - low / entry) if direction > 0 else (high / entry - 1.0)
+            adverse_hit = adverse >= sl
+            favorable_hit = favorable >= tp
+            if adverse_hit and favorable_hit:
+                if same_bar_policy == "tp_first":
+                    result = tp
+                elif same_bar_policy == "neutral":
+                    result = 0.0
+                else:
+                    result = -sl
+                break
+            if adverse_hit:
+                result = -sl
+                break
+            if favorable_hit:
+                result = tp
+                break
+        if result is None:
+            result = direction * (float(df["close"].iloc[idx + horizon]) / entry - 1.0)
+        indices.append(idx)
+        outcomes.append(float(result))
+        # A persistent state is one position, not a fresh overlapping trade on
+        # every bar.  The next entry may be considered only after this
+        # position's full outcome window has ended.
+        next_eligible_signal = idx + int(horizon)
+    return np.asarray(indices, dtype=int), np.asarray(outcomes, dtype=float)
+
+
+
+_MIN_HISTORICAL_SPREAD_COVERAGE = 0.9
+
+
+
+def _observed_spread_bps(
+    request: StrategyValidateRequest,
+    gateway: Any,
+    frame: pd.DataFrame,
+) -> Tuple[Optional[float], str, bool, Dict[str, Any]]:
+    if request.cost_model == "fixed":
+        return (
+            float(request.spread_bps),
+            "explicit",
+            True,
+            {"basis": "request"},
+        )
+    spread_points = _finite(frame.get("spread", pd.Series(dtype=float)))
+    close = _finite(frame.get("close", pd.Series(dtype=float)))
+    try:
+        point = float(getattr(gateway.symbol_info(request.symbol), "point", 0.0) or 0.0)
+    except Exception:
+        point = 0.0
+    valid_mask = (
+        np.isfinite(spread_points)
+        & (spread_points > 0.0)
+        & np.isfinite(close)
+        & (close > 0.0)
+    )
+    observations = int(valid_mask.sum())
+    total_bars = int(len(frame))
+    coverage = float(observations / total_bars) if total_bars else 0.0
+    window = {
+        "basis": "historical_bar_spread",
+        "start": (
+            format_epoch_utc(float(frame["time"].iloc[0]))
+            if total_bars and "time" in frame
+            else None
+        ),
+        "end": (
+            format_epoch_utc(float(frame["time"].iloc[-1]))
+            if total_bars and "time" in frame
+            else None
+        ),
+        "observations": observations,
+        "bars": total_bars,
+        "coverage_pct": round(coverage * 100.0, 2),
+        "minimum_complete_coverage_pct": round(
+            _MIN_HISTORICAL_SPREAD_COVERAGE * 100.0,
+            2,
+        ),
+    }
+    if observations and math.isfinite(point) and point > 0.0:
+        spread_values = spread_points[valid_mask] * point / close[valid_mask] * 10_000.0
+        return (
+            float(np.median(spread_values)),
+            "mt5_historical_bar_spread_median",
+            coverage >= _MIN_HISTORICAL_SPREAD_COVERAGE,
+            window,
+        )
+    return (
+        None,
+        "unavailable",
+        False,
+        window,
+    )
+
+
+
+def validate_strategies(  # noqa: C901
+    request: StrategyValidateRequest, gateway: Any
+) -> Dict[str, Any]:
+    try:
+        symbol_info = gateway.symbol_info(request.symbol)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Could not validate symbol '{request.symbol}': {exc}",
+            "error_code": "symbol_lookup_failed",
+            "symbol": request.symbol,
+            "remediation": "Check the MT5 connection and retry the symbol lookup.",
+            "related_tools": ["symbols_list"],
+        }
+    if symbol_info is None:
+        return {
+            "success": False,
+            "error": f"Symbol '{request.symbol}' was not found by MT5.",
+            "error_code": "symbol_not_found",
+            "symbol": request.symbol,
+            "remediation": (
+                "Use symbols_list to find the broker's exact symbol name and suffix."
+            ),
+            "related_tools": ["symbols_list"],
+        }
+    df = _rates(
+        gateway,
+        request.symbol,
+        request.timeframe,
+        request.lookback + request.barrier.horizon + 5,
+        start=request.start,
+        end=request.end,
+    )
+    if len(df) < 200:
+        return {"error": "At least 200 completed bars are required.", "error_code": "insufficient_data"}
+    spread_bps, spread_source, complete, spread_window = _observed_spread_bps(
+        request,
+        gateway,
+        df,
+    )
+    if spread_bps is None:
+        return {
+            "success": False,
+            "error": (
+                "Transaction-cost spread is unavailable for the requested evaluation window. "
+                "Provide --spread-bps with --cost-model fixed or use a window whose "
+                "completed bars include historical spread observations."
+            ),
+            "error_code": "cost_model_unavailable",
+            "cost_model": {
+                "source": spread_source,
+                "spread_bps": None,
+                "window": spread_window,
+                "complete": False,
+            },
+        }
+    round_trip_bps = spread_bps + 2.0 * (request.commission_bps + request.slippage_bps)
+    purge = int(request.purge_bars or 0)
+    embargo = int(
+        request.embargo_bars
+        if request.embargo_bars is not None
+        else request.barrier.horizon
+    )
+    labelable_end = len(df) - int(request.barrier.horizon) - 1
+    fold_windows, embargo_intervals = _walk_forward_windows(
+        0,
+        labelable_end,
+        n_splits=request.n_splits,
+        embargo=embargo,
+    )
+    results = []
+    for candidate in request.candidates:
+        signal_definition = _candidate_signal_definition(candidate)
+        signal = _builtin_signal(df["close"], candidate) if candidate.type == "builtin_strategy" else _forecast_signal(df, candidate, request.symbol, request.timeframe)
+        candidate_fold_windows = fold_windows
+        candidate_embargo_intervals = embargo_intervals
+        valid_signal_bars = np.flatnonzero(signal.notna().to_numpy())
+        signal_coverage = {
+            "anchors_computed": int(len(valid_signal_bars)),
+            "first_bar": int(valid_signal_bars[0]) if len(valid_signal_bars) else None,
+            "last_bar": int(valid_signal_bars[-1]) if len(valid_signal_bars) else None,
+            "anchor_limit": (
+                _MAX_FORECAST_SIGNAL_ANCHORS
+                if candidate.type == "forecast_threshold"
+                else None
+            ),
+        }
+        valid_signal_values = signal.iloc[valid_signal_bars].to_numpy(dtype=float)
+        signal_counts = {
+            "long": int(np.sum(valid_signal_values > 0.0)),
+            "short": int(np.sum(valid_signal_values < 0.0)),
+            "neutral": int(np.sum(valid_signal_values == 0.0)),
+            "non_finite_or_unavailable": int(len(signal) - len(valid_signal_bars)),
+        }
+        if candidate.type == "forecast_threshold" and len(valid_signal_bars):
+            candidate_fold_windows, candidate_embargo_intervals = _walk_forward_windows(
+                int(valid_signal_bars[0]),
+                labelable_end,
+                n_splits=request.n_splits,
+                embargo=embargo,
+            )
+        same_bar_policy = normalize_same_bar_policy(request.barrier.same_bar_policy)
+        indices, gross = _barrier_returns(
+            df,
+            signal,
+            request.barrier.horizon,
+            request.barrier.tp_pct,
+            request.barrier.sl_pct,
+            same_bar_policy,
+        )
+        if len(indices) < request.n_splits * 5:
+            if not len(valid_signal_bars):
+                insufficient_reason = "forecast_unavailable_for_all_anchors"
+            elif signal_counts["long"] + signal_counts["short"] == 0:
+                insufficient_reason = "threshold_not_crossed"
+            else:
+                insufficient_reason = "too_few_non_overlapping_trades"
+            results.append({
+                "id": candidate.id,
+                "evaluation_status": "insufficient_data",
+                "signal_definition": signal_definition,
+                "trades": int(len(indices)),
+                "minimum_trades_required": int(request.n_splits * 5),
+                "insufficient_data_reason": insufficient_reason,
+                "signal_coverage": signal_coverage,
+                "signal_counts": signal_counts,
+            })
+            continue
+        fold_rows = []
+        skipped_folds: List[Dict[str, Any]] = []
+        all_net = []
+        calibrated_probabilities: List[float] = []
+        calibrated_labels: List[int] = []
+        for fold, (test_start, test_end) in enumerate(candidate_fold_windows):
+            if test_start > test_end:
+                skipped_folds.append({"fold": fold + 1, "reason": "empty_test_window"})
+                continue
+            test_mask = (
+                (indices >= test_start)
+                & (indices + int(request.barrier.horizon) <= test_end)
+            )
+            test_indices = indices[test_mask]
+            test_gross = gross[test_mask]
+            if not len(test_indices):
+                skipped_folds.append({"fold": fold + 1, "reason": "no_test_trades"})
+                continue
+            test = test_gross - round_trip_bps / 10_000.0
+            train_mask = (
+                indices + int(request.barrier.horizon) < int(test_start) - purge
+            )
+            embargo_excluded = np.zeros(len(indices), dtype=bool)
+            for gap_start, gap_end in candidate_embargo_intervals:
+                if gap_start >= test_start:
+                    break
+                embargo_excluded |= (indices >= gap_start) & (indices <= gap_end)
+            train_mask &= ~embargo_excluded
+            train_count = int(np.sum(train_mask))
+            if train_count < 5:
+                skipped_folds.append({
+                    "fold": fold + 1,
+                    "reason": "insufficient_training_trades",
+                    "train_trades": train_count,
+                })
+                continue
+            all_net.extend(test.tolist())
+            if train_count >= 100:
+                try:
+                    from sklearn.linear_model import LogisticRegression
+
+                    train_x = signal.iloc[indices[train_mask]].to_numpy(dtype=float).reshape(-1, 1)
+                    train_net = gross[train_mask] - round_trip_bps / 10_000.0
+                    train_y = (train_net > 0).astype(int)
+                    test_x = signal.iloc[test_indices].to_numpy(dtype=float).reshape(-1, 1)
+                    if len(np.unique(train_y)) > 1 and np.all(np.isfinite(train_x)) and np.all(np.isfinite(test_x)):
+                        calibrator = LogisticRegression(random_state=42).fit(train_x, train_y)
+                        calibrated_probabilities.extend(calibrator.predict_proba(test_x)[:, 1].tolist())
+                        calibrated_labels.extend((test > 0).astype(int).tolist())
+                except Exception:
+                    pass
+            fold_rows.append({
+                "fold": fold + 1,
+                "train_trades": train_count,
+                "test_trades": int(len(test)),
+                "test_start_bar": int(test_indices[0]),
+                "test_end_bar": int(test_indices[-1]),
+                "test_window_start_bar": int(test_start),
+                "test_window_end_bar": int(test_end),
+                "horizon_tail_excluded": int(request.barrier.horizon),
+                "embargo_bars_excluded": int(embargo),
+                "extra_purge_bars": int(purge),
+                "net_expectancy": float(np.mean(test)),
+                "win_rate": float(np.mean(test > 0)),
+            })
+        arr = np.asarray(all_net, dtype=float)
+        if not len(arr):
+            results.append({
+                **_candidate_result_identity(
+                    candidate,
+                    include_effective_parameters=request.detail == "full",
+                ),
+                "evaluation_status": "insufficient_data",
+                "signal_definition": signal_definition,
+                "trades": 0,
+                "minimum_trades_required": int(request.n_splits * 5),
+                "insufficient_data_reason": "no_evaluable_oos_folds",
+                "signal_coverage": signal_coverage,
+                "signal_counts": signal_counts,
+                "skipped_folds": skipped_folds,
+            })
+            continue
+        equity = np.concatenate(
+            ([1.0], np.cumprod(1.0 + np.clip(arr, -0.999, None)))
+        )
+        peaks = np.maximum.accumulate(equity)
+        drawdown = equity / peaks - 1.0
+        std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+        per_trade_sharpe = float(np.mean(arr) / std) if std > 0 else 0.0
+        sharpe = per_trade_sharpe if std > 0 else None
+        mean_return_t_stat = (
+            float(per_trade_sharpe * math.sqrt(len(arr))) if std > 0 else None
+        )
+        trials = max(1, len(request.candidates))
+        gamma = 0.5772156649015329
+        expected_max = 0.0
+        if trials > 1:
+            expected_max = (1.0 - gamma) * norm.ppf(1.0 - 1.0 / trials) + gamma * norm.ppf(1.0 - 1.0 / (trials * math.e))
+            expected_max /= math.sqrt(max(1, len(arr)))
+        moment_scale = float(np.std(arr))
+        skewness = float(skew(arr, bias=False)) if len(arr) > 2 and moment_scale > 1e-12 else 0.0
+        kurt = float(kurtosis(arr, fisher=False, bias=False)) if len(arr) > 3 and moment_scale > 1e-12 else 3.0
+        psr_denom = math.sqrt(max(1e-12, 1.0 - skewness * per_trade_sharpe + ((kurt - 1.0) / 4.0) * per_trade_sharpe**2))
+        deflated_probability = float(norm.cdf((per_trade_sharpe - expected_max) * math.sqrt(max(1, len(arr) - 1)) / psr_denom))
+        expectancy_ci = _bootstrap_mean_ci(arr.tolist(), request.bootstrap_samples)
+        mean_return_p_value = _block_bootstrap_positive_mean_p_value(
+            arr.tolist(), request.bootstrap_samples
+        )
+        fold_expectancies = [item["net_expectancy"] for item in fold_rows]
+        folds_evaluated = int(len(fold_rows))
+        fold_coverage = float(folds_evaluated / request.n_splits)
+        fold_stability = float(
+            np.sum(np.asarray(fold_expectancies) > 0) / request.n_splits
+        ) if fold_expectancies else 0.0
+        base_rate_stability = {"status": "insufficient_data", "observations": len(calibrated_labels)}
+        if calibrated_labels:
+            probs = np.asarray(calibrated_probabilities, dtype=float)
+            labels = np.asarray(calibrated_labels, dtype=float)
+            distinct_probabilities = int(len(np.unique(np.round(probs, 12))))
+            base_rate_stability = {
+                "status": "available",
+                "observations": len(labels),
+                "method": "direction_group_train_base_rate",
+                "base_rate_brier_score": float(np.mean((probs - labels) ** 2)),
+                "weighted_base_rate_gap": float(abs(np.mean(probs) - np.mean(labels))),
+                "distinct_probabilities": distinct_probabilities,
+                "label_basis": "net_return_after_costs_positive",
+                "interpretation": "Long/short win-rate stability across folds; not continuous-score calibration.",
+            }
+        results.append({
+            **_candidate_result_identity(
+                candidate,
+                include_effective_parameters=request.detail == "full",
+            ),
+            "evaluation_status": (
+                "complete" if folds_evaluated == request.n_splits else "partial"
+            ),
+            "signal_definition": signal_definition,
+            "trades": int(len(arr)),
+            "net_expectancy": float(np.mean(arr)),
+            "expectancy_ci_95": expectancy_ci,
+            "win_rate": float(np.mean(arr > 0)),
+            "profit_factor": float(arr[arr > 0].sum() / abs(arr[arr < 0].sum())) if np.any(arr < 0) else None,
+            "sharpe": sharpe,
+            "mean_return_t_stat": mean_return_t_stat,
+            "deflated_sharpe_probability": deflated_probability,
+            "mean_return_p_value": mean_return_p_value,
+            "max_drawdown": abs(float(np.min(drawdown))),
+            "fold_stability": fold_stability,
+            "folds_requested": int(request.n_splits),
+            "folds_evaluated": folds_evaluated,
+            "fold_coverage": fold_coverage,
+            "signal_coverage": signal_coverage,
+            "signal_counts": signal_counts,
+            "skipped_folds": skipped_folds,
+            "same_bar_policy": same_bar_policy,
+            "direction_base_rate_stability": base_rate_stability,
+            **({"folds": fold_rows} if request.detail == "full" else {}),
+        })
+    eligible_p = sorted(
+        [(idx, float(item["mean_return_p_value"])) for idx, item in enumerate(results) if item.get("mean_return_p_value") is not None],
+        key=lambda pair: pair[1],
+    )
+    running = 0.0
+    for rank, (idx, p_value) in enumerate(eligible_p):
+        adjusted = min(1.0, p_value * (len(eligible_p) - rank))
+        running = max(running, adjusted)
+        results[idx]["holm_adjusted_p_value"] = running
+    for item in results:
+        if item.get("evaluation_status") not in {"complete", "partial"}:
+            continue
+        ci = item.get("expectancy_ci_95")
+        fold_share = float(item.get("fold_stability") or 0.0)
+        adjusted_p = item.get("holm_adjusted_p_value")
+        criteria = {
+            "cost_model_complete": bool(complete),
+            "all_requested_folds_evaluated": bool(
+                int(item.get("folds_evaluated") or 0) == request.n_splits
+            ),
+            "expectancy_ci_above_zero": bool(ci and float(ci[0]) > 0.0),
+            "holm_adjusted_p_at_most_alpha": bool(
+                adjusted_p is not None
+                and float(adjusted_p) <= request.significance_alpha
+            ),
+            "positive_fold_share_at_least_minimum": bool(
+                fold_share >= request.min_positive_fold_share
+            ),
+        }
+        if all(criteria.values()):
+            classification = "positive"
+        elif ci and float(ci[1]) < 0.0:
+            classification = "negative"
+        else:
+            classification = "inconclusive"
+        item["evidence"] = {
+            "classification": classification,
+            "criteria": criteria,
+            "provisional_positive_before_complete_costs": bool(
+                not complete
+                and all(
+                    value
+                    for name, value in criteria.items()
+                    if name != "cost_model_complete"
+                )
+            ),
+            "significance_alpha": float(request.significance_alpha),
+            "minimum_positive_fold_share": float(request.min_positive_fold_share),
+        }
+    ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
+    warnings_out: List[str] = []
+    candidate_counts = {
+        "requested": int(len(results)),
+        "complete": int(
+            sum(1 for item in results if item.get("evaluation_status") == "complete")
+        ),
+        "partial": int(
+            sum(1 for item in results if item.get("evaluation_status") == "partial")
+        ),
+        "insufficient_data": int(
+            sum(
+                1
+                for item in results
+                if item.get("evaluation_status") == "insufficient_data"
+            )
+        ),
+    }
+    evaluable = int(candidate_counts["complete"] + candidate_counts["partial"])
+    if not complete:
+        warnings_out.append(
+            "Historical spread coverage is below 90%; positive classification "
+            "is disabled. Use --cost-model fixed with an explicit --spread-bps for "
+            "a controlled complete-cost comparison."
+        )
+    for item in results:
+        folds_evaluated = int(item.get("folds_evaluated") or 0)
+        if item.get("evaluation_status") == "partial":
+            warnings_out.append(
+                f"Candidate {item.get('id')} evaluated {folds_evaluated} of "
+                f"{request.n_splits} requested folds; positive classification is disabled."
+            )
+        elif item.get("evaluation_status") == "insufficient_data" and evaluable:
+            warnings_out.append(
+                f"Candidate {item.get('id')} was not evaluable: "
+                f"{item.get('insufficient_data_reason') or 'insufficient_data'}."
+            )
+    payload = {
+        "success": True,
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+        "rankings": ranked,
+        "candidate_counts": candidate_counts,
+        "validation": {
+            "protocol": "anchored_expanding_fixed_candidate_oos",
+            "n_splits": request.n_splits,
+            "outcome_horizon_bars": int(request.barrier.horizon),
+            "extra_purge_bars": purge,
+            "embargo_bars": embargo,
+            "candidate_parameters_reestimated": False,
+            "forecast_models_refit_per_anchor": any(
+                item.type == "forecast_threshold" for item in request.candidates
+            ),
+            "forecast_signal_anchor_limit": _MAX_FORECAST_SIGNAL_ANCHORS,
+            "same_bar_policy": request.barrier.same_bar_policy,
+            "completed_candles_only": True,
+            "signal_timing": "completed_bar_close",
+            "execution_timing": "next_bar_open",
+            "barrier_window": "entry_bar_through_horizon",
+        },
+        "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "window": spread_window, "complete": complete},
+        "data_quality": {
+            "bars": len(df),
+            "cost_model_complete": complete,
+            "history_selection": {
+                "mode": (
+                    "explicit_range"
+                    if request.start and request.end
+                    else "latest_lookback"
+                ),
+                "lookback_bars_requested": int(request.lookback),
+                "lookback_applied": not bool(request.start and request.end),
+                "bars_used": int(len(df)),
+                "requested_start": request.start,
+                "requested_end": request.end,
+                "first_bar_open": format_epoch_utc(float(df["time"].iloc[0])),
+                "last_bar_close": format_epoch_utc(
+                    float(df["time"].iloc[-1])
+                    + float(TIMEFRAME_SECONDS[request.timeframe])
+                ),
+            },
+        },
+        "units": {
+            "net_expectancy": "return_fraction_per_trade",
+            "max_drawdown": "nonnegative_return_fraction",
+            "sharpe": "mean_net_return_per_trade_divided_by_per_trade_standard_deviation",
+            "mean_return_t_stat": "dimensionless_test_statistic",
+            "trades": "non_overlapping_positions",
+        },
+        "warnings": warnings_out,
+    }
+    if results and evaluable == 0:
+        payload["success"] = False
+        payload["error"] = (
+            "No strategy candidates produced an evaluable out-of-sample result."
+        )
+        payload["error_code"] = "strategy_validation_no_evaluable_candidates"
+        payload["remediation"] = (
+            "Increase --lookback, reduce --n-splits or barrier horizon, or "
+            "choose a less sparse signal."
+        )
+    return payload

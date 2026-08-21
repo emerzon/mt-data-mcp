@@ -13,7 +13,7 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 | `forecast_validation.py` | 541 | Input validation and sanity checks |
 | `forecast_methods.py` | 281 | Method dispatch helpers |
 | `forecast.py` | 164 | High-level forecast convenience functions |
-| `use_cases.py` | 3406 | Forecast use case orchestration |
+| `use_cases/` | — | Forecast use-case orchestration (`compact`, `generate`, `backtest`, `barriers`, `tune`, `sktime_index`) |
 | `requests.py` | 408 | Forecast request models |
 
 ### Method Registry

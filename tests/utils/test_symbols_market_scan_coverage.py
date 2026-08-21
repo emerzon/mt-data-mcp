@@ -21,7 +21,7 @@ def _get_symbols_top_markets():
     raw = _unwrap(symbols_top_markets)
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+        with patch("mtdata.core.symbols.scan.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
@@ -33,7 +33,7 @@ def _get_market_scan():
     raw = _unwrap(market_scan)
 
     def _call(*args, **kwargs):
-        with patch("mtdata.core.symbols.ensure_mt5_connection_or_raise", return_value=None):
+        with patch("mtdata.core.symbols.scan.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
     return _call
@@ -152,8 +152,8 @@ def test_market_scan_live_rank_puts_unusable_quotes_last() -> None:
     assert [row["symbol"] for row in rows] == ["USABLE", "UNUSABLE"]
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_market_scan_live_rank_changes_public_leaderboard(
@@ -289,7 +289,7 @@ def test_market_scan_locked_quote_is_explicitly_unsafe() -> None:
     assert "Locked quote" in row["warning"]
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_top_markets_ranks_locked_quotes_after_valid_spreads(
@@ -316,8 +316,8 @@ def test_top_markets_ranks_locked_quotes_after_valid_spreads(
     assert result["unsafe_quote_rows"] == 1
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_market_scan_ranks_locked_quotes_after_valid_spreads(
@@ -554,7 +554,7 @@ def test_market_scan_freshness_summary_labels_mixed_closed_weekend():
     def _fake_closed(symbol, *, now_epoch=None):
         return str(symbol) == "EURUSD"
 
-    with patch.object(symbols_mod, "closed_session_context", _fake_closed):
+    with patch.object(symbols_mod.scan, "closed_session_context", _fake_closed):
         result = symbols_mod._market_scan_freshness_summary(
             [
                 {"symbol": "EURUSD", "data_stale": False},
@@ -609,9 +609,9 @@ def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
     with (
         patch.object(symbols_mod.mt5, "symbols_get", return_value=[symbol]),
         patch.object(symbols_mod.mt5, "symbol_info_tick", return_value=tick),
-        patch.object(symbols_mod, "_mt5_copy_rates_from_pos", return_value=bars),
+        patch.object(symbols_mod.scan, "_mt5_copy_rates_from_pos", return_value=bars),
         patch.object(symbols_mod.time, "time", return_value=now),
-        patch.object(symbols_mod, "ensure_mt5_connection_or_raise", return_value=None),
+        patch.object(symbols_mod.scan, "ensure_mt5_connection_or_raise", return_value=None),
     ):
         result = _unwrap(symbols_mod.market_scan)(
             symbols="BTCUSD",
@@ -655,7 +655,7 @@ def test_market_scan_default_limit_is_concise():
 def test_market_scan_rejects_invalid_constraints_before_mt5(kwargs, message):
     from mtdata.core import symbols as symbols_mod
 
-    with patch.object(symbols_mod, "create_mt5_gateway") as create_gateway:
+    with patch.object(symbols_mod.scan, "create_mt5_gateway") as create_gateway:
         result = _unwrap(symbols_mod.market_scan)(**kwargs)
 
     assert result["success"] is False
@@ -674,7 +674,7 @@ def test_market_scan_rejects_invalid_constraints_before_mt5(kwargs, message):
 def test_market_scan_rejects_contradictory_ranges_before_mt5(kwargs):
     from mtdata.core import symbols as symbols_mod
 
-    with patch.object(symbols_mod, "create_mt5_gateway") as create_gateway:
+    with patch.object(symbols_mod.scan, "create_mt5_gateway") as create_gateway:
         result = _unwrap(symbols_mod.market_scan)(**kwargs)
 
     assert result["success"] is False
@@ -708,7 +708,7 @@ def test_market_scan_spread_row_reconciles_newer_stream_quote() -> None:
 
 
 @patch("mtdata.core.symbols.time.time", return_value=10_000.0)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 def test_market_scan_completed_rates_keeps_latest_closed_bar(mock_rates, mock_time):
     from mtdata.core.symbols import _market_scan_completed_rates
 
@@ -728,7 +728,7 @@ def test_market_scan_completed_rates_keeps_latest_closed_bar(mock_rates, mock_ti
 
 
 @patch("mtdata.core.symbols.time.time", return_value=10_000.0)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 def test_market_scan_completed_rates_drops_forming_bar(mock_rates, mock_time):
     from mtdata.core.symbols import _market_scan_completed_rates
 
@@ -747,7 +747,7 @@ def test_market_scan_completed_rates_drops_forming_bar(mock_rates, mock_time):
 
 
 @patch("mtdata.core.symbols.time.time", return_value=20_000.0)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 def test_market_scan_completed_rates_refreshes_stale_open_session_tail(
     mock_rates,
     mock_time,
@@ -785,7 +785,7 @@ def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):
     from mtdata.core import symbols as symbols_mod
 
     monkeypatch.setattr(
-        symbols_mod,
+        symbols_mod.scan,
         "_market_scan_completed_rates",
         lambda *args, **kwargs: [
             {
@@ -863,7 +863,7 @@ def test_market_scan_rsi_is_independent_of_generic_lookback(monkeypatch):
         requested_counts.append(count)
         return bars[-count:]
 
-    monkeypatch.setattr(symbols_mod, "_market_scan_completed_rates", completed_rates)
+    monkeypatch.setattr(symbols_mod.scan, "_market_scan_completed_rates", completed_rates)
     kwargs = {
         "timeframe": "H1",
         "mt5_timeframe": 16385,
@@ -934,8 +934,8 @@ def _make_bars(closes, *, tick_volume: int = 100):
     return bars
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_gap_up_preset_uses_open_vs_previous_close(
@@ -979,8 +979,8 @@ def test_gap_up_preset_uses_open_vs_previous_close(
     )
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_gap_down_preset_ranks_largest_decline_first(
@@ -1013,8 +1013,8 @@ def test_gap_down_preset_ranks_largest_decline_first(
     assert [row["gap_pct"] for row in result["data"]] == [-8.0, -2.5]
 
 
-@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
 @patch("mtdata.core.symbols.mt5.symbol_info_tick")
 @patch("mtdata.core.symbols.mt5.symbols_get")
 def test_market_scan_accepts_negative_price_change_thresholds(
@@ -1141,8 +1141,8 @@ class TestSymbolsTopMarkets:
         assert "open" in full_bar_headers
         assert "pricing_basis" not in full_bar_headers
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_default_returns_single_abs_price_change_leaderboard(
@@ -1232,8 +1232,8 @@ class TestSymbolsTopMarkets:
         assert "highest_volume" not in result
         assert "highest_price_change_pct" not in result
 
-    @patch("mtdata.core.symbols._build_market_scan_spread_row")
-    @patch("mtdata.core.symbols._build_market_scan_bar_row")
+    @patch("mtdata.core.symbols.scan._build_market_scan_spread_row")
+    @patch("mtdata.core.symbols.scan._build_market_scan_bar_row")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_price_change_ranking_prefers_fresh_rows_before_magnitude(
         self,
@@ -1273,8 +1273,8 @@ class TestSymbolsTopMarkets:
             0.75,
         ]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_filters_group_and_category_for_comparable_universe(
         self,
@@ -1340,7 +1340,7 @@ class TestSymbolsTopMarkets:
         assert {row["symbol"] for row in result["data"]} == {"EURUSD", "GBPUSD"}
         assert {row["asset_class"] for row in result["data"]} == {"forex"}
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_top_markets_exact_hidden_group_is_not_replaced_by_visible_group(
@@ -1374,7 +1374,7 @@ class TestSymbolsTopMarkets:
         assert not _market_scan_group_matches_query("Stock CFD's\\Nasdaq", "stock")
         assert _market_scan_group_matches_query("Forex\\Majors", "forex_major")
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_spread_ranks_lowest_first_visible_default(self, mock_symbols_get, mock_tick, mock_group):
@@ -1432,7 +1432,7 @@ class TestSymbolsTopMarkets:
         assert "tick_volume" not in result["data"][0]
         assert "pricing_basis" not in result["data"][0]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.classify._extract_group_path_util", side_effect=lambda s: s.path)
     def test_stock_cfd_group_takes_precedence_over_nasdaq_venue(self, mock_group):
         from mtdata.core.symbols import _symbol_category
 
@@ -1441,8 +1441,8 @@ class TestSymbolsTopMarkets:
 
         assert _symbol_category(symbol) == "stocks"
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_rank_by_aliases_match_market_scan_names(
@@ -1465,8 +1465,8 @@ class TestSymbolsTopMarkets:
         assert result["rank_by_input"] is None
         mock_tick.assert_not_called()
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_all_returns_all_leaderboards(self, mock_symbols_get, mock_tick, mock_rates, mock_group):
@@ -1532,7 +1532,7 @@ class TestSymbolsTopMarkets:
         assert result["data_as_of_basis"] == "shared_source_timestamp_across_rankings"
         assert result["data_time_alignment"]["status"] == "aligned"
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_spread_detail_compact_returns_ranking_focused_rows(
@@ -1589,8 +1589,8 @@ class TestSymbolsTopMarkets:
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_all_detail_compact_applies_compact_rows_to_each_leaderboard(
@@ -1690,8 +1690,8 @@ class TestSymbolsTopMarkets:
         assert "error" in result
         assert "scan_budget_seconds" in result["error"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._symbol_ready_guard", side_effect=_ready_guard_ok)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_all_universe_activates_hidden_symbols(
@@ -1718,7 +1718,7 @@ class TestSymbolsTopMarkets:
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "USDJPY"]
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=mock_symbols_get.return_value[1])
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_all_universe_ranks_more_than_250_candidates_globally(
@@ -1749,7 +1749,7 @@ class TestSymbolsTopMarkets:
         assert result["sampling_window"]["atomic"] is False
         assert result["sampling_window"]["comparable"] is False
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_global_stock_ranking_handles_6000_candidates_in_one_call(
@@ -1786,7 +1786,7 @@ class TestSymbolsTopMarkets:
         assert len(result["data"]) == 5
         assert elapsed < 15.0
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_global_ranking_reports_time_budget_partial_results(
@@ -1817,8 +1817,8 @@ class TestSymbolsTopMarkets:
         assert result["candidate_progress"]["has_more"] is True
         assert "scan_budget_seconds=0" in result["remediation"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._symbol_ready_guard", side_effect=_ready_guard_ok)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_oversized_universe_supports_deterministic_candidate_partitions(
@@ -1851,8 +1851,8 @@ class TestSymbolsTopMarkets:
         assert result["data"][0]["symbol"] == "SYM0250"
         mock_ready_guard.assert_called_once()
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_volume_reports_skipped_symbols_when_bar_data_missing(self, mock_symbols_get, mock_rates, mock_group):
         mock_symbols_get.return_value = [
@@ -1872,8 +1872,8 @@ class TestSymbolsTopMarkets:
         assert result["skipped_symbols"] == 1
         assert result["skipped_examples"][0]["symbol"] == "GBPUSD"
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos", return_value=None)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos", return_value=None)
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_volume_skipped_examples_are_deterministic(self, mock_symbols_get, mock_rates, mock_group):
         mock_symbols_get.return_value = [
@@ -1917,8 +1917,8 @@ class TestMarketScan:
         assert "requires symbols or group" in result["error"]
         mock_symbols_get.assert_not_called()
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_filters_by_rsi_and_sma(self, mock_symbols_get, mock_tick, mock_rates, mock_group):
@@ -1978,8 +1978,8 @@ class TestMarketScan:
         assert result["meta"]["stats"]["matched_symbols"] == 1
         assert "matched_symbols" not in result
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_default_compact_detail_omits_redundant_columns(
@@ -2046,8 +2046,8 @@ class TestMarketScan:
         assert "collection_kind" not in result
         assert "collection_contract_version" not in result
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_bar_rankings_disclose_mixed_completed_bar_times(
@@ -2096,8 +2096,8 @@ class TestMarketScan:
             assert result["data_as_of_range"]["oldest"] < result["data_as_of_range"]["newest"]
             assert all(row["time"] for row in result["data"])
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_compact_omits_non_fx_null_spread_pips(
@@ -2167,8 +2167,8 @@ class TestMarketScan:
             "warnings": [warning],
         }
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_and_top_markets_share_price_and_freshness_semantics(
@@ -2217,8 +2217,8 @@ class TestMarketScan:
         assert scan["stale_bar_rows"] == top["stale_bar_rows"] == 1
         assert scan["unsafe_quote_rows"] == top["unsafe_quote_rows"] == 0
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_supports_offset_pagination(
@@ -2272,7 +2272,7 @@ class TestMarketScan:
         )
         assert result["meta"]["request"]["offset"] == 1
 
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_rejects_oversized_candidate_set_before_evaluation(
@@ -2296,8 +2296,8 @@ class TestMarketScan:
         mock_tick.assert_not_called()
         mock_rates.assert_not_called()
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_accepts_rank_by_aliases(
@@ -2332,8 +2332,8 @@ class TestMarketScan:
         assert "rank_order_requested" not in descending
         assert descending["ranking"] == "highest_spread_pct"
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_spread_ranking_puts_stale_rows_after_fresh(
@@ -2407,9 +2407,9 @@ class TestMarketScan:
         assert result["stale_symbols"] == ["STALETIGHT"]
         assert "Returned rows: 1/2 stale." in result["message"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_group_universe_all_activates_hidden_symbols(
@@ -2445,9 +2445,9 @@ class TestMarketScan:
         assert result["meta"]["stats"]["scanned_symbols"] == 2
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=hidden_symbol)
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_group_accepts_doubled_backslash_path(
@@ -2468,9 +2468,9 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["group"] == "Forex\\Majors"
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_group_accepts_common_singular_alias(
@@ -2492,8 +2492,8 @@ class TestMarketScan:
         assert result["meta"]["request"]["group"] == "Forex\\Majors"
         assert result["meta"]["request"]["groups"] == ["Forex\\Majors"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_symbols_updates_request_meta(
@@ -2513,8 +2513,8 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_symbols_filters_single_symbol(
@@ -2543,8 +2543,8 @@ class TestMarketScan:
         assert result["data"][0]["price_point"] == 0.0001
         assert "usable_for_live_trading" not in result["data"][0]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_reports_missing_requested_symbols(
@@ -2568,8 +2568,8 @@ class TestMarketScan:
             "NOTAREALPAIR."
         ]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
-    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_returns_no_action_when_no_symbols_match(
@@ -2616,7 +2616,7 @@ class TestMarketScan:
         assert "Market Watch has 0 visible symbol(s)" in result["message"]
         assert "--symbols/--group" in result["remediation"]
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbols_get")
     @patch("mtdata.core.symbols.mt5.copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -2642,7 +2642,7 @@ class TestMarketScan:
         assert result["meta"]["request"]["groups"] == ["Forex\\Majors", "Forex\\Minors"]
         assert {row["symbol"] for row in result["data"]} == {"EURUSD", "AUDCAD"}
 
-    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick", return_value=None)
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_group_skipped_examples_are_deterministic(
