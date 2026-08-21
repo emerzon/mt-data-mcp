@@ -72,6 +72,11 @@ paginate the selected multi-source feed rather than the raw provider
 candidate pool.
 Calendar rows show both the absolute UTC `scheduled_at` timestamp and the
 convenience `relative_time` label in the default TOON view.
+When the provider supplies a reporting period, `reference_date` identifies the
+period the statistic describes (for example, a month or quarter). It is not the
+release instant; use `scheduled_at` to decide whether the event is ahead or has
+already occurred. Full metadata keeps the same value under
+`metadata.reference_date` when it can be resolved.
 
 Full detail also adds, when available, a `market_context` quote snapshot.
 Finviz snapshot performance is expressed in canonical `*_pct` metadata fields
@@ -105,3 +110,9 @@ context, not a live tape.
 - Optional embedding rerank (downloads a model on first use) is **off** by
   default. See [ENV_VARS.md](ENV_VARS.md#news-embeddings).
 - CNBC via `ycnbc` is an opt-in extra (`pip install -e ".[news-ycnbc]"`).
+  When `--source ycnbc` is pinned but that extra is unavailable, the command
+  returns `source_unavailable` with install/restart guidance instead of
+  presenting the missing adapter as an empty result.
+- A failed Finviz endpoint does not erase successful buckets from another
+  endpoint. The result is marked `partial=true` and `status=partial`; full
+  detail records the affected endpoint under source diagnostics.

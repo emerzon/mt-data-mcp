@@ -42,8 +42,8 @@ basis. This is a historical candle close, not a live executable bid or ask.
 
 For `analog` forecasts, compact output retains concise `component_status` and
 `ensemble_metrics` summaries. Raw analog paths, per-timeframe diagnostics, and
-component diagnostic blobs are available with `--detail standard`, `--detail full`,
-or `--detail full`.
+component diagnostic blobs are available with `--detail standard` or
+`--detail full`.
 
 ---
 
@@ -61,6 +61,8 @@ or `--detail full`.
 | `--method` | `theta` | Method name within the library |
 | `--params` | — | Method-specific parameters (JSON or `key=value`) |
 | `--model-cache` | `reuse` | Trainable-model policy: `reuse` loads or persists an artifact, `ephemeral` trains without model-store reads/writes, and `require_existing` fails on a cache miss |
+| `--model-id` | — | Reuse a compatible stored model artifact instead of training a new one |
+| `--async-mode` | `false` | Submit trainable methods to a persistent task runtime and return a task ID |
 
 Method parameters are validated against the selected method before history is
 fetched. Misspelled or unsupported keys return `unknown_parameter` with
@@ -75,11 +77,26 @@ non-empty `--params` mapping.
 | `--horizon` | 12 | Available bars to forecast; closed equity-session intervals do not count |
 | `--lookback` | auto | Historical bars to use. For analog forecasts this is a hard upper bound: `search_depth` is reduced to fit, or the request fails if `window_size` and `horizon` cannot fit. |
 | `--as-of` | now | Reference time (for backtesting) |
+| `--start` / `--end` | — | Bounded training range; use this range style instead of `--as-of` |
+
+For `analog`, an explicit lookback must contain at least
+`2 × window_size + horizon` bars. A smaller request returns
+`analog_lookback_too_small` with `minimum_lookback_bars`. Otherwise the
+effective `search_depth` is capped at
+`lookback - (2 × window_size + horizon - 1)`. Without `--lookback`, the method
+fetches its configured search depth plus the required window/horizon overhead.
 
 ### Target
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--quantity` | `price` | What to forecast: price, return, volatility |
+| `--target-spec` | — | Optional structured target transformation or aggregation settings |
+
+### Output
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--detail` | `compact` | Output detail: compact, standard, summary, or full |
 
 ### Uncertainty
 | Parameter | Default | Description |

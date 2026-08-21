@@ -2,7 +2,7 @@
 
 **Turn MetaTrader 5 into a research lab you can script, query from AI agents, or browse in a local web UI.**
 
-mtdata is a Windows-first toolkit that sits on top of a running MT5 terminal. It gives you **90+ tools** for market data, forecasting, regime detection, patterns, risk, and trading through the command line and an optional AI-assistant plug ([MCP](docs/MCP.md)), plus a local website and HTTP API.
+mtdata is a Windows-first toolkit that sits on top of a running MT5 terminal. It gives you **80+ tools** for market data, forecasting, regime detection, patterns, risk, and trading through the command line and an optional AI-assistant plug ([MCP](docs/MCP.md)), plus a local website and HTTP API.
 
 It is a **toolkit for exploration and automation**, not a trading strategy or financial advice.
 
@@ -148,7 +148,7 @@ One path: build the SPA once, start the API, open the UI.
 pip install -e ".[web]"
 
 # Production frontend (once per checkout / after UI changes)
-cd webui && npm install && npm run build && cd ..
+cd webui && npm ci && npm run build && cd ..
 
 # Start API + UI
 mtdata-webapi

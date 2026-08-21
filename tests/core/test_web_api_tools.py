@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +27,47 @@ from mtdata.forecast.exceptions import ForecastError
 from mtdata.utils.denoise import DenoiseCausalityError
 from mtdata.utils.mt5 import MT5ConnectionError
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _documented_tool_inventory() -> tuple[str, list[dict[str, str]]]:
+    path = REPO_ROOT / "docs" / "WEBUI_TOOL_COVERAGE.md"
+    text = path.read_text(encoding="utf-8")
+    rows: list[dict[str, str]] = []
+    for line in text.splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 6:
+            continue
+        rows.append(
+            {
+                "name": cells[0].strip("`"),
+                "category": cells[1],
+                "surface": cells[2],
+                "frontend": cells[3],
+                "confirm": cells[4],
+            }
+        )
+    return text, rows
+
+
+def _fresh_coverage_inventory_rows() -> list[dict[str, object]]:
+    code = (
+        "import json; "
+        "from mtdata.core.web_api_tools import coverage_inventory_rows; "
+        "print(json.dumps(coverage_inventory_rows()))"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return json.loads(completed.stdout)
+
 
 class TestToolClassification:
     def test_dedicated_and_generic_and_confirm(self):
@@ -41,10 +86,30 @@ class TestToolClassification:
         assert "tools_list" in names
         assert "trade_place" in names
         assert "market_depth_fetch" in names  # gated but listed
-        assert len(rows) >= 91
+        assert len(rows) == len(names)
         # zero unlisted surface values
         for row in rows:
             assert row["surface"] in {"dedicated_ui", "generic_runner", "intentional_omit"}
+
+    def test_documented_inventory_matches_registry(self):
+        expected = {
+            str(row["name"]): {
+                "name": str(row["name"]),
+                "category": str(row.get("category") or ""),
+                "surface": str(row["surface"]),
+                "frontend": str(row["frontend"]),
+                "confirm": "yes" if row["requires_confirmation"] else "no",
+            }
+            for row in _fresh_coverage_inventory_rows()
+        }
+        text, documented_rows = _documented_tool_inventory()
+        documented_names = [row["name"] for row in documented_rows]
+
+        assert len(documented_names) == len(set(documented_names)), (
+            "WEBUI_TOOL_COVERAGE.md contains duplicate tool rows"
+        )
+        assert {row["name"]: row for row in documented_rows} == expected
+        assert f"**Total tools in inventory:** {len(expected)} " in text
 
 
 class TestListAndInvoke:

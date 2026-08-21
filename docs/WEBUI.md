@@ -23,7 +23,7 @@ time slice (for example one hour). This page is read-only until you open
 
 ```bash
 cd webui
-npm install
+npm ci
 npm run build
 cd ..
 mtdata-webapi

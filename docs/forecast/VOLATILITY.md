@@ -202,7 +202,7 @@ Use volatility-scaled barriers instead of fixed percentages:
 ```bash
 # Let the optimizer scale barriers to current volatility
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --grid-style volatility --vol-window 250
+  --grid-style volatility --params "vol_window=250"
 ```
 
 ---

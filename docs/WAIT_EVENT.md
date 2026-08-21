@@ -6,11 +6,11 @@ Sometimes a script or assistant should **pause** until something happens —
 the current hour closes, or an order fills — instead of polling forever by
 hand. `wait_event` does that pause for you.
 
-It **blocks** until it finishes or times out. That is useful in the CLI or an
-MCP session. It is a poor fit for the Web UI Tools runner, which has no
-progress bar for a long wait.
+It **blocks** until it finishes or times out. That is useful in the CLI or a
+Model Context Protocol (MCP) session. It is a poor fit for the Web UI Tools
+runner, which has no progress bar for a long wait.
 
-**Dense terms:** [Timeframe](GLOSSARY.md#timeframe-and-candles-bars) · [Pending vs market order](GLOSSARY.md#market-vs-pending-orders)
+**Dense terms:** [MCP](GLOSSARY.md#mcp-model-context-protocol) · [Timeframe](GLOSSARY.md#timeframe-and-candles-bars) · [Pending vs market order](GLOSSARY.md#market-vs-pending-orders)
 
 **Related:** [CLI](CLI.md) · [Market discovery](MARKET.md) · [Trading safety](TRADING_SAFETY.md) · [Web UI](WEBUI.md)
 

@@ -40,7 +40,7 @@ User tour: [WEBUI.md](WEBUI.md).
 
 | What you see | What to try |
 |--------------|-------------|
-| Enablement page / “build the UI” instead of a chart | In `webui/`: `npm install && npm run build`, then restart `mtdata-webapi`. |
+| Enablement page / “build the UI” instead of a chart | In `webui/`: `npm ci && npm run build`, then restart `mtdata-webapi`. |
 | Chart opens but stays empty | Pick a symbol that exists in MetaTrader 5 Market Watch, then reload. |
 | Connection chip is not ready | MetaTrader 5 must be running and logged in. Check `http://127.0.0.1:8000/api/v1/ready`. |
 | Overlay or forecast banner error | The rest of the chart can still work. Retry after `/ready` is healthy. |

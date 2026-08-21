@@ -292,6 +292,10 @@ See [DENOISING.md](DENOISING.md) for available filters.
 
 Three tools are available for automated tuning and configuration search:
 
+All three accept `--lookback` as the fixed training bars available at every
+rolling-origin anchor. When it is omitted, candidate backtests use the
+expanding roughly 400-bar default.
+
 ### Genetic Algorithm (`forecast_tune_genetic`)
 
 Evolutionary search through parameter space. Good for discrete/mixed search spaces.
@@ -321,6 +325,7 @@ mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--methods` | `fourier_ols` | Forecast methods to optimize |
+| `--lookback` | expanding | Optional fixed training window at each anchor |
 | `--n-trials` | 40 | Number of optimization trials |
 | `--sampler` | `tpe` | Sampling algorithm: `tpe`, `random`, `cmaes` |
 | `--timeout` | (none) | Max wall-clock seconds |
@@ -337,7 +342,7 @@ Broader than single-method tuning: `forecast_optimize_hints` runs a genetic sear
 
 ```bash
 mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
-  --methods theta ets arima --horizon 12 --top-n 5 --json
+  --methods theta ets arima --horizon 12 --steps 30 --top-n 5 --json
 ```
 
 | Parameter | Default | Description |

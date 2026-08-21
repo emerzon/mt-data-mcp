@@ -340,9 +340,12 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods fourier_ols \
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--method` | (required) | Method to optimize |
+| `--methods` / `--method` | `fourier_ols` | One or more methods to optimize |
 | `--metric` | `avg_rmse` | Metric to optimize |
 | `--mode` | `auto` | Uses the metric's standard direction; `min` or `max` explicitly overrides it |
+| `--lookback` | unset (expanding ~400 bars) | Optional fixed training bars available at each rolling-origin anchor |
+| `--steps` | 5 | Rolling-origin anchors evaluated for every candidate |
+| `--spacing` | 20 | Bars between anchors; must be at least the horizon when steps is greater than 1 |
 | `--slippage-bps` | `0` | Execution slippage per side; always disclosed in tuning output |
 | `--trade-threshold` | `0` | Minimum expected return required to enter a simulated trade |
 | `--population` | 12 | Population size per generation (minimum 2) |
@@ -360,8 +363,18 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods fourier_ols \
 | `avg_rmse` | min | Minimize root mean squared error |
 | `avg_directional_accuracy` | max | Maximize direction accuracy |
 | `win_rate` | max | Maximize profitable trades |
+| `max_drawdown` | min | Minimize peak-to-trough loss magnitude |
 | `sharpe_ratio` | max | Maximize risk-adjusted return |
 | `calmar_ratio` | max | Maximize return/drawdown ratio |
+| `annual_return` | max | Maximize annualized return |
+| `avg_return_per_trade` | max | Maximize mean simulated trade return |
+| `avg_win_loss_ratio` | max | Maximize average win relative to average loss |
+| `kelly_fraction` | max | Maximize the estimated Kelly fraction |
+| `half_kelly_fraction` | max | Maximize the more conservative half-Kelly fraction |
+
+`sharpe_ratio`, `calmar_ratio`, and `annual_return` require at least 30
+rolling-origin anchors. Requests with fewer steps fail before the search starts
+instead of producing an annualized score from an undersized sample.
 
 ### Custom Search Space
 
@@ -493,10 +506,14 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods fourier_ols \
 ⚠️ `avg_rmse` much larger than `avg_mae` → outlier errors
 ⚠️ `max_drawdown` > 20% → high risk
 ⚠️ Results vary wildly with small parameter changes → unstable
+⚠️ `history_sample_ok=false` or `forecast_reliability=low` → one or more
+anchors trained on fewer than the method's recommended history bars; increase
+the available history or the explicit `--lookback` before relying on the result
 
 ### Avoiding Overfitting
 
-1. **Use enough test points:** `steps` ≥ 20 for statistical significance
+1. **Use enough test points:** start with `steps` ≥ 20 for accuracy checks;
+   annualized metrics require at least 30
 2. **Test across timeframes:** Method should work on H1, H4, D1
 3. **Test across symbols:** Don't optimize for a single pair
 4. **Out-of-sample validation:** Reserve recent data for final test

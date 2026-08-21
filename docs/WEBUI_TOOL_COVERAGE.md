@@ -42,9 +42,8 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `indicators_describe` | methods | generic_runner | tools-runner/generic | no |  |
 | `indicators_list` | methods | generic_runner | tools-runner/generic | no |  |
 | `labels_triple_barrier` | research | generic_runner | tools-runner/generic | no |  |
-| `market_depth_fetch` | market | generic_runner | tools-runner/generic | no | gated by `MTDATA_ENABLE_MARKET_DEPTH_FETCH`; disabled |
+| `market_depth_fetch` | market | generic_runner | tools-runner/generic | no | gated by `MTDATA_ENABLE_MARKET_DEPTH_FETCH`; disabled by default |
 | `market_microstructure_analyze` | market | generic_runner | tools-runner/generic | no |  |
-| `market_radar` | market | dedicated_ui | radar-panel/watchlist | no | Watchlist radar; also via Tools |
 | `market_radar` | market | dedicated_ui | radar-panel/watchlist | no | Watchlist radar; also via Tools |
 | `market_relative_strength` | market | generic_runner | tools-runner/generic | no |  |
 | `market_scan` | market | generic_runner | tools-runner/generic | no |  |

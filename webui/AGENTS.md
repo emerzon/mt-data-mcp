@@ -58,7 +58,7 @@ React + Vite + Tailwind single-page app for chart visualization and forecast int
 ## DEV SETUP
 
 ```bash
-cd webui && npm install && npm run dev       # Dev server on :5173 (proxies /api → :8000)
+cd webui && npm ci && npm run dev            # Dev server on :5173 (proxies /api → :8000)
 cd webui && npm run build                    # Production build → dist/ (base /app/)
 cd webui && npm run typecheck                # tsc --noEmit
 cd webui && npm test                         # vitest pure client unit tests

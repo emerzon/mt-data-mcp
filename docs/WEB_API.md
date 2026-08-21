@@ -6,7 +6,7 @@ Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and
 
 If you want to *use* the website, start at [WEBUI.md](WEBUI.md). This page is the route reference.
 
-Dedicated chart routes (`/history`, `/forecast/price`, …) are a focused research subset. The Tools invoke path (`POST /api/v1/tools/{name}/invoke`) can run almost the full CLI/MCP catalog. Tune jobs stay CLI/MCP-only; treat `trade_*` as live-capable once confirm + `--dry-run false` are set.
+Dedicated chart routes (`/history`, `/forecast/price`, …) are a focused research subset. The Tools invoke path (`POST /api/v1/tools/{name}/invoke`) can run almost the full CLI/MCP catalog. Tune jobs stay CLI/MCP-only. A `trade_*` invocation is live-capable only when the wrapper has `"confirm": true` and its `arguments` set `"dry_run": false`.
 
 **Base URL:** `http://localhost:8000` (default)
 
@@ -26,7 +26,7 @@ Build the production SPA once with Node.js 22.12 or newer (Node is only required
 
 ```bash
 cd webui
-npm install
+npm ci
 npm run build
 cd ..
 mtdata-webapi
@@ -124,6 +124,10 @@ Fetch OHLCV candles for a symbol.
   - `ohlcv` (string): Column selector (default "ohlc").
   - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
   - `include_incomplete` (bool): Include the latest forming candle.
+  - `allow_stale` (bool): Return fetched history even when freshness validation
+    fails (default `false`). This is an explicit research override; it does not
+    make stale data suitable for live decisions. A forming bar is still included
+    only when `include_incomplete=true`.
   - `timestamp_format` (`epoch` | `iso`): Requested timestamp encoding for
     returned rows. Default `iso`.
   - `detail` (`compact` | `standard` | `summary` | `full`): Use `full` for diagnostics and runtime metadata.
@@ -148,6 +152,8 @@ Unavailable FX `last` and volume values are omitted rather than represented as z
 
 - **Query Params:**
   - `symbol` (string, required).
+  - `detail` (`compact` | `standard` | `summary` | `full`): Response detail
+    level (default `compact`).
 
 ### Analysis
 
@@ -158,6 +164,8 @@ Calculate pivot points.
   - `symbol` (string, required).
   - `timeframe` (string): Default "H1".
   - `method` (string): "classic", "fibonacci", "woodie", "camarilla", "demark".
+  - `detail` (`compact` | `standard` | `summary` | `full`): Response detail
+    level (default `compact`).
 
 #### `GET /api/confluence`
 
@@ -249,6 +257,9 @@ List available dimensionality reduction methods (PCA, UMAP, t-SNE, etc.) with pa
 #### `GET /api/methods`
 List available forecasting models and their requirements.
 
+- **Query Params:** `detail` (`compact` | `standard` | `summary` | `full`,
+  default `compact`).
+
 #### `GET /api/models`
 List trained model artifacts currently available in the model store.
 
@@ -277,6 +288,8 @@ Generate price forecasts.
   "horizon": 12,
   "lookback": null,
   "as_of": null,
+  "start": null,
+  "end": null,
   "params": {},
   "ci_alpha": 0,
   "quantity": "price",
@@ -286,12 +299,22 @@ Generate price forecasts.
   },
   "features": null,
   "dimred": null,
-  "target_spec": null
+  "target_spec": null,
+  "async_mode": false,
+  "model_id": null,
+  "detail": "compact"
 }
 ```
 
 - `library` supports the same forecast libraries exposed by the forecast tool:
   `native`, `statsforecast`, `sktime`, `mlforecast`, and `pretrained`.
+- Use `as_of` for a point-in-time cutoff or `start` / `end` for a bounded
+  training range; do not combine those window styles.
+- `async_mode=true` submits trainable methods to the Web API's persistent task
+  runtime. A pending submission returns HTTP 202 with a `task_id` instead of
+  waiting for the fit.
+- `model_id` reuses a compatible stored artifact instead of training a new
+  one. Use `detail=full` when you need model and runtime diagnostics.
 
 #### `POST /api/forecast/volatility`
 Generate volatility forecasts.
@@ -306,9 +329,15 @@ Generate volatility forecasts.
   "proxy": null,
   "params": {"lambda_": 0.94},
   "as_of": null,
-  "denoise": null
+  "start": null,
+  "end": null,
+  "denoise": null,
+  "detail": "compact"
 }
 ```
+
+Use `as_of` or a `start` / `end` range, not both. `detail=full` includes the
+richer volatility diagnostics supported by the selected method.
 
 #### `GET /api/tools`
 List registered MCP tools for the Web UI runner (bootstraps the full tool surface).
@@ -328,7 +357,7 @@ Invoke a registered tool.
     "symbol": "EURUSD",
     "timeframe": "H1",
     "detail": "full",
-    "fields": "symbol,summary"
+    "output_fields": "symbol,summary"
   },
   "confirm": false
 }
@@ -336,15 +365,21 @@ Invoke a registered tool.
 
 Generic invocation uses the shared structured-output contract. Output is compact
 by default; `detail=full` requests richer sections and adds related-tool
-suggestions when the tool defines them. `fields` accepts comma-separated names
-or dotted paths and keeps the standard envelope fields alongside each match.
+suggestions when the tool defines them. `output_fields` accepts comma-separated
+names or dotted paths and keeps the standard envelope fields alongside each
+match.
 
 `forecast_tune_genetic`, `forecast_tune_optuna`, and `wait_event` are cataloged
 as `intentional_omit`: they can run longer than an HTTP request and the generic
 runner has no progress or cancellation contract. Run those tools through CLI or
 MCP instead.
 
-Live trade mutations (`trade_place`, `trade_modify`, `trade_close`) and destructive model/task tools require `"confirm": true`. See [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md).
+Live trade mutations (`trade_place`, `trade_modify`, `trade_close`) and
+destructive model/task tools require `"confirm": true`. Trade tools still
+default to preview mode; live submission additionally requires
+`"dry_run": false` inside `arguments` and remains subject to account
+guardrails. See [TRADING_SAFETY.md](TRADING_SAFETY.md) and
+[WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md).
 
 #### `POST /api/backtest`
 Run a rolling-origin backtest.
@@ -370,9 +405,8 @@ Run a rolling-origin backtest.
 }
 ```
 
-Compact response shape is the default. Use `detail=full` for
-`["metadata"]` or `"all"`) when you need richer sections such as per-anchor
-detail records.
+Compact response shape is the default. Use `detail=full` when you need richer
+sections such as per-anchor detail records and diagnostics.
 
 ## Running the Server
 

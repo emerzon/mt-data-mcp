@@ -18,11 +18,11 @@ The UI should not be a thin demo. It should be the default interactive surface f
 
 | Reality today | Target |
 |---|---|
-| SPA is a single full-viewport chart workspace (~23 TS/TSX files, ~130 KB source) | Structured product surface with clear modules, status, and growth path |
-| Strong core: OHLC chart, live ticks, pivots/S-R, denoise, forecast/vol/backtest panel | Same core, polished + complete API coverage + responsive UX |
-| Web API is **smaller** than full CLI/MCP by design | UI tracks **100% of Web API**; Web API grows deliberately for UI-critical research features |
-| Dev quality is light: pure unit tests on libs/API errors only; no lint; AGENTS.md partially stale | Reliable test pyramid for client logic + critical UI paths; docs and scripts stay accurate |
-| Layout is desktop-horizontal (fixed 420px side panel, dense toolbar, almost no breakpoints) | Responsive, keyboard-friendly, accessible dark workspace that still feels trading-terminal modern |
+| Modular chart workspace with dedicated panels, feature hooks, and pure client helpers | Keep boundaries clear as dedicated research experiences grow |
+| Core routes and the generic Tools runner cover the documented Web API | Preserve complete route classification and add custom UI only where it improves a workflow |
+| Responsive toolbar and adaptive panels support desktop, tablet, and mobile widths | Finish keyboard, accessibility, and small-screen polish across every panel |
+| Pure Vitest coverage, strict TypeScript, typecheck, and build checks are established | Add component/e2e confidence and a frontend lint gate without slowing iteration |
+| The API exposes a broader catalog than should become custom chart widgets | Prioritize high-value read-only research surfaces and keep mutations explicitly guarded |
 
 ---
 
@@ -32,32 +32,30 @@ The UI should not be a thin demo. It should be the default interactive surface f
 
 - **Chart workspace:** symbol search, timeframes, infinite left history, timezone modes (UTC / local / server)
 - **Live market:** tick poll (bid / ask / last), live incomplete candle, reload and empty/error status surface
-- **Overlays:** pivot levels, support/resistance, sample-trade indicators (EMA / RSI / MACD / volume panes), forecast series + anchor comparison metrics (MAE, MAPE, RMSE, direction)
+- **Overlays:** pivots, support/resistance, indicators, confluence, volume profile, trade ideas, and read-only exposure
 - **Preprocessing:** chart-level denoise with method metadata UI
 - **Analysis panel:** price forecast, volatility forecast, rolling backtest (with advanced options: dimred, denoise, params)
+- **Discovery:** persistent watchlist radar, session strip, trained-model browser, and schema-driven Tools runner
 - **Auth:** in-memory Bearer token for remote/tokenized API access
-- **Stack:** React 18, Vite, Tailwind, TanStack Query, lightweight-charts, axios → `/api/v1`
+- **Stack:** React 19, Vite, Tailwind, TanStack Query, lightweight-charts, axios → `/api/v1`
 
 ### Web API endpoints vs UI usage
 
-Living matrix: **[WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md)** (route × used / intentional-omit × UI entry).
-
-| Endpoint | UI usage |
-|---|---|
-| `GET /health`, `GET /ready` | Used — non-blocking `ConnectionStatus` chip |
-| `GET /instruments`, `/timeframes` | Used |
-| `GET /history`, `/tick` | Used (core chart + live) |
-| `GET /pivots`, `/support-resistance` | Used — Levels controls (pivot method, S/R lookback, touches, max levels, tolerance) |
-| `GET /denoise/methods`, `/denoise/wavelets` | Used via Denoise modal |
-| `GET /methods`, `/volatility/methods`, `/dimred/methods`, `/sktime/estimators` | Used in forecast panel |
-| `GET /models` | Used — `ModelsBrowser` in forecast advanced options |
-| `POST /forecast/price`, `/forecast/volatility`, `/backtest` | Used |
+The canonical route-by-route matrix is
+**[WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md)**. It records each route's
+method, status, UI entry, and rationale. Keep endpoint inventory there instead
+of duplicating it in this goal. The current dedicated surfaces cover chart
+data, geometry/levels, denoise, forecasts, volatility, backtests, trade-idea
+previews, watchlist context, models, health/readiness, and the generic catalog.
 
 ### Explicit non-parity (historical note, then current boundary)
 
 **Then (dedicated chart routes only):** trading, regimes, patterns, reports, Finviz, options, news, causal tools, and wait-events lived only on CLI/MCP.
 
-**Now:** `GET/POST /api/v1/tools*` plus the SPA **Tools** runner expose almost the full catalog. Dedicated chart widgets remain the comfortable path for candles, levels, denoise, forecast, volatility, and backtest. Two deliberate omissions:
+**Now:** `GET/POST /api/v1/tools*` plus the SPA **Tools** runner expose almost
+the full catalog. Dedicated chart widgets remain the comfortable path for
+candles, levels, denoise, forecast, volatility, and backtest. Three tools are
+deliberately omitted from synchronous invoke:
 
 - `forecast_tune_optuna` / `forecast_tune_genetic` — no HTTP progress or cancel contract (run via CLI/MCP).
 - `wait_event` — blocking waits have no HTTP progress or cancel contract; see [WAIT_EVENT.md](WAIT_EVENT.md).
@@ -74,27 +72,28 @@ The goal is not “rebuild every tool as a custom widget on day one.” It is:
 
 ## Goal pillars
 
-### 1. Feature parity with the Web API (and intentional expansion)
+### 1. Preserve Web API parity and expand deliberately
 
-**Definition of done for parity**
+**Parity contract**
 
 - Every documented Web API route is either (a) reachable from the UI with clear affordances, or (b) listed as intentional omission with rationale.
-- Useful query/body parameters are exposed where users need them (not only hardcoded defaults): S/R lookback & method, pivot method, history date range, forecast libraries/estimators/models, backtest extras.
-- `GET /models` is discoverable (browse cached/trained models when available).
-- Connection health: show API liveness and MT5 readiness (`/ready`) without blocking the whole layout.
+- The route matrix is updated in the same change as any API or UI coverage change.
+- Common workflows get typed, dedicated controls; uncommon tools remain usable through the schema-driven runner.
+- New mutation surfaces retain confirmation, dry-run defaults, and account guardrails.
 
-**Expansion track (after parity)**  
-Prioritize Web API + UI modules that unlock research workflows already mature on the backend:
+**Next expansion track**
+
+Prioritize dedicated experiences where chart context materially improves the
+generic tool result:
 
 | Priority | Domain | User value |
 |---|---|---|
-| P1 | Technical indicators on chart | Everyday charting parity with research notebooks |
-| P1 | Richer levels (Fib zones, breakout status from S/R rich mode) | Actionable structure on the chart |
-| P2 | Regime overlays / summary | Context for forecast trust |
-| P2 | Pattern markers (classic / high-signal only first) | Visual event anchors |
-| P2 | Report export / snapshot | Shareable research artifact |
-| P3 | Screener / Finviz-style discovery | Symbol discovery beyond search box |
-| — | Live order placement | **Out of scope** unless a dedicated safety-reviewed design exists |
+| P1 | Regime overlays and high-signal pattern markers | Put forecast trust and event context on the chart |
+| P1 | Backtest result visualization | Make reliability, history sufficiency, and trade metrics easier to compare |
+| P2 | Report export / snapshot | Produce a shareable research artifact from the current workspace |
+| P2 | Screener and news discovery | Move from a watchlist to broader read-only symbol discovery |
+| P3 | Multi-forecast comparison | Compare a small, bounded set of methods without chart clutter |
+| — | Dedicated live-order UI | Out of scope until it has a separate safety-reviewed interaction design |
 
 Expansion always lands as: **backend route contract → client types → UI surface → tests → docs**.
 
@@ -128,10 +127,10 @@ Expansion always lands as: **backend route contract → client types → UI surf
 
 | Gap | Target |
 |---|---|
-| Tests mostly pure lib/API helpers | Expand unit tests for workspace status, time, client; add component tests for critical panels; optional Playwright smoke for `/app` load + symbol select |
+| Tests emphasize pure lib/API helpers | Add component tests for critical panels and an optional Playwright smoke for `/app` load + symbol select |
 | No frontend lint in package scripts | Add ESLint (TS + React hooks) or Biome; wire `npm run lint` |
-| AGENTS.md / FILE MAP drift | Keep `webui/AGENTS.md` in sync with real tree (features/, status, vitest) |
-| Single mega-hook / large panel components | Feature folders: `chart-workspace`, `forecast`, `overlays`, `connection`; shared UI kit |
+| File-map drift as the UI grows | Keep `webui/AGENTS.md` aligned with feature hooks, panels, and pure helpers |
+| Some large hooks and panels remain | Continue extracting feature-owned state and shared UI primitives |
 | Types hand-maintained vs API | Keep `types.ts` aligned with compact Web API payloads; document any intentional subset |
 | No visual regression | Not required day one; snapshot only if it pays for itself |
 | Docs | This goal + WEB_API stay the source of truth for “what the UI should expose” |
@@ -162,48 +161,21 @@ The goal is met when all of the following are true:
 
 ---
 
-## Phased roadmap
+## Remaining roadmap
 
-Phases are sequential by default; work inside a phase can parallelize.
+The inventory, route parity, responsive shell, and generic catalog bridge in
+[Tracking](#tracking) are complete. Continue in this order unless a user-facing
+defect takes priority:
 
-### Phase 0 — Stabilize & inventory (short)
-
-- Freeze a **coverage matrix** (endpoint × UI entry point × params × tests).
-- Refresh `webui/AGENTS.md` and package scripts checklist.
-- Baseline metrics: bundle size, Lighthouse-ish manual notes, list of UX pain points (toolbar overflow, fixed panel width).
-
-### Phase 1 — Parity & reliability
-
-- Wire `/models` and readiness/health indicator.
-- Expose missing high-value params (pivot method, S/R controls, date range / as-of clarity).
-- Harden error surfaces (partial overlay failures, forecast failures, offline API).
-- Expand pure tests; fix type drift; optional lint.
-
-### Phase 2 — Responsive & modern shell
-
-- Responsive toolbar (overflow menu / bottom bar).
-- Forecast panel as adaptive drawer/sheet.
-- Design tokens / shared components (buttons, selects, badges, sheets).
-- Keyboard and a11y pass on primary flows.
-- Empty states and onboarding (no symbol, MT5 not ready, dist missing already handled server-side).
-
-### Phase 3 — Chart research depth
-
-- Indicator overlays (subset first: MA, ATR band, volume pane if data available).
-- Richer S/R / Fib visualization from API rich mode.
-- Multi-forecast compare (2–3 methods) if API payloads allow clean overlay semantics.
-- Backtest results visualization upgrade (equity-style summary, not only tables).
-
-### Phase 4 — Backend feature bridge
-
-- For each approved domain (regimes, patterns, reports, …): design compact Web API → implement → UI module → docs.
-- Prefer read-only research features before any account/trading surfaces.
-
-### Phase 5 — Hardening & speed
-
-- Code-split, query audit, long-session memory check.
-- Optional e2e smoke against mock or live local API.
-- Performance budget note in this doc or WEB_API.
+1. Add regime/pattern context and improve backtest reliability visualization.
+2. Finish keyboard, screen-reader, reduced-motion, and narrow-screen passes on
+   every dedicated panel.
+3. Add a frontend lint command, critical component tests, and one optional
+   browser smoke against a mocked or local API.
+4. Audit query cancellation, long-session memory, and code-splitting; record a
+   small performance budget.
+5. Add further dedicated research modules only as vertical slices: API
+   contract → client types → UI → tests → docs.
 
 ---
 
@@ -211,7 +183,9 @@ Phases are sequential by default; work inside a phase can parallelize.
 
 1. **Transport purity:** UI talks only to Web API (`/api/v1`). No special-casing domain logic in React; adapt and present.
 2. **Compact payloads:** Prefer UI-oriented compact responses; request `detail=full` only when the UI shows those diagnostics.
-3. **Safety:** No order placement / account mutation from the SPA without an explicit safety design (confirmations, mode gates, env flags)—aligned with trading safety docs.
+3. **Safety:** Generic mutations keep the Tools runner confirmation gate,
+   preview defaults, and environment guardrails. Do not add a dedicated order
+   workflow without a separate safety-reviewed design.
 4. **Token hygiene:** Auth token stays in memory only (current behavior is correct—do not “improve” it into localStorage).
 5. **Small PRs:** Prefer vertical slices (one capability usable end-to-end) over giant refactors.
 6. **Commit style:** `webui: <imperative summary>` (or `docs:` when only documentation).

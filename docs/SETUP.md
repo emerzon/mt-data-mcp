@@ -360,7 +360,7 @@ Building or developing the SPA requires Node.js 22.12 or newer.
 ```bash
 # Once per checkout (or after UI source changes)
 cd webui
-npm install
+npm ci
 npm run build
 cd ..
 
@@ -469,7 +469,7 @@ python -m pytest tests/
 
 ```bash
 cd webui
-npm install
+npm ci
 npm run dev     # Development server
 npm run build   # Production build
 ```

@@ -662,7 +662,7 @@ mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000" --ci-
 
 # Search timeframes + methods + params for the best starting configuration
 mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
-  --methods theta ets --horizon 12 --top-n 5 --json
+  --methods theta ets --horizon 12 --steps 30 --top-n 5 --json
 ```
 
 ### Backtest Trading Rules

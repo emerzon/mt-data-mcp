@@ -264,11 +264,11 @@ Run barrier optimization separately for each regime:
 ```bash
 # In low-volatility regime: tighter barriers
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --tp-min 0.15 --tp-max 0.5 --sl-min 0.1 --sl-max 0.4
+  --params "tp_min=0.15,tp_max=0.5,sl_min=0.1,sl_max=0.4"
 
 # In high-volatility regime: wider barriers
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --tp-min 0.5 --tp-max 2.0 --sl-min 0.3 --sl-max 1.5
+  --params "tp_min=0.5,tp_max=2.0,sl_min=0.3,sl_max=1.5"
 ```
 
 ---
