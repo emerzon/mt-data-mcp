@@ -609,7 +609,7 @@ def test_calibrate_heston_default_selects_nearest_eligible_expiration(monkeypatc
         "get_options_expirations",
         lambda _symbol: {
             "success": True,
-            "as_of": "2026-12-01T20:00:00Z",
+            "underlying_as_of": "2026-12-01T20:00:00Z",
             "expirations": ["2026-12-01", "2026-12-04", "2026-12-08"],
         },
     )

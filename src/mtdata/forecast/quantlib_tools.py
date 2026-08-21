@@ -724,7 +724,10 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
             selection_date_source = "explicit_valuation_date"
         else:
             selection_day = _chain_observation_date(
-                expirations_result.get("as_of")
+                (
+                    expirations_result.get("underlying_as_of")
+                    or expirations_result.get("as_of")
+                )
                 if isinstance(expirations_result, dict)
                 else None,
                 timezone_name=valuation_timezone,
@@ -739,7 +742,7 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
                 "error_code": "expiration_observation_time_unavailable",
                 "remediation": (
                     "Pass --expiration explicitly, or retry with a provider response "
-                    "that includes a timezone-qualified as_of timestamp."
+                    "that includes a timezone-qualified underlying_as_of timestamp."
                 ),
             }
         eligible = [
