@@ -2320,6 +2320,11 @@ class TestMarketScan:
         assert result["rank_order"] == "asc"
         assert result["rank_order_requested"] == "auto"
         assert result["ranking"] == "lowest_spread_pct"
+        assert result["ranking_basis"] == "live_quote_bid_ask"
+        assert not any(
+            "price_change_pct" in str(warning)
+            for warning in (result.get("warnings") or [])
+        )
 
         descending = fn(lookback=4, rank_by="spread", rank_order="descending")
 

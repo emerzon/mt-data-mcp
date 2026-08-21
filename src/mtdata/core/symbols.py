@@ -2599,11 +2599,20 @@ _MARKET_SCAN_UNITS = {
 }
 
 
+def _market_scan_ranking_basis(rank_by: str) -> str:
+    if rank_by in {"live_price_change_pct", "abs_live_price_change_pct"}:
+        return "previous_completed_close_to_live_quote_mid"
+    if rank_by in {"spread_pct", "spread"}:
+        return "live_quote_bid_ask"
+    return "completed_bar_metric"
+
+
 def _attach_market_scan_rank_gap_warning(
     payload: Dict[str, Any],
     rows: List[Dict[str, Any]],
 ) -> None:
-    if str(payload.get("ranking_basis") or "") != "completed_bar_metric":
+    rank_by = str(payload.get("rank_by") or "")
+    if rank_by not in {"price_change_pct", "abs_price_change_pct"}:
         return
     max_gap = 0.0
     for row in rows:
@@ -5274,12 +5283,7 @@ def market_scan(  # noqa: C901
                     "excluded_examples": quote_eligibility_examples,
                 },
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
-                "ranking_basis": (
-                    "previous_completed_close_to_live_quote_mid"
-                    if rank_by_value
-                    in {"live_price_change_pct", "abs_live_price_change_pct"}
-                    else "completed_bar_metric"
-                ),
+                "ranking_basis": _market_scan_ranking_basis(rank_by_value),
                 "price_change_period": {
                     "bars": 1,
                     "timeframe": timeframe,
