@@ -13,6 +13,7 @@ from ...utils.minimal_output import (
 from ..output_contract import apply_output_verbosity
 from ..output_serialization import json_default as _json_default
 from ..output_serialization import sanitize_json as _sanitize_json
+from .catalog import current_cli_program_name
 from .output_format import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
@@ -48,9 +49,10 @@ _SYMBOL_SEARCH_CALL_PATTERN = re.compile(
 
 def _normalize_cli_command_hints(value: Any) -> Any:
     if isinstance(value, str):
+        program = current_cli_program_name()
         return _SYMBOL_SEARCH_CALL_PATTERN.sub(
             lambda match: (
-                "mtdata-cli symbols_list --search-term "
+                f"{program} symbols_list --search-term "
                 f"{match.group('quote')}{match.group('term')}{match.group('quote')}"
             ),
             value,

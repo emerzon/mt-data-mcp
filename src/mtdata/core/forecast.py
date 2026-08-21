@@ -11,9 +11,6 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import Field
 
-from ..forecast.barrier_constants import (
-    BARRIER_MONTE_CARLO_METHODS,
-)
 from ..forecast.exceptions import ForecastError, ModelCompatibilityError
 from ..forecast.requests import (
     ForecastBacktestRequest,
@@ -722,10 +719,6 @@ def _forecast_volatility_impl(**kwargs):
 
 def _get_forecast_methods_data():
     return _forecast_module().get_forecast_methods_data()
-
-
-def _get_volatility_methods_data():
-    return _forecast_volatility_module().get_volatility_methods_data()
 
 
 def _get_forecast_methods_snapshot():
@@ -1913,75 +1906,6 @@ def _forecast_list_full_row(
     return row
 
 
-def _forecast_volatility_methods_section(
-    *,
-    detail: str,
-    show_unavailable: bool,
-    search: Optional[str] = None,
-) -> Dict[str, Any]:
-    note = (
-        "Dedicated volatility estimators for forecast_volatility_estimate; "
-        "forecast_generate quantity=volatility routes to this method namespace."
-    )
-    try:
-        data = _get_volatility_methods_data()
-    except Exception as exc:
-        return {
-            "tool": "forecast_volatility_estimate",
-            "note": note,
-            "error": f"Unable to list volatility methods: {exc}",
-        }
-    methods = data.get("methods") if isinstance(data, dict) else None
-    if not isinstance(methods, list):
-        return {
-            "tool": "forecast_volatility_estimate",
-            "note": note,
-            "error": "Volatility method metadata is unavailable.",
-        }
-
-    search_value = str(search or "").strip().lower()
-    available_methods = [
-        item
-        for item in methods
-        if isinstance(item, dict) and (show_unavailable or bool(item.get("available")))
-    ]
-    selected = [
-        item
-        for item in available_methods
-        if not search_value
-        or search_value
-        in " ".join(
-            (
-                str(item.get("method") or ""),
-                str(item.get("description") or ""),
-                " ".join(str(alias) for alias in item.get("aliases", []) or []),
-            )
-        ).lower()
-    ]
-    if detail == "full":
-        return {
-            "tool": "forecast_volatility_estimate",
-            "note": note,
-            "total": len(methods),
-            "total_filtered": len(selected),
-            "methods_shown": len(selected),
-            "methods": selected,
-        }
-    method_names = [
-        str(item.get("method"))
-        for item in selected
-        if item.get("method") not in (None, "")
-    ]
-    return {
-        "tool": "forecast_volatility_estimate",
-        "note": note,
-        "total": len(methods),
-        "total_filtered": len(method_names),
-        "methods_shown": len(method_names),
-        "methods": method_names,
-    }
-
-
 def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: DetailLiteral = "compact",
@@ -2126,13 +2050,6 @@ def _forecast_list_methods_impl(  # noqa: C901
             haystack = " ".join((method_name, desc, cat, namespace)).lower()
             return search_value in haystack
 
-        barrier_methods = {
-            "methods": list(BARRIER_MONTE_CARLO_METHODS),
-            "probability_only_methods": ["closed_form"],
-            "optimizer_only_methods": ["ensemble"],
-            "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",
-        }
-
         def _profile_methods_hidden_count(method_rows: Any) -> int:
             if profile_methods is None or not isinstance(method_rows, list):
                 return 0
@@ -2144,14 +2061,6 @@ def _forecast_list_methods_impl(  # noqa: C901
                 if method_name in profile_methods:
                     profile_count += 1
             return int(max(0, len(method_rows) - profile_count))
-
-        volatility_methods = None
-        if detail_value in {"standard", "full"}:
-            volatility_methods = _forecast_volatility_methods_section(
-                detail=detail_value,
-                show_unavailable=bool(show_unavailable),
-                search=search_value,
-            )
 
         if detail_value == "full":
             if not bool(snapshot.get("methods_valid")):
@@ -2184,6 +2093,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full = dict(data)
             out_full["detail"] = "full"
             out_full["methods"] = filtered_full
+            out_full["count"] = len(filtered_full)
             out_full["row_key"] = "methods"
             out_full["catalog_total"] = int(data.get("total") or len(methods_full))
             out_full.pop("total", None)
@@ -2237,12 +2147,11 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "quickstart/core shows native methods with no optional package dependency; use profile=all for the full catalog."
                 )
             out_full["note"] = (
-                "Full view includes trader-facing method metadata and structured params; "
-                "use search_term, library, or limit to narrow large catalogs."
+                "Full view expands selected forecast methods with trader-facing "
+                "metadata and structured params; use search_term, library, or "
+                "limit to narrow large catalogs. Volatility and barrier catalogs "
+                "are listed by forecast_volatility_estimate and forecast_barrier_prob."
             )
-            if volatility_methods is not None:
-                out_full["volatility_methods"] = volatility_methods
-            out_full["barrier_methods"] = barrier_methods
             return out_full
 
         if not bool(snapshot.get("methods_valid")):
@@ -2352,6 +2261,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "available": available_count,
             "unavailable": unavailable_count,
             "methods": selected_methods,
+            "count": len(selected_methods),
             "row_key": "methods",
             "pagination": build_pagination_meta(
                 total=len(compact_methods),
@@ -2368,8 +2278,6 @@ def _forecast_list_methods_impl(  # noqa: C901
             out["unavailable_hidden"] = unavailable_count
         if detail_value == "standard":
             out["detail"] = "standard"
-            if volatility_methods is not None:
-                out["volatility_methods"] = volatility_methods
         if profile_methods is not None:
             out["profile"] = profile_value
             profile_hidden_count = _profile_methods_hidden_count(methods)

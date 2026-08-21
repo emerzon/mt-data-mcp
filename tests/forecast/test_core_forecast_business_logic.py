@@ -2471,6 +2471,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
     assert compact["pagination"]["returned"] == 1
+    assert compact["count"] == 1
     assert compact["pagination"]["more_available"] == 0
     assert compact["profile"] == "quickstart"
     assert compact["profile_methods_hidden"] == 1
@@ -2484,7 +2485,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert standard["detail"] == "standard"
     assert standard["methods"][0]["description"] == "Theta model."
     assert standard["methods"][0]["params_count"] == 1
-    assert "volatility_methods" in standard
+    assert "volatility_methods" not in standard
+    assert "barrier_methods" not in standard
 
     volatility_filtered = _unwrap(cf.forecast_list_methods)(
         detail="full",
@@ -2492,11 +2494,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         search_term="ewma",
         show_unavailable=True,
     )
-    assert volatility_filtered["volatility_methods"]["total_filtered"] == 1
-    assert [
-        row["method"]
-        for row in volatility_filtered["volatility_methods"]["methods"]
-    ] == ["ewma"]
+    assert "volatility_methods" not in volatility_filtered
+    assert "barrier_methods" not in volatility_filtered
 
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True, profile="all")
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
@@ -2536,7 +2535,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert full["methods"][1]["supports_ci"] is False
     assert full["methods"][1]["supports_training"] is False
     assert full["methods"][1]["library"] == "native"
-    assert full["barrier_methods"]["optimizer_only_methods"] == ["ensemble"]
+    assert "barrier_methods" not in full
+    assert "volatility_methods" not in full
+    assert full["count"] == 2
 
     monkeypatch.setattr(
         cf,
@@ -3731,6 +3732,11 @@ def test_forecast_barrier_methods_reject_legacy_aliases():
 def test_forecast_barrier_prob_requires_explicit_barriers(monkeypatch):
     with pytest.raises(ValidationError, match="barrier"):
         ForecastBarrierProbRequest(symbol="EURUSD")
+
+
+def test_forecast_barrier_prob_kind_string_includes_json_example():
+    with pytest.raises(ValidationError, match=r'kind":"tp_sl"'):
+        ForecastBarrierProbRequest(symbol="EURUSD", barrier="tp_sl")
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():

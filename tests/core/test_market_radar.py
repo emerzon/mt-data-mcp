@@ -54,6 +54,8 @@ def test_market_radar_keeps_watchlist_order() -> None:
         call_section=caller,
     )
     assert [row["symbol"] for row in result["rows"]] == ["EURUSD", "GBPUSD"]
+    assert result["row_key"] == "rows"
+    assert result["count"] == 2
     assert result["rows"][1]["quote_not_live_ready"] is False
 
 

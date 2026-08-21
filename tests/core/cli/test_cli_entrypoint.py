@@ -168,6 +168,15 @@ def test_unknown_command_path_does_not_import_cli_api(capsys):
     assert "market_ticker" in captured.out
 
 
+def test_current_cli_program_name_uses_module_invocation():
+    from mtdata.core.cli.catalog import current_cli_program_name
+
+    assert current_cli_program_name(r"C:\code\mtdata\__main__.py") == "python -m mtdata"
+    assert current_cli_program_name("mtdata-cli") == "mtdata-cli"
+    assert current_cli_program_name(r"C:\envs\mtdata\Lib\site-packages\pytest\__main__.py") == "mtdata-cli"
+    assert current_cli_program_name("pytest") == "mtdata-cli"
+
+
 def test_root_help_groups_commands_by_tools_list_category():
     from mtdata.core.cli.catalog import available_command_names, format_root_help
     from mtdata.shared.tool_categories import TOOL_CATEGORY_IDS, tool_catalog_category

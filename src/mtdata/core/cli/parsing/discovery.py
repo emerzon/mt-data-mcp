@@ -120,8 +120,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "toward nearby structure."
     ),
     ("trade_idea_compose", "direction"): (
-        "Trade direction. auto suggests long or short from the forecast path "
-        "and stands down when evidence disagrees."
+        "Trade direction. Auto and explicit long/short share the same conformal "
+        "interval forecast; auto stands down when the horizon band contains the "
+        "last-price or live-quote anchor."
     ),
     ("trade_idea_compose", "risk_pct"): (
         "Fixed-fraction account risk in percent (0.5 means 0.5% of "
@@ -315,6 +316,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("calendar", "upcoming"): (
         "When omitted with no start/end, economic calendar defaults to upcoming "
         "unreleased events. Pass false to include already-printed releases."
+    ),
+    ("calendar", "period"): (
+        "Earnings window when view=period: this-week, next-week, previous-week, "
+        "or this-month. Defaults to this-week when omitted."
     ),
     ("calendar", "include_elapsed"): (
         "Include earnings already released in the selected period. Defaults to "
@@ -511,6 +516,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Built-in scan preset: oversold, overbought, high-volume, tight-spread, "
         "gap-up, or gap-down. Explicit filter flags override preset defaults."
     ),
+    ("market_scan", "rank_by"): (
+        "Ranking metric. Default abs_price_change_pct uses completed-bar closes, "
+        "not live bid/ask. Use abs_live_price_change_pct to rank by executable quotes."
+    ),
     ("market_scan", "rank_order"): (
         "Sort direction for ranked rows: auto, asc/ascending, or desc/descending. "
         "Auto keeps tight spreads and oversold RSI ascending; most other ranks descending."
@@ -662,8 +671,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "key and payload within the retention window replays the prior outcome."
     ),
     ("trade_place", "idempotency_key"): (
-        "Durable dedupe key shared by CLI and server processes. Reusing the same "
-        "key and payload within the retention window replays the prior outcome."
+        "Durable dedupe key for live submissions shared by CLI and server "
+        "processes. Reusing the same key and payload within the retention window "
+        "replays the prior live outcome. Dry-run previews are not stored."
     ),
     ("trade_place", "dry_run"): (
         "Preview the order without sending it to the broker."
@@ -679,7 +689,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "'{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
     ),
     ("trade_place", "require_sl_tp"): (
-        "Require both stop_loss and take_profit for market orders."
+        "Require both stop_loss and take_profit for market and pending orders."
     ),
     ("trade_history", "minutes_back"): (
         "History lookback in minutes. Defaults to 10080 minutes (7 days) when "
@@ -716,9 +726,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "With inferred watchers, reaching the boundary is a successful completion."
     ),
     ("wait_event", "max_wait_seconds"): (
-        "Maximum wait in seconds. With timeframe, bounds the candle-boundary wait; "
-        "without timeframe, omit the symbol and watch_for for a timer, or pass "
-        "watchers to return early."
+        "Maximum wait in seconds (alias: --timeout). With timeframe, bounds the "
+        "candle-boundary wait; without timeframe, omit the symbol and watch_for "
+        "for a timer, or pass watchers to return early."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
@@ -1383,6 +1393,8 @@ def add_dynamic_arguments(  # noqa: C901
             "cross_correlation",
         } and param_name == "window_bars":
             extras.append("--lookback")
+        if cmd_name_value == "wait_event" and param_name == "max_wait_seconds":
+            extras.append("--timeout")
         return tuple(extras)
 
     for param in param_info["params"]:

@@ -110,6 +110,20 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
         ),
         "related_tools": ["indicators_list"],
     },
+    "ticket_not_found": {
+        "remediation": (
+            "Use trade_get_open or trade_get_pending to find an active ticket, "
+            "then retry with that exact ticket."
+        ),
+        "related_tools": ["trade_get_open", "trade_get_pending"],
+    },
+    "close_scope_required": {
+        "remediation": (
+            "Specify --ticket, --symbol, --magic, or --close-all true, then retry "
+            "trade_close."
+        ),
+        "related_tools": ["trade_get_open", "trade_get_pending"],
+    },
 }
 
 _CANONICAL_DATE_RANGE_MESSAGE = "start must be before or equal to end."
@@ -282,6 +296,10 @@ def _canonical_error_code(
         normalized_operation
         and normalized_code == f"{normalized_operation}_error"
     )
+    if normalized_operation and normalized_code.startswith(f"{normalized_operation}_"):
+        suffix = normalized_code[len(normalized_operation) + 1 :]
+        if suffix in {"invalid_date_range", "invalid_date", "symbol_not_found"}:
+            return suffix
     if normalized_code not in _GENERIC_ERROR_CODES and not is_operation_catch_all:
         return current_code
     evidence = " ".join(
@@ -363,6 +381,17 @@ def normalize_error_payload(
     normalized_error = str(error_text)
     if error_code == "invalid_date_range":
         normalized_error = _CANONICAL_DATE_RANGE_MESSAGE
+
+    if not str(out.get("remediation") or "").strip():
+        suggestion = out.get("suggestion")
+        if isinstance(suggestion, str) and suggestion.strip():
+            out["remediation"] = suggestion.strip()
+        else:
+            alternatives = out.get("alternatives")
+            if isinstance(alternatives, list):
+                texts = [str(item).strip() for item in alternatives if str(item).strip()]
+                if texts:
+                    out["remediation"] = " ".join(texts)
 
     normalized: Dict[str, Any] = {
         "success": False,

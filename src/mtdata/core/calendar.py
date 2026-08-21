@@ -79,7 +79,12 @@ def calendar(
     ] = "range",
     period: Annotated[
         Optional[Literal["this-week", "next-week", "previous-week", "this-month"]],
-        Field(description="Earnings window when view=period."),
+        Field(
+            description=(
+                "Earnings window when view=period. Defaults to this-week when "
+                "view=period and this flag is omitted."
+            )
+        ),
     ] = None,
     impact: Annotated[
         Optional[Literal["low", "medium", "high"]],

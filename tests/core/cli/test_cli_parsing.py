@@ -1167,6 +1167,8 @@ class TestAddDynamicArguments:
         assert "Cannot be combined with symbol" in compact_help
         assert "must be at least 0.1" in compact_help
         assert "Defaults to M1" not in compact_help
+        assert "--timeout" in help_text
+        assert parser.parse_args(["--timeout", "1"]).max_wait_seconds == 1.0
         assert parser.parse_args(["--symbols", "EURUSD", "GBPUSD"]).symbols == [
             "EURUSD",
             "GBPUSD",
@@ -1268,6 +1270,22 @@ class TestAddDynamicArguments:
             assert not any(action.dest == "preview_detail" for action in parser._actions)
             args = parser.parse_args(argv)
             assert args.detail == detail_value
+
+    def test_news_detail_choices_are_compact_and_full(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "detail",
+                    "type": Literal["compact", "full"],
+                    "required": False,
+                    "default": "compact",
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="news")
+        detail_action = next(action for action in parser._actions if action.dest == "detail")
+        assert list(detail_action.choices) == ["compact", "full"]
 
     def test_trade_modify_requires_named_ticket(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -2153,10 +2171,8 @@ class TestResolveParamKwargs:
             "default": "abs_price_change_pct",
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="market_scan")
-        assert kwargs["help"] == (
-            "Ranking to compute for market scans: abs_price_change_pct, "
-            "price_change_pct, tick_volume, rsi, or spread_pct."
-        )
+        assert "completed-bar" in kwargs["help"]
+        assert "abs_live_price_change_pct" in kwargs["help"]
 
     def test_symbols_top_markets_limit_help_is_command_specific(self):
         param = {

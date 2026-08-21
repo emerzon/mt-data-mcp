@@ -10,7 +10,6 @@ from pydantic import Field
 
 from ..services.research.payload import stamp_provider
 from ..services.unified_news import fetch_unified_news
-from ..shared.schema import DetailLiteral
 from ..utils.time import format_datetime_utc, format_relative_time
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -583,6 +582,7 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
     )
     if row_keys:
         out["row_keys"] = row_keys
+        out["row_key"] = row_keys[0]
         summary_present = False
         summary_missing = False
         for key in row_keys:
@@ -607,7 +607,7 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
-    detail: DetailLiteral = "compact",
+    detail: Literal["compact", "full"] = "compact",
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
     limit_per_bucket: Optional[int] = None,

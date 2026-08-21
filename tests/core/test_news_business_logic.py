@@ -107,6 +107,7 @@ def test_news_tool_limits_globally(monkeypatch) -> None:
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
     assert limited["row_keys"] == ["upcoming_events", "related_news"]
+    assert limited["row_key"] == "upcoming_events"
     assert "general_news" not in limited
     assert "impact_news" not in limited
     assert "recent_events" not in limited
@@ -184,6 +185,7 @@ def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:
     assert limited["related_news"] == [{"title": "r1"}]
     assert limited["upcoming_events"] == [{"title": "u1"}]
     assert limited["row_keys"] == ["upcoming_events", "related_news"]
+    assert limited["row_key"] == "upcoming_events"
     assert "general_news" not in limited
     assert "impact_news" not in limited
     assert "recent_events" not in limited

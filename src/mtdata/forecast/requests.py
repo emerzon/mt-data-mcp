@@ -105,13 +105,20 @@ def _normalize_forecast_barrier_spec(value: Any) -> Any:
         return {"kind": "single_price", "level": float(value)}
     if isinstance(value, str):
         text = value.strip()
+        if text in {"tp_sl", "single_price"}:
+            raise ValueError(
+                "barrier must be a JSON object, not a kind name. Example: "
+                '\'{"kind":"tp_sl","unit":"pct","take_profit":0.2,"stop_loss":0.2}\''
+            )
         try:
             return {"kind": "single_price", "level": float(text)}
         except ValueError:
             pass
     if not isinstance(value, dict):
         raise ValueError(
-            "barrier must be an object with kind='single_price' or kind='tp_sl'"
+            "barrier must be an object with kind='single_price' or kind='tp_sl'. "
+            "Example: "
+            '\'{"kind":"tp_sl","unit":"pct","take_profit":0.2,"stop_loss":0.2}\''
         )
     out = dict(value)
     if "level" not in out:
@@ -126,7 +133,9 @@ def _normalize_forecast_barrier_spec(value: Any) -> Any:
             out["kind"] = "tp_sl"
         else:
             raise ValueError(
-                "barrier.kind is required; allowed kinds are single_price and tp_sl"
+                "barrier.kind is required; allowed kinds are single_price and tp_sl. "
+                "Example: "
+                '{"kind":"tp_sl","unit":"pct","take_profit":0.2,"stop_loss":0.2}'
             )
     return out
 

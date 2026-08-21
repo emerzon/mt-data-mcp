@@ -126,6 +126,28 @@ def display_program_name(argv0: object) -> str:
     return basename or "mtdata-cli"
 
 
+def current_cli_program_name(argv0: object | None = None) -> str:
+    """Return the program name for copy-paste remediations in this process."""
+    import sys
+
+    raw = argv0 if argv0 is not None else (sys.argv[0] if sys.argv else "")
+    path_text = str(raw or "").replace("\\", "/")
+    basename = os.path.basename(path_text).lower()
+    if basename in {
+        "mtdata",
+        "mtdata.exe",
+        "mtdata-cli",
+        "mtdata-cli.exe",
+        "cli.py",
+    }:
+        return display_program_name(raw)
+    if basename == "__main__.py":
+        parent = os.path.basename(os.path.dirname(path_text)).lower()
+        if parent == "mtdata":
+            return "python -m mtdata"
+    return "mtdata-cli"
+
+
 def format_root_help(program: str) -> str:
     """Render root help without importing any tool implementation modules."""
     names = available_command_names()

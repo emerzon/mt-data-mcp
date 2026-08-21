@@ -818,6 +818,48 @@ class TestFormatResultForCli:
         )
         assert "symbols_list(search_term" not in payload["remediation"]
 
+    def test_symbol_search_remediation_uses_module_invocation_name(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", [r"C:\code\mtdata\__main__.py", "market_ticker"])
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": False,
+                    "error": "Symbol 'NOTASYM' was not found in MT5.",
+                    "remediation": (
+                        "Verify the broker symbol name with "
+                        "symbols_list(search_term='NOTASYM')."
+                    ),
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="market_ticker",
+            )
+        )
+
+        assert payload["remediation"].endswith(
+            "python -m mtdata symbols_list --search-term 'NOTASYM'."
+        )
+
+    def test_market_ticker_verbose_toon_keeps_compact_trading_fields(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "bid": 1.16911,
+                "ask": 1.16912,
+                "mid": 1.169115,
+                "freshness_state": "live",
+                "usable_for_live_trading": True,
+                "data_age_seconds": 1.2,
+            },
+            fmt="toon",
+            verbose=True,
+            cmd_name="market_ticker",
+        )
+        assert "mid:" in result
+        assert "usable_for_live_trading: true" in result
+        assert "freshness_state: live" in result
+
     def test_market_ticker_verbose_toon_keeps_raw_epoch_separately(self):
         result = _format_result_for_cli(
             {

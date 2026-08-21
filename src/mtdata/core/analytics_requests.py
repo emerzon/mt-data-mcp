@@ -216,7 +216,10 @@ class StrategyValidateRequest(BaseModel):
                 )
             ]
         if not self.candidates:
-            raise ValueError("Provide strategy or at least one candidate.")
+            raise ValueError(
+                "Provide strategy or at least one candidate. "
+                "Example: --strategy ema_cross"
+            )
         positions_by_id: Dict[str, List[int]] = {}
         display_by_id: Dict[str, str] = {}
         for position, candidate in enumerate(self.candidates):

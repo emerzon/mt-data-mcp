@@ -2074,7 +2074,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
             print(f"  Optional: {', '.join(optional)}")
         if name == "trade_place":
             print(
-                "  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false."
+                "  Safety: market and pending orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false."
             )
             print("  Recovery: an unprotected market fill is always closed defensively.")
             print(

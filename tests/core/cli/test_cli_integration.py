@@ -3313,7 +3313,7 @@ class TestPrintExtendedHelp:
         out = capsys.readouterr().out
         assert "dry_run=true" in out
         assert "require_sl_tp=true" in out
-        assert "market orders default to require_sl_tp=true" in out
+        assert "market and pending orders default to require_sl_tp=true" in out
         assert "unprotected market fill is always closed defensively" in out
         assert (
             "dry_run=true is the default; set --dry-run false explicitly to send an order to MT5"

@@ -1169,19 +1169,46 @@ def _normalize_market_ticker_payload(  # noqa: C901
             item="tick",
         )
 
-    rich_keys = (
+    primary_spread_key = next(
+        (
+            key
+            for key in ("spread_pips", "spread_points", "spread")
+            if not _is_empty_value(payload.get(key))
+        ),
+        None,
+    )
+    compact_keys = [
         "success",
         "symbol",
         "type",
         "field",
         "price",
-        "price_precision",
-        "point",
         "price_currency",
         "bid",
         "ask",
-        "last",
+        "mid",
         "tick_volume",
+        "freshness",
+        "freshness_state",
+        "freshness_reason",
+        "data_stale",
+        "usable_for_live_trading",
+        "related_live_symbols",
+        "market_status_reason",
+        "spread_valid",
+        "spread_quality",
+        "quote_source_state",
+    ]
+    if not _is_empty_value(payload.get("spread")):
+        compact_keys.append("spread")
+    if primary_spread_key is not None and primary_spread_key != "spread":
+        compact_keys.append(primary_spread_key)
+    if primary_spread_key == "spread_points":
+        compact_keys.append("point")
+    verbose_extra_keys = (
+        "price_precision",
+        "point",
+        "last",
         "spread",
         "spread_points",
         "spread_pips",
@@ -1193,7 +1220,6 @@ def _normalize_market_ticker_payload(  # noqa: C901
         "data_age_anchor",
         "data_age_metric",
         "data_age",
-        "data_stale",
         "stale_after_seconds",
         "freshness_basis",
         "timestamp_ahead_of_wall_clock",
@@ -1202,48 +1228,12 @@ def _normalize_market_ticker_payload(  # noqa: C901
         "timestamp_skew_tolerance_seconds",
         "timestamp_warning",
         "market_status",
-        "market_status_reason",
         "note",
         "warning",
     )
     if verbose:
-        selected_keys = rich_keys
+        selected_keys = tuple(dict.fromkeys([*compact_keys, *verbose_extra_keys]))
     else:
-        primary_spread_key = next(
-            (
-                key
-                for key in ("spread_pips", "spread_points", "spread")
-                if not _is_empty_value(payload.get(key))
-            ),
-            None,
-        )
-        compact_keys = [
-            "success",
-            "symbol",
-            "type",
-            "field",
-            "price",
-            "price_currency",
-            "bid",
-            "ask",
-            "mid",
-            "tick_volume",
-            "freshness",
-            "freshness_state",
-            "freshness_reason",
-            "data_stale",
-            "usable_for_live_trading",
-            "market_status_reason",
-            "spread_valid",
-            "spread_quality",
-            "quote_source_state",
-        ]
-        if not _is_empty_value(payload.get("spread")):
-            compact_keys.append("spread")
-        if primary_spread_key is not None and primary_spread_key != "spread":
-            compact_keys.append(primary_spread_key)
-        if primary_spread_key == "spread_points":
-            compact_keys.append("point")
         selected_keys = tuple(compact_keys)
     for key in selected_keys:
         value = _freshness_label() if key == "freshness" else payload.get(key)

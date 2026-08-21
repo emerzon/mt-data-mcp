@@ -141,7 +141,7 @@ def test_strategy_validation_single_strategy_shortcut_builds_candidate() -> None
 
 
 def test_strategy_validation_requires_exactly_one_candidate_input() -> None:
-    with pytest.raises(ValueError, match="Provide strategy or at least one candidate"):
+    with pytest.raises(ValueError, match="Example: --strategy ema_cross"):
         StrategyValidateRequest(symbol="EURUSD")
     with pytest.raises(ValueError, match="strategy and candidates cannot be combined"):
         StrategyValidateRequest(

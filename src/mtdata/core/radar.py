@@ -237,6 +237,7 @@ def assemble_radar_payload(
         "assembled_at": assembled_at,
         "timezone": "UTC",
         "count": len(ordered),
+        "row_key": "rows",
         "rows": ordered,
     }
     if isinstance(scan, dict):
