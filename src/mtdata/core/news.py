@@ -616,7 +616,12 @@ def news(
     limit_per_bucket: Optional[int] = None,
     source: Annotated[
         Literal["auto", "finviz", "mt5", "ycnbc"],
-        Field(description="Adapter pin. auto merges every available source."),
+        Field(
+            description=(
+                "Adapter pin. auto merges every available source. ycnbc requires "
+                "the optional news-ycnbc extra."
+            )
+        ),
     ] = "auto",
     view: Annotated[
         Literal["unified", "ticker", "market"],
@@ -688,7 +693,8 @@ def news(
         Number of ranked bucket-order items to skip before applying limit.
     source : {"auto", "finviz", "mt5", "ycnbc"}, optional
         Adapter pin. ``auto`` (default) merges every available source. Pin
-        ``finviz``, ``mt5``, or ``ycnbc`` to query one provider.
+        ``finviz``, ``mt5``, or ``ycnbc`` to query one provider. ``ycnbc``
+        requires the optional ``news-ycnbc`` extra.
     view : {"unified", "ticker", "market"}, optional
         ``unified`` (default) ranks mixed sources. ``ticker`` needs a symbol
         and returns that provider's equity page. ``market`` returns the

@@ -1444,6 +1444,14 @@ class YCNBCNewsSource:
             self._available = True
         return self._available
 
+    def unavailable_reason(self) -> Optional[str]:
+        if self.is_available():
+            return None
+        return "the optional ycnbc package is not installed"
+
+    def install_hint(self) -> str:
+        return 'pip install -e ".[news-ycnbc]"'
+
     def fetch_general_candidates(self, limit: int) -> List[NewsItem]:
         if not self.is_available():
             return []
@@ -2004,6 +2012,30 @@ class NewsAggregator:
 
                 available = list(selected_sources)
                 if pin in self._sources:
+                    registered = self._sources[pin]
+                    if not registered.is_available():
+                        payload = source_unavailable_error(
+                            capability="news",
+                            source=pin,
+                            available=available,
+                            operation="news",
+                        )
+                        reason = getattr(registered, "unavailable_reason", None)
+                        detail = reason() if callable(reason) else None
+                        hint = getattr(registered, "install_hint", None)
+                        install = hint() if callable(hint) else None
+                        if detail:
+                            payload["error"] = (
+                                f"News source '{pin}' is unavailable because {detail}."
+                            )
+                        if install:
+                            payload["remediation"] = (
+                                f"Install it with {install}, or pass source=auto "
+                                "to use every available adapter."
+                            )
+                        if pin == "ycnbc":
+                            payload["missing_extra"] = "news-ycnbc"
+                        return payload
                     return capability_unsupported_error(
                         capability="news",
                         source=pin,

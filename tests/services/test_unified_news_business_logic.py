@@ -1989,6 +1989,24 @@ def test_fetch_unified_news_source_pin_filters_adapters(monkeypatch) -> None:
     assert unknown["error_code"] == "research_source_unavailable"
 
 
+def test_pinned_ycnbc_missing_dependency_is_source_unavailable(monkeypatch) -> None:
+    _disable_ycnbc(monkeypatch)
+    aggregator = svc.NewsAggregator()
+    aggregator._sources = {
+        "finviz": aggregator._sources["finviz"],
+        "ycnbc": svc.YCNBCNewsSource(),
+    }
+
+    result = aggregator.fetch_news(source="ycnbc")
+
+    assert result["success"] is False
+    assert result["error_code"] == "research_source_unavailable"
+    assert "does not support news" not in result["error"]
+    assert "ycnbc package is not installed" in result["error"]
+    assert "news-ycnbc" in result["remediation"]
+    assert result["missing_extra"] == "news-ycnbc"
+
+
 def test_fetch_unified_news_returns_failure_when_all_sources_error(monkeypatch) -> None:
     class BrokenSource:
         name = "broken"
