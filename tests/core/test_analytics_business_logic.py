@@ -2309,6 +2309,10 @@ def test_forecast_strategy_insufficient_data_explains_threshold_coverage(
     assert candidate["signal_counts"]["short"] == 0
     assert candidate["signal_counts"]["neutral"] == 200
     assert candidate["signal_counts"]["non_finite_or_unavailable"] > 0
+    assert result["success"] is False
+    assert result["error_code"] == "strategy_validation_no_evaluable_candidates"
+    assert result["candidate_counts"]["insufficient_data"] == 1
+    assert result["candidate_counts"]["complete"] == 0
 
 
 def test_portfolio_risk_marks_empty_position_book() -> None:

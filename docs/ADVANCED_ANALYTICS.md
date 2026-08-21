@@ -109,6 +109,22 @@ Use `--strategy` for a single built-in strategy with default parameters. Use
 the JSON `--candidates` form for parameterized built-ins, forecast-threshold
 candidates, or multi-candidate validation.
 
+A forecast-threshold candidate compares each forecast's expected simple return
+`(forecast_price - last_close) / last_close` with `long_above` and
+`short_below`. Those thresholds are fractions: `0.005` means 0.5%. Barrier
+`tp_pct`/`sl_pct` stay in percentage points (`0.5` means 0.5%), so the two
+objects in the same request use different numeric conventions.
+
+```bash
+mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 200 \
+  --candidates '[{"id":"drift-half","type":"forecast_threshold","method":"drift","params":{"lookback":30},"horizon":1,"long_above":0.005,"short_below":-0.005}]' \
+  --barrier '{"horizon":1,"tp_pct":0.5,"sl_pct":0.5}' --json
+```
+
+If every candidate reports `evaluation_status=insufficient_data`, the command
+fails with `strategy_validation_no_evaluable_candidates` instead of a top-level
+success. Mixed requests stay successful and count omitted candidates.
+
 Candidate parameters are fixed before validation; this tool does not optimize
 and validate on the same sample. Candidate IDs are trimmed, case-insensitively
 unique within the request, and remain the stable correlation key after ranking.

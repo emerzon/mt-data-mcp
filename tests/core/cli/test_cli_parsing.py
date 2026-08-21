@@ -1130,6 +1130,8 @@ class TestAddDynamicArguments:
         [
             ("options_barrier_price", "barrier", "knock-in/knock-out"),
             ("strategy_validate", "candidates", "builtin_strategy"),
+            ("strategy_validate", "candidates", "forecast_threshold"),
+            ("strategy_validate", "candidates", "0.005"),
             ("strategy_validate", "barrier", "next-open execution"),
         ],
     )

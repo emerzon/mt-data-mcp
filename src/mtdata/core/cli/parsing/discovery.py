@@ -435,10 +435,15 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "and strike. This is a numeric parametric pricer; it does not fetch a symbol quote."
     ),
     ("strategy_validate", "candidates"): (
-        "JSON strategy candidate list. Example: "
+        "JSON strategy candidate list. Built-in example: "
         "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
-        "\"strategy\":\"ema_cross\"}]'. Candidate types are builtin_strategy "
-        "and forecast_threshold."
+        "\"strategy\":\"ema_cross\"}]'. Forecast-threshold example: "
+        "'[{\"id\":\"drift-half\",\"type\":\"forecast_threshold\","
+        "\"method\":\"drift\",\"params\":{\"lookback\":30},\"horizon\":1,"
+        "\"long_above\":0.005,\"short_below\":-0.005}]'. long_above and "
+        "short_below are simple-return fractions (0.005 = 0.5%), not "
+        "percentage points. Candidate types are builtin_strategy and "
+        "forecast_threshold."
     ),
     ("strategy_validate", "barrier"): (
         "JSON next-open execution barrier for strategy P&L (not labels_triple_barrier). "

@@ -2558,6 +2558,23 @@ def validate_strategies(  # noqa: C901
         }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
     warnings_out: List[str] = []
+    candidate_counts = {
+        "requested": int(len(results)),
+        "complete": int(
+            sum(1 for item in results if item.get("evaluation_status") == "complete")
+        ),
+        "partial": int(
+            sum(1 for item in results if item.get("evaluation_status") == "partial")
+        ),
+        "insufficient_data": int(
+            sum(
+                1
+                for item in results
+                if item.get("evaluation_status") == "insufficient_data"
+            )
+        ),
+    }
+    evaluable = int(candidate_counts["complete"] + candidate_counts["partial"])
     if not complete:
         warnings_out.append(
             "Historical spread coverage is below 90%; positive classification "
@@ -2571,11 +2588,17 @@ def validate_strategies(  # noqa: C901
                 f"Candidate {item.get('id')} evaluated {folds_evaluated} of "
                 f"{request.n_splits} requested folds; positive classification is disabled."
             )
-    return {
+        elif item.get("evaluation_status") == "insufficient_data" and evaluable:
+            warnings_out.append(
+                f"Candidate {item.get('id')} was not evaluable: "
+                f"{item.get('insufficient_data_reason') or 'insufficient_data'}."
+            )
+    payload = {
         "success": True,
         "symbol": request.symbol,
         "timeframe": request.timeframe,
         "rankings": ranked,
+        "candidate_counts": candidate_counts,
         "validation": {
             "protocol": "anchored_expanding_fixed_candidate_oos",
             "n_splits": request.n_splits,
@@ -2624,6 +2647,17 @@ def validate_strategies(  # noqa: C901
         },
         "warnings": warnings_out,
     }
+    if results and evaluable == 0:
+        payload["success"] = False
+        payload["error"] = (
+            "No strategy candidates produced an evaluable out-of-sample result."
+        )
+        payload["error_code"] = "strategy_validation_no_evaluable_candidates"
+        payload["remediation"] = (
+            "Increase --lookback, reduce --n-splits or barrier horizon, or "
+            "choose a less sparse signal."
+        )
+    return payload
 
 
 def _position_side(row: Dict[str, Any], gateway: Any) -> str:

@@ -128,8 +128,22 @@ class StrategyCandidate(BaseModel):
     method: Optional[str] = None
     params: Dict[str, Any] = Field(default_factory=dict)
     horizon: int = Field(1, ge=1, le=100)
-    long_above: float = 0.0
-    short_below: float = 0.0
+    long_above: float = Field(
+        0.0,
+        description=(
+            "Long when expected return is at or above this simple-return "
+            "fraction. 0.005 means 0.5%; this is not the same unit as "
+            "barrier tp_pct."
+        ),
+    )
+    short_below: float = Field(
+        0.0,
+        description=(
+            "Short when expected return is at or below this simple-return "
+            "fraction. -0.005 means -0.5%; this is not the same unit as "
+            "barrier sl_pct."
+        ),
+    )
 
     @field_validator("id")
     @classmethod
