@@ -1823,7 +1823,11 @@ def _run_data_fetch_ticks_impl(
         effective_limit if effective_limit is not None else request.limit
     )
     limit_explicit = "limit" in getattr(request, "model_fields_set", set())
-    range_selection = "first_n"
+    range_selection = (
+        "last_n"
+        if request.start and request.end and not limit_explicit
+        else "first_n"
+    )
     page_offset = 0
     if request.cursor:
         if not request.start or not request.end:
