@@ -197,7 +197,101 @@ def _collect_report_timestamp_candidates(value: Any) -> List[datetime]:
     return candidates
 
 
-def _derive_report_data_as_of(sections: Any) -> str | None:
+def _first_report_timestamp(
+    payload: Any,
+    keys: tuple[str, ...],
+) -> datetime | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in keys:
+        parsed = _parse_report_timestamp(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _report_base_timestamp_candidates(
+    sections: Any,
+    *,
+    base_timeframe: str | None = None,
+) -> List[datetime]:
+    if not isinstance(sections, dict):
+        return []
+
+    candidates: List[datetime] = []
+    context = sections.get("context")
+    if isinstance(context, dict):
+        context_time = _first_report_timestamp(
+            context.get("last_snapshot"),
+            ("time", "time_epoch"),
+        )
+        if context_time is None:
+            context_time = _first_report_timestamp(
+                context,
+                (
+                    "source_bar_time",
+                    "last_bar_time",
+                    "last_bar_epoch",
+                    "data_as_of",
+                    "data_as_of_epoch",
+                ),
+            )
+        if context_time is None:
+            context_time = _first_report_timestamp(
+                context.get("freshness"),
+                (
+                    "source_bar_time",
+                    "last_observation_time",
+                    "last_observation_epoch",
+                    "data_as_of",
+                    "data_as_of_epoch",
+                ),
+            )
+        if context_time is not None:
+            candidates.append(context_time)
+
+    forecast = sections.get("forecast")
+    forecast_time = _first_report_timestamp(
+        forecast,
+        (
+            "last_observation_time",
+            "last_observation_epoch",
+            "data_as_of",
+            "data_as_of_epoch",
+        ),
+    )
+    if forecast_time is not None:
+        candidates.append(forecast_time)
+
+    if candidates or not isinstance(base_timeframe, str):
+        return candidates
+
+    normalized_timeframe = base_timeframe.strip().upper()
+    if not normalized_timeframe:
+        return candidates
+    for section_name in ("contexts_multi", "pivot_multi"):
+        timeframe_sections = sections.get(section_name)
+        if not isinstance(timeframe_sections, dict):
+            continue
+        timeframe_payload = next(
+            (
+                value
+                for key, value in timeframe_sections.items()
+                if str(key).strip().upper() == normalized_timeframe
+            ),
+            None,
+        )
+        timeframe_time = _first_report_timestamp(
+            timeframe_payload,
+            ("source_bar_time", "last_bar_time", "last_bar_epoch"),
+        )
+        if timeframe_time is not None:
+            candidates.append(timeframe_time)
+            break
+    return candidates
+
+
+def _derive_oldest_section_data_as_of(sections: Any) -> str | None:
     if not isinstance(sections, dict):
         return None
     section_times: List[datetime] = []
@@ -206,6 +300,44 @@ def _derive_report_data_as_of(sections: Any) -> str | None:
     if not section_times:
         return None
     return _format_report_timestamp(min(section_times))
+
+
+def _derive_report_timestamp_contract(
+    sections: Any,
+    *,
+    base_timeframe: str | None = None,
+) -> Dict[str, str | None]:
+    oldest_section = _derive_oldest_section_data_as_of(sections)
+    base_times = _report_base_timestamp_candidates(
+        sections,
+        base_timeframe=base_timeframe,
+    )
+    if base_times:
+        return {
+            "as_of": _format_report_timestamp(min(base_times)),
+            "as_of_basis": "base_timeframe_last_completed_bar_open",
+            "oldest_section_data_as_of": oldest_section,
+        }
+    return {
+        "as_of": oldest_section,
+        "as_of_basis": (
+            "oldest_selected_section_timestamp"
+            if oldest_section is not None
+            else None
+        ),
+        "oldest_section_data_as_of": oldest_section,
+    }
+
+
+def _derive_report_data_as_of(
+    sections: Any,
+    *,
+    base_timeframe: str | None = None,
+) -> str | None:
+    return _derive_report_timestamp_contract(
+        sections,
+        base_timeframe=base_timeframe,
+    )["as_of"]
 
 
 def _report_temporal_alignment(sections: Any) -> Dict[str, Any] | None:
@@ -544,6 +676,8 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
         "section_run_status",
         "content_detail",
         "as_of",
+        "as_of_basis",
+        "oldest_section_data_as_of",
         "generated_at",
         "timezone",
         "summary_structured",
@@ -889,6 +1023,11 @@ def _compact_report_payload(  # noqa: C901
     if timezone_label:
         compact["timezone"] = timezone_label
     compact["as_of"] = report.get("as_of")
+    if report.get("as_of_basis") not in (None, ""):
+        compact["as_of_basis"] = report.get("as_of_basis")
+    oldest_section_data_as_of = report.get("oldest_section_data_as_of")
+    if oldest_section_data_as_of not in (None, "", report.get("as_of")):
+        compact["oldest_section_data_as_of"] = oldest_section_data_as_of
     if report.get("data_as_of_status") not in (None, ""):
         compact["data_as_of_status"] = report.get("data_as_of_status")
     structured_preview = report.get("summary_structured")
@@ -2546,10 +2685,32 @@ def run_report_generate(  # noqa: C901
             if generated_at_text is None:
                 generated_at_text = _format_report_timestamp(datetime.now(timezone.utc))
             rep["generated_at"] = generated_at_text
-            data_as_of = _derive_report_data_as_of(source_sections or rep.get("sections"))
-            rep["as_of"] = data_as_of
-            if data_as_of is None:
+            report_sections = source_sections or rep.get("sections")
+            meta_timeframe = meta.get("timeframe")
+            base_timeframe = params.get("timeframe") or meta_timeframe
+            timestamp_contract = _derive_report_timestamp_contract(
+                report_sections,
+                base_timeframe=(
+                    str(base_timeframe)
+                    if base_timeframe not in (None, "")
+                    else None
+                ),
+            )
+            rep["as_of"] = timestamp_contract["as_of"]
+            if timestamp_contract["as_of_basis"] is not None:
+                rep["as_of_basis"] = timestamp_contract["as_of_basis"]
+            else:
+                rep.pop("as_of_basis", None)
+            if timestamp_contract["oldest_section_data_as_of"] is not None:
+                rep["oldest_section_data_as_of"] = timestamp_contract[
+                    "oldest_section_data_as_of"
+                ]
+            else:
+                rep.pop("oldest_section_data_as_of", None)
+            if timestamp_contract["as_of"] is None:
                 rep["data_as_of_status"] = "unavailable"
+            else:
+                rep.pop("data_as_of_status", None)
             rep = _attach_report_timezone(rep)
             rep = _prioritize_report_payload(rep)
 

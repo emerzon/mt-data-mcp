@@ -164,16 +164,21 @@ session, news, temporal seasonality, regime, or multi-timeframe variants. Check 
 value: a successful report envelope can still describe omitted or partial
 sections.
 
-Root `as_of` is the market-data cutoff derived from the selected sections;
-`generated_at` is the later assembly time. If no section exposes a trustworthy
-market timestamp, `as_of` is null and `data_as_of_status` is `unavailable`.
+Root `as_of` is the last completed base-timeframe bar-open anchor shared by the
+context and forecast sections. `as_of_basis` names that contract, while
+`oldest_section_data_as_of` preserves the oldest timestamp used by any selected
+section. `generated_at` is the later assembly time. If no base-timeframe anchor
+is present, `as_of` falls back to the oldest selected section timestamp and
+`as_of_basis` says so. If no section exposes a trustworthy market timestamp,
+`as_of` is null and `data_as_of_status` is `unavailable`.
 When context, forecast, or a multi-timeframe source falls outside its
 timeframe-aware session tolerance, `temporal_alignment` reports every checked
 cutoff and the mismatched sections. The report is partial and the combined
 narrative is omitted rather than mixing data from different cutoffs.
 Multi-timeframe context and pivot entries expose `source_bar_time`,
-`source_bar_timezone`, and `source_bar_state`; the root cutoff is the oldest
-selected source time so mixed timeframes are represented conservatively.
+`source_bar_timezone`, and `source_bar_state`. Use
+`oldest_section_data_as_of`, rather than root `as_of`, when a workflow needs the
+most conservative cross-timeframe timestamp.
 
 Barrier sections preserve negative optimizer decisions. When neither direction
 has a mathematically viable candidate, each direction retains its status,

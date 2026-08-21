@@ -334,6 +334,13 @@ the latest analyzed bar's close, not its open. A successful analytical result
 can still have `history_policy_ok=false`; treat that as historical context and
 refresh the market data before using it in a current-market decision.
 
+Root `as_of` follows the output's scope. Current quote and position snapshots
+use their retrieval or assembly instant. In `report_generate`, it is the last
+completed base-timeframe bar-open anchor and `as_of_basis` states that rule;
+`generated_at` is the assembly instant. Multi-timeframe reports separately
+publish `oldest_section_data_as_of` so freshness checks do not mistake an older
+D1 context bar for the report's H1 anchor.
+
 ---
 
 ## TOON vs JSON
