@@ -29,6 +29,7 @@ class TestToolClassification:
         assert classify_tool_surface("forecast_generate") == "dedicated_ui"
         assert classify_tool_surface("regime_detect") == "generic_runner"
         assert classify_tool_surface("forecast_tune_optuna") == "intentional_omit"
+        assert classify_tool_surface("wait_event") == "intentional_omit"
         assert tool_requires_confirmation("trade_place") is True
         assert tool_requires_confirmation("tools_list") is False
         assert "trade_place" in MUTATING_TOOLS
@@ -190,6 +191,13 @@ class TestListAndInvoke:
 
         assert exc.value.status_code == 403
         assert exc.value.detail["rationale"].startswith("Long-running optimization")
+
+    def test_wait_event_is_omitted_from_sync_invoke(self):
+        with pytest.raises(HTTPException) as exc:
+            invoke_tool_for_webapi("wait_event")
+
+        assert exc.value.status_code == 403
+        assert "wait_event" in exc.value.detail["rationale"]
 
     @pytest.mark.parametrize(
         ("error", "status_code", "error_code"),

@@ -60,7 +60,7 @@ Living matrix: **[WEBUI_API_COVERAGE.md](WEBUI_API_COVERAGE.md)** (route × used
 **Now:** `GET/POST /api/v1/tools*` plus the SPA **Tools** runner expose almost the full catalog. Dedicated chart widgets remain the comfortable path for candles, levels, denoise, forecast, volatility, and backtest. Two deliberate omissions:
 
 - `forecast_tune_optuna` / `forecast_tune_genetic` — no HTTP progress or cancel contract (run via CLI/MCP).
-- Long `wait_event` blocks — the browser is the wrong place; see [WAIT_EVENT.md](WAIT_EVENT.md).
+- `wait_event` — blocking waits have no HTTP progress or cancel contract; see [WAIT_EVENT.md](WAIT_EVENT.md).
 
 Live `trade_*` mutations from the SPA still require an explicit confirm gate, dry-run defaults, and the [trading safety](TRADING_SAFETY.md) rules. That is the safety design; it is not “trading is out of the Web API.”
 

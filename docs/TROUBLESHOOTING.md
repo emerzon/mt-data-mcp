@@ -45,7 +45,7 @@ User tour: [WEBUI.md](WEBUI.md).
 | Connection chip is not ready | MetaTrader 5 must be running and logged in. Check `http://127.0.0.1:8000/api/v1/ready`. |
 | Overlay or forecast banner error | The rest of the chart can still work. Retry after `/ready` is healthy. |
 | Auth control / 401 | Enter the same token as `WEBAPI_AUTH_TOKEN`. It lives only in this tab. |
-| Tools run of `wait_event` hangs | Cancel and use the [CLI wait guide](WAIT_EVENT.md) instead. |
+| Tools invoke of `wait_event` is refused | That tool is omitted from the Web runner. Use the [CLI wait guide](WAIT_EVENT.md) instead. |
 | Tools confirm box for `trade_place` | That can send a **real** order if dry-run is off. Demo account; see [TRADING_SAFETY.md](TRADING_SAFETY.md). |
 
 ---

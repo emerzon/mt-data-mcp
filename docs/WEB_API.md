@@ -339,8 +339,8 @@ by default; `detail=full` requests richer sections and adds related-tool
 suggestions when the tool defines them. `fields` accepts comma-separated names
 or dotted paths and keeps the standard envelope fields alongside each match.
 
-`forecast_tune_genetic` and `forecast_tune_optuna` are cataloged as
-`intentional_omit`: tuning can run longer than an HTTP request and the generic
+`forecast_tune_genetic`, `forecast_tune_optuna`, and `wait_event` are cataloged
+as `intentional_omit`: they can run longer than an HTTP request and the generic
 runner has no progress or cancellation contract. Run those tools through CLI or
 MCP instead.
 

@@ -90,7 +90,7 @@ Every backend MCP/bootstrap tool classified for the SPA. User tour:
 | `trade_var_cvar_calculate` | trading | generic_runner | tools-runner/generic | no |  |
 | `volatility_term_structure` | research | generic_runner | tools-runner/generic | no |  |
 | `volume_profile_levels` | research | dedicated_ui | chart-workspace/volume-profile-overlay | no |  |
-| `wait_event` | data | generic_runner | tools-runner/generic | no |  |
+| `wait_event` | data | intentional_omit | Blocking waits have no HTTP progress or cancellation contract. Run wait_event through CLI or MCP instead. | no |  |
 
 ## Surface meanings
 

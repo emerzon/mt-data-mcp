@@ -68,6 +68,10 @@ INTENTIONAL_OMIT_TOOLS: dict[str, str] = {
         "Long-running optimization has no HTTP progress or cancellation contract. "
         "Run it through CLI or MCP instead."
     ),
+    "wait_event": (
+        "Blocking waits have no HTTP progress or cancellation contract. "
+        "Run wait_event through CLI or MCP instead."
+    ),
 }
 
 

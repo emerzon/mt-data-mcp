@@ -84,8 +84,8 @@ and tick-count set. They do **not** fetch support/resistance or pivot zones.
 
 ## Web UI warning
 
-Do **not** run `wait_event` from **Tools** in the chart workspace for a long
-block. Use `mtdata-cli` or an MCP assistant instead. See [WEBUI.md](WEBUI.md#do-not-run-these-from-the-browser).
+`wait_event` is omitted from the Web UI Tools runner. Use `mtdata-cli` or an
+MCP assistant instead. See [WEBUI.md](WEBUI.md#do-not-run-these-from-the-browser).
 
 ---
 
