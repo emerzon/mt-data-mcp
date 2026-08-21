@@ -13,6 +13,7 @@ from ..services.research.protocols import CalendarRequest
 from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
@@ -183,6 +184,75 @@ def calendar(
                 "operation": "calendar",
                 "valid_values": {"kind": ["earnings"], "view": ["range", "period"]},
             }
+        if request.view == "period":
+            invalid = [
+                name
+                for name, value in (
+                    ("start", request.start),
+                    ("end", request.end),
+                    ("impact", request.impact),
+                    ("country", request.country),
+                    ("currency", request.currency),
+                    ("upcoming", request.upcoming),
+                )
+                if value is not None
+            ]
+            if invalid:
+                return build_error_payload(
+                    "Period view does not use "
+                    + ", ".join(invalid)
+                    + ".",
+                    code="incompatible_parameters",
+                    operation="calendar",
+                    details={"invalid": invalid, "view": "period"},
+                    valid_values={
+                        "view": ["period"],
+                        "controls": [
+                            "period",
+                            "limit",
+                            "page",
+                            "include_elapsed",
+                            "detail",
+                        ],
+                    },
+                    remediation=(
+                        "Drop start/end and economic filters, or switch to "
+                        "view=range."
+                    ),
+                )
+        if request.view == "range":
+            invalid = []
+            if request.period is not None:
+                invalid.append("period")
+            if request.include_elapsed:
+                invalid.append("include_elapsed")
+            if invalid:
+                return build_error_payload(
+                    "Range view does not use "
+                    + ", ".join(invalid)
+                    + ".",
+                    code="incompatible_parameters",
+                    operation="calendar",
+                    details={"invalid": invalid, "view": "range"},
+                    valid_values={
+                        "view": ["range"],
+                        "controls": [
+                            "start",
+                            "end",
+                            "impact",
+                            "country",
+                            "currency",
+                            "upcoming",
+                            "limit",
+                            "page",
+                            "detail",
+                        ],
+                    },
+                    remediation=(
+                        "Drop period/include_elapsed, or switch to view=period "
+                        "with kind=earnings."
+                    ),
+                )
         # Structured calendars do not share a mergeable row schema yet. Use the
         # first available adapter (Finviz is preferred by the registry).
         adapter = adapters[0]

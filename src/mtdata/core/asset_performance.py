@@ -12,6 +12,7 @@ from ..services.research.payload import stamp_provider
 from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,41 @@ def asset_performance(
         )
         if error is not None:
             return error
+        universe_key = str(universe)
+        invalid: list[str] = []
+        if universe_key != "forex" and symbol is not None:
+            invalid.append("symbol")
+        if universe_key != "insider" and str(option) != "latest":
+            invalid.append("option")
+        if universe_key != "insider" and int(page) != 1:
+            invalid.append("page")
+        if universe_key == "insider" and int(offset) != 0:
+            invalid.append("offset")
+        if invalid:
+            valid_by_universe = {
+                "forex": ["symbol", "offset", "limit", "detail"],
+                "crypto": ["offset", "limit", "detail"],
+                "futures": ["offset", "limit", "detail"],
+                "insider": ["option", "page", "limit", "detail"],
+            }
+            return build_error_payload(
+                "Universe '"
+                + universe_key
+                + "' does not use "
+                + ", ".join(invalid)
+                + ".",
+                code="incompatible_parameters",
+                operation="asset_performance",
+                details={"invalid": invalid, "universe": universe_key},
+                valid_values={
+                    "universe": list(valid_by_universe),
+                    "controls": valid_by_universe.get(universe_key, []),
+                },
+                remediation=(
+                    "Drop the listed selectors, or switch --universe to one that "
+                    "implements them."
+                ),
+            )
         adapter = adapters[0]
         payload = adapter.fetch_performance(
             universe=str(universe),

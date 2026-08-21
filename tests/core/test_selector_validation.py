@@ -39,6 +39,20 @@ def test_news_rejects_explicit_empty_symbol() -> None:
     assert result["error_code"] == "empty_symbol_selector"
 
 
+def test_news_rejects_view_incompatible_controls() -> None:
+    ticker = _unwrap(news)(symbol="AAPL", view="ticker", offset=99)
+    market = _unwrap(news)(symbol="AAPL", view="market")
+    unified = _unwrap(news)(view="unified", news_type="blogs", page=99)
+
+    assert ticker["error_code"] == "incompatible_parameters"
+    assert ticker["details"]["invalid"] == ["offset"]
+    assert market["error_code"] == "incompatible_parameters"
+    assert market["details"]["invalid"] == ["symbol"]
+    assert unified["error_code"] == "incompatible_parameters"
+    assert "news_type" in unified["details"]["invalid"]
+    assert "page" in unified["details"]["invalid"]
+
+
 @pytest.mark.parametrize("tool", [confluence_levels, support_resistance_levels])
 def test_level_distance_cap_accepts_explicit_none(tool) -> None:
     annotation = get_runtime_annotations(_unwrap(tool))["max_distance_pct"]

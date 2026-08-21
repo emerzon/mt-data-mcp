@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mtdata.core.calendar import calendar
 from mtdata.services.research.capabilities import CALENDAR
 from mtdata.services.research.registry import reset_research_registry
@@ -62,6 +64,45 @@ def test_calendar_mt5_pin_is_capability_unsupported() -> None:
     assert result["error_code"] == "research_capability_unsupported"
     assert result["capability"] == CALENDAR
     assert "finviz" in result["valid_values"]["source"]
+
+
+def test_calendar_period_view_rejects_range_controls(monkeypatch) -> None:
+    reset_research_registry()
+    monkeypatch.setattr(
+        "mtdata.core.finviz.finviz_earnings",
+        lambda **_kwargs: pytest.fail("period view must not fetch with range controls"),
+    )
+
+    result = _unwrap(calendar)(
+        kind="earnings",
+        view="period",
+        period="next-week",
+        start="2000-01-01",
+        end="2000-01-02",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "incompatible_parameters"
+    assert "start" in result["details"]["invalid"]
+    assert "end" in result["details"]["invalid"]
+
+
+def test_calendar_range_view_rejects_period_controls(monkeypatch) -> None:
+    reset_research_registry()
+    monkeypatch.setattr(
+        "mtdata.core.finviz.run_finviz_calendar",
+        lambda **_kwargs: pytest.fail("range view must not fetch with period controls"),
+    )
+
+    result = _unwrap(calendar)(
+        kind="earnings",
+        view="range",
+        period="next-week",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "incompatible_parameters"
+    assert result["details"]["invalid"] == ["period"]
 
 
 def test_calendar_period_view_uses_earnings_alias(monkeypatch) -> None:

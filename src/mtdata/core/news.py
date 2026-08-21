@@ -776,6 +776,58 @@ def news(
         if default_compact_symbol_bucket_limit
         else limit_per_bucket_value
     )
+    view_key = str(view or "unified")
+    invalid_controls: list[str] = []
+    if view_key == "ticker":
+        if offset_value != 0:
+            invalid_controls.append("offset")
+        if limit_per_bucket_value is not None:
+            invalid_controls.append("limit_per_bucket")
+        if str(news_type) != "news":
+            invalid_controls.append("news_type")
+    elif view_key == "market":
+        if symbol not in (None, ""):
+            invalid_controls.append("symbol")
+        if offset_value != 0:
+            invalid_controls.append("offset")
+        if limit_per_bucket_value is not None:
+            invalid_controls.append("limit_per_bucket")
+    else:
+        if int(page) != 1:
+            invalid_controls.append("page")
+        if str(news_type) != "news":
+            invalid_controls.append("news_type")
+    if invalid_controls:
+        valid_by_view = {
+            "ticker": ["symbol", "limit", "page", "source", "detail"],
+            "market": ["news_type", "limit", "page", "source", "detail"],
+            "unified": [
+                "symbol",
+                "limit",
+                "offset",
+                "limit_per_bucket",
+                "source",
+                "detail",
+            ],
+        }
+        return build_error_payload(
+            "view='"
+            + view_key
+            + "' does not use "
+            + ", ".join(invalid_controls)
+            + ".",
+            code="incompatible_parameters",
+            operation="news",
+            details={"invalid": invalid_controls, "view": view_key},
+            valid_values={
+                "view": ["unified", "ticker", "market"],
+                "controls": valid_by_view.get(view_key, []),
+            },
+            remediation=(
+                "Use --page for ticker/market pagination and --offset for the "
+                "unified feed, or drop the listed controls."
+            ),
+        )
 
     def _fetch_raw_provider_page() -> Dict[str, Any]:
         from .finviz import finviz_market_news, finviz_news
