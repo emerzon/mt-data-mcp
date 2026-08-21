@@ -15,6 +15,7 @@ for _p in (_SRC, _ROOT):
         sys.path.insert(0, _p)
 
 from mtdata.forecast.backtest import forecast_backtest, strategy_backtest
+from mtdata.forecast.use_cases import _compact_backtest_result
 from mtdata.utils.time import _format_time_minimal
 
 
@@ -145,3 +146,32 @@ def test_strategy_backtest_full_includes_request_metadata() -> None:
     assert res_full["request"]["symbol"] == "EURUSD"
     assert res_full["request"]["strategy"] == "sma_cross"
     assert res_full["request"]["lookback"] == 50
+
+
+def test_compact_backtest_ranks_low_history_methods() -> None:
+    compact = _compact_backtest_result(
+        {
+            "success": True,
+            "results": {
+                "theta": {
+                    "success": True,
+                    "avg_rmse": 0.12,
+                    "history_sample_ok": False,
+                    "forecast_reliability": "low",
+                    "recommended_history_bars": 30,
+                    "low_history_anchors": 3,
+                    "warnings": ["3 of 3 anchors used fewer than the recommended 30 training bars."],
+                    "metrics_available": True,
+                }
+            },
+        }
+    )
+
+    ranked = compact["ranked_methods"][0]
+    assert ranked["ranking_status"] == "ranked"
+    assert ranked["history_sample_ok"] is False
+    assert ranked["forecast_reliability"] == "low"
+    assert ranked["recommended_history_bars"] == 30
+    assert ranked["selection_warning"] == "low_history_sample"
+    assert compact["results"]["theta"]["history_sample_ok"] is False
+    assert compact["results"]["theta"]["low_history_anchors"] == 3

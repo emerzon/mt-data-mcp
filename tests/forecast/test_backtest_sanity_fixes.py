@@ -320,6 +320,39 @@ class TestAnnualizationCadence:
         assert m1["trades_per_year"] == m2["trades_per_year"]
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_backtest_aggregates_low_history_reliability(self, fetch):
+        fetch.return_value = _make_df(80)
+        with patch("mtdata.forecast.backtest.forecast") as fc:
+            fc.return_value = {
+                "forecast_price": [101.0, 102.0],
+                "history_sample_ok": False,
+                "forecast_reliability": "low",
+                "recommended_history_bars": 30,
+                "history_shortfall_bars": 25,
+            }
+            result = forecast_backtest(
+                "EURUSD",
+                timeframe="H1",
+                methods=["theta"],
+                horizon=2,
+                steps=3,
+                spacing=2,
+                lookback=5,
+                detail="full",
+            )
+
+        method = result["results"]["theta"]
+        assert method["success"] is True
+        assert method["history_sample_ok"] is False
+        assert method["forecast_reliability"] == "low"
+        assert method["recommended_history_bars"] == 30
+        assert method["low_history_anchors"] == method["successful_tests"]
+        assert any("recommended 30" in warning for warning in method["warnings"])
+        details = method["details"]
+        assert details
+        assert all(row.get("history_sample_ok") is False for row in details if row.get("success"))
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_backtest_passes_actual_spacing_to_metrics(self, fetch):
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast") as fc:

@@ -2088,6 +2088,11 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
             "directional_accuracy_status",
             "metrics_available",
             "metrics_reason",
+            "history_sample_ok",
+            "forecast_reliability",
+            "recommended_history_bars",
+            "low_history_anchors",
+            "warnings",
         ):
             if key in method_payload:
                 method_out[key] = _compact_metric(key, method_payload[key])
@@ -2226,6 +2231,18 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa:
                 )
                 if row.get("metrics_reason"):
                     ranked_row["trading_metrics_reason"] = row["metrics_reason"]
+            if row.get("history_sample_ok") is False:
+                ranked_row["forecast_reliability"] = "low"
+                ranked_row["history_sample_ok"] = False
+                if recommended := row.get("recommended_history_bars"):
+                    ranked_row["recommended_history_bars"] = recommended
+                existing_warning = ranked_row.get("selection_warning")
+                low_history_warning = "low_history_sample"
+                ranked_row["selection_warning"] = (
+                    f"{existing_warning}; {low_history_warning}"
+                    if existing_warning
+                    else low_history_warning
+                )
         else:
             ranked_row["unranked_reason"] = (
                 row.get("error_code")

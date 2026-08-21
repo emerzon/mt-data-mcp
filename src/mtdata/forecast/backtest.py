@@ -2657,6 +2657,14 @@ def forecast_backtest(  # noqa: C901
                         "trade_return": net_return,
                         "training_bars_used": anchor_training_bars,
                     }
+                    for key in (
+                        "history_sample_ok",
+                        "forecast_reliability",
+                        "recommended_history_bars",
+                        "history_shortfall_bars",
+                    ):
+                        if r.get(key) is not None:
+                            detail_row[key] = r.get(key)
                     if da is None and directional_opportunities > 0 and directional_calls_made == 0:
                         detail_row["directional_accuracy_status"] = "no_directional_calls"
                     if include_paths:
@@ -2762,6 +2770,42 @@ def forecast_backtest(  # noqa: C901
                     )
                 if _dn_used:
                     agg["denoise_used"] = _dn_used
+                low_history = [
+                    row
+                    for row in ok
+                    if row.get("history_sample_ok") is False
+                ]
+                if low_history:
+                    recommended = next(
+                        (
+                            row.get("recommended_history_bars")
+                            for row in low_history
+                            if row.get("recommended_history_bars") is not None
+                        ),
+                        None,
+                    )
+                    agg["history_sample_ok"] = False
+                    agg["forecast_reliability"] = "low"
+                    agg["low_history_anchors"] = int(len(low_history))
+                    if recommended is not None:
+                        agg["recommended_history_bars"] = recommended
+                    warning = (
+                        f"{len(low_history)} of {len(ok)} anchors used fewer than "
+                        f"the recommended {recommended} training bars."
+                        if recommended is not None
+                        else (
+                            f"{len(low_history)} of {len(ok)} anchors used a "
+                            "below-recommended training sample."
+                        )
+                    )
+                    existing = agg.get("warnings")
+                    if isinstance(existing, list):
+                        existing.append(warning)
+                    else:
+                        agg["warnings"] = [warning]
+                elif ok:
+                    agg["history_sample_ok"] = True
+                    agg["forecast_reliability"] = "adequate"
                 results[method] = agg
             else:
                 results[method] = {
