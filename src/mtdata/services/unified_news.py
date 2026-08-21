@@ -1571,12 +1571,32 @@ class FinvizNewsSource:
 
     name = "finviz"
 
+    def __init__(self) -> None:
+        self.endpoint_errors: Dict[str, Any] = {}
+
     def is_available(self) -> bool:
         return True
+
+    def _record_endpoint_error(self, endpoint: str, payload: Any) -> None:
+        if isinstance(payload, dict) and payload.get("success") is False:
+            self.endpoint_errors[endpoint] = {
+                "error": payload.get("error"),
+                "error_code": payload.get("error_code"),
+                "retry_after": payload.get("retry_after"),
+            }
+        else:
+            self.endpoint_errors.pop(endpoint, None)
+
+    def _record_endpoint_exception(self, endpoint: str, exc: BaseException) -> None:
+        self.endpoint_errors[endpoint] = {
+            "error": str(exc) or exc.__class__.__name__,
+            "error_code": "provider_request_failed",
+        }
 
     def fetch_general_candidates(self, limit: int) -> List[NewsItem]:
         try:
             result = get_general_news(news_type="news", limit=limit, page=1)
+            self._record_endpoint_error("general_news", result)
             if not result.get("success"):
                 return []
             items = result.get("items", [])
@@ -1614,8 +1634,9 @@ class FinvizNewsSource:
                     )
                 )
             return out
-        except Exception:
+        except Exception as exc:
             logger.exception("Error fetching Finviz general candidates")
+            self._record_endpoint_exception("general_news", exc)
             return []
 
     def fetch_calendar_candidates(self, limit: int) -> List[NewsItem]:
@@ -1828,6 +1849,7 @@ class FinvizNewsSource:
     def _fetch_economic_candidates(self, limit: int) -> List[NewsItem]:
         try:
             result = get_economic_calendar(limit=limit, page=1)
+            self._record_endpoint_error("upcoming_events", result)
             if not result.get("success"):
                 return []
             out: List[NewsItem] = []
@@ -1888,8 +1910,9 @@ class FinvizNewsSource:
                     )
                 )
             return out
-        except Exception:
+        except Exception as exc:
             logger.exception("Error fetching Finviz economic candidates")
+            self._record_endpoint_exception("upcoming_events", exc)
             return []
 
 
@@ -2099,13 +2122,22 @@ class NewsAggregator:
                     if callable(calendar_fetcher):
                         calendar_items = calendar_fetcher(candidate_limit)
                         calendar_candidates.extend(calendar_items)
+                endpoint_errors = dict(getattr(source, "endpoint_errors", {}) or {})
                 source_details[name] = {
-                    "success": True,
+                    "success": not bool(endpoint_errors)
+                    or bool(
+                        general_items
+                        or news_items
+                        or context_items
+                        or calendar_items
+                    ),
                     "general_candidates": len(general_items),
                     "related_candidates": len(news_items),
                     "market_context_candidates": len(context_items),
                     "calendar_candidates": len(calendar_items),
                 }
+                if endpoint_errors:
+                    source_details[name]["endpoint_errors"] = endpoint_errors
             except NewsSymbolUnavailableError as exc:
                 return {
                     "success": False,
@@ -2349,8 +2381,6 @@ class NewsAggregator:
         selected_upcoming_counts = Counter(item.provider for item in upcoming_events)
         selected_recent_counts = Counter(item.provider for item in recent_events)
         for name, details in source_details.items():
-            if not details.get("success"):
-                continue
             details["selected_general"] = selected_general_counts.get(name, 0)
             details["selected_related"] = selected_related_counts.get(name, 0)
             details["selected_market_context"] = selected_context_counts.get(name, 0)
@@ -2365,8 +2395,15 @@ class NewsAggregator:
                 + details["selected_upcoming"]
                 + details["selected_recent"]
             )
+        endpoint_failures = {
+            name: details.get("endpoint_errors")
+            for name, details in source_details.items()
+            if isinstance(details.get("endpoint_errors"), dict)
+            and details.get("endpoint_errors")
+        }
         payload = {
             "success": True,
+            "partial": bool(endpoint_failures),
             "symbol": context.symbol if context is not None else None,
             "relevance_status": (
                 "market_wide"
@@ -2405,6 +2442,27 @@ class NewsAggregator:
         }
         if related_selection is not None:
             payload["related_selection"] = related_selection
+        if endpoint_failures:
+            payload["provider_failures"] = endpoint_failures
+            warnings_out: List[str] = []
+            for provider, errors in endpoint_failures.items():
+                if not isinstance(errors, dict):
+                    continue
+                retry_after = next(
+                    (
+                        info.get("retry_after")
+                        for info in errors.values()
+                        if isinstance(info, dict) and info.get("retry_after") not in (None, "")
+                    ),
+                    None,
+                )
+                message = f"{provider} failed {', '.join(sorted(errors))}."
+                if retry_after not in (None, ""):
+                    message += f" Retry after {retry_after} seconds."
+                warnings_out.append(message)
+            if warnings_out:
+                payload["warnings"] = warnings_out
+            payload["status"] = "partial"
         if context is not None and context.asset_class == "equity":
             provider_symbol = normalize_finviz_equity_symbol(context.symbol)
             if provider_symbol and provider_symbol != context.symbol:

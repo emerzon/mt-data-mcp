@@ -1989,6 +1989,53 @@ def test_fetch_unified_news_source_pin_filters_adapters(monkeypatch) -> None:
     assert unknown["error_code"] == "research_source_unavailable"
 
 
+def test_finviz_partial_calendar_failure_is_not_silent_success(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda **_kwargs: {
+            "success": True,
+            "items": [{"Title": "Headline", "Source": "Reuters", "Date": "Aug-19", "Link": "https://example.test"}],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda **_kwargs: {
+            "success": False,
+            "error": "Finviz rate limit encountered. Retry after 60 seconds.",
+            "error_code": "finviz_rate_limited",
+            "retry_after": 60,
+        },
+    )
+    source = svc.FinvizNewsSource()
+    aggregator = svc.NewsAggregator()
+    aggregator._sources = {"finviz": source}
+
+    result = aggregator.fetch_news()
+
+    assert result["success"] is True
+    assert result["partial"] is True
+    assert result["status"] == "partial"
+    assert result["general_news"]
+    assert not result.get("upcoming_events")
+    assert "upcoming_events" in result["provider_failures"]["finviz"]
+    assert result["provider_failures"]["finviz"]["upcoming_events"]["error_code"] == (
+        "finviz_rate_limited"
+    )
+    assert any("Retry after 60" in warning for warning in result["warnings"])
+
+    from mtdata.core.news import normalize_news_output
+
+    compact = normalize_news_output(result, detail="compact")
+    assert compact["partial"] is True
+    assert compact["status"] == "partial"
+    assert compact["warnings"]
+    assert compact["provider_failures"]["finviz"]["upcoming_events"]["error_code"] == (
+        "finviz_rate_limited"
+    )
+
+
 def test_pinned_ycnbc_missing_dependency_is_source_unavailable(monkeypatch) -> None:
     _disable_ycnbc(monkeypatch)
     aggregator = svc.NewsAggregator()
