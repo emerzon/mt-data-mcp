@@ -1977,6 +1977,24 @@ def test_analytics_window_keeps_explicit_equal_instants_invalid() -> None:
         )
 
 
+def test_microstructure_rejects_future_only_history_window() -> None:
+    gateway = FakeGateway()
+    gateway.copy_ticks_range = MagicMock()
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(
+            symbol="EURUSD",
+            start="2028-01-01T10:00:00Z",
+            end="2028-01-01T11:00:00Z",
+        ),
+        gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    assert "at or before" in result["remediation"]
+    gateway.copy_ticks_range.assert_not_called()
+
+
 def test_execution_quality_rejects_future_only_history_window() -> None:
     result = analyze_execution_quality(
         TradeExecutionQualityRequest(

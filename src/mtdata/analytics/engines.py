@@ -617,6 +617,9 @@ def _microstructure_latest_quote(
 def analyze_microstructure(  # noqa: C901
     request: MarketMicrostructureRequest, gateway: Any
 ) -> Dict[str, Any]:
+    range_error = validate_historical_range(request.start, request.end)
+    if range_error is not None:
+        return range_error
     try:
         symbol_info = gateway.symbol_info(request.symbol)
     except Exception:
