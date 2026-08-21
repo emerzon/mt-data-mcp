@@ -2461,6 +2461,48 @@ def test_portfolio_mark_conflict_uses_canonical_execution_gate() -> None:
     assert context["unusable_marks"] == []
 
 
+def test_portfolio_risk_compact_keeps_quote_conflict_warning() -> None:
+    gateway = FakeGateway()
+    now = _now()
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.1000,
+        ask=1.1002,
+        time=now,
+        time_msc=now * 1000,
+    )
+    gateway.tick_rows = [
+        {
+            "bid": 1.1001,
+            "ask": 1.1003,
+            "time": now,
+            "time_msc": now * 1000,
+        }
+    ]
+    gateway.positions = [
+        {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
+    ]
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+            detail="compact",
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["warnings"]
+    assert any(str(warning).startswith("EURUSD:") for warning in result["warnings"])
+    marks = result["model_context"]["mark_freshness"]
+    assert marks[0]["symbol"] == "EURUSD"
+    assert marks[0]["warning"]
+    assert "quote_source_state" in marks[0]
+    assert "quote_source_conflict" not in marks[0]
+
+
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     gateway = FakeGateway()
     gateway.account_info = lambda: SimpleNamespace(currency="USD", equity=25000.0)

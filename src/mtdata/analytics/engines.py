@@ -182,7 +182,24 @@ def _portfolio_model_context_for_detail(
 ) -> Dict[str, Any]:
     out = dict(context)
     if detail == "compact":
-        out.pop("mark_freshness", None)
+        marks = out.get("mark_freshness")
+        if isinstance(marks, list):
+            out["mark_freshness"] = [
+                {
+                    key: item.get(key)
+                    for key in (
+                        "symbol",
+                        "quote_source_state",
+                        "warning",
+                    )
+                    if item.get(key) not in (None, "")
+                }
+                for item in marks
+                if isinstance(item, dict)
+                and item.get("warning")
+            ]
+            if not out["mark_freshness"]:
+                out.pop("mark_freshness", None)
     return out
 
 
@@ -3132,6 +3149,16 @@ def decompose_portfolio_risk(  # noqa: C901
     modeled_symbols = [str(column) for column in standardized.columns]
     omitted_symbols = sorted(set(requested_symbols) - set(modeled_symbols))
     warnings_out: List[str] = []
+    for mark in model_context.get("mark_freshness") or []:
+        if not isinstance(mark, dict):
+            continue
+        warning = str(mark.get("warning") or "").strip()
+        if not warning:
+            continue
+        symbol = str(mark.get("symbol") or "").strip() or "unknown"
+        qualified = f"{symbol}: {warning}"
+        if qualified not in warnings_out:
+            warnings_out.append(qualified)
     if mark_omissions:
         warnings_out.append(
             "Some positions had non-live marks and were omitted because allow_partial=true."
