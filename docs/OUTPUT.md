@@ -275,7 +275,7 @@ Failures return a **structured** payload (not just a string) so callers can reac
 |-------|:---:|---------|
 | `success` | ✅ | Always `false` on errors |
 | `error` | ✅ | Human-readable message |
-| `error_code` | ✅ | Stable lowercase machine-readable code (e.g. `symbol_not_found`, `mt5_connection_error`) |
+| `error_code` | ✅ | Stable lowercase machine-readable code (e.g. `symbol_not_found`, `invalid_date_range`). Shared failures are unprefixed; the tool name lives in `operation`. |
 | `request_id` | ✅ | Correlation id for logs |
 | `operation` | | The tool that failed |
 | `remediation` | | Suggested fix |

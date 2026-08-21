@@ -135,7 +135,7 @@ library.
 
 ## Output contract
 
-Every tool returns the **same canonical payload**; CLI, MCP, and Web API only change presentation. For the full envelope (`success` / error, `detail`, `output_fields`, pagination, error codes), see [OUTPUT.md](OUTPUT.md).
+JSON (`--json`) is the canonical machine payload. CLI, MCP, and Web API share that envelope (`success` / error, `detail`, `output_fields`, pagination, error codes); see [OUTPUT.md](OUTPUT.md). Default TOON is a human-oriented projection: it may omit diagnostic fields, collapse nested objects, and apply tool-specific compact allow-lists. Scripts and agents that need a stable schema must pass `--json`.
 
 ### TOON (Default)
 Human-readable compact TOON output:
@@ -212,9 +212,9 @@ none resolve, the response has `success=false`,
 paths, including the trade-read `items.*` fields, remain valid when their
 collection is empty.
 
-Projection is format-independent: default TOON and `--json` retain the same
-selected fields. TOON only changes their textual encoding and numeric display
-precision.
+When `--output-fields` is set, JSON and TOON retain the same selected keys.
+Without it, default TOON may still compact the payload; use `--json` for the
+full canonical object. TOON may also apply numeric display precision.
 
 ### Exit Codes
 
@@ -750,7 +750,10 @@ account watchers, which may complete before the candle boundary.
 ### Place Orders
 `trade_place` requires `symbol`, `volume`, and `order_type`.
 
-The examples below intentionally use `--dry-run true`. Remove it, or set `--dry-run false`, only when you are on the intended account and ready to send the order to MT5. See [TRADING_SAFETY.md](TRADING_SAFETY.md) for the dry-run-first workflow, account guardrails, and broker behavior.
+The examples below keep the safe default preview. Omitting `--dry-run` still
+previews (`dry_run=true`); only `--dry-run false` submits the order to MT5.
+See [TRADING_SAFETY.md](TRADING_SAFETY.md) for the dry-run-first workflow,
+account guardrails, and broker behavior.
 
 Accepted `order_type` values (case-insensitive; `-` or space is normalized to `_`):
 `BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `BUY_STOP_LIMIT`, `SELL_LIMIT`,

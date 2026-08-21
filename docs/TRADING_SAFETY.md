@@ -18,7 +18,7 @@ If you only skim one trading doc, make it this one. The `trade_*` tools send **r
 2. **Demo while learning** — no simulated mode except an MT5 demo.
 3. **Enable guardrails** on any account that can place orders ([Account guardrails](#account-guardrails)).
 4. **Exact tickets** for modify/close; treat `--close-all` as nuclear.
-5. **Protective levels** — market orders require SL **and** TP by default (`--require-sl-tp`).
+5. **Protective levels** — market and pending orders require SL **and** TP by default (`--require-sl-tp`). If a filled market order cannot attach those levels, mtdata always tries to close the unprotected position; that fail-safe is not a CLI flag.
 
 MT5 tickets and magic numbers are unsigned 64-bit identifiers. Ticket inputs
 accept `1..18446744073709551615`; magic accepts

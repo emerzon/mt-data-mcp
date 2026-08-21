@@ -80,7 +80,8 @@ Inspect `entry_cost_coverage` before interpreting them: matched entry commission
 and fees are included, while unmatched exits retain an exit-deal-only basis.
 Those raw PnL averages are not Kelly inputs because deal sizes and capital at risk can vary.
 Normalize each historical outcome to a consistent stake or initial risk before
-computing the average return metrics supplied here.
+computing the average return metrics supplied here. Values larger than 10 are
+rejected as currency-like rather than R-multiples.
 
 Journal side filters distinguish two directions: `side=long|short` selects the
 economic position side of realized exits, while `side=buy|sell` selects the
