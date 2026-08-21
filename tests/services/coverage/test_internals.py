@@ -742,6 +742,61 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNotNone(result)
 
     @patch(_RATES_FROM)
+    def test_stale_error_names_completed_bar_not_forming_tail(self, mock_from):
+        forming_open = 13 * 3600
+        completed_open = forming_open - 18 * 3600
+        now_ts = forming_open + 30 * 60
+        rates = [
+            {
+                "time": completed_open,
+                "open": 1.0,
+                "high": 1.1,
+                "low": 0.9,
+                "close": 1.05,
+                "tick_volume": 100,
+                "real_volume": 0,
+                "spread": 1,
+            },
+            {
+                "time": forming_open,
+                "open": 1.05,
+                "high": 1.15,
+                "low": 1.0,
+                "close": 1.1,
+                "tick_volume": 10,
+                "real_volume": 0,
+                "spread": 1,
+            },
+        ]
+        mock_from.return_value = rates
+        from mtdata.utils.time import _format_time_explicit
+
+        with (
+            patch(f"{_DS}.FETCH_RETRY_ATTEMPTS", 1),
+            patch(f"{_DS}._utc_epoch_seconds", return_value=now_ts),
+        ):
+            result, err = _fetch_rates_with_warmup(
+                "AAPL.NAS",
+                16385,
+                "H1",
+                2,
+                0,
+                None,
+                None,
+                retry=False,
+                sanity_check=True,
+            )
+
+        self.assertIsNone(result)
+        self.assertIn("latest completed bar is", err)
+        self.assertIn(_format_time_explicit(completed_open), err)
+        self.assertIn("forming bar", err)
+        self.assertIn(_format_time_explicit(forming_open), err)
+        self.assertIn("include_incomplete=true", err)
+        prefix, _sep, _rest = err.partition("forming bar")
+        self.assertNotIn(_format_time_explicit(forming_open), prefix)
+
+    @patch(_RATES_FROM)
     def test_include_incomplete_does_not_relax_unverified_stale_policy(self, mock_from):
         stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
         mock_from.return_value = stale_rates

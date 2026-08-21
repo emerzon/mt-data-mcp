@@ -890,6 +890,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
     attempts = FETCH_RETRY_ATTEMPTS if retry else 1
     rates = None
     stale_last_t: Optional[float] = None
+    stale_forming_t: Optional[float] = None
     freshness_cutoff: Optional[float] = None
     for idx in range(attempts):
         try:
@@ -922,14 +923,18 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 # time; completed-bar freshness is attached after it is
                 # excluded, while live output gets last-tick freshness.
                 last_completed_epoch = float(last_t)
+                last_completed_open = float(last_t)
             elif tail_is_forming and len(rates) >= 2:
                 last_completed_epoch = bar_close_epoch(
                     rates[-2]["time"], timeframe
                 )
+                last_completed_open = float(rates[-2]["time"])
             elif tail_is_forming:
                 last_completed_epoch = None
+                last_completed_open = None
             else:
                 last_completed_epoch = bar_close_epoch(last_t, timeframe)
+                last_completed_open = float(last_t)
             freshness_meta = _build_candle_freshness_diagnostics(
                 last_bar_epoch=last_completed_epoch,
                 expected_end_epoch=expected_end_ts,
@@ -971,6 +976,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 break
             if bool(freshness_meta.get("last_bar_within_policy_window")):
                 stale_last_t = None
+                stale_forming_t = None
                 break
             if _relax_live_completed_bar_freshness(
                 symbol=symbol,
@@ -982,8 +988,10 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 freshness_meta=freshness_meta,
             ):
                 stale_last_t = None
+                stale_forming_t = None
                 break
-            stale_last_t = float(last_t)
+            stale_last_t = last_completed_open
+            stale_forming_t = float(last_t) if tail_is_forming else None
         if retry and idx < (attempts - 1):
             time.sleep(FETCH_RETRY_DELAY)
     if (
@@ -993,12 +1001,18 @@ def _fetch_rates_with_warmup(  # noqa: C901
         and rates is not None
         and len(rates) > 0
     ):
-        return None, (
+        message = (
             f"Data appears stale for {symbol} {timeframe}: latest completed bar is "
             f"from {_format_time_explicit(stale_last_t)}. Market may be closed; "
             "set allow_stale=true to retrieve the latest "
             "available completed historical bars."
         )
+        if stale_forming_t is not None:
+            message += (
+                f" A forming bar at {_format_time_explicit(stale_forming_t)} was "
+                "observed and skipped; pass include_incomplete=true to include it."
+            )
+        return None, message
     return rates, None
 
 
