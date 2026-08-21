@@ -812,7 +812,7 @@ class TestGetHistory:
         assert res["count"] == 1
         assert "candles" not in res
         assert "meta" not in res
-        assert res["timestamp_format"] == "iso"
+        assert res["timestamp_format"] == "epoch_seconds"
         assert res["server_utc_offset_seconds"] == 0
         assert res["server_timezone"] == "Europe/Nicosia"
 

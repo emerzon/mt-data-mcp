@@ -662,10 +662,6 @@ def get_history_response(  # noqa: C901
         tool_name="data_fetch_candles",
         mt5_config=mt5_config,
     )
-    timestamp_mode = str(timestamp_format).strip().lower()
-    payload["timestamp_format"] = timestamp_mode
-    if timestamp_mode == "epoch":
-        payload["timestamp_unit"] = "unix_seconds_utc"
     shape_detail = detail
     if shape_detail != "full":
         meta = payload.get("meta")

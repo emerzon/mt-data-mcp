@@ -173,8 +173,8 @@ def test_history_labels_explicit_epoch_timestamps_as_utc_seconds() -> None:
             timestamp_format="epoch",
         )
 
-    assert res["timestamp_format"] == "epoch"
-    assert res["timestamp_unit"] == "unix_seconds_utc"
+    assert res["timestamp_format"] == "epoch_seconds"
+    assert "timestamp_unit" not in res
     assert mock_fetch.call_args.kwargs["time_as_epoch"] is True
 
 
