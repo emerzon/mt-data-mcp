@@ -733,6 +733,30 @@ class TestAddDynamicArguments:
             == "EURUSD,GBPUSD"
         )
 
+    def test_market_radar_accepts_optional_positional_symbols(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "symbols",
+                    "type": Optional[str],
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="market_radar")
+
+        help_text = _strip_ansi(parser.format_help())
+
+        assert "[symbols]" in help_text
+        assert "--symbols SYMBOLS" in help_text
+        assert parser.parse_args(["EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
+        assert (
+            parser.parse_args(["--symbols", "EURUSD,GBPUSD"])._cli_option_symbols
+            == "EURUSD,GBPUSD"
+        )
+
     def test_non_positional_required_parameters_are_required_options(self):
         parser = argparse.ArgumentParser()
         func_info = {

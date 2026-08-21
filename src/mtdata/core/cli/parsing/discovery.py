@@ -14,6 +14,7 @@ _OPTIONAL_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
     ("market_relative_strength", "symbols"),
+    ("market_radar", "symbols"),
     ("market_scan", "symbols"),
     ("causal_discover_signals", "symbols"),
     ("market_status", "symbol"),
