@@ -2502,6 +2502,27 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
     assert "volatility_methods" not in volatility_filtered
     assert "barrier_methods" not in volatility_filtered
+    ewma_row = next(
+        row
+        for row in volatility_filtered["methods"]
+        if row["method"] == "ewma"
+    )
+    assert ewma_row["tool"] == "forecast_volatility_estimate"
+    assert any(param.get("name") == "lambda_" for param in ewma_row.get("params") or [])
+
+    barrier_filtered = _unwrap(cf.forecast_list_methods)(
+        detail="full",
+        profile="all",
+        search_term="bootstrap",
+        show_unavailable=True,
+    )
+    bootstrap_row = next(
+        row
+        for row in barrier_filtered["methods"]
+        if row["method"] == "bootstrap"
+    )
+    assert bootstrap_row["tool"] == "forecast_barrier_prob"
+    assert any(param.get("name") == "block_size" for param in bootstrap_row.get("params") or [])
 
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True, profile="all")
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)

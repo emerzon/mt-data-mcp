@@ -348,8 +348,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("forecast_volatility_estimate", "method"): (
         "Volatility estimator, such as ewma, rolling_std, har_rv, garch, "
-        "arima, theta, or ensemble. Run forecast_list_methods with "
-        "--detail standard --search-term NAME to browse the full namespace."
+        "arima, theta, or ensemble. Run forecast_list_methods --detail full "
+        "--search-term NAME to inspect parameters for volatility and barrier "
+        "methods as well as general forecast methods."
     ),
     ("volatility_term_structure", "horizons"): (
         "Comma-separated realized-volatility horizons in bars, for example 1,5,20."

@@ -1886,6 +1886,10 @@ def _forecast_list_full_row(
         row["training_category"] = item.get("training_category")
     if params:
         row["params"] = params
+    if item.get("tool") not in (None, ""):
+        row["tool"] = item.get("tool")
+    if item.get("namespace") not in (None, ""):
+        row["namespace"] = item.get("namespace")
     requires = item.get("requires")
     if isinstance(requires, list) and requires:
         row["requires"] = [str(req) for req in requires if str(req).strip()]
@@ -1906,6 +1910,55 @@ def _forecast_list_full_row(
     return row
 
 
+def _auxiliary_method_catalog_rows() -> List[Dict[str, Any]]:
+    """Expose volatility and barrier algorithms in the public method catalog."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        from ..forecast.volatility import get_volatility_methods_data
+
+        for item in get_volatility_methods_data().get("methods") or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("method") or "").strip()
+            if not name:
+                continue
+            rows.append(
+                {
+                    "method": name,
+                    "available": bool(item.get("available", True)),
+                    "description": item.get("description"),
+                    "params": item.get("params") or [],
+                    "requires": item.get("requires") or [],
+                    "tool": "forecast_volatility_estimate",
+                    "namespace": "volatility",
+                    "category": "volatility",
+                }
+            )
+    except Exception:
+        pass
+    try:
+        from ..forecast.barriers_probabilities import _BARRIER_METHOD_PARAM_KEYS
+
+        for name, keys in _BARRIER_METHOD_PARAM_KEYS.items():
+            rows.append(
+                {
+                    "method": str(name),
+                    "available": True,
+                    "description": f"Barrier probability method '{name}'.",
+                    "params": [
+                        {"name": key, "type": "any"}
+                        for key in sorted(keys)
+                    ],
+                    "tool": "forecast_barrier_prob",
+                    "namespace": "barrier",
+                    "category": "barrier",
+                }
+            )
+    except Exception:
+        pass
+    return rows
+
+
 def _forecast_list_methods_impl(  # noqa: C901
     *,
     detail: DetailLiteral = "compact",
@@ -1924,6 +1977,8 @@ def _forecast_list_methods_impl(  # noqa: C901
         data = snapshot.get("data") if isinstance(snapshot, dict) else {}
         if not isinstance(data, dict):
             data = {}
+        if isinstance(snapshot, dict):
+            snapshot = dict(snapshot)
         detail_value = str(detail or "compact").strip().lower()
         if detail_value in {"summary"}:
             detail_value = "compact"
@@ -1943,6 +1998,29 @@ def _forecast_list_methods_impl(  # noqa: C901
         if profile_auto_expanded:
             profile_value = "all"
             profile_methods = None
+        if isinstance(snapshot, dict) and search_value:
+            catalog_rows = list(snapshot.get("methods") or [])
+            existing = {
+                str(row.get("method") or "")
+                for row in catalog_rows
+                if isinstance(row, dict)
+            }
+            try:
+                from ..forecast.forecast_registry import ForecastRegistry
+
+                existing.update(
+                    str(name)
+                    for name in ForecastRegistry.get_all_method_names()
+                )
+            except Exception:
+                pass
+            for row in _auxiliary_method_catalog_rows():
+                name = str(row.get("method") or "")
+                if name and name not in existing:
+                    catalog_rows.append(row)
+                    existing.add(name)
+            snapshot["methods"] = catalog_rows
+            snapshot["methods_valid"] = True
         supported_libraries = {
             "native",
             "statsforecast",
@@ -2029,8 +2107,16 @@ def _forecast_list_methods_impl(  # noqa: C901
 
         def _method_matches(item: Dict[str, Any]) -> bool:
             method_name = str(item.get("method") or "")
+            auxiliary_tool = str(item.get("tool") or "")
             if profile_methods is not None and method_name not in profile_methods:
-                return False
+                if not (
+                    search_value
+                    and auxiliary_tool in {
+                        "forecast_volatility_estimate",
+                        "forecast_barrier_prob",
+                    }
+                ):
+                    return False
             if library_value and _item_library(item) != library_value:
                 return False
             if category_filter_value and _item_category(item) != category_filter_value:
@@ -2147,10 +2233,11 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "quickstart/core shows native methods with no optional package dependency; use profile=all for the full catalog."
                 )
             out_full["note"] = (
-                "Full view expands selected forecast methods with trader-facing "
-                "metadata and structured params; use search_term, library, or "
-                "limit to narrow large catalogs. Volatility and barrier catalogs "
-                "are listed by forecast_volatility_estimate and forecast_barrier_prob."
+                "Full view expands selected forecast, volatility, and barrier "
+                "methods with trader-facing metadata and structured params; use "
+                "search_term, library, or limit to narrow large catalogs. "
+                "Volatility rows use tool=forecast_volatility_estimate; barrier "
+                "rows use tool=forecast_barrier_prob."
             )
             return out_full
 
@@ -2184,6 +2271,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "method": method_name,
                 "available": available,
             }
+            if item.get("tool") not in (None, ""):
+                row["tool"] = item.get("tool")
             if detail_value == "standard":
                 desc = str(item.get("description") or "").strip()
                 if desc and desc.lower() != method_name.lower():
