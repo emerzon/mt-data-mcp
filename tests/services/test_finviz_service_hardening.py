@@ -178,6 +178,19 @@ def test_screener_pagination_distinguishes_complete_and_prefix_results():
     }
 
 
+def test_screener_pagination_does_not_advertise_pages_beyond_prefix():
+    beyond = finviz_pagination.screener_pagination_metadata(
+        fetched_count=120,
+        fetch_limit=120,
+        limit=50,
+        page=4,
+    )
+
+    assert beyond["has_more"] is False
+    assert beyond["total_lower_bound"] == 120
+    assert beyond["page_unavailable_beyond_prefix"] is True
+
+
 def test_screener_view_uses_canonical_ticker_cell_metadata():
     soup = BeautifulSoup(
         """

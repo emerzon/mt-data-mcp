@@ -667,6 +667,28 @@ def screen_stocks(
     try:
         _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
+        safe_limit, safe_page = _sanitize_pagination(limit, page)
+        max_rows = int(get_finviz_screener_max_rows())
+        start_idx = (safe_page - 1) * safe_limit
+        if start_idx >= max_rows:
+            last_page = max(1, (max_rows + safe_limit - 1) // safe_limit)
+            return {
+                "success": False,
+                "error": (
+                    f"Requested page {safe_page} starts at offset {start_idx}, "
+                    f"beyond the screener fetch cap of {max_rows} rows."
+                ),
+                "error_code": "pagination_limit_reached",
+                "max_rows": max_rows,
+                "max_offset": max_rows,
+                "last_page": last_page,
+                "limit": safe_limit,
+                "page": safe_page,
+                "remediation": (
+                    f"Use --page {last_page} or lower, or reduce --limit. "
+                    "The Finviz adapter fetches a bounded prefix, not the full universe."
+                ),
+            }
         screener = _build_finviz_screener(view_lower)
         
         if filters:

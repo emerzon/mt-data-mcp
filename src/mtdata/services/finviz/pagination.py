@@ -97,7 +97,21 @@ def screener_pagination_metadata(
     safe_limit, safe_page = sanitize_pagination(limit, page)
     fetched = max(0, int(fetched_count))
     complete = fetched < int(fetch_limit)
+    requested_start = safe_limit * (safe_page - 1)
     requested_end = safe_limit * safe_page
+    if requested_start >= fetched:
+        return {
+            "total": fetched if complete else None,
+            "pages": (
+                0 if fetched == 0 else (fetched + safe_limit - 1) // safe_limit
+            )
+            if complete
+            else None,
+            "has_more": False,
+            "total_lower_bound": fetched,
+            "truncated": not complete,
+            "page_unavailable_beyond_prefix": True,
+        }
     has_more = bool(fetched > requested_end or not complete)
     if complete:
         pages = 0 if fetched == 0 else (fetched + safe_limit - 1) // safe_limit

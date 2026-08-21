@@ -991,8 +991,12 @@ def _apply_finviz_pagination_contract(
             limit=limit_value,
         )
     else:
-        minimum_total = offset_value + returned_value + (1 if has_more else 0)
-        lower_bound_value = max(lower_bound or 0, minimum_total)
+        if returned_value == 0:
+            lower_bound_value = lower_bound if lower_bound is not None else 0
+            has_more = False
+        else:
+            minimum_total = offset_value + returned_value + (1 if has_more else 0)
+            lower_bound_value = max(lower_bound or 0, minimum_total)
         pagination = {
             "total": None,
             "total_lower_bound": lower_bound_value,
