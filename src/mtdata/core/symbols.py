@@ -4870,7 +4870,10 @@ def market_scan(  # noqa: C901
                         request=request,
                         details={
                             "did_you_mean": selection_meta.get("did_you_mean", []),
-                            "search_hint": "Use symbols_list --search to browse matching broker symbols.",
+                            "search_hint": (
+                                "Browse matching broker symbols with the symbols_list "
+                                "tool (CLI: mtdata-cli symbols_list --search-term TERM)."
+                            ),
                         }
                         if selection_meta.get("did_you_mean")
                         else None,

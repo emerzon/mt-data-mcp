@@ -792,6 +792,31 @@ class TestFormatResultForCli:
         assert "error:" in result
         assert "remediation:" in result
         assert "did_you_mean" in result
+        assert "mtdata-cli symbols_list --search-term 'NOTASYM'" in result
+        assert "symbols_list(search_term" not in result
+
+    def test_market_ticker_json_uses_cli_symbol_search_syntax(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": False,
+                    "error_code": "market_ticker_symbol_unavailable",
+                    "error": "Symbol 'NOTASYM' was not found in MT5.",
+                    "remediation": (
+                        "Verify the broker symbol name with "
+                        "symbols_list(search_term='NOTASYM')."
+                    ),
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="market_ticker",
+            )
+        )
+
+        assert payload["remediation"].endswith(
+            "mtdata-cli symbols_list --search-term 'NOTASYM'."
+        )
+        assert "symbols_list(search_term" not in payload["remediation"]
 
     def test_market_ticker_verbose_toon_keeps_raw_epoch_separately(self):
         result = _format_result_for_cli(

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Callable, Dict, Optional
 
 from ...shared.output_precision import resolve_output_precision
@@ -29,6 +30,29 @@ def _format_result_minimal(result: Any, verbose: bool = True) -> str:
 
 def _normalize_cli_formatter(fmt: Any) -> str:
     return normalize_cli_output_format(fmt)
+
+
+_SYMBOL_SEARCH_CALL_PATTERN = re.compile(
+    r"symbols_list\(search_term=(?P<quote>['\"])(?P<term>.*?)(?P=quote)\)"
+)
+
+
+def _normalize_cli_command_hints(value: Any) -> Any:
+    if isinstance(value, str):
+        return _SYMBOL_SEARCH_CALL_PATTERN.sub(
+            lambda match: (
+                "mtdata-cli symbols_list --search-term "
+                f"{match.group('quote')}{match.group('term')}{match.group('quote')}"
+            ),
+            value,
+        )
+    if isinstance(value, dict):
+        return {key: _normalize_cli_command_hints(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_cli_command_hints(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_cli_command_hints(item) for item in value)
+    return value
 
 
 def _resolve_cli_formatter(args: Any) -> str:
@@ -597,7 +621,7 @@ def _prepare_cli_payload(
     cmd_name: str,
     precision: Any = None,
 ) -> Any:
-    prepared = result
+    prepared = _normalize_cli_command_hints(result)
     compact_numbers = resolve_output_precision(
         None,
         tool_name=cmd_name,
