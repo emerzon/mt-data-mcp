@@ -304,8 +304,10 @@ def _fetch_pattern_data_after_select(  # noqa: C901
 
     # Freshness warning: flag when the most recent bar is unusually old.
     # Uses a generous threshold (7 days) to tolerate weekend/holiday closures.
+    # Bounded historical queries are evaluated against their requested cutoff,
+    # not live wall-clock freshness.
     tf_secs = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
-    if tf_secs > 0 and len(df) > 0:
+    if tf_secs > 0 and len(df) > 0 and not start and not end:
         try:
             last_epoch = float(df["time"].iloc[-1])
             staleness = utc_now.timestamp() - last_epoch

@@ -78,6 +78,61 @@ def test_bounded_pattern_fetch_drops_forming_tail(monkeypatch):
     assert frame["time"].tolist() == [row["time"] for row in rates[:-1]]
 
 
+def test_bounded_historical_pattern_fetch_skips_wall_clock_staleness(monkeypatch):
+    old_open = 1_720_000_000.0
+    rates = [
+        {
+            "time": old_open + index * 3600,
+            "open": 1.0 + index * 0.01,
+            "high": 1.1 + index * 0.01,
+            "low": 0.9 + index * 0.01,
+            "close": 1.05 + index * 0.01,
+            "tick_volume": 100,
+        }
+        for index in range(8)
+    ]
+    gateway = SimpleNamespace(
+        symbol_info=lambda _symbol: SimpleNamespace(visible=True),
+        symbol_select=lambda *_args: True,
+    )
+    monkeypatch.setattr(core_patterns, "_mt5_copy_rates_from", lambda *_args: rates)
+    monkeypatch.setattr(
+        core_patterns, "_should_drop_last_pattern_bar", lambda *_args, **_kwargs: False
+    )
+    monkeypatch.setattr(
+        data_service_mod,
+        "_resolve_live_bar_reference_epoch",
+        lambda *_args: rates[-1]["time"] + 3600,
+    )
+
+    bounded, bounded_error = core_patterns._fetch_pattern_data(
+        "EURUSD",
+        "H1",
+        5,
+        False,
+        gateway=gateway,
+        end="2024-07-31",
+    )
+    live, live_error = core_patterns._fetch_pattern_data(
+        "EURUSD",
+        "H1",
+        5,
+        False,
+        gateway=gateway,
+    )
+
+    assert bounded_error is None
+    assert live_error is None
+    assert not any(
+        "Data may be stale" in str(warning)
+        for warning in (bounded.attrs.get("warnings") or [])
+    )
+    assert any(
+        "Data may be stale" in str(warning)
+        for warning in (live.attrs.get("warnings") or [])
+    )
+
+
 def test_data_quality_uses_tick_volume_when_real_volume_is_structural_zero():
     df = pd.DataFrame(
         {
