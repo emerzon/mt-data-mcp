@@ -326,10 +326,13 @@ def normalize_news_output(
     visible_bucket_keys = tuple(
         key for key in _NEWS_BUCKET_KEYS if key != "market_context"
     )
-    if not any(
+    has_visible_buckets = any(
         isinstance(result.get(key), list) and bool(result.get(key))
         for key in visible_bucket_keys
-    ):
+    )
+    raw_items = result.get("items")
+    has_raw_items = isinstance(raw_items, list) and bool(raw_items)
+    if not has_visible_buckets and not has_raw_items:
         queried = [
             str(provider)
             for provider in (result.get("sources_used") or [])

@@ -250,6 +250,43 @@ def test_compact_empty_news_discloses_provider_attempts_and_fallback() -> None:
     assert "view='market'" in compact["hint"]
 
 
+def test_compact_raw_news_page_does_not_claim_no_results() -> None:
+    payload = {
+        "success": True,
+        "count": 2,
+        "items": [
+            {"title": "Nasdaq 100 Halts Five-Day Slump", "time": "2026-08-21T13:00Z"},
+            {"title": "Wall St opens higher", "time": "2026-08-21T13:05Z"},
+        ],
+        "pagination": {"offset": 0, "limit": 2, "returned": 2},
+        "view": "market",
+        "source": "finviz",
+    }
+
+    compact = normalize_news_output(payload, detail="compact")
+
+    assert compact["success"] is True
+    assert compact["count"] == 2
+    assert len(compact["items"]) == 2
+    assert compact.get("status") != "no_results"
+    assert "hint" not in compact
+
+
+def test_compact_empty_raw_news_page_can_report_no_results() -> None:
+    payload = {
+        "success": True,
+        "count": 0,
+        "items": [],
+        "view": "ticker",
+        "source": "finviz",
+    }
+
+    compact = normalize_news_output(payload, detail="compact")
+
+    assert compact["status"] == "no_results"
+    assert compact["items"] == []
+
+
 def test_news_tool_limit_reserves_recent_event_when_upcoming_empty(
     monkeypatch,
 ) -> None:
