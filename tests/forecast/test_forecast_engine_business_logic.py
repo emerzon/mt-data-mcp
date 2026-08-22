@@ -159,6 +159,35 @@ def test_analog_lookback_caps_search_depth_and_rejects_impossible_windows():
     assert too_small["minimum_lookback_bars"] == 132
 
 
+def test_forecast_engine_naive_lookback_skips_analog_gate():
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=3,
+        lookback=50,
+        ci_alpha=None,
+        prefetched_df=_df(60),
+    )
+    assert out.get("error_code") != "analog_lookback_too_small"
+    assert "Analog lookback" not in str(out.get("error") or "")
+    assert out.get("success") is True
+
+
+def test_forecast_engine_analog_still_rejects_impossible_lookback():
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="analog",
+        horizon=3,
+        lookback=50,
+        ci_alpha=None,
+        prefetched_df=_df(60),
+    )
+    assert out["error_code"] == "analog_lookback_too_small"
+    assert out["minimum_lookback_bars"] == 131
+
+
 def test_explicit_range_is_capped_to_requested_lookback_for_prefetched_history():
     frame = pd.DataFrame(
         {
@@ -417,6 +446,36 @@ def test_equity_intraday_forecast_targets_next_observed_session_bars() -> None:
     assert result["calendar_treatment"] == (
         "xnys_observed_broker_slots_holidays_and_early_closes_applied"
     )
+
+
+def test_weekend_projection_reports_unit_forecast_start_gap():
+    last_epoch = pd.Timestamp("2026-05-22 20:00", tz="UTC").timestamp()
+    frame = pd.DataFrame(
+        {
+            "time": [last_epoch - 3600.0, last_epoch],
+            "close": [1.0, 1.1],
+        }
+    )
+
+    with patch("mtdata.forecast.forecast_engine._use_client_tz", return_value=False):
+        result = fe._format_forecast_output(
+            forecast_values=np.array([1.2, 1.3, 1.4]),
+            last_epoch=last_epoch,
+            tf_secs=3600,
+            horizon=3,
+            base_col="close",
+            df=frame,
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
+            symbol="EURUSD",
+            timeframe="H1",
+        )
+
+    assert result["forecast_start_time"] == "2026-05-24T21:00Z"
+    assert result["forecast_start_gap_bars"] == 1.0
 
 
 def test_prepare_feature_context_surfaces_univariate_fallback(monkeypatch, caplog):

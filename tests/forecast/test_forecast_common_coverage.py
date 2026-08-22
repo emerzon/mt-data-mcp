@@ -887,6 +887,7 @@ class TestFormatForecastOutput:
         assert result["horizon_note"] == (
             "6 trading bars forecast; 48 H1 bars skipped (weekend)."
         )
+        assert result["forecast_start_gap_bars"] == 1.0
         assert "market_hours_note" not in result
         assert "forecast_market_status" not in result
         assert "warnings" not in result

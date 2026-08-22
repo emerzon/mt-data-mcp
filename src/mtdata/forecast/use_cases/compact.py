@@ -152,6 +152,10 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         out: Dict[str, Any] = {
             "status": "unavailable",
             "mode": "point_only",
+            "reason": (
+                "requested intervals are unavailable for this method; "
+                "point forecast only."
+            ),
             "recommended_tool": "forecast_conformal_intervals",
         }
         if payload.get("ci_alpha") is not None:

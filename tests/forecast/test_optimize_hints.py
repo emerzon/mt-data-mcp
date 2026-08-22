@@ -182,7 +182,7 @@ class TestForecastOptimizeHintsRequest:
 
     def test_default_values(self):
         req = ForecastOptimizeHintsRequest(symbol='EURUSD')
-        assert req.fitness_metric == 'composite'
+        assert req.fitness_metric == 'avg_rmse'
         assert req.population == 8
         assert req.generations == 5
         assert req.top_n == 5
@@ -191,12 +191,40 @@ class TestForecastOptimizeHintsRequest:
         assert req.steps == 5
         assert req.lookback is None
 
+    def test_rejects_population_below_two(self):
+        with pytest.raises(ValueError, match="greater than or equal to 2"):
+            ForecastOptimizeHintsRequest(symbol="EURUSD", population=1)
 
-def test_optimize_hints_rejects_default_composite_with_five_steps():
+
+def test_optimize_hints_default_combo_is_runnable():
     from mtdata.forecast.use_cases import run_forecast_optimize_hints
+
+    captured: dict = {}
+
+    def _impl(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "hints": []}
 
     result = run_forecast_optimize_hints(
         ForecastOptimizeHintsRequest(symbol="EURUSD", timeframes=["H1"]),
+        optimize_hints_impl=_impl,
+    )
+
+    assert result["success"] is True
+    assert captured["fitness_metric"] == "avg_rmse"
+    assert captured["steps"] == 5
+
+
+def test_optimize_hints_rejects_explicit_composite_with_five_steps():
+    from mtdata.forecast.use_cases import run_forecast_optimize_hints
+
+    result = run_forecast_optimize_hints(
+        ForecastOptimizeHintsRequest(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            fitness_metric="composite",
+            steps=5,
+        ),
         optimize_hints_impl=lambda **kwargs: pytest.fail("search must not start"),
     )
 
@@ -204,10 +232,6 @@ def test_optimize_hints_rejects_default_composite_with_five_steps():
     assert result["error_code"] == "insufficient_tuning_sample"
     assert result["minimum_steps"] == 30
     assert "avg_rmse" in result["remediation"]
-
-    def test_rejects_population_below_two(self):
-        with pytest.raises(ValueError, match="greater than or equal to 2"):
-            ForecastOptimizeHintsRequest(symbol="EURUSD", population=1)
 
 
 def test_genetic_search_optimize_hints_rejects_population_below_two():

@@ -687,11 +687,12 @@ def build_training_context(
         raise ValueError("Use forecast_volatility for volatility models")
 
     p = _parse_kv_or_json(params)
-    analog_error = _cap_analog_params_to_lookback(
-        p, lookback=lookback, horizon=int(horizon)
-    )
-    if analog_error is not None:
-        raise ValueError(str(analog_error["error"]))
+    if method_l == "analog":
+        analog_error = _cap_analog_params_to_lookback(
+            p, lookback=lookback, horizon=int(horizon)
+        )
+        if analog_error is not None:
+            raise ValueError(str(analog_error["error"]))
     seasonality = int(p.get("seasonality")) if p.get("seasonality") is not None else default_seasonality(timeframe)
     need = _calculate_lookback_bars(method_l, int(horizon), lookback, seasonality, timeframe, params=p)
     df, base_col, _ = _resolve_history_context(
@@ -1111,7 +1112,7 @@ def _try_predict_with_stored_model(  # noqa: C901
             )
         return None
     except Exception as exc:
-        logger.debug("Model store predict failed for %s/%s: %s", method_l, data_scope, exc)
+        logger.warning("Model store predict failed for %s/%s: %s", method_l, data_scope, exc)
         return None
 
 
@@ -1680,11 +1681,12 @@ def _format_forecast_output(
         tf_secs,
         observed_times=observed_times,
     )
+    weekend_projection = uses_standard_weekend_projection(symbol, tf_secs)
     future_epochs = next_times_from_last(
         last_epoch,
         tf_secs,
         horizon,
-        skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
+        skip_weekends=weekend_projection,
         timeframe=timeframe,
         symbol=symbol,
         observed_times=observed_times,
@@ -1728,7 +1730,9 @@ def _format_forecast_output(
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
     forecast_start_gap_bars = (
         1.0
-        if (calendar_timeframe or session_projection) and forecast_start_epoch is not None
+        if (
+            calendar_timeframe or session_projection or weekend_projection
+        ) and forecast_start_epoch is not None
         else float(forecast_start_epoch - float(last_epoch)) / float(tf_secs)
         if forecast_start_epoch is not None and tf_secs
         else None
@@ -1806,7 +1810,7 @@ def _format_forecast_output(
             f"{str(timeframe or '').upper() or 'timeframe'} bars skipped (weekend)."
         )
     elif (
-        not uses_standard_weekend_projection(symbol, tf_secs)
+        not weekend_projection
         and not is_probably_crypto_symbol(symbol)
     ):
         weekend_bars = _count_weekend_forecast_times(forecast_times)
@@ -2008,11 +2012,12 @@ def forecast_engine(  # noqa: C901
 
         # Parse method params
         p = _parse_kv_or_json(params)
-        analog_error = _cap_analog_params_to_lookback(
-            p, lookback=lookback, horizon=int(horizon)
-        )
-        if analog_error is not None:
-            return analog_error
+        if method_l == "analog":
+            analog_error = _cap_analog_params_to_lookback(
+                p, lookback=lookback, horizon=int(horizon)
+            )
+            if analog_error is not None:
+                return analog_error
         seasonality = int(p.get('seasonality')) if p.get('seasonality') is not None else default_seasonality(timeframe)
 
         if method_l == 'seasonal_naive' and (not seasonality or seasonality <= 0):

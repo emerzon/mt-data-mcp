@@ -587,6 +587,22 @@ def test_volatility_forecast_window_skips_closed_fx_weekend() -> None:
     }
 
 
+def test_volatility_friday_close_weekend_skip_reports_unit_gap() -> None:
+    friday_20 = datetime(2026, 6, 12, 20, tzinfo=timezone.utc).timestamp()
+    context = vol._volatility_input_context(
+        pd.DataFrame({"time": [friday_20 - 3600, friday_20]}),
+        symbol="EURUSD",
+        timeframe="H1",
+        returns_used=1,
+        live_window=False,
+        horizon=3,
+    )
+
+    assert context["forecast_window"]["start"] == "2026-06-14T21:00Z"
+    assert context["forecast_window"]["forecast_start_gap_bars"] == 1.0
+    assert context["forecast_window"]["calendar_treatment"] == "forex_weekend_skipped"
+
+
 def test_volatility_window_uses_observed_equity_session_slots() -> None:
     observed = [
         pd.Timestamp(f"2026-08-{day} {hour:02d}:00", tz="America/New_York").timestamp()

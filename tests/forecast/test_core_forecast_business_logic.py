@@ -1100,6 +1100,10 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
     assert out["uncertainty"] == {
         "status": "unavailable",
         "mode": "point_only",
+        "reason": (
+            "requested intervals are unavailable for this method; "
+            "point forecast only."
+        ),
         "recommended_tool": "forecast_conformal_intervals",
         "requested_alpha": 0.05,
     }
@@ -4810,6 +4814,22 @@ def test_options_tools_validate_controls_before_provider_gate(
     assert result["success"] is False
     assert result["error_code"] == error_code
     assert result["parameter"] == parameter
+
+
+def test_options_barrier_price_rejects_relative_valuation_date():
+    raw_price = _unwrap(opt.options_barrier_price)
+
+    result = raw_price(
+        spot=100.0,
+        strike=105.0,
+        barrier=90.0,
+        maturity_days=30,
+        valuation_date="yesterday",
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_valuation_date"
+    assert result["parameter"] == "valuation_date"
 
 
 def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):

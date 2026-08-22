@@ -768,7 +768,7 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     fitness_metric: str = Field(
-        "composite",
+        "avg_rmse",
         description=(
             "Optimization objective. Composite trading fitness requires at least "
             "30 backtest anchors (--steps 30) so each candidate can produce a "

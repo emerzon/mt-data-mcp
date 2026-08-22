@@ -1274,9 +1274,10 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
     mutation_rate : float, optional (default=0.3)
         Mutation probability (0-1).
     
-    fitness_metric : str, optional (default='composite')
-        Fitness metric: 'composite' (default) or specific metric
-        ('avg_rmse', 'sharpe_ratio', 'win_rate', 'calmar_ratio', etc.).
+    fitness_metric : str, optional (default='avg_rmse')
+        Fitness metric: 'avg_rmse' (default), 'composite', or another score
+        ('sharpe_ratio', 'win_rate', 'calmar_ratio', etc.). Composite
+        trading fitness requires at least 30 backtest anchors.
     
     fitness_weights : dict, optional
         Custom weights for composite fitness (metric -> weight).

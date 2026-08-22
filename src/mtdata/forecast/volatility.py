@@ -678,7 +678,11 @@ def _volatility_input_context(
             "nominal_step_seconds": tf_secs if session_projection else None,
             "forecast_start_gap_bars": round(
                 1.0
-                if calendar_timeframe or session_projection
+                if (
+                    calendar_timeframe
+                    or session_projection
+                    or uses_standard_weekend_projection(symbol, tf_secs)
+                )
                 else (start_epoch - last_epoch) / float(tf_secs),
                 4,
             ),
