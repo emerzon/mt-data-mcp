@@ -190,8 +190,9 @@ class MT5Adapter:
 
     def symbol_info_tick(self, symbol):
         with _mt5_lock:
-            raw_tick = self._module().symbol_info_tick(symbol)
-            mode = _timestamp_mode_from_tick(raw_tick, symbol=symbol)
+            module = self._module()
+            raw_tick = module.symbol_info_tick(symbol)
+            mode = _timestamp_mode_for_symbol(module, symbol)
             return _normalize_object_times(raw_tick, mode=mode)
 
     def order_send(self, request):
@@ -1551,6 +1552,13 @@ def _symbol_name_suggestions(symbol: str, *, limit: int = 5) -> list[str]:
         elif name_upper.startswith(query_upper):
             score = 1
         elif query_compact and name_compact.startswith(query_compact):
+            score = 2
+        elif (
+            query_compact
+            and name_compact
+            and query_compact.startswith(name_compact)
+            and len(name_compact) >= 5
+        ):
             score = 2
         elif query_upper in name_upper:
             score = 3

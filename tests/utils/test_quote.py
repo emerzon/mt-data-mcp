@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -355,3 +356,42 @@ def test_resolve_quote_tick_tolerates_small_future_skew_without_downgrade() -> N
 
     assert selected is cached
     assert metadata["quote_source"] == "mt5.symbol_info_tick"
+
+
+def test_resolve_quote_tick_does_not_prefer_server_clock_cache_over_utc_stream(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 22, 1, 28, tzinfo=timezone.utc).timestamp()
+    friday_utc = datetime(2026, 8, 21, 20, 56, 59, tzinfo=timezone.utc).timestamp()
+    offset = 3 * 60 * 60
+    cached = SimpleNamespace(
+        bid=1.16749,
+        ask=1.16767,
+        time=friday_utc + offset,
+        time_msc=(friday_utc + offset) * 1000,
+    )
+    streamed = {
+        "bid": 1.16753,
+        "ask": 1.16763,
+        "time": friday_utc,
+        "time_msc": friday_utc * 1000,
+    }
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        symbol_info=lambda _symbol: SimpleNamespace(point=0.00001),
+        copy_ticks_range=lambda *_args: [streamed],
+    )
+    monkeypatch.setattr(
+        "mtdata.utils.quote._configured_broker_offset_seconds",
+        lambda _at_epoch: offset,
+    )
+
+    selected, metadata = resolve_quote_tick(
+        gateway,
+        "EURUSD",
+        cached,
+        now_epoch=now,
+    )
+
+    assert selected is streamed
+    assert metadata["quote_source"] == "mt5.copy_ticks_range"

@@ -39,6 +39,7 @@ from ...utils.market_metadata import (
 )
 from ...utils.mt5 import (
     MT5ConnectionError,
+    _compact_symbol_name,
     _mt5_copy_rates_from_pos,
     _symbol_ready_guard,
     _symbol_visibility_snapshot_guard,
@@ -1230,6 +1231,53 @@ def _resolve_market_scan_group_path(
         return [], f"No symbol group matched '{requested}'. Available groups: {preview}{suffix}"
     return [], f"No symbol group matched '{requested}'."
 
+
+def _scan_symbol_suggestions(
+    requested: str,
+    tradable_symbols: List[Any],
+    *,
+    limit: int = 5,
+) -> List[Any]:
+    query_upper = str(requested or "").strip().upper()
+    query_compact = _compact_symbol_name(requested)
+    if not query_upper and not query_compact:
+        return []
+    ranked: List[tuple[tuple[int, str], Any]] = []
+    seen: set[str] = set()
+    for symbol in tradable_symbols:
+        name = str(getattr(symbol, "name", "") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        name_upper = name.upper()
+        name_compact = _compact_symbol_name(name)
+        if name_upper == query_upper or (
+            query_compact and name_compact == query_compact
+        ):
+            score = 0
+        elif name_upper.startswith(query_upper):
+            score = 1
+        elif query_compact and name_compact.startswith(query_compact):
+            score = 2
+        elif (
+            query_compact
+            and name_compact
+            and query_compact.startswith(name_compact)
+            and len(name_compact) >= 5
+        ):
+            score = 2
+        elif query_upper in name_upper:
+            score = 3
+        else:
+            continue
+        ranked.append(((score, name_upper), symbol))
+    ranked.sort(key=lambda item: item[0])
+    return [
+        _symbol_suggestion_from_info(symbol)
+        for _key, symbol in ranked[: max(1, int(limit))]
+    ]
+
+
 def _select_market_scan_symbols(
     all_symbols: List[Any],
     *,
@@ -1248,15 +1296,23 @@ def _select_market_scan_symbols(
 
     if requested_names:
         by_upper: Dict[str, Any] = {}
+        by_compact: Dict[str, List[Any]] = {}
         for tradable_symbol in tradable_symbols:
             name = str(getattr(tradable_symbol, "name", "") or "").strip()
             if not name:
                 continue
             by_upper.setdefault(name.upper(), tradable_symbol)
+            compact_name = _compact_symbol_name(name)
+            if compact_name:
+                by_compact.setdefault(compact_name, []).append(tradable_symbol)
         selected: List[Any] = []
         missing: List[str] = []
         for name in requested_names:
             symbol_obj = by_upper.get(name.upper())
+            if symbol_obj is None:
+                compact_matches = by_compact.get(_compact_symbol_name(name), [])
+                if len(compact_matches) == 1:
+                    symbol_obj = compact_matches[0]
             if symbol_obj is None:
                 missing.append(name)
                 continue
@@ -1264,18 +1320,20 @@ def _select_market_scan_symbols(
         if not selected:
             suggestions = []
             for requested in missing:
-                prefix = requested.upper()
-                matches = [
-                    symbol
-                    for symbol in tradable_symbols
-                    if str(getattr(symbol, "name", "") or "").upper().startswith(prefix)
-                ]
                 suggestions.extend(
-                    _symbol_suggestion_from_info(symbol) for symbol in matches[:5]
+                    _scan_symbol_suggestions(requested, tradable_symbols)
                 )
             if suggestions:
                 selection_meta["did_you_mean"] = suggestions[:5]
             return [], selection_meta, "None of the requested symbols matched the MT5 symbol list."
+        if missing:
+            suggestions = []
+            for requested in missing:
+                suggestions.extend(
+                    _scan_symbol_suggestions(requested, tradable_symbols)
+                )
+            if suggestions:
+                selection_meta["did_you_mean"] = suggestions[:5]
         return selected, {
             **selection_meta,
             "scope": "symbols",
@@ -2525,6 +2583,7 @@ def market_scan(  # noqa: C901
     rank_by: Literal["abs_price_change_pct", "abs_price_change", "abs_live_price_change_pct", "abs_live_price_change", "live_price_change_pct", "live_price_change", "price_change_pct", "price_change", "gap_pct", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
     rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
     quote_usable_only: Optional[bool] = None,
+    allow_partial: bool = True,
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
@@ -2542,7 +2601,9 @@ def market_scan(  # noqa: C901
     to true for spread and live-price-change rankings and the `tight_spread`
     preset, excluding stale, future, locked, inverted, and one-sided quotes
     before pagination. Set it explicitly for other rankings. Locked or invalid
-    quotes cannot satisfy a maximum-spread filter.
+    quotes cannot satisfy a maximum-spread filter. `allow_partial` defaults true
+    so unknown requested names are dropped with `missing_symbols`; set false to
+    fail closed when any requested symbol is missing.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -2598,6 +2659,7 @@ def market_scan(  # noqa: C901
             "rank_by": rank_by,
             "rank_order": rank_order,
             "quote_usable_only": quote_usable_only_value,
+            "allow_partial": bool(allow_partial),
             "filters": {
                 key: value
                 for key, value in {
@@ -2921,6 +2983,22 @@ def market_scan(  # noqa: C901
                 request["requested_symbols"] = selection_meta.get("requested_symbols")
             if selection_meta.get("missing_symbols") is not None:
                 request["missing_symbols"] = selection_meta.get("missing_symbols")
+            missing_requested = list(selection_meta.get("missing_symbols") or [])
+            if missing_requested and not allow_partial:
+                return _attach_market_scan_source(
+                    _market_scan_error(
+                        "Requested symbol(s) not found: "
+                        + ", ".join(missing_requested)
+                        + ".",
+                        code="missing_symbols",
+                        request=request,
+                        details={
+                            "missing_symbols": missing_requested,
+                            "did_you_mean": selection_meta.get("did_you_mean", []),
+                        },
+                    ),
+                    mt5_gateway,
+                )
             if len(selected_symbols) > _MARKET_SCAN_MAX_CANDIDATES:
                 return _attach_market_scan_source(
                     _market_scan_error(
@@ -3136,6 +3214,8 @@ def market_scan(  # noqa: C901
                 "bid",
                 "ask",
                 "spread_quality",
+                "quote_source_state",
+                "quote_source_conflict",
                 "quote_usable_for_live_trading",
                 "price_change_pct",
                 "live_price_change_pct",
@@ -3203,7 +3283,16 @@ def market_scan(  # noqa: C901
             )
             stale_rows = int(freshness_summary.get("stale_rows") or 0)
             returned_count = int(table_payload["row_count"])
-            if total_matches > returned_count:
+            missing_symbols = list(selection_meta.get("missing_symbols") or [])
+            requested_symbols = list(selection_meta.get("requested_symbols") or [])
+            if missing_symbols and requested_symbols:
+                message = (
+                    f"Returned {max(0, len(requested_symbols) - len(missing_symbols))} "
+                    f"of {len(requested_symbols)} requested symbols; dropped "
+                    + ", ".join(missing_symbols)
+                    + "."
+                )
+            elif total_matches > returned_count:
                 message = (
                     f"Showing {returned_count} of {int(total_matches)} symbols matching "
                     "the requested market scan filters."

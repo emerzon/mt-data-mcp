@@ -309,7 +309,7 @@ def _normalize_trade_session_context_cli_payload(  # noqa: C901
                     "freshness_state",
                     "usable_for_live_trading",
                     "live_max_age_seconds",
-                    "market_state",
+                    "market_status",
                     "market_status_reason",
                     "stale_warning",
                     "warning",
@@ -551,6 +551,9 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
         "summary",
         "no_action",
         "message",
+        "missing_symbols",
+        "warnings",
+        "did_you_mean",
     ):
         value = result.get(key)
         if not _is_empty_value(value):

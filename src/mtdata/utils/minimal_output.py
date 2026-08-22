@@ -1202,10 +1202,15 @@ def _normalize_market_ticker_payload(  # noqa: C901
         "data_stale",
         "usable_for_live_trading",
         "related_live_symbols",
+        "market_status",
         "market_status_reason",
         "spread_valid",
         "spread_quality",
         "quote_source_state",
+        "quote_source_conflict",
+        "quote_conflict_pips",
+        "alternate_bid",
+        "alternate_ask",
     ]
     if not _is_empty_value(payload.get("spread")):
         compact_keys.append("spread")
@@ -1249,6 +1254,23 @@ def _normalize_market_ticker_payload(  # noqa: C901
             if key in {"price", "bid", "ask", "last", "spread"}:
                 value = _price_value(value)
             out[key] = value
+
+    conflict = payload.get("quote_source_conflict")
+    if isinstance(conflict, dict):
+        if _is_empty_value(out.get("quote_conflict_pips")):
+            pips = conflict.get("max_disagreement_pips")
+            if not _is_empty_value(pips):
+                out["quote_conflict_pips"] = pips
+        cached_pair = conflict.get("symbol_info_tick")
+        if isinstance(cached_pair, dict):
+            if _is_empty_value(out.get("alternate_bid")) and not _is_empty_value(
+                cached_pair.get("bid")
+            ):
+                out["alternate_bid"] = cached_pair.get("bid")
+            if _is_empty_value(out.get("alternate_ask")) and not _is_empty_value(
+                cached_pair.get("ask")
+            ):
+                out["alternate_ask"] = cached_pair.get("ask")
 
     display_time = payload.get("time_display")
     epoch_time = payload.get("time_epoch")

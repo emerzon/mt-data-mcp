@@ -203,9 +203,17 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             value = payload.get(key)
         if value is not None:
             out[key] = value
-    market_state = out.pop("market_status", None)
-    if market_state is not None:
-        out["market_state"] = market_state
+    quote_conflict = out.get("quote_source_conflict")
+    if isinstance(quote_conflict, dict):
+        conflict_pips = quote_conflict.get("max_disagreement_pips")
+        if conflict_pips is not None:
+            out["quote_conflict_pips"] = conflict_pips
+        cached_pair = quote_conflict.get("symbol_info_tick")
+        if isinstance(cached_pair, dict):
+            if cached_pair.get("bid") is not None:
+                out["alternate_bid"] = cached_pair.get("bid")
+            if cached_pair.get("ask") is not None:
+                out["alternate_ask"] = cached_pair.get("ask")
     for key in ("spread", "spread_points", "spread_pips", "spread_pct"):
         if payload.get(key) is not None:
             out[key] = payload[key]

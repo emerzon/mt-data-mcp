@@ -1907,6 +1907,24 @@ class TestMarketScan:
         assert [symbol.name for symbol in selected] == ["USDJPY", "EURUSD"]
         assert meta["missing_symbols"] == ["MISSING"]
 
+    def test_explicit_symbol_selection_resolves_separator_aliases(self):
+        fn = _get_select_market_scan_symbols()
+
+        selected, meta, error = fn(
+            [
+                _make_symbol("EURUSD"),
+                _make_symbol("BTCUSD"),
+            ],
+            symbols="EUR/USD, EUR.USD, BTC-USDT",
+            group=None,
+            universe="visible",
+        )
+
+        assert error is None
+        assert [symbol.name for symbol in selected] == ["EURUSD", "EURUSD"]
+        assert meta["missing_symbols"] == ["BTC-USDT"]
+        assert meta["did_you_mean"][0]["symbol"] == "BTCUSD"
+
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_market_scan_universe_all_requires_bounded_scope(self, mock_symbols_get):
         fn = _get_market_scan()
@@ -2033,6 +2051,7 @@ class TestMarketScan:
             "bid",
             "ask",
             "spread_quality",
+            "quote_source_state",
             "price_change_pct",
             "live_price_change_pct",
             "spread_pct",
@@ -2567,6 +2586,32 @@ class TestMarketScan:
             "Requested symbol(s) not found and excluded from the scan: "
             "NOTAREALPAIR."
         ]
+        assert "dropped NOTAREALPAIR" in result["message"]
+
+    @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_allow_partial_false_fails_closed(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [_make_symbol("EURUSD")]
+        mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1001)
+        mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03])
+
+        result = _get_market_scan()(
+            symbols="EURUSD,NOTAREALPAIR",
+            lookback=4,
+            allow_partial=False,
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "missing_symbols"
+        assert result["details"]["missing_symbols"] == ["NOTAREALPAIR"]
 
     @patch("mtdata.core.symbols.scan._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.scan._mt5_copy_rates_from_pos")

@@ -19,6 +19,39 @@ QUOTE_EXECUTION_SOURCE_AGREEMENT_BASIS = (
     "quote_age_market_session_spread_and_source_agreement"
 )
 _MATERIAL_QUOTE_MID_DISAGREEMENT_POINTS = 10.0
+_SERVER_CLOCK_OFFSET_MATCH_SECONDS = 2.0
+
+
+def _configured_broker_offset_seconds(at_epoch: float) -> int:
+    try:
+        from ..bootstrap.settings import mt5_config
+
+        at_time = datetime.fromtimestamp(float(at_epoch), tz=timezone.utc)
+        return int(mt5_config.get_time_offset_seconds(at_time))
+    except Exception:
+        return 0
+
+
+def _cache_epoch_is_unnormalized_server_clock(
+    raw_epoch: Any,
+    stream_epoch: Any,
+    *,
+    now_epoch: float,
+) -> bool:
+    """True when cached tick looks like a server-clock epoch of the UTC stream."""
+    if raw_epoch is None or stream_epoch is None:
+        return False
+    try:
+        raw_value = float(raw_epoch)
+        stream_value = float(stream_epoch)
+    except (TypeError, ValueError):
+        return False
+    offset_seconds = _configured_broker_offset_seconds(now_epoch)
+    if offset_seconds == 0:
+        return False
+    return abs((raw_value - stream_value) - float(offset_seconds)) <= (
+        _SERVER_CLOCK_OFFSET_MATCH_SECONDS
+    )
 
 
 def _quote_source_conflict_is_material(
@@ -462,7 +495,14 @@ def resolve_quote_tick(
         stale_after_seconds=stale_after_seconds,
     )
     stream_live_ready = stream_freshness.get("usable_for_live_trading") is True
-    same_epoch = raw_epoch is not None and abs(stream_epoch - raw_epoch) <= 0.001
+    unnormalized_server_cache = _cache_epoch_is_unnormalized_server_clock(
+        raw_epoch,
+        stream_epoch,
+        now_epoch=now_epoch,
+    )
+    same_epoch = raw_epoch is not None and (
+        abs(stream_epoch - raw_epoch) <= 0.001 or unnormalized_server_cache
+    )
     pairs_differ = _quote_pair(raw_tick) != _quote_pair(stream_tick)
     point = _symbol_point(gateway, symbol)
     one_sided_stream_update = _is_one_sided_quote_update(gateway, stream_tick)
@@ -498,6 +538,7 @@ def resolve_quote_tick(
     use_stream = (
         raw_tick is None
         or use_stream_for_conflict
+        or unnormalized_server_cache
         or (
             raw_ahead_of_observation
             and stream_not_ahead_of_observation

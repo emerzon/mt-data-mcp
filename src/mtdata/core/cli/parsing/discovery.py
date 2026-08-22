@@ -643,6 +643,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Keep usable comma-separated symbol results after partial failure; set "
         "false for strict completion."
     ),
+    ("market_scan", "allow_partial"): (
+        "Keep usable rows after unknown requested symbols are dropped; set "
+        "false to fail closed when any requested name is missing."
+    ),
     ("symbols_top_markets", "candidate_offset"): (
         "Zero-based offset into the deterministic sorted candidate universe. Increment "
         "by candidate_limit until candidate_page.has_more is false."

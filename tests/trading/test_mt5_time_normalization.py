@@ -621,3 +621,47 @@ def test_adapter_detects_clock_before_normalizing_positions_and_symbol_info(monk
     assert float(positions[0].time) == now_epoch - 30 * 60
     assert float(positions[0].time_msc) == (now_epoch - 30 * 60) * 1000
     assert float(info.time) == now_epoch
+
+
+def test_symbol_info_tick_probes_live_symbol_after_utc_midnight(
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 8, 22, 1, 28, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    offset = 3 * 60 * 60
+    friday_utc = datetime(2026, 8, 21, 20, 56, 59, tzinfo=timezone.utc).timestamp()
+    stale_server_tick = SimpleNamespace(
+        time=friday_utc + offset,
+        time_msc=(friday_utc + offset) * 1000,
+        bid=1.16749,
+        ask=1.16767,
+    )
+    live_tick = SimpleNamespace(
+        time=now_epoch + offset,
+        time_msc=(now_epoch + offset) * 1000,
+        bid=78000.0,
+        ask=78010.0,
+    )
+    module = SimpleNamespace(
+        positions_get=lambda: (),
+        symbols_get=lambda: (
+            SimpleNamespace(name="EURUSD", visible=True),
+            SimpleNamespace(name="BTCUSD", visible=True),
+        ),
+        symbol_info_tick=lambda symbol: (
+            live_tick if symbol == "BTCUSD" else stale_server_tick
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: offset,
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 180)
+
+    normalized = mt5_mod.MT5Adapter().symbol_info_tick("EURUSD")
+
+    assert float(normalized.time) == pytest.approx(friday_utc)
+    assert mt5_mod.get_mt5_timestamp_mode("EURUSD") == "server_clock"

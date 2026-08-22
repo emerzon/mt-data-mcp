@@ -952,6 +952,29 @@ class TestFormatResultForCli:
         assert "session_status: closed_weekend" in result
         assert "units.close: price" in result
 
+    def test_market_scan_toon_keeps_missing_symbols(self):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "count": 1,
+                "data": [["EURUSD"]],
+                "missing_symbols": ["EUR/USD", "BTC-USDT"],
+                "warnings": [
+                    "Requested symbol(s) not found and excluded from the scan: "
+                    "EUR/USD, BTC-USDT."
+                ],
+                "message": (
+                    "Returned 1 of 3 requested symbols; dropped EUR/USD, BTC-USDT."
+                ),
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="market_scan",
+        )
+
+        assert "missing_symbols[2]: EUR/USD,BTC-USDT" in result
+        assert "dropped EUR/USD" in result
+
     def test_market_scan_json_keeps_metadata_for_scripts(self):
         payload = json.loads(
             _format_result_for_cli(

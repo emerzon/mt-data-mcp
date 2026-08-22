@@ -80,3 +80,29 @@ def test_symbol_selection_does_not_report_success_as_an_error_detail() -> None:
     assert _describe_symbol_select_error("NOTREAL", (1, "Success")) == (
         "Symbol 'NOTREAL' was not found or is not available in MT5."
     )
+
+
+def test_compact_ticker_keeps_market_status_and_conflict_size() -> None:
+    result = _compact_market_ticker_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.16753,
+            "ask": 1.16763,
+            "market_status": "closed",
+            "market_status_reason": "weekend",
+            "quote_source_state": "reconciled_equal_timestamp_conflict",
+            "quote_source_conflict": {
+                "reason": "equal_timestamp_bid_ask_disagreement",
+                "max_disagreement_pips": 0.4,
+                "symbol_info_tick": {"bid": 1.16749, "ask": 1.16767},
+                "stream_tick": {"bid": 1.16753, "ask": 1.16763},
+            },
+        }
+    )
+
+    assert result["market_status"] == "closed"
+    assert "market_state" not in result
+    assert result["quote_conflict_pips"] == 0.4
+    assert result["alternate_bid"] == 1.16749
+    assert result["alternate_ask"] == 1.16767
