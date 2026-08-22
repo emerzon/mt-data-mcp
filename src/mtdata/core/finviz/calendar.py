@@ -902,8 +902,8 @@ def run_finviz_calendar(
     except ValueError as exc:
         return build_error_payload(
             str(exc),
-            code="finviz_calendar_invalid_date",
-            operation="finviz_calendar",
+            code="invalid_date",
+            operation="calendar",
             remediation=(
                 "Pass YYYY-MM-DD or a dateparser expression such as "
                 "start='2 days ago', end='today'."

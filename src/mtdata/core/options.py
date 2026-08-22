@@ -850,6 +850,19 @@ def options_barrier_price(
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Price a barrier option using QuantLib with optional calendar overrides."""
+    date_error = _validate_options_valuation_date(valuation_date)
+    if date_error is not None:
+        return _run_options_operation(
+            "options_barrier_price",
+            option_type=option_type,
+            barrier_type=barrier_type,
+            maturity_days=maturity_days,
+            valuation_date=valuation_date,
+            calendar=calendar,
+            maturity_basis=maturity_basis,
+            detail=detail,
+            func=lambda: date_error,
+        )
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
 
     def _run() -> Dict[str, Any]:

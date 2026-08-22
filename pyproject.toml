@@ -172,6 +172,7 @@ mtdata-stdio = "mtdata.core.server:main_stdio"
 mtdata-streamable-http = "mtdata.core.server:main_streamable_http"
 mtdata-webapi = "mtdata.core.web_api:main_webapi"
 mtdata-cli = "mtdata.core.cli:main"
+mtdata = "mtdata.core.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/emerzon/mt-data-mcp"

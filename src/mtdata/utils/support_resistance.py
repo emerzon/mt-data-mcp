@@ -2326,6 +2326,9 @@ def merge_support_resistance_results(  # noqa: C901
     ranges = range_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
+    _annotate_strength_metrics(supports)
+    _annotate_strength_metrics(resistances)
+    _annotate_strength_metrics(ranges)
     zone_overlap = _build_zone_overlap(
         support_level=supports[0] if supports else None,
         resistance_level=resistances[0] if resistances else None,
@@ -2898,6 +2901,9 @@ def compute_support_resistance_levels(
     ranges = range_candidates[:max_levels_value]
     supports.sort(key=lambda level: (-float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
     resistances.sort(key=lambda level: (float(level.get("value", 0.0)), -float(level.get("score", 0.0))))
+    _annotate_strength_metrics(supports)
+    _annotate_strength_metrics(resistances)
+    _annotate_strength_metrics(ranges)
     zone_overlap = _build_zone_overlap(
         support_level=supports[0] if supports else None,
         resistance_level=resistances[0] if resistances else None,

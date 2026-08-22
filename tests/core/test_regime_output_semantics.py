@@ -633,6 +633,14 @@ def test_rule_based_rejects_limit_below_minimum_window() -> None:
     assert out["error"].startswith("fetch_limit must be >= 20")
 
 
+def test_rule_based_rejects_lookback_below_minimum_window() -> None:
+    raw = _unwrap(regime_detect)
+    out = raw(symbol="TEST", timeframe="H1", lookback=1, method="rule_based")
+
+    assert out["error"].startswith("--lookback must be >= 20")
+    assert "params.window_bars" not in out["error"]
+
+
 @pytest.mark.parametrize(
     ("params", "expected_error"),
     [

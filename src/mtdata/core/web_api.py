@@ -285,22 +285,17 @@ def _readiness_payload() -> tuple[Dict[str, Any], int]:
             },
             200,
         )
-    component = {
-        "status": "error",
-        "error": connection_error.get("error"),
-        "error_code": connection_error.get("error_code"),
-    }
-    if connection_error.get("request_id"):
-        component["request_id"] = connection_error["request_id"]
-    if connection_error.get("remediation"):
-        component["remediation"] = connection_error["remediation"]
     return (
         {
             "service": "mtdata-webui",
             "status": "degraded",
             "ready": False,
             "components": {
-                "mt5_connection": component,
+                "mt5_connection": {
+                    "status": "error",
+                    "error_code": connection_error.get("error_code")
+                    or "mt5_connection_error",
+                }
             },
         },
         503,
@@ -400,7 +395,7 @@ def get_history(
         Optional[str],
         Query(description="Indicator specification forwarded to data_fetch_candles."),
     ] = None,
-    timestamp_format: Literal["epoch", "iso"] = "iso",
+    timestamp_format: Literal["epoch", "iso", "iso_utc"] = "iso",
     detail: DetailLiteral = "compact",
     denoise_method: Annotated[
         Optional[str],

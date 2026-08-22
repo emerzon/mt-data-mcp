@@ -272,6 +272,26 @@ def test_compact_raw_news_page_does_not_claim_no_results() -> None:
     assert "hint" not in compact
 
 
+def test_compact_news_error_is_not_labeled_no_results() -> None:
+    payload = {
+        "success": False,
+        "error": "symbol was supplied but is empty; omit it for market-wide news.",
+        "error_code": "empty_symbol_selector",
+        "general_news": [],
+        "related_news": [],
+        "impact_news": [],
+        "upcoming_events": [],
+        "recent_events": [],
+    }
+
+    compact = normalize_news_output(payload, detail="compact")
+
+    assert compact["success"] is False
+    assert compact["error_code"] == "empty_symbol_selector"
+    assert compact.get("status") != "no_results"
+    assert "hint" not in compact
+
+
 def test_compact_empty_raw_news_page_can_report_no_results() -> None:
     payload = {
         "success": True,
@@ -558,6 +578,23 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
     assert "related_news" not in result
     assert "market_context" not in result
     assert "category" not in result["general_news"][0]
+
+
+def test_news_compact_mt5_feed_includes_freshness_warning() -> None:
+    payload = {
+        "success": True,
+        "general_news": [
+            {"title": "ECB preview", "provider": "mt5", "source": "Broker News"},
+        ],
+    }
+
+    result = _prepare_news_output(payload, detail="compact")
+
+    assert result["providers_used"] == ["mt5"]
+    assert result["delivery"] == "broker_terminal_feed"
+    assert result["is_realtime"] is False
+    assert result["freshness_warning"]["code"] == "non_realtime_news_provider"
+    assert result["freshness_warning"]["providers"] == ["mt5"]
 
 
 def test_news_compact_keeps_item_provider_when_feeds_are_merged() -> None:

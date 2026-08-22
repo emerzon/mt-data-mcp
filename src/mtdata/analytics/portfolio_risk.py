@@ -183,30 +183,33 @@ def _position_side(row: Dict[str, Any], gateway: Any) -> str:
 
 
 def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[float], Optional[str]]:
-    symbol = str(row.get("symbol") or "")
-    volume = float(row.get("volume") or 0.0)
-    side = _position_side(row, gateway)
-    raw_tick = gateway.symbol_info_tick(symbol)
-    tick, _ = resolve_quote_tick(
-        gateway,
-        symbol,
-        raw_tick,
-        now_epoch=datetime.now(timezone.utc).timestamp(),
-    )
-    price = float(getattr(tick, "bid" if side == "sell" else "ask", 0.0) or row.get("price_current") or 0.0)
-    if not symbol or volume <= 0 or price <= 0:
-        return None, "missing symbol, volume, or mark price"
-    action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
-    up = gateway.order_calc_profit(action, symbol, volume, price, price * 1.0001)
-    down = gateway.order_calc_profit(action, symbol, volume, price, price * 0.9999)
-    if up is None or down is None:
-        return None, "order_calc_profit unavailable"
-    up_sens = float(up) / 0.0001
-    down_sens = float(down) / -0.0001
-    scale = max(abs(up_sens), abs(down_sens), 1e-12)
-    if abs(up_sens - down_sens) / scale > 0.05:
-        return None, "nonlinear or asymmetric P&L response"
-    return float((up_sens + down_sens) / 2.0), None
+    try:
+        symbol = str(row.get("symbol") or "")
+        volume = float(row.get("volume") or 0.0)
+        side = _position_side(row, gateway)
+        raw_tick = gateway.symbol_info_tick(symbol)
+        tick, _ = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        )
+        price = float(getattr(tick, "bid" if side == "sell" else "ask", 0.0) or row.get("price_current") or 0.0)
+        if not symbol or volume <= 0 or price <= 0:
+            return None, "missing symbol, volume, or mark price"
+        action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
+        up = gateway.order_calc_profit(action, symbol, volume, price, price * 1.0001)
+        down = gateway.order_calc_profit(action, symbol, volume, price, price * 0.9999)
+        if up is None or down is None:
+            return None, "order_calc_profit unavailable"
+        up_sens = float(up) / 0.0001
+        down_sens = float(down) / -0.0001
+        scale = max(abs(up_sens), abs(down_sens), 1e-12)
+        if abs(up_sens - down_sens) / scale > 0.05:
+            return None, "nonlinear or asymmetric P&L response"
+        return float((up_sens + down_sens) / 2.0), None
+    except Exception as exc:
+        return None, str(exc)
 
 
 

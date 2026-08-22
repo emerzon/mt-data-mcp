@@ -1561,6 +1561,20 @@ def market_status(  # noqa: C901
             "symbol": symbol,
             "venue": venue_id,
         }
+    if symbol_mode and not venue_mode:
+        positional = str(symbol).strip().upper()
+        if positional in _MARKETS and "," not in str(symbol):
+            return {
+                "error": (
+                    f"'{positional}' is a venue ID, not an MT5 symbol. "
+                    f"Use --venue {positional} for the equity session calendar."
+                ),
+                "error_code": "invalid_market_status_scope",
+                "venue": positional,
+                "remediation": (
+                    f"Use --venue {positional} or pass a broker symbol such as EURUSD."
+                ),
+            }
     if venue_mode and venue_id not in _MARKETS:
         return {
             "error": (

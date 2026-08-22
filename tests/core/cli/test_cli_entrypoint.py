@@ -90,6 +90,18 @@ def test_version_path_does_not_import_cli_api(capsys):
     assert capsys.readouterr().out.strip() == "mtdata-cli 9.8.7"
 
 
+def test_global_only_argv_uses_curated_root_help(capsys):
+    from mtdata.core.cli import main
+
+    with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
+        status = main(["--precision", "auto"])
+
+    output = capsys.readouterr().out
+    assert status == 1
+    assert "Catalog categories" in output
+    assert "Dynamic CLI for MetaTrader5 MCP tools" not in output
+
+
 def test_root_help_path_does_not_import_cli_api(capsys):
     from mtdata.core.cli import main
 

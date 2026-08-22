@@ -325,6 +325,7 @@ After editable install, these entry points are available:
 | `mtdata-streamable-http` | Streamable HTTP | `mtdata-streamable-http` |
 | `mtdata-webapi` | Web API (FastAPI) | `mtdata-webapi` |
 | `mtdata-cli` | CLI | `mtdata-cli <command>` |
+| `mtdata` | CLI | `mtdata <command>` |
 
 **MCP server environment variables:**
 

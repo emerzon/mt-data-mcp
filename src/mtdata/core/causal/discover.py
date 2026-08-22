@@ -744,7 +744,6 @@ def causal_discover_signals(  # noqa: C901
             "pairs_tested_basis": "directed_granger_tests",
             "directed_tests": int(pair_success),
             "undirected_pairs": int(undirected_pairs_tested),
-            "tested_directions": tested_directions,
             **pagination,
             "context": {
                 **_pairwise_analysis_context(rows_sorted, timeframe=timeframe),
@@ -786,6 +785,8 @@ def causal_discover_signals(  # noqa: C901
             out["warnings"] = warnings_out
         if rows_sorted and detail_mode == "full":
             out["pairs"] = _compact_causal_pair_rows(rows_sorted, limit=20)
+        if requested_detail == "full":
+            out["tested_directions"] = tested_directions
         if not rows_sorted:
             out["result"] = "no_tests_run"
             out["message"] = (

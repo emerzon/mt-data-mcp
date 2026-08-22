@@ -582,10 +582,7 @@ class TestCausalDiscoverSignals:
 
         assert result["success"] is True
         assert result["pairs_tested"] == 30
-        assert len(result["tested_directions"]) == 30
-        assert len(
-            {(item["cause"], item["effect"]) for item in result["tested_directions"]}
-        ) == 30
+        assert "tested_directions" not in result
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.discover.TIMEFRAME_MAP", {"H1": 1})
@@ -939,10 +936,7 @@ class TestCausalDiscoverSignals:
         assert result["pairs_tested_basis"] == "directed_granger_tests"
         assert result["directed_tests"] == 2
         assert result["undirected_pairs"] == 1
-        assert result["tested_directions"] == [
-            {"cause": "B", "effect": "A"},
-            {"cause": "A", "effect": "B"},
-        ]
+        assert "tested_directions" not in result
         assert result["summary"]["counts"] == {
             "pairs_tested": 2,
             "directed_tests": 2,

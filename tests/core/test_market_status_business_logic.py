@@ -250,29 +250,14 @@ def test_market_status_accepts_explicit_venue_identifier(monkeypatch) -> None:
     assert "symbol" not in result["markets"][0]
 
 
-def test_market_status_reserved_venue_name_stays_in_symbol_mode(monkeypatch) -> None:
+def test_market_status_positional_venue_id_hints_at_venue_flag() -> None:
     raw = _unwrap(market_status_mod.market_status)
-    captured = {}
 
-    def fake_symbol_status(symbol, **kwargs):
-        captured.update({"symbol": symbol, **kwargs})
-        return {"success": True, "mode": "symbol", "symbol": symbol}
+    result = raw(symbol="NYSE")
 
-    monkeypatch.setattr(
-        market_status_mod,
-        "_check_symbol_market_status",
-        fake_symbol_status,
-    )
-
-    result = raw(symbol="ASX")
-
-    assert result == {
-        "success": True,
-        "mode": "symbol",
-        "symbol": "ASX",
-        "source": {"provider": "mt5", "context_available": False},
-    }
-    assert captured["symbol"] == "ASX"
+    assert result["error_code"] == "invalid_market_status_scope"
+    assert "--venue NYSE" in result["error"]
+    assert result["venue"] == "NYSE"
 
 
 def test_market_status_rejects_ambiguous_symbol_and_venue() -> None:

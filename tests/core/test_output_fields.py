@@ -268,6 +268,26 @@ def test_output_fields_preserves_pagination_metadata() -> None:
     }
 
 
+def test_output_fields_keeps_domain_remediation_on_partial_error() -> None:
+    payload = {
+        "success": False,
+        "error": "No usable quote data for DE40.",
+        "error_code": "market_ticker_quote_unavailable",
+        "remediation": "Ensure the symbol has a recent tick in Market Watch.",
+        "details": {"symbol": "DE40"},
+    }
+
+    result = _select_output_fields(payload, "success,error,bid,ask")
+
+    assert result["success"] is False
+    assert result["error"] == payload["error"]
+    assert result["remediation"] == payload["remediation"]
+    assert result["output_fields_status"] == "partial"
+    assert result["output_fields_remediation"]
+    assert result["valid_output_fields"]
+    assert "details" in result["valid_output_fields"]
+
+
 def test_output_fields_preserves_history_truncation_warnings() -> None:
     payload = {
         "success": True,

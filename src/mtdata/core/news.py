@@ -80,6 +80,11 @@ _NEWS_PROVIDER_DELIVERY = {
     },
     "mt5": {
         "delivery": "broker_terminal_feed",
+        "is_realtime": False,
+        "freshness_note": (
+            "MT5 terminal headlines come from the broker feed and are not "
+            "guaranteed real-time."
+        ),
     },
 }
 
@@ -333,6 +338,8 @@ def normalize_news_output(
     raw_items = result.get("items")
     has_raw_items = isinstance(raw_items, list) and bool(raw_items)
     if not has_visible_buckets and not has_raw_items:
+        if result.get("success") is False or result.get("error") not in (None, ""):
+            return out
         queried = [
             str(provider)
             for provider in (result.get("sources_used") or [])

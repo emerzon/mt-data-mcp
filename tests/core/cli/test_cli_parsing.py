@@ -89,7 +89,7 @@ def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
         ("volume_profile_levels", None),
     ],
 )
-def test_global_timeframe_does_not_change_mode_switch_commands(
+def test_global_timeframe_applies_to_mode_switch_commands(
     command: str,
     command_default: Optional[str],
 ) -> None:
@@ -111,7 +111,7 @@ def test_global_timeframe_does_not_change_mode_switch_commands(
         functions=functions,
     )
 
-    assert result.timeframe == command_default
+    assert result.timeframe == "H4"
 
 
 @pytest.mark.parametrize(
@@ -162,7 +162,7 @@ def test_shell_timeframe_support_matches_one_shot_inheritance_policy() -> None:
         "wait_event",
         "patterns_detect",
         "volume_profile_levels",
-    }.isdisjoint(supported)
+    }.issubset(supported)
 
 
 @pytest.mark.parametrize(
@@ -463,6 +463,15 @@ class TestAddForecastGenerateArgs:
         assert args.denoise == "__PRESENT__"
         assert args.params == "__PRESENT__"
 
+    def test_parser_accepts_denoise_params_companion(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+        args = parser.parse_args(
+            ["EURUSD", "--denoise", "ema", "--denoise-params", "alpha=0.2"]
+        )
+        assert args.denoise == "ema"
+        assert args.denoise_params == "alpha=0.2"
+
     def test_parser_exposes_detail_flag(self):
         parser = argparse.ArgumentParser()
         _add_forecast_generate_args(parser)
@@ -524,6 +533,36 @@ class TestAddForecastGenerateArgs:
         assert result == 0
         request = mock_fn.call_args[1]["request"]
         assert request.denoise == {"method": "ema"}
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_main_accepts_denoise_params_companion(self, mock_discover):
+        from mtdata.core.cli.api import main
+
+        mock_fn = MagicMock(return_value="ok")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Generate forecasts"}},
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "forecast_generate",
+                "EURUSD",
+                "--denoise",
+                "ema",
+                "--denoise-params",
+                "alpha=0.2",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.denoise == {"method": "ema", "params": {"alpha": 0.2}}
 
 
 @pytest.mark.parametrize(
@@ -1803,8 +1842,8 @@ class TestResolveParamKwargs:
     @pytest.mark.parametrize(
         ("cmd_name", "param_name", "expected"),
         [
-            ("data_fetch_candles", "timestamp_format", "UTC bar-open timestamp"),
-            ("data_fetch_ticks", "timestamp_format", "MT5 tick event"),
+            ("data_fetch_candles", "timestamp_format", "ISO in CLIENT_TZ"),
+            ("data_fetch_ticks", "timestamp_format", "ISO in CLIENT_TZ"),
             ("market_ticker", "price_field", "default bid/ask/spread quote snapshot"),
             ("patterns_detect", "timeframe", "elliott scans H1/H4/D1"),
             ("symbols_list", "universe", "searches use the full broker catalog"),
@@ -1876,6 +1915,17 @@ class TestResolveParamKwargs:
         assert causal_limit_kwargs["help"] == "Max causal link rows to return."
         assert "Historical bars per symbol" in causal_window_kwargs["help"]
         assert "max_regimes" in regime_fetch_limit_kwargs["help"]
+
+    def test_stationarity_trend_help_describes_adf_deterministic_term(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "trend", "type": str, "required": False, "default": "c"},
+            None,
+            cmd_name="stationarity_test",
+        )
+
+        assert "ADF" in kwargs["help"]
+        assert "constant+trend" in kwargs["help"]
+        assert "Cointegration" not in kwargs["help"]
 
     @pytest.mark.parametrize(
         "cmd_name",
@@ -2494,6 +2544,44 @@ class TestNormalizeCliArgvAliases:
             "EURUSD",
             "--pivot-timeframe",
             "H1",
+        ]
+
+    def test_keeps_explicit_confluence_pivot_timeframe_when_timeframe_differs(self):
+        functions = {"confluence_levels": {"func": lambda: None}}
+
+        with pytest.raises(ValueError, match="both set and differ"):
+            _normalize_cli_argv_aliases(
+                [
+                    "confluence_levels",
+                    "EURUSD",
+                    "--pivot-timeframe",
+                    "D1",
+                    "--timeframe",
+                    "H1",
+                ],
+                functions,
+            )
+
+    def test_does_not_rewrite_confluence_timeframe_when_pivot_present(self):
+        functions = {"confluence_levels": {"func": lambda: None}}
+
+        out = _normalize_cli_argv_aliases(
+            [
+                "confluence_levels",
+                "EURUSD",
+                "--pivot-timeframe",
+                "D1",
+                "--timeframe",
+                "D1",
+            ],
+            functions,
+        )
+
+        assert out == [
+            "confluence_levels",
+            "EURUSD",
+            "--pivot-timeframe",
+            "D1",
         ]
 
     def test_keeps_global_confluence_timeframe_for_global_override(self):

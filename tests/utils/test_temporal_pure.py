@@ -677,7 +677,7 @@ class TestTemporalAnalyze:
 
     @_apply_analyze_patches
     def test_default_compact_omits_verbose_overall_stats(self, mock_fetch, *_):
-        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+        mock_fetch.return_value = (_make_rates(n=720, start_epoch=1704067200, interval=3600), None)
 
         r = _raw_temporal_analyze(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="dow")
 
@@ -727,7 +727,7 @@ class TestTemporalAnalyze:
 
     @_apply_analyze_patches
     def test_summary_detail_returns_best_and_overall_only(self, mock_fetch, *_):
-        r = self._call(mock_fetch, detail="summary")
+        r = self._call(mock_fetch, n=720, detail="summary")
 
         assert r.get("success") is True
         assert "groups" not in r
@@ -1025,13 +1025,13 @@ class TestTemporalAnalyze:
                 {
                     "dimension": "dow",
                     "breakdown": [
-                        {"group_label": "Mon", "avg_return_pct": 0.001, "win_rate": 0.55, "win_rate_pct": 55.0},
+                        {"group_label": "Mon", "bars": 30, "avg_return_pct": 0.001, "win_rate": 0.55, "win_rate_pct": 55.0},
                     ],
                 },
                 {
                     "dimension": "hour",
                     "breakdown": [
-                        {"group_label": "08:00", "avg_return_pct": 0.003, "win_rate": 0.60, "win_rate_pct": 60.0},
+                        {"group_label": "08:00", "bars": 30, "avg_return_pct": 0.003, "win_rate": 0.60, "win_rate_pct": 60.0},
                     ],
                 },
             ],
@@ -1049,7 +1049,7 @@ class TestTemporalAnalyze:
 
     @_apply_analyze_patches
     def test_group_by_all_compact_keeps_grouped_breakdowns(self, mock_fetch, *_):
-        mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
+        mock_fetch.return_value = (_make_rates(n=720, start_epoch=1704067200, interval=3600), None)
 
         r = _raw_temporal_analyze(
             symbol="EURUSD",

@@ -360,7 +360,11 @@ def validate_strategies(  # noqa: C901
         end=request.end,
     )
     if len(df) < 200:
-        return {"error": "At least 200 completed bars are required.", "error_code": "insufficient_data"}
+        return {
+            "success": False,
+            "error": "At least 200 completed bars are required.",
+            "error_code": "insufficient_data",
+        }
     spread_bps, spread_source, complete, spread_window = _observed_spread_bps(
         request,
         gateway,
@@ -459,6 +463,7 @@ def validate_strategies(  # noqa: C901
         all_net = []
         calibrated_probabilities: List[float] = []
         calibrated_labels: List[int] = []
+        calibration_available = True
         for fold, (test_start, test_end) in enumerate(candidate_fold_windows):
             if test_start > test_end:
                 skipped_folds.append({"fold": fold + 1, "reason": "empty_test_window"})
@@ -503,8 +508,10 @@ def validate_strategies(  # noqa: C901
                         calibrator = LogisticRegression(random_state=42).fit(train_x, train_y)
                         calibrated_probabilities.extend(calibrator.predict_proba(test_x)[:, 1].tolist())
                         calibrated_labels.extend((test > 0).astype(int).tolist())
+                except ImportError:
+                    calibration_available = False
                 except Exception:
-                    pass
+                    calibration_available = False
             fold_rows.append({
                 "fold": fold + 1,
                 "train_trades": train_count,
@@ -569,6 +576,12 @@ def validate_strategies(  # noqa: C901
             np.sum(np.asarray(fold_expectancies) > 0) / request.n_splits
         ) if fold_expectancies else 0.0
         base_rate_stability = {"status": "insufficient_data", "observations": len(calibrated_labels)}
+        if not calibration_available:
+            base_rate_stability = {
+                "status": "calibration_unavailable",
+                "observations": len(calibrated_labels),
+                "calibration_available": False,
+            }
         if calibrated_labels:
             probs = np.asarray(calibrated_probabilities, dtype=float)
             labels = np.asarray(calibrated_labels, dtype=float)

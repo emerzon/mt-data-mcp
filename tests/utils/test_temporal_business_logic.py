@@ -66,11 +66,27 @@ def test_compact_temporal_payload_best_keeps_group_key() -> None:
             "groups_analyzed": 2,
             "groups_excluded": 0,
             "groups": [
-                {"group": 7, "group_label": "07:00", "bars": 24, "avg_return_pct": 0.1},
-                {"group": 8, "group_label": "08:00", "bars": 24, "avg_return_pct": 0.2},
+                {"group": 7, "group_label": "07:00", "bars": 30, "avg_return_pct": 0.1},
+                {"group": 8, "group_label": "08:00", "bars": 30, "avg_return_pct": 0.2},
             ],
         }
     )
 
     assert result["groups"][0]["group"] == 7
     assert result["best"]["group"] == 8
+
+
+def test_compact_temporal_payload_omits_best_when_winner_is_undersampled() -> None:
+    result = _compact_temporal_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "group_by": "hour",
+            "groups": [
+                {"group": 7, "group_label": "07:00", "bars": 1, "avg_return_pct": 0.5},
+            ],
+        }
+    )
+
+    assert "best" not in result

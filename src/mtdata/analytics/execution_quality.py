@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -33,6 +34,8 @@ from .engine_common import (
     _tick_frame,
     _window,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _execution_percentiles(values: Iterable[float]) -> Dict[str, Optional[float]]:
@@ -558,8 +561,9 @@ def analyze_execution_quality(  # noqa: C901
             )
             if shortfall is not None:
                 item["execution_shortfall_currency_estimate"] = float(shortfall)
-        except Exception:
-            pass
+        except Exception as exc:
+            item["execution_shortfall_error"] = str(exc)
+            logger.warning("execution shortfall estimate failed: %s", exc)
         fills.append(item)
         if len(fills) >= request.limit:
             break

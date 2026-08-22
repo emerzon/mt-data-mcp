@@ -441,6 +441,8 @@ def _flatten_temporal_dimension_groups(
             key=lambda row: float(row.get("avg_return_pct") or 0.0),
             default=None,
         )
+        if best and int(best.get("bars", 0) or 0) < _TEMPORAL_RELIABLE_GROUP_BARS:
+            best = None
         if best:
             best_row = {"dimension": dimension}
             best_row.update(
@@ -532,11 +534,13 @@ def _temporal_best_summary(groups: Any) -> Any:
             key=lambda row: float(row.get("avg_return_pct") or 0.0),
             default=None,
         )
+        if best is not None and int(best.get("bars", 0) or 0) < _TEMPORAL_RELIABLE_GROUP_BARS:
+            best = None
         if best is not None:
             best_rows.append({"dimension": item.get("dimension"), **best})
     if best_rows:
         return best_rows
-    return max(
+    best = max(
         (
             row
             for row in groups
@@ -545,6 +549,9 @@ def _temporal_best_summary(groups: Any) -> Any:
         key=lambda row: float(row.get("avg_return_pct") or 0.0),
         default=None,
     )
+    if best is not None and int(best.get("bars", 0) or 0) < _TEMPORAL_RELIABLE_GROUP_BARS:
+        return None
+    return best
 
 
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -644,6 +651,8 @@ def _compact_temporal_payload(
             key=lambda row: float(row.get("avg_return_pct") or 0.0),
             default=None,
         )
+        if best and int(best.get("bars", 0) or 0) < _TEMPORAL_RELIABLE_GROUP_BARS:
+            best = None
         if best:
             out["best"] = {
                 key: best[key]
@@ -778,6 +787,8 @@ def _standard_temporal_payload(
                 key=lambda row: float(row.get("avg_return_pct") or 0.0),
                 default=None,
             )
+            if best and int(best.get("bars", 0) or 0) < _TEMPORAL_RELIABLE_GROUP_BARS:
+                best = None
         if best:
             out["best"] = {
                 key: best[key]

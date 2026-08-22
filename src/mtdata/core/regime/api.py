@@ -576,6 +576,13 @@ def regime_detect(  # noqa: C901
                             "increase the requested history window or choose another method."
                         )
                     })
+                if lookback_mapped_to_window:
+                    return _finish({
+                        "error": (
+                            "--lookback must be >= 20 for method='rule_based'; "
+                            "increase the requested history window or choose another method."
+                        )
+                    })
                 return _finish({"error": "params.window_bars must be >= 20."})
             if fetch_limit is not None and int(fetch_limit) < int(requested_window_bars):
                 return _finish({

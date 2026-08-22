@@ -252,6 +252,31 @@ class TestExtractCandlestickRows:
 
         assert rows == [["T1", "Neutral DOJI"]]
 
+    def test_deprioritized_metrics_zero_raw_signal(self):
+        df_tail = pd.DataFrame({
+            "time": ["T0", "T1"],
+            "close": [100.0, 101.0],
+        })
+        temp_tail = pd.DataFrame({"cdl_doji": [0.0, 100.0]})
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["cdl_doji"],
+            threshold=0.5,
+            robust_only=False,
+            robust_set=set(),
+            whitelist_set=None,
+            min_gap=0,
+            top_k=1,
+            deprioritize={"doji"},
+            include_metrics=True,
+        )
+
+        assert rows[0][1] == "Neutral DOJI"
+        assert rows[0][2] == "neutral"
+        assert rows[0][4] == 0
+
     def test_include_metrics_adds_span_context(self):
         df_tail = pd.DataFrame({
             "time": [f"2024-01-{i+1:02d}" for i in range(5)],

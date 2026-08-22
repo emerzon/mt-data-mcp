@@ -97,7 +97,7 @@ class ResearchRegistry:
         if resolved:
             return resolved, None
         known = self.known_names()
-        if pin not in _SOURCE_PIN_AUTO and pin in known:
+        if pin not in _SOURCE_PIN_AUTO and (pin in known or pin == "mt5"):
             return [], capability_unsupported_error(
                 capability=capability_name,
                 source=pin,

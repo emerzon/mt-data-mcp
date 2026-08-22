@@ -154,12 +154,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Optional wall-clock search limit in seconds."
     ),
     ("data_fetch_candles", "timestamp_format"): (
-        "Format each candle's `time` value: iso for the UTC bar-open timestamp "
+        "Format each candle's `time` value: iso for ISO in CLIENT_TZ "
+        "(iso_utc / iso_offset in the payload), iso_utc for UTC Z strings, "
         "or epoch for UTC epoch seconds."
     ),
     ("data_fetch_ticks", "timestamp_format"): (
-        "Format each MT5 tick event's `time` value as an ISO UTC timestamp or "
-        "UTC epoch seconds."
+        "Format each MT5 tick event's `time` value as ISO in CLIENT_TZ "
+        "(iso_utc / iso_offset in the payload), iso_utc for UTC Z strings, "
+        "or UTC epoch seconds."
     ),
     ("data_fetch_ticks", "start"): (
         "Inclusive range start (dateparser). Date-only and calendar phrases "
@@ -220,6 +222,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Comma-separated stationarity tests: adf, kpss, pp. "
         "Example: --tests adf,kpss."
     ),
+    ("stationarity_test", "trend"): (
+        "ADF/KPSS/PP deterministic term: c for constant, ct for constant+trend."
+    ),
     ("denoise_describe", "method"): (
         "Denoise method to describe. Run denoise_list_methods to list methods "
         "available in this installation."
@@ -249,8 +254,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "from broker-local midnight. Adding --limit retains the first N bars."
     ),
     ("data_fetch_candles", "end"): (
-        "Inclusive range end. Intraday date-only and calendar phrases end in UTC; "
-        "for D1/W1/MN1 they end at the broker-local calendar-period boundary."
+        "Inclusive range end. A timestamp end uses end_filter=bar_close "
+        "(bars whose close is at or before end). Intraday date-only and calendar "
+        "phrases end in UTC; for D1/W1/MN1 they end at the broker-local "
+        "calendar-period boundary."
     ),
     ("data_fetch_candles", "include_incomplete"): (
         "Include the latest forming candle; defaults to false. Compact responses "
@@ -1385,6 +1392,8 @@ def add_dynamic_arguments(  # noqa: C901
         extras: list[str] = []
         if cmd_name_value == "trade_history" and param_name == "position_ticket":
             extras.append("--ticket")
+        if cmd_name_value == "trade_history" and param_name == "history_kind":
+            extras.append("--kind")
         if cmd_name_value in {
             "forecast_backtest_run",
             "forecast_tune_genetic",
@@ -1538,29 +1547,30 @@ def add_dynamic_arguments(  # noqa: C901
                     hidden_kwargs = dict(local_kwargs)
                     hidden_kwargs["help"] = argparse.SUPPRESS
                     parser.add_argument(*hidden_option_flags, **hidden_kwargs)
-                no_flags, no_hidden_flags = _split_visible_and_hidden_flags(
-                    f"--no-{param['name'].replace('_', '-')}",
-                    f"--no_{param['name']}",
-                )
-                no_default = kwargs.get("default", argparse.SUPPRESS)
-                if no_flags:
-                    parser.add_argument(
-                        *no_flags,
-                        dest=param["name"],
-                        action="store_const",
-                        const="false",
-                        default=no_default,
-                        help=argparse.SUPPRESS,
+                if param["name"] not in {"dry_run", "require_sl_tp"}:
+                    no_flags, no_hidden_flags = _split_visible_and_hidden_flags(
+                        f"--no-{param['name'].replace('_', '-')}",
+                        f"--no_{param['name']}",
                     )
-                if no_hidden_flags:
-                    hidden_no_kwargs = {
-                        "dest": param["name"],
-                        "action": "store_const",
-                        "const": "false",
-                        "default": no_default,
-                        "help": argparse.SUPPRESS,
-                    }
-                    parser.add_argument(*no_hidden_flags, **hidden_no_kwargs)
+                    no_default = kwargs.get("default", argparse.SUPPRESS)
+                    if no_flags:
+                        parser.add_argument(
+                            *no_flags,
+                            dest=param["name"],
+                            action="store_const",
+                            const="false",
+                            default=no_default,
+                            help=argparse.SUPPRESS,
+                        )
+                    if no_hidden_flags:
+                        hidden_no_kwargs = {
+                            "dest": param["name"],
+                            "action": "store_const",
+                            "const": "false",
+                            "default": no_default,
+                            "help": argparse.SUPPRESS,
+                        }
+                        parser.add_argument(*no_hidden_flags, **hidden_no_kwargs)
             elif is_mapping_type:
                 local_kwargs = dict(kwargs)
                 if not is_required_option:

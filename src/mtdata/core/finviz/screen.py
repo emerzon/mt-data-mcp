@@ -399,7 +399,7 @@ def finviz_filters_list(
         ),
         "detail": detail_mode,
         "hint": (
-            "Use finviz_screen filters as Filter=Value pairs or shorthand "
+            "Use screener filters as Filter=Value pairs or shorthand "
             "tokens such as cap_largeover; pass --filter-name or --detail full "
             "for accepted values."
         ),

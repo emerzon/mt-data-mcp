@@ -324,7 +324,7 @@ def _tool_catalog_cli_binding(
     if (
         binding["value_format"] == "boolean"
         and option
-        and parameter_name != "json"
+        and parameter_name not in {"json", "dry_run", "require_sl_tp"}
     ):
         binding["negated_option"] = f"--no-{parameter_name.replace('_', '-')}"
     return binding
@@ -1359,15 +1359,27 @@ def _select_output_fields(
             declared_paths=declared_paths,
             preserved_keys=preserved_keys,
         )
-        remediation = (
+        projection_remediation = (
             "Choose one or more paths from valid_output_fields and retry "
             "--output-fields. valid_output_fields lists paths present in this "
             "response; compact detail omits some diagnostics, so retry with "
             "--detail full if a declared field is absent."
         )
+        if (
+            not selected["valid_output_fields"]
+            and (value.get("error") or value.get("success") is False)
+        ):
+            selected["valid_output_fields"] = _available_output_fields(
+                value,
+                declared_paths=declared_paths,
+                preserved_keys=frozenset(),
+            )
         if resolved_count:
             selected["output_fields_status"] = "partial"
-            selected["remediation"] = remediation
+            if value.get("error") or value.get("remediation"):
+                selected["output_fields_remediation"] = projection_remediation
+            else:
+                selected["remediation"] = projection_remediation
         elif value.get("success") is not False and not bool(value.get("error")):
             selected.update(
                 {
@@ -1378,7 +1390,7 @@ def _select_output_fields(
                     ),
                     "error_code": "output_fields_unresolved",
                     "output_fields_status": "failed",
-                    "remediation": remediation,
+                    "remediation": projection_remediation,
                 }
             )
     return selected

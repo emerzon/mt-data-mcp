@@ -257,6 +257,8 @@ def calendar(
         # first available adapter (Finviz is preferred by the registry).
         adapter = adapters[0]
         payload = adapter.fetch_events(request)
+        if isinstance(payload, dict) and payload.get("operation") == "finviz_calendar":
+            payload["operation"] = "calendar"
         return stamp_provider(payload, provider=str(adapter.name))
 
     return run_logged_operation(

@@ -100,16 +100,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     raw_command = _leading_command_token(effective_argv)
     if raw_command is None:
-        from . import api
+        if _json_output_requested(effective_argv):
+            from . import api
 
-        if argv is None:
-            return api.main()
-        original_argv = list(sys.argv)
-        try:
-            sys.argv = [original_argv[0], *effective_argv]
-            return api.main()
-        finally:
-            sys.argv = original_argv
+            if argv is None:
+                return api.main()
+            original_argv = list(sys.argv)
+            try:
+                sys.argv = [original_argv[0], *effective_argv]
+                return api.main()
+            finally:
+                sys.argv = original_argv
+        print(format_root_help(program))
+        return 1
     normalized_command = raw_command.replace("-", "_")
     known_commands = {*known_command_names(), "shell"}
     if not raw_command.startswith("-") and normalized_command not in known_commands:

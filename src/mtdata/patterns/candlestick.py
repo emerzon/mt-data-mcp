@@ -682,7 +682,9 @@ def _extract_candlestick_rows(
                     direction = "bullish" if value > 0 else "bearish"
                 strength = float(strength_values[i, col_idx])
                 raw_signal: Any
-                if abs(value - round(value)) <= 1e-9:
+                if normalized in deprioritize:
+                    raw_signal = 0
+                elif abs(value - round(value)) <= 1e-9:
                     raw_signal = int(round(value))
                 else:
                     raw_signal = float(value)

@@ -46,7 +46,7 @@ from ..error_envelope import build_error_payload
 from ..execution_logging import infer_result_success
 from ..output_contract import resolve_output_contract
 from ..request_context import ensure_request_id_scope
-from .catalog import display_program_name, known_command_names
+from .catalog import display_program_name, format_root_help, known_command_names
 from .formatting import (
     _attach_cli_meta,
     _format_result_for_cli,
@@ -391,13 +391,29 @@ def _flatten_request_model_param(info: Dict[str, Any]) -> Dict[str, Any]:
 def _argv_option_present_after_command(
     argv: List[str], command: str, option: str
 ) -> bool:
+    return _argv_option_value_after_command(argv, command, option) is not None
+
+
+def _argv_option_value_after_command(
+    argv: List[str], command: str, option: str
+) -> Optional[str]:
     cmd_index = _find_command_index(argv, command)
     if cmd_index is None:
-        return False
-    for token in argv[cmd_index + 1 :]:
-        if token == option or token.startswith(f"{option}="):
-            return True
-    return False
+        return None
+    last_value: Optional[str] = None
+    index = cmd_index + 1
+    while index < len(argv):
+        token = str(argv[index])
+        if token == option:
+            if index + 1 < len(argv):
+                last_value = str(argv[index + 1])
+                index += 2
+                continue
+            return last_value
+        if token.startswith(f"{option}="):
+            last_value = token.split("=", 1)[1]
+        index += 1
+    return last_value
 
 
 def _command_variants(command: str) -> Tuple[str, ...]:
@@ -453,12 +469,56 @@ def _normalize_cli_argv_aliases(
 
     confluence_index = _find_command_index(normalized, "confluence_levels")
     if confluence_index is not None:
-        for index in range(confluence_index + 1, len(normalized)):
-            token = str(normalized[index])
-            if token == "--timeframe":
-                normalized[index] = "--pivot-timeframe"
-            elif token.startswith("--timeframe="):
-                normalized[index] = "--pivot-timeframe=" + token.split("=", 1)[1]
+        pivot_value = _argv_option_value_after_command(
+            normalized,
+            "confluence_levels",
+            "--pivot-timeframe",
+        ) or _argv_option_value_after_command(
+            normalized,
+            "confluence_levels",
+            "--pivot_timeframe",
+        )
+        timeframe_value = _argv_option_value_after_command(
+            normalized,
+            "confluence_levels",
+            "--timeframe",
+        )
+        if (
+            pivot_value is not None
+            and timeframe_value is not None
+            and str(pivot_value).strip().upper() != str(timeframe_value).strip().upper()
+        ):
+            raise ValueError(
+                "--timeframe and --pivot-timeframe both set and differ; "
+                "use --pivot-timeframe for confluence pivots."
+            )
+        if pivot_value is None:
+            for index in range(confluence_index + 1, len(normalized)):
+                token = str(normalized[index])
+                if token == "--timeframe":
+                    normalized[index] = "--pivot-timeframe"
+                elif token.startswith("--timeframe="):
+                    normalized[index] = "--pivot-timeframe=" + token.split("=", 1)[1]
+        else:
+            drop: set[int] = set()
+            index = confluence_index + 1
+            while index < len(normalized):
+                token = str(normalized[index])
+                if token == "--timeframe":
+                    drop.add(index)
+                    if index + 1 < len(normalized):
+                        drop.add(index + 1)
+                    index += 2
+                    continue
+                if token.startswith("--timeframe="):
+                    drop.add(index)
+                index += 1
+            if drop:
+                normalized = [
+                    token
+                    for index, token in enumerate(normalized)
+                    if index not in drop
+                ]
     return normalized
 
 
@@ -476,10 +536,7 @@ def _apply_global_cli_overrides(
     global_timeframe = getattr(args, "_global_timeframe", None)
     if command == "shell":
         global_timeframe = None
-    if (
-        global_timeframe is not None
-        and command not in _GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS
-    ):
+    if global_timeframe is not None:
         if functions is not None and command not in {
             "confluence_levels",
             "forecast_generate",
@@ -996,6 +1053,52 @@ def _parse_set_overrides(items: Optional[List[str]]) -> Dict[str, Dict[str, Any]
 
 _merge_dict = _merge_dict_impl
 
+_DENOISE_PIPELINE_KEYS = frozenset(
+    {"columns", "when", "causality", "keep_original", "suffix"}
+)
+
+
+def _apply_denoise_companion_params(
+    denoise: Optional[Dict[str, Any]],
+    denoise_params: Optional[str],
+    *,
+    parser: argparse.ArgumentParser,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(denoise_params, str) or not denoise_params.strip():
+        return denoise
+    extra = _parse_kv_string(denoise_params)
+    if not extra:
+        parser.error(
+            "Invalid --denoise-params value. "
+            "Use JSON object syntax or key=value pairs."
+        )
+    if not isinstance(denoise, dict):
+        return extra
+    pipeline_values = {
+        key: value for key, value in extra.items() if key in _DENOISE_PIPELINE_KEYS
+    }
+    method_values = {
+        key: value
+        for key, value in extra.items()
+        if key not in _DENOISE_PIPELINE_KEYS
+    }
+    if "keep_original" in pipeline_values:
+        keep_original = _coerce_cli_scalar(str(pipeline_values["keep_original"]))
+        if not isinstance(keep_original, bool):
+            parser.error("denoise keep_original must be true or false.")
+        pipeline_values["keep_original"] = keep_original
+    if "columns" in pipeline_values and isinstance(pipeline_values["columns"], str):
+        pipeline_values["columns"] = _normalize_cli_list_value(
+            pipeline_values["columns"]
+        )
+    denoise.update(pipeline_values)
+    if method_values:
+        method_params = denoise.get("params")
+        if not isinstance(method_params, dict):
+            method_params = {}
+        denoise["params"] = _merge_dict(method_params, method_values)
+    return denoise
+
 
 _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
     "params": {
@@ -1274,6 +1377,13 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         dest="denoise",
         metavar=_FORECAST_TYPED_ARG_SPECS["denoise"]["metavar"],
         help_text=_FORECAST_TYPED_ARG_SPECS["denoise"]["help"],
+    )
+    group_pipe.add_argument(
+        "--denoise-params",
+        dest="denoise_params",
+        type=str,
+        default=None,
+        help="Extra params for denoise (key=value[,key=value])",
     )
     _add_forecast_typed_arg(
         group_pipe,
@@ -1770,16 +1880,6 @@ _TIMEFRAMELESS_GLOBAL_COMMANDS: set[str] = {
     "trade_risk_analyze",
 }
 
-# These tools expose a parameter named ``timeframe``, but it changes the
-# command's mode or narrows an intentionally multi-timeframe workflow. A root
-# or shell-session timeframe is therefore not a safe default for them.
-_GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS: set[str] = {
-    "patterns_detect",
-    "volume_profile_levels",
-    "wait_event",
-}
-
-
 def _add_tool_command_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -2181,7 +2281,29 @@ def main():  # noqa: C901
                 file=sys.stderr,
             )
         return 1
-    argv = _normalize_cli_argv_aliases(sys.argv[1:], functions)
+    try:
+        argv = _normalize_cli_argv_aliases(sys.argv[1:], functions)
+    except ValueError as exc:
+        parser_prog = display_program_name(sys.argv[0])
+        _write_cli_text(
+            json.dumps(
+                build_error_payload(
+                    str(exc),
+                    code="cli_invalid_arguments",
+                    operation="cli",
+                    remediation=(
+                        "For confluence_levels, pass --pivot-timeframe only, "
+                        "or make --timeframe match it."
+                    ),
+                    documentation="docs/CLI.md",
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+            if "--json" in sys.argv
+            else str(exc)
+        )
+        return 2
     help_query = _extract_help_query(argv)
     if help_query:
         _print_extended_help(functions, help_query)
@@ -2430,6 +2552,11 @@ def main():  # noqa: C901
                 denoise = {"method": str(denoise_raw).strip()}
                 if str(denoise_raw).strip().startswith("{"):
                     denoise = _parse_mapping_value(denoise_raw, option_name="denoise")
+            denoise = _apply_denoise_companion_params(
+                denoise,
+                getattr(args, "denoise_params", None),
+                parser=cmd_parser,
+            )
 
             features = _parse_mapping_value(features_raw, option_name="features")
             dimred = None
@@ -2550,7 +2677,7 @@ def main():  # noqa: C901
                 )
             )
         else:
-            parser.print_help()
+            _write_cli_text(format_root_help(parser_prog))
         return 1
 
     output_contract = _resolve_cli_output_contract_or_error(parser, args)
@@ -2680,8 +2807,6 @@ def _shell_timeframe_commands(functions: Dict[str, ToolInfo]) -> set[str]:
     }
     for name, tool in functions.items():
         normalized_name = str(name).replace("-", "_")
-        if normalized_name in _GLOBAL_TIMEFRAME_INHERITANCE_EXCLUSIONS:
-            continue
         func_info = tool.get("_cli_func_info") or get_function_info(tool["func"])
         param_names = {
             str(param.get("name") or "")
