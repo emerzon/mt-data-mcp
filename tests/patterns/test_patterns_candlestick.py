@@ -10,7 +10,7 @@ import pytest
 
 import mtdata.core.patterns_support as patterns_support_mod
 import mtdata.patterns.candlestick as candlestick_mod
-import mtdata.services.data_service as data_service_mod
+import mtdata.services.data_service.candles as data_service_mod
 from mtdata.core import patterns as core_patterns
 from mtdata.core.patterns_requests import PatternsDetectRequest
 from mtdata.patterns.candlestick import (

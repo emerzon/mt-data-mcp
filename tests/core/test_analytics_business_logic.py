@@ -163,6 +163,26 @@ def test_strategy_validation_requires_exactly_one_candidate_input() -> None:
 from mtdata.utils.sessions import market_session_label
 
 
+@pytest.fixture(autouse=True)
+def _open_market_session(monkeypatch):
+    monkeypatch.setattr(
+        "mtdata.utils.freshness.closed_session_context",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "mtdata.utils.market_metadata.closed_session_context",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.microstructure.closed_session_context",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.relative_strength.closed_session_context",
+        lambda *_args, **_kwargs: None,
+    )
+
+
 def _now() -> int:
     import time
 

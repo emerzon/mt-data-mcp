@@ -18,10 +18,10 @@ _TOOL_MODULES = {
 
 def test_history_window_resolves_daily_labels_in_broker_timezone():
     with patch(
-        "mtdata.services.data_service.mt5_config.get_server_tz",
+        "mtdata.services.data_service.candles.mt5_config.get_server_tz",
         return_value=ZoneInfo("America/Chicago"),
     ):
-        start, end, error = causal._resolve_history_window(
+        start, end, error = common._resolve_history_window(
             "2026-01-05",
             "2026-01-05",
             timeframe="D1",
@@ -166,15 +166,15 @@ def test_fetch_series_excludes_forming_bar_by_default():
         patch.object(common, "_ensure_symbol_ready", return_value=None),
         patch.object(common, "_mt5_copy_rates_from", return_value=rates),
     ):
-        closed, error = causal._fetch_series(
+        closed, error = common._fetch_series(
             "EURUSD",
-            causal.TIMEFRAME_MAP["H1"],
+            common.TIMEFRAME_MAP["H1"],
             2,
             timeframe_key="H1",
         )
-        including_forming, include_error = causal._fetch_series(
+        including_forming, include_error = common._fetch_series(
             "EURUSD",
-            causal.TIMEFRAME_MAP["H1"],
+            common.TIMEFRAME_MAP["H1"],
             2,
             timeframe_key="H1",
             include_incomplete=True,

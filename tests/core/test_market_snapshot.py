@@ -749,8 +749,8 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
             "time_epoch": 1_700_000_000.0,
             "bid": 1.1,
             "ask": 1.1002,
-            "data_age_seconds": 29.0,
-            "live_max_age_seconds": 30.0,
+            "data_age_seconds": 9.0,
+            "live_max_age_seconds": 10.0,
             "usable_for_live_trading": True,
             "usable_for_live_trading_basis": (
                 "quote_age_market_session_and_positive_spread"
@@ -761,11 +761,11 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
     warning = snapshot_mod._revalidate_snapshot_quote(
         sections,
         symbol="BTCUSD",
-        assembled_at_epoch=1_700_000_031.0,
+        assembled_at_epoch=1_700_000_011.0,
     )
 
     quote = sections["quote"]
-    assert quote["data_age_seconds"] == 31.0
+    assert quote["data_age_seconds"] == 11.0
     assert quote["usable_for_live_trading"] is False
     assert quote["usable_for_live_trading_basis"] == (
         "quote_age_market_session_and_positive_spread"
@@ -777,8 +777,8 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
             "The quote crossed its live-readiness threshold while the snapshot "
             "was being assembled."
         ),
-        "quote_age_seconds": 31.0,
-        "live_max_age_seconds": 30,
+        "quote_age_seconds": 11.0,
+        "live_max_age_seconds": 10,
     }
 
 

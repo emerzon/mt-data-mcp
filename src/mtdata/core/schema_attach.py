@@ -334,7 +334,11 @@ def _iter_manager_tools(mcp: Any) -> Iterable[tuple[str, Any]]:
     manager = getattr(mcp, "_tool_manager", None)
     tools = getattr(manager, "_tools", None)
     if isinstance(tools, dict):
-        return list(tools.items())
+        return [
+            (name, tool)
+            for name, tool in tools.items()
+            if str(name or "").strip() and str(name) != "_tool"
+        ]
     return []
 
 
@@ -701,6 +705,8 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
     attached = 0
     failed = 0
     for name in sorted(set(registry.keys()) | set(manager_tools.keys())):
+        if not str(name or "").strip() or str(name) == "_tool":
+            continue
         try:
             attached += int(
                 _attach_schema_to_tool(

@@ -1217,6 +1217,8 @@ def discover_tools(
     )
     if registry and hasattr(registry, "items"):
         for name, obj in registry.items():
+            if not str(name or "").strip() or str(name) == "_tool":
+                continue
             func = extract_function_from_tool_obj(obj)
             mod = getattr(func, "__module__", None) if func else None
             if func and (not module_names or _module_is_visible(mod, module_names, module_prefixes)):

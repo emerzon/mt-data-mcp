@@ -456,7 +456,7 @@ def test_fetch_history_daily_dates_use_broker_sessions_and_wall_clock(monkeypatc
     monkeypatch.setattr(fc, "_mt5_copy_rates_range", fake_range)
     monkeypatch.setattr(fc.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(
-        "mtdata.services.data_service.mt5_config.get_server_tz",
+        "mtdata.services.data_service.candles.mt5_config.get_server_tz",
         lambda: __import__("zoneinfo").ZoneInfo("Europe/Nicosia"),
     )
 

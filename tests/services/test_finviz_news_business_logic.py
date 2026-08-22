@@ -4,8 +4,9 @@ import logging
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from mtdata.core import finviz as core_finviz
 from mtdata.core.finviz import finviz_market_news, finviz_news
+from mtdata.core.finviz import news as core_finviz
+from mtdata.core.finviz.common import logger as _finviz_logger
 from mtdata.services.finviz import get_stock_news
 
 
@@ -43,7 +44,7 @@ def test_finviz_news_logs_finish_event_for_success(caplog) -> None:
     raw = _unwrap(finviz_news)
 
     with patch("mtdata.core.finviz.news.get_stock_news", return_value={"success": True, "items": []}), caplog.at_level(logging.DEBUG,
-        logger=core_finviz.logger.name,
+        logger=_finviz_logger.name,
     ):
         out = raw(symbol="AAPL", limit=5, page=1)
 

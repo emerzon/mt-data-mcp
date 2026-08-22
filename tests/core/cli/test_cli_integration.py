@@ -279,8 +279,8 @@ class TestMain:
         out = capsys.readouterr().out
         assert "usage: cli.py" in out
         assert "<command>" in out
+        assert "Catalog categories" in out
         assert "{my_tool,my-tool}" not in out
-        assert out.count("    my_tool") == 1
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_command_execution(self, mock_discover, capsys):

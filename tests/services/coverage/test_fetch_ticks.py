@@ -502,8 +502,10 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    @patch("mtdata.utils.market_metadata.closed_session_context", return_value=None)
+    @patch("mtdata.services.data_service.ticks.closed_session_context", return_value=None)
     def test_one_sided_latest_tick_uses_reconciled_execution_quote(
-        self, mock_ctz, mock_info, mock_ticks
+        self, mock_session, mock_meta_session, mock_ctz, mock_info, mock_ticks
     ):
         ticks = _make_ticks(2)
         ticks[0].update({"bid": 1.1000, "ask": 1.1002, "flags": 6})
@@ -530,8 +532,10 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    @patch("mtdata.utils.market_metadata.closed_session_context", return_value=None)
+    @patch("mtdata.services.data_service.ticks.closed_session_context", return_value=None)
     def test_two_sided_latest_tick_uses_executable_quote_basis(
-        self, mock_ctz, mock_info, mock_ticks, mock_time
+        self, mock_session, mock_meta_session, mock_ctz, mock_info, mock_ticks, mock_time
     ):
         mock_ticks.return_value = _make_ticks(2)
 

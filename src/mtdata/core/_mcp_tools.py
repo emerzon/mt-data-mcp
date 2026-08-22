@@ -62,6 +62,8 @@ def get_mcp_registry(mcp: Any) -> Optional[Dict[str, Any]]:
 def _project_tool_registry(field: str) -> Dict[str, Any]:
     projected: Dict[str, Any] = {}
     for name, entry in _TOOL_METADATA_REGISTRY.items():
+        if not _is_public_tool_name(name):
+            continue
         value = getattr(entry, field, _REGISTRY_UNSET)
         if value is not _REGISTRY_UNSET:
             projected[name] = value
@@ -78,6 +80,11 @@ def _sync_tool_registry_views() -> None:
     _replace_dict_contents(_TOOL_OBJECT_REGISTRY, _project_tool_registry("tool_object"))
 
 
+def _is_public_tool_name(name: Any) -> bool:
+    key = str(name or "").strip()
+    return bool(key) and key != "_tool"
+
+
 def _upsert_tool_registration(
     name: Any,
     *,
@@ -85,6 +92,8 @@ def _upsert_tool_registration(
     tool_object: Any = _REGISTRY_UNSET,
 ) -> None:
     key = str(name)
+    if not _is_public_tool_name(key):
+        return
     entry = _TOOL_METADATA_REGISTRY.get(key)
     if entry is None:
         entry = _ToolRegistration()
@@ -601,6 +610,8 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
     categories: Dict[str, List[str]] = {}
     seen: set[str] = set()
     for name in sorted(_TOOL_METADATA_REGISTRY):
+        if not _is_public_tool_name(name):
+            continue
         entry = _TOOL_METADATA_REGISTRY[name]
         func = entry.function
         if func is _REGISTRY_UNSET:
