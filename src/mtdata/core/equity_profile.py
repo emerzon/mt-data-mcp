@@ -8,8 +8,8 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..services.research.capabilities import EQUITY_PROFILE
+from ..services.research.errors import finviz_only_source_error
 from ..services.research.payload import stamp_provider
-from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -34,73 +34,55 @@ _VALID_SECTIONS = _FUNDAMENTAL_SECTIONS | _EXTRA_SECTIONS
 _DEFAULT_SECTIONS = ("summary",)
 
 
-class FinvizEquityProfileSource:
-    """Finviz-backed issuer dossier adapter."""
+def _fetch_finviz_profile(
+    *,
+    symbol: str,
+    sections: tuple[str, ...],
+    detail: str,
+    fields: Optional[str],
+    limit: int,
+    offset: int,
+    page: int,
+) -> Dict[str, Any]:
+    from . import finviz as finviz_impl
 
-    name = "finviz"
-
-    def is_available(self) -> bool:
-        return True
-
-    def fetch_profile(
-        self,
-        *,
-        symbol: str,
-        sections: tuple[str, ...],
-        detail: str,
-        fields: Optional[str],
-        limit: int,
-        offset: int,
-        page: int,
-    ) -> Dict[str, Any]:
-        from . import finviz as finviz_impl
-
-        payloads: Dict[str, Any] = {}
-        fund_sections = [item for item in sections if item in _FUNDAMENTAL_SECTIONS]
-        if fund_sections:
-            category = fund_sections[0] if len(fund_sections) == 1 else "all"
-            payloads["fundamentals"] = finviz_impl.finviz_fundamentals(
-                symbol,
-                detail=detail,  # type: ignore[arg-type]
-                category=category,
-                fields=fields,
-            )
-        if "description" in sections:
-            payloads["description"] = finviz_impl.finviz_description(
-                symbol,
-                detail=detail,  # type: ignore[arg-type]
-            )
-        if "ratings" in sections:
-            payloads["ratings"] = finviz_impl.finviz_ratings(
-                symbol,
-                detail="full" if detail == "full" else "compact",
-                limit=limit,
-                offset=offset,
-            )
-        if "peers" in sections:
-            payloads["peers"] = finviz_impl.finviz_peers(
-                symbol,
-                detail=detail,  # type: ignore[arg-type]
-                limit=limit,
-                offset=offset,
-            )
-        if "insider" in sections:
-            payloads["insider"] = finviz_impl.finviz_insider(
-                symbol,
-                limit=limit,
-                page=page,
-                detail=detail,  # type: ignore[arg-type]
-            )
-        return payloads
-
-
-def _ensure_equity_profile_sources() -> None:
-    registry = get_research_registry()
-    if "finviz" not in registry.known_names(EQUITY_PROFILE):
-        registry.register(
-            FinvizEquityProfileSource(),
-            capabilities={EQUITY_PROFILE},
+    payloads: Dict[str, Any] = {}
+    fund_sections = [item for item in sections if item in _FUNDAMENTAL_SECTIONS]
+    if fund_sections:
+        category = fund_sections[0] if len(fund_sections) == 1 else "all"
+        payloads["fundamentals"] = finviz_impl.finviz_fundamentals(
+            symbol,
+            detail=detail,  # type: ignore[arg-type]
+            category=category,
+            fields=fields,
         )
+    if "description" in sections:
+        payloads["description"] = finviz_impl.finviz_description(
+            symbol,
+            detail=detail,  # type: ignore[arg-type]
+        )
+    if "ratings" in sections:
+        payloads["ratings"] = finviz_impl.finviz_ratings(
+            symbol,
+            detail="full" if detail == "full" else "compact",
+            limit=limit,
+            offset=offset,
+        )
+    if "peers" in sections:
+        payloads["peers"] = finviz_impl.finviz_peers(
+            symbol,
+            detail=detail,  # type: ignore[arg-type]
+            limit=limit,
+            offset=offset,
+        )
+    if "insider" in sections:
+        payloads["insider"] = finviz_impl.finviz_insider(
+            symbol,
+            limit=limit,
+            page=page,
+            detail=detail,  # type: ignore[arg-type]
+        )
+    return payloads
 
 
 def _parse_sections(value: Optional[str]) -> tuple[str, ...] | Dict[str, Any]:
@@ -218,16 +200,14 @@ def equity_profile(
         parsed = _parse_sections(sections)
         if isinstance(parsed, dict):
             return parsed
-        _ensure_equity_profile_sources()
-        adapters, error = get_research_registry().resolve_or_error(
-            EQUITY_PROFILE,
+        pin_error = finviz_only_source_error(
             source,
+            capability=EQUITY_PROFILE,
             operation="equity_profile",
         )
-        if error is not None:
-            return error
-        adapter = adapters[0]
-        payloads = adapter.fetch_profile(
+        if pin_error is not None:
+            return pin_error
+        payloads = _fetch_finviz_profile(
             symbol=symbol,
             sections=parsed,
             detail=str(detail or "compact"),
@@ -239,7 +219,7 @@ def equity_profile(
         return _compose_profile(
             payloads,
             sections=parsed,
-            provider=str(adapter.name),
+            provider="finviz",
         )
 
     return run_logged_operation(
@@ -250,6 +230,3 @@ def equity_profile(
         source=source,
         func=_run,
     )
-
-
-_ensure_equity_profile_sources()

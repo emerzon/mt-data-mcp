@@ -8,8 +8,8 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..services.research.capabilities import PERFORMANCE
+from ..services.research.errors import finviz_only_source_error
 from ..services.research.payload import stamp_provider
-from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -21,61 +21,43 @@ ResearchSourcePin = Literal["auto", "finviz", "mt5"]
 PerformanceUniverse = Literal["forex", "crypto", "futures", "insider"]
 
 
-class FinvizPerformanceSource:
-    """Finviz delayed web-table adapter."""
+def _fetch_finviz_performance(
+    *,
+    universe: str,
+    symbol: Optional[str],
+    option: str,
+    limit: int,
+    offset: int,
+    page: int,
+    detail: str,
+) -> Dict[str, Any]:
+    from . import finviz as finviz_impl
 
-    name = "finviz"
-
-    def is_available(self) -> bool:
-        return True
-
-    def fetch_performance(
-        self,
-        *,
-        universe: str,
-        symbol: Optional[str],
-        option: str,
-        limit: int,
-        offset: int,
-        page: int,
-        detail: str,
-    ) -> Dict[str, Any]:
-        from . import finviz as finviz_impl
-
-        if universe == "forex":
-            return finviz_impl.finviz_forex(
-                symbol=symbol,
-                limit=limit,
-                offset=offset,
-                detail=detail,  # type: ignore[arg-type]
-            )
-        if universe == "crypto":
-            return finviz_impl.finviz_crypto(
-                limit=limit,
-                offset=offset,
-                detail=detail,  # type: ignore[arg-type]
-            )
-        if universe == "futures":
-            return finviz_impl.finviz_futures(
-                limit=limit,
-                offset=offset,
-                detail=detail,  # type: ignore[arg-type]
-            )
-        return finviz_impl.finviz_insider_activity(
-            option=option,  # type: ignore[arg-type]
+    if universe == "forex":
+        return finviz_impl.finviz_forex(
+            symbol=symbol,
             limit=limit,
-            page=page,
+            offset=offset,
             detail=detail,  # type: ignore[arg-type]
         )
-
-
-def _ensure_performance_sources() -> None:
-    registry = get_research_registry()
-    if "finviz" not in registry.known_names(PERFORMANCE):
-        registry.register(
-            FinvizPerformanceSource(),
-            capabilities={PERFORMANCE},
+    if universe == "crypto":
+        return finviz_impl.finviz_crypto(
+            limit=limit,
+            offset=offset,
+            detail=detail,  # type: ignore[arg-type]
         )
+    if universe == "futures":
+        return finviz_impl.finviz_futures(
+            limit=limit,
+            offset=offset,
+            detail=detail,  # type: ignore[arg-type]
+        )
+    return finviz_impl.finviz_insider_activity(
+        option=option,  # type: ignore[arg-type]
+        limit=limit,
+        page=page,
+        detail=detail,  # type: ignore[arg-type]
+    )
 
 
 @mcp.tool()
@@ -121,14 +103,13 @@ def asset_performance(
     """
 
     def _run() -> Dict[str, Any]:
-        _ensure_performance_sources()
-        adapters, error = get_research_registry().resolve_or_error(
-            PERFORMANCE,
+        pin_error = finviz_only_source_error(
             source,
+            capability=PERFORMANCE,
             operation="asset_performance",
         )
-        if error is not None:
-            return error
+        if pin_error is not None:
+            return pin_error
         universe_key = str(universe)
         invalid: list[str] = []
         if universe_key != "forex" and symbol is not None:
@@ -164,8 +145,7 @@ def asset_performance(
                     "implements them."
                 ),
             )
-        adapter = adapters[0]
-        payload = adapter.fetch_performance(
+        payload = _fetch_finviz_performance(
             universe=str(universe),
             symbol=symbol,
             option=str(option),
@@ -174,7 +154,7 @@ def asset_performance(
             page=int(page),
             detail=str(detail or "compact"),
         )
-        out = stamp_provider(payload, provider=str(adapter.name))
+        out = stamp_provider(payload, provider="finviz")
         if isinstance(out, dict):
             out.setdefault("universe", universe)
             out.setdefault(
@@ -190,6 +170,3 @@ def asset_performance(
         source=source,
         func=_run,
     )
-
-
-_ensure_performance_sources()

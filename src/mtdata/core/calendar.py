@@ -8,9 +8,9 @@ from typing import Annotated, Any, Dict, Literal, Optional
 from pydantic import Field
 
 from ..services.research.capabilities import CALENDAR
+from ..services.research.errors import finviz_only_source_error
 from ..services.research.payload import stamp_provider
 from ..services.research.protocols import CalendarRequest
-from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -23,44 +23,29 @@ CalendarView = Literal["range", "period"]
 ResearchSourcePin = Literal["auto", "finviz", "mt5"]
 
 
-class FinvizCalendarSource:
-    """Finviz-backed structured calendar adapter."""
+def _fetch_finviz_calendar(request: CalendarRequest) -> Dict[str, Any]:
+    from .finviz import finviz_earnings, run_finviz_calendar
 
-    name = "finviz"
-
-    def is_available(self) -> bool:
-        return True
-
-    def fetch_events(self, request: CalendarRequest) -> Dict[str, Any]:
-        from .finviz import finviz_earnings, run_finviz_calendar
-
-        if request.view == "period":
-            earnings = finviz_earnings
-            return earnings(
-                period=request.period or "this-week",
-                limit=request.limit,
-                page=request.page,
-                include_elapsed=request.include_elapsed,
-                detail=request.detail,
-            )
-        return run_finviz_calendar(
-            calendar=request.kind,
-            impact=request.impact,
-            country=request.country,
-            currency=request.currency,
-            start=request.start,
-            end=request.end,
-            upcoming=request.upcoming,
+    if request.view == "period":
+        return finviz_earnings(
+            period=request.period or "this-week",
             limit=request.limit,
             page=request.page,
+            include_elapsed=request.include_elapsed,
             detail=request.detail,
         )
-
-
-def _ensure_calendar_sources() -> None:
-    registry = get_research_registry()
-    if "finviz" not in registry.known_names(CALENDAR):
-        registry.register(FinvizCalendarSource(), capabilities={CALENDAR})
+    return run_finviz_calendar(
+        calendar=request.kind,
+        impact=request.impact,
+        country=request.country,
+        currency=request.currency,
+        start=request.start,
+        end=request.end,
+        upcoming=request.upcoming,
+        limit=request.limit,
+        page=request.page,
+        detail=request.detail,
+    )
 
 
 @mcp.tool()
@@ -152,15 +137,13 @@ def calendar(
     """
 
     def _run() -> Dict[str, Any]:
-        _ensure_calendar_sources()
-        registry = get_research_registry()
-        adapters, error = registry.resolve_or_error(
-            CALENDAR,
+        pin_error = finviz_only_source_error(
             source,
+            capability=CALENDAR,
             operation="calendar",
         )
-        if error is not None:
-            return error
+        if pin_error is not None:
+            return pin_error
         request = CalendarRequest(
             kind=str(kind),
             view=str(view),
@@ -253,13 +236,10 @@ def calendar(
                         "with kind=earnings."
                     ),
                 )
-        # Structured calendars do not share a mergeable row schema yet. Use the
-        # first available adapter (Finviz is preferred by the registry).
-        adapter = adapters[0]
-        payload = adapter.fetch_events(request)
+        payload = _fetch_finviz_calendar(request)
         if isinstance(payload, dict) and payload.get("operation") == "finviz_calendar":
             payload["operation"] = "calendar"
-        return stamp_provider(payload, provider=str(adapter.name))
+        return stamp_provider(payload, provider="finviz")
 
     return run_logged_operation(
         logger,
@@ -269,6 +249,3 @@ def calendar(
         source=source,
         func=_run,
     )
-
-
-_ensure_calendar_sources()

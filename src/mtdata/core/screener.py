@@ -8,8 +8,8 @@ from typing import Annotated, Any, Dict, Literal, Optional, Union
 from pydantic import Field
 
 from ..services.research.capabilities import SCREENER
+from ..services.research.errors import finviz_only_source_error
 from ..services.research.payload import stamp_provider
-from ..services.research.registry import get_research_registry
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -25,61 +25,6 @@ ScreenerView = Literal[
     "performance",
     "technical",
 ]
-
-
-class FinvizScreenerSource:
-    """Finviz-backed equity screener adapter."""
-
-    name = "finviz"
-
-    def is_available(self) -> bool:
-        return True
-
-    def list_filters(
-        self,
-        *,
-        search: Optional[str],
-        filter_name: Optional[str],
-        limit: int,
-        offset: int,
-        detail: str,
-    ) -> Dict[str, Any]:
-        from .finviz import finviz_filters_list
-
-        return finviz_filters_list(
-            search=search,
-            filter_name=filter_name,
-            limit=limit,
-            offset=offset,
-            detail=detail,  # type: ignore[arg-type]
-        )
-
-    def screen(
-        self,
-        *,
-        filters: Optional[Union[str, Dict[str, Any]]],
-        order: Optional[str],
-        limit: int,
-        page: int,
-        view: str,
-        detail: str,
-    ) -> Dict[str, Any]:
-        from .finviz import finviz_screen
-
-        return finviz_screen(
-            filters=filters,
-            order=order,
-            limit=limit,
-            page=page,
-            view=view,  # type: ignore[arg-type]
-            detail=detail,  # type: ignore[arg-type]
-        )
-
-
-def _ensure_screener_sources() -> None:
-    registry = get_research_registry()
-    if "finviz" not in registry.known_names(SCREENER):
-        registry.register(FinvizScreenerSource(), capabilities={SCREENER})
 
 
 @mcp.tool()
@@ -134,17 +79,17 @@ def screener(
     """
 
     def _run() -> Dict[str, Any]:
-        _ensure_screener_sources()
-        adapters, error = get_research_registry().resolve_or_error(
-            SCREENER,
+        pin_error = finviz_only_source_error(
             source,
+            capability=SCREENER,
             operation="screener",
         )
-        if error is not None:
-            return error
-        adapter = adapters[0]
+        if pin_error is not None:
+            return pin_error
+        from .finviz import finviz_filters_list, finviz_screen
+
         if list_filters:
-            payload = adapter.list_filters(
+            payload = finviz_filters_list(
                 search=search,
                 filter_name=filter_name,
                 limit=int(limit),
@@ -152,7 +97,7 @@ def screener(
                 detail=str(detail or "compact"),
             )
         else:
-            payload = adapter.screen(
+            payload = finviz_screen(
                 filters=filters,
                 order=order,
                 limit=int(limit),
@@ -160,7 +105,7 @@ def screener(
                 view=str(view),
                 detail=str(detail or "compact"),
             )
-        return stamp_provider(payload, provider=str(adapter.name))
+        return stamp_provider(payload, provider="finviz")
 
     return run_logged_operation(
         logger,
@@ -169,6 +114,3 @@ def screener(
         source=source,
         func=_run,
     )
-
-
-_ensure_screener_sources()

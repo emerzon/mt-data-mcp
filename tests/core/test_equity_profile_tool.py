@@ -30,18 +30,6 @@ def test_equity_profile_default_summary_uses_fundamentals(monkeypatch) -> None:
 
 
 def test_equity_profile_mt5_pin_is_unsupported() -> None:
-    from mtdata.services.research.capabilities import NEWS
-    from mtdata.services.research.registry import get_research_registry
-
-    class Mt5News:
-        name = "mt5"
-
-        def is_available(self) -> bool:
-            return True
-
-    reset_research_registry()
-    get_research_registry().register(Mt5News(), capabilities={NEWS})
-
     result = _unwrap(equity_profile)("AAPL", source="mt5")
 
     assert result["success"] is False

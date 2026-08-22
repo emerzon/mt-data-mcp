@@ -8,7 +8,7 @@ Thin service layer for external data sources. No business logic — data retriev
 |------|-------|---------|
 | `data_service/` | package | **MT5 history gateway**: candles, ticks. `__init__.py` re-exports the public API; `query.py` (datetime/calendar bounds, `query_applied`), `errors.py` (no-data/weekend/last-error), `candles.py` (warmup, denoise/indicators, `fetch_candles`), `ticks.py` (flag decode, backward/forward fetch, `fetch_ticks`). `core/data/` stays the MCP/wait-event layer. |
 | `finviz/` | package | Finviz web scraping: fundamentals, screening, news, economic calendar |
-| `research/` | package | Capability registry for news/calendar/profile/screener adapters |
+| `research/` | package | Shared research errors/payloads; registry used by multi-source news |
 | `options_service.py` | — | Options chain data retrieval |
 | `news_service.py` | — | MT5/news data retrieval |
 | `unified_news.py` | — | Unified news provider orchestration |

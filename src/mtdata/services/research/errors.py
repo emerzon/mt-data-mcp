@@ -46,6 +46,32 @@ def source_unavailable_error(
     }
 
 
+def finviz_only_source_error(
+    source: Optional[str],
+    *,
+    capability: str,
+    operation: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return an error when a Finviz-only tool is pinned to another source."""
+    pin = str(source or "auto").strip().lower() or "auto"
+    if pin in {"", "auto", "finviz"}:
+        return None
+    available = ["finviz"]
+    if pin == "mt5":
+        return capability_unsupported_error(
+            capability=capability,
+            source=pin,
+            available=available,
+            operation=operation,
+        )
+    return source_unavailable_error(
+        capability=capability,
+        source=pin,
+        available=available,
+        operation=operation,
+    )
+
+
 def capability_unsupported_error(
     *,
     capability: str,

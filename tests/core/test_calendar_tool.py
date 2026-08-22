@@ -45,28 +45,7 @@ def test_calendar_period_view_requires_earnings() -> None:
     assert result["error_code"] == "calendar_invalid_view"
 
 
-def test_calendar_mt5_pin_is_unsupported_when_unregistered() -> None:
-    reset_research_registry()
-
-    result = _unwrap(calendar)(source="mt5")
-
-    assert result["success"] is False
-    assert result["error_code"] == "research_capability_unsupported"
-
-
 def test_calendar_mt5_pin_is_capability_unsupported() -> None:
-    from mtdata.services.research.capabilities import NEWS
-    from mtdata.services.research.registry import get_research_registry
-
-    class Mt5News:
-        name = "mt5"
-
-        def is_available(self) -> bool:
-            return True
-
-    reset_research_registry()
-    get_research_registry().register(Mt5News(), capabilities={NEWS})
-
     result = _unwrap(calendar)(source="mt5")
 
     assert result["success"] is False
