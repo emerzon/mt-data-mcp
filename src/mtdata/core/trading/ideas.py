@@ -383,8 +383,8 @@ def _idea_barrier_percents(vol_payload: Any) -> tuple[float, float, str]:
         horizon_vol = _as_float(vol_payload.get("volatility_horizon"))
     if horizon_vol is None or horizon_vol <= 0:
         return DEFAULT_TAKE_PROFIT_PCT, DEFAULT_STOP_LOSS_PCT, "fixed_default"
-    take_profit = min(max(horizon_vol * 100.0 * 2.0, 0.05), 5.0)
-    stop_loss = min(max(horizon_vol * 100.0 * 3.0, 0.05), 5.0)
+    take_profit = round(min(max(horizon_vol * 100.0 * 2.0, 0.05), 5.0), 4)
+    stop_loss = round(min(max(horizon_vol * 100.0 * 3.0, 0.05), 5.0), 4)
     return take_profit, stop_loss, "volatility_scaled"
 
 
@@ -1398,7 +1398,7 @@ def run_trade_idea_compose(  # noqa: C901
         "timeframe": request.timeframe,
         "horizon": int(request.horizon),
         "template": request.template,
-        "as_of": data_as_of or (request.as_of if historical else assembled_at),
+        "as_of": assembled_at if not historical else (data_as_of or request.as_of),
         "assembled_at": assembled_at,
         "timezone": "UTC",
         "direction": direction,
@@ -1427,6 +1427,10 @@ def run_trade_idea_compose(  # noqa: C901
         idea["quote"] = quote
     if structure:
         idea["structure"] = {"levels": structure}
+    if direction == "stand_down":
+        trend = None
+        barriers_compact.pop("tp_pct", None)
+        barriers_compact.pop("sl_pct", None)
     forecast_compact = _compact_forecast(
         forecast_payload,
         forecast_values,
@@ -1439,7 +1443,9 @@ def run_trade_idea_compose(  # noqa: C901
     vol_compact = _compact_volatility(sections.get("volatility"))
     if vol_compact:
         idea["volatility"] = vol_compact
-    if barriers_compact:
+    if barriers_compact and any(
+        key != "barrier_source" for key in barriers_compact
+    ):
         idea["barriers"] = barriers_compact
     if entry is not None and (take_profit is not None or stop_loss is not None):
         geometry: Dict[str, Any] = {"entry": entry}

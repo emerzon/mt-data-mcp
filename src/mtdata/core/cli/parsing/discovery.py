@@ -340,10 +340,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, auto, or ensemble.",
     ("forecast_barrier_prob", "barrier"): (
-        'Barrier object. Use {"kind":"single_price","level":1.1000} (aliases: '
-        'price, barrier) for closed_form, or {"kind":"tp_sl","unit":"pct",'
-        '"take_profit":0.2,"stop_loss":0.1} for simulation methods. The kind '
-        "may be omitted from a complete TP/SL or single-price object."
+        "Barrier object. Prefer the shell-safe form "
+        "kind=tp_sl,unit=pct,take_profit=0.5,stop_loss=0.5 or "
+        "kind=single_price,level=1.1000. JSON objects and "
+        "--set barrier.kind=tp_sl --set barrier.unit=pct ... also work. "
+        "The kind may be omitted from a complete TP/SL or single-price object."
     ),
     ("forecast_barrier_prob", "mu"): (
         "Annual log-return drift override (decimal fraction) on the shared "
@@ -749,9 +750,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "With inferred watchers, reaching the boundary is a successful completion."
     ),
     ("wait_event", "max_wait_seconds"): (
-        "Maximum wait in seconds (alias: --timeout). With timeframe, bounds the "
-        "candle-boundary wait; without timeframe, omit the symbol and watch_for "
-        "for a timer, or pass watchers to return early."
+        "Maximum wait in seconds (alias: --timeout). With timeframe, defaults to "
+        "the timeframe length plus 60 seconds. Without timeframe, omit the symbol "
+        "and watch_for for a timer, or pass watchers to return early."
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
@@ -763,10 +764,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("wait_event", "watch_for"): (
         "Event names or event objects. Examples: order_filled, "
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "
-        "Put candle_close boundaries in end_on. In timeframe mode, omit for the "
-        "lightweight core order/position and market-activity watcher set; generated "
-        "S/R and pivot zones are not inferred. In duration mode, omit for a pure "
-        "timer. Explicit watchers make an unmatched timeout or boundary a failed wait."
+        "Put candle_close boundaries in end_on. In timeframe mode, omit for a "
+        "candle-boundary wait only. In duration mode, omit for a pure timer. "
+        "Explicit watchers make an unmatched timeout or boundary a failed wait."
     ),
     ("wait_event", "end_on"): (
         "Optional timeframe-mode boundaries. Explicit boundary timeframes must "

@@ -75,7 +75,7 @@ non-empty `--params` mapping.
 |-----------|---------|-------------|
 | `--timeframe` | `H1` | Candle timeframe |
 | `--horizon` | 12 | Available bars to forecast; closed equity-session intervals do not count |
-| `--lookback` | auto | Historical bars to use. For analog forecasts this is a hard upper bound: `search_depth` is reduced to fit, or the request fails if `window_size` and `horizon` cannot fit. |
+| `--lookback` | auto | Historical bars to use. Native theta/fourier_ols default to 300 bars. For analog forecasts this is a hard upper bound: `search_depth` is reduced to fit, or the request fails if `window_size` and `horizon` cannot fit. |
 | `--as-of` | now | Reference time (for backtesting) |
 | `--start` / `--end` | — | Bounded training range; use this range style instead of `--as-of` |
 

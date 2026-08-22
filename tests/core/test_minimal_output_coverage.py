@@ -1182,7 +1182,7 @@ class TestFormatResultMinimal:
         assert result["freshness"] == "closed weekend, tick 1h 36m ago"
         assert result["data_stale"] is False
         assert "stale_after_seconds" not in result
-        assert "market_status" not in result
+        assert result["market_status"] == "closed"
         assert result["market_status_reason"] == "weekend"
         assert "note" not in result
 
@@ -1423,6 +1423,13 @@ class TestFormatResultMinimal:
                 "volume_step": 0.01,
                 "volume_rounding": "rounded_down_to_step",
             },
+            "trade_evaluation": {
+                "direction": "long",
+                "stop_loss": 1.15,
+                "take_profit": 1.17,
+                "reward_risk_ratio": 2.0,
+                "internal_debug": True,
+            },
         }
 
         compact = format_result_minimal(
@@ -1444,6 +1451,8 @@ class TestFormatResultMinimal:
         assert "positions[1]" in compact
         assert "notional_value" in compact
         assert "1867597160" in compact
+        assert "reward_risk_ratio: 2" in compact
+        assert "internal_debug" not in compact
         assert "raw_volume" in verbose
 
     def test_compact_trade_idea_output_hides_source_calls(self):

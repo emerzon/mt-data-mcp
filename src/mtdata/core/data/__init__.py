@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import ValidationError
 
 from ...services.data_service import fetch_candles, fetch_ticks
+from ...shared.constants import TIMEFRAME_SECONDS
 from ...shared.schema import DetailLiteral, TimeframeLiteral
 from ...utils.coercion import coerce_finite_float
 from ...utils.mt5 import (
@@ -742,11 +743,10 @@ def wait_event(
     `max_wait_seconds` as a safety cap. Set `max_wait_seconds` alone to stop after
     a fixed duration. Omitting both is invalid.
 
-    In timeframe mode, omitting `watch_for` watches the lightweight core set:
-    order/position lifecycle events, pending/stop proximity, volatility/activity
-    events, and tick-count changes. It does not fetch support/resistance or pivot
-    zones during setup. Pass explicit price_touch_level, price_break_level, or
-    price_enter_zone objects when those levels are part of the intended wait.
+    In timeframe mode, omitting `watch_for` waits only for the candle boundary.
+    Pass explicit order/position/market watchers when those events should end
+    the wait early. `max_wait_seconds` defaults to the timeframe length plus 60
+    seconds so a weekend H1 wait cannot block until Sunday reopen.
 
     In duration mode, omitting `watch_for` creates a timer-only wait. It does not
     connect to MT5 or poll market/account state. Pass explicit watcher objects to
@@ -860,7 +860,12 @@ def wait_event(
             request_kwargs["symbol"] = symbol_value
         if symbols_value is not None:
             request_kwargs["symbols"] = list(symbols_value)
-        request_kwargs["max_wait_seconds"] = max_wait_seconds
+        if max_wait_seconds is None and timeframe is not None:
+            request_kwargs["max_wait_seconds"] = float(
+                TIMEFRAME_SECONDS.get(str(timeframe).upper(), 3600)
+            ) + 60.0
+        else:
+            request_kwargs["max_wait_seconds"] = max_wait_seconds
         request_kwargs["accept_preexisting"] = bool(accept_preexisting)
         if poll_interval_seconds is not None:
             request_kwargs["poll_interval_seconds"] = poll_interval_seconds
@@ -873,20 +878,7 @@ def wait_event(
         if normalized_watch_for is not None:
             resolved_watch_for = list(normalized_watch_for)
         else:
-            watcher_symbols = (
-                list(symbols_value)
-                if symbols_value is not None
-                else ([] if symbol_value is None else [symbol_value])
-            )
-            resolved_watch_for = (
-                _build_default_wait_event_basket_watchers(
-                    symbols=watcher_symbols,
-                    timeframe=timeframe,
-                    watch_tick_count_spike=watch_tick_count_spike,
-                )
-                if watcher_symbols and timeframe is not None
-                else []
-            )
+            resolved_watch_for = []
         try:
             request = WaitEventRequest(
                 **request_kwargs,

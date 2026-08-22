@@ -215,7 +215,10 @@ PARAM_HINTS = {
     "threshold_pct": "Segmentation change threshold (percent).",
     "threshold": "Change-point probability threshold (0-1).",
     "value_col": "Column name to use for value-based operations.",
-    "lookback": "Historical bars to use.",
+    "lookback": (
+        "Historical bars to use. Forecast omit means the method default "
+        "(native theta/fourier_ols: 300 bars)."
+    ),
     "horizon_bars": (
         "Holding period in bars of the requested timeframe. Default 1 is one-bar "
         "VaR; pass 5 to match portfolio_risk_decompose."
@@ -247,8 +250,12 @@ PARAM_HINTS = {
     "deviation": "Max slippage (points).",
     "order_type": "Required order type: BUY/SELL for market orders, or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders.",
     "price": "Entry price (required for pending).",
-    "stop_loss": "Stop-loss price.",
-    "take_profit": "Take-profit price.",
+    "stop_loss": (
+        "Stop-loss price. Required for trade_place unless --require-sl-tp false."
+    ),
+    "take_profit": (
+        "Take-profit price. Required for trade_place unless --require-sl-tp false."
+    ),
     "stop_limit_price": "Limit price activated after a stop-limit order's trigger price.",
     "require_sl_tp": "Require both stop_loss and take_profit for market and pending orders and fail if protection cannot be attached. Defaults to true.",
     "auto_close_on_sl_tp_fail": "Always-on policy: if a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Not configurable.",

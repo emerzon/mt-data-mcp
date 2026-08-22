@@ -345,7 +345,8 @@ def test_wait_event_builds_default_watchers_for_normalized_basket(
     request = mock_run_wait.call_args.args[0]
     assert request.symbol is None
     assert request.symbols == ["EURUSD", "GBPUSD"]
-    assert [item.symbol for item in request.watch_for] == ["EURUSD", "GBPUSD"]
+    assert list(request.watch_for or []) == []
+    assert request.max_wait_seconds == 360.0
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
@@ -363,7 +364,7 @@ def test_wait_event_symbol_less_timeframe_builds_boundary_only_request(
     assert request.symbol is None
     assert request.symbols is None
     assert request.timeframe == "H1"
-    assert request.max_wait_seconds is None
+    assert request.max_wait_seconds == 3660.0
     assert request.watch_for == []
     assert [(item.type, item.timeframe) for item in request.end_on] == [
         ("candle_close", "H1")

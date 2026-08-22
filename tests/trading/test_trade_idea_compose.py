@@ -206,6 +206,7 @@ def test_trade_idea_compose_quick_preview_path() -> None:
     assert idea["idea_eligible"] is True
     assert idea["overall_gate_status"] == "pass"
     assert idea["data_as_of"] == "2026-07-31T20:00:00Z"
+    assert idea["as_of"] == idea["assembled_at"]
     assert "source_tool_calls" not in idea
     assert "not an order" in idea["narrative"]
 
@@ -567,7 +568,9 @@ def test_trade_idea_compose_stands_down_on_unconfirmed_direction() -> None:
     assert idea["direction"] == "stand_down"
     assert idea["direction_basis"] == "forecast_vs_last_price"
     assert "suggested_direction" not in idea
-    assert idea["forecast"]["trend"] == "down"
+    assert "trend" not in idea["forecast"]
+    assert "tp_pct" not in idea.get("barriers", {})
+    assert "sl_pct" not in idea.get("barriers", {})
     assert idea["gates"]["alignment"]["status"] == "fail"
     assert idea["sizing"]["suggested_volume"] == 0.0
 

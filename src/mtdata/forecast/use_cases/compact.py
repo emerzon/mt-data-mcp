@@ -817,10 +817,16 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
             ("history_start_time", "history_start"),
             ("history_end_time", "history_end"),
             ("history_bars_used", "history_bars_used"),
+            ("lookback_bars_requested", "lookback_bars_requested"),
+            ("minimum_history_bars_requested", "minimum_history_bars_requested"),
         ):
             value = diagnostics.get(source_key)
             if value not in (None, "", [], {}):
                 out[target_key] = value
+        if diagnostics.get("lookback_bars_requested") in (None, "", [], {}):
+            out["lookback_source"] = "method_default"
+        else:
+            out["lookback_source"] = "requested"
     for source_key, target_key in (
         ("forecast_start_time", "forecast_start"),
         ("forecast_start_gap_bars", "forecast_start_gap_bars"),

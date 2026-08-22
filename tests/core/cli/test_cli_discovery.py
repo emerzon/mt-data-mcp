@@ -841,6 +841,44 @@ class TestCreateCommandFunction:
         }
         assert call_kwargs["__cli_raw"] is True
 
+    def test_set_overrides_fulfill_required_mapping_param(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "barrier",
+                    "type": Dict[str, Any],
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="forecast_barrier_prob")
+        args = argparse.Namespace(
+            symbol="BTCUSD",
+            set_overrides=[
+                "barrier.kind=tp_sl",
+                "barrier.unit=pct",
+                "barrier.take_profit=0.5",
+                "barrier.stop_loss=0.5",
+            ],
+            json=False,
+            verbose=False,
+        )
+
+        rc = cmd_fn(args)
+
+        assert rc == 0
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["barrier"] == {
+            "kind": "tp_sl",
+            "unit": "pct",
+            "take_profit": 0.5,
+            "stop_loss": 0.5,
+        }
+
     def test_detail_full_is_forwarded_as_tool_detail(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

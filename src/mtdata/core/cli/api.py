@@ -46,7 +46,12 @@ from ..error_envelope import build_error_payload
 from ..execution_logging import infer_result_success
 from ..output_contract import resolve_output_contract
 from ..request_context import ensure_request_id_scope
-from .catalog import display_program_name, format_root_help, known_command_names
+from .catalog import (
+    current_cli_program_name,
+    display_program_name,
+    format_root_help,
+    known_command_names,
+)
 from .formatting import (
     _attach_cli_meta,
     _format_result_for_cli,
@@ -1311,7 +1316,13 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         ),
     )
     group_window.add_argument(
-        "--lookback", type=int, default=None, help="Historical bars to use."
+        "--lookback",
+        type=int,
+        default=None,
+        help=(
+            "Historical bars to use. Omit for the method default "
+            "(native theta/fourier_ols: 300 bars)."
+        ),
     )
     group_window.add_argument(
         "--as-of", dest="as_of", type=str, default=None, help="Reference time override."
@@ -2156,6 +2167,8 @@ def _match_global_flags(query: str) -> List[tuple[str, str]]:
 
 
 def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
+    program = current_cli_program_name()
+
     def _format_optional_param(param: Dict[str, Any]) -> str:
         name = param["name"]
         default_text = _format_cli_literal(param.get("default"))
@@ -2173,22 +2186,22 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print(f"Global options matching '{query}':")
         for _name, doc in exact_global_matches:
             print(f"  {doc}")
-        print(f"\nRun `{CLI_PROGRAM} --help` for the full command list.")
+        print(f"\nRun `{program} --help` for the full command list.")
         return
     if not matches:
         if global_matches:
             print(f"Global options matching '{query}':")
             for _name, doc in global_matches:
                 print(f"  {doc}")
-            print(f"\nThese apply to every command. Run `{CLI_PROGRAM} --help` for the full list.")
+            print(f"\nThese apply to every command. Run `{program} --help` for the full list.")
             return
         print(f"No commands match '{query}'.")
         suggestions = _suggest_commands(functions, query)
         if suggestions:
             print(f"Did you mean: {', '.join(suggestions)}")
-        print(f"Run `{CLI_PROGRAM} --help` to view the full command list.")
+        print(f"Run `{program} --help` to view the full command list.")
         print(
-            f"Run `{CLI_PROGRAM} tools_list --search {query} --json` "
+            f"Run `{program} tools_list --search {query} --json` "
             "for machine-readable discovery."
         )
         return
@@ -2220,7 +2233,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:
             print(f"  Example+: {advanced_example}")
-        print(f"  More: {CLI_PROGRAM} {name} --help")
+        print(f"  More: {program} {name} --help")
         print("")
 
 

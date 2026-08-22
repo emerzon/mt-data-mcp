@@ -703,7 +703,7 @@ class TestAddDynamicArguments:
         assert "defaults to false" in help_text
         assert "--allow-stale [{true,false}]" in help_text
         assert "freshness" in help_text
-        assert "checks would otherwise fail" in help_text
+        assert "freshness_policy_relaxed" in help_text
 
     def test_include_incomplete_bool_param_uses_canonical_hyphen_flag(self):
         parser = argparse.ArgumentParser()
@@ -1232,7 +1232,7 @@ class TestAddDynamicArguments:
         compact_help = " ".join(help_text.split())
 
         assert "optional safety cap" in compact_help
-        assert "bounds the candle-boundary wait" in compact_help
+        assert "defaults to the timeframe length plus 60 seconds" in compact_help
         assert "Basket of 1-12 trading symbols" in compact_help
         assert "Cannot be combined with symbol" in compact_help
         assert "must be at least 0.1" in compact_help

@@ -372,21 +372,35 @@ def create_command_function(  # noqa: C901
                     cmd_name=cmd_name,
                 )
                 return 2
+            extra_param_name = f"{param_name}_params"
+            extra_val = getattr(args, extra_param_name, None)
+            has_mapping_companion = (
+                param_name in mapping_param_names
+                and (
+                    (isinstance(extra_val, str) and extra_val.strip())
+                    or param_name in set_overrides
+                )
+            )
             if not positional_supplied and not option_supplied:
                 # argparse.SUPPRESS is used for omission-sensitive defaults. Do
                 # not reconstruct those values here: request validators rely on
                 # model_fields_set to distinguish omission from an explicit flag.
                 # Required positional-or-option aliases also use SUPPRESS, so
                 # treat a missing required parameter as a usage error instead of
-                # skipping it until the tool raises TypeError.
-                if param.get("required"):
-                    missing_required.append(param_name)
-                continue
-            arg_value = (
-                getattr(args, option_alias_name)
-                if option_supplied
-                else getattr(args, param_name, param["default"])
-            )
+                # skipping it until the tool raises TypeError. Mapping companions
+                # (--set section.* / --*-params) still fulfill a required object.
+                if has_mapping_companion:
+                    arg_value = {}
+                else:
+                    if param.get("required"):
+                        missing_required.append(param_name)
+                    continue
+            else:
+                arg_value = (
+                    getattr(args, option_alias_name)
+                    if option_supplied
+                    else getattr(args, param_name, param["default"])
+                )
 
             if (
                 param_name == "symbols"

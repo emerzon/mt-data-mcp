@@ -59,10 +59,11 @@ was explicitly requested.
 `--as-of` makes the idea historical and **research-only**: no live session or
 quote, no live sizing, and no dry-run preview. Historical geometry uses the
 barrier analysis's cutoff-bound reference price.
-The response keeps the raw cutoff in `requested_as_of`; `as_of` and
-`data_as_of` identify the resolved last observation. Component `lineage`
-records source windows and price anchors, and full detail includes timestamped
-forecast points.
+The response keeps the raw cutoff in `requested_as_of`. Live ideas stamp
+`as_of` at assembly time and keep the last closed-bar observation on
+`data_as_of`. Historical ideas keep `as_of` on that observation. Component
+`lineage` records source windows and price anchors, and full detail includes
+timestamped forecast points.
 
 ---
 
@@ -80,7 +81,7 @@ forecast points.
 | `idea_eligible` / `overall_gate_status` | Aggregate strategy and operational gate decision; only `true` / `pass` permits a preview-eligible idea |
 | `gates` | `pass` / `fail` / `skip` for quote, session, forecast, barriers, SL/TP, sizing, preview |
 | `preview.preview_ok` | Local dry-run order validation. It is false whenever the aggregate idea is ineligible and is never a broker fill. |
-| `requested_as_of` / `data_as_of` | Requested historical cutoff and the resolved market-data observation used by the components |
+| `as_of` / `assembled_at` / `data_as_of` | Live `as_of` is assembly time; `data_as_of` is the last closed-bar observation. Historical `as_of` follows `data_as_of`. |
 | `lineage` | Per-component source cutoff, data window, price anchor, and forecast target window |
 | `partial_failure` | Some sections failed; do not infer the missing ones |
 

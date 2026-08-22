@@ -1563,6 +1563,7 @@ def _normalize_trade_idea_payload(
         "warnings",
         "as_of",
         "assembled_at",
+        "data_as_of",
         "timezone",
     )
     out: Dict[str, Any] = {}
@@ -1711,6 +1712,8 @@ def _normalize_trade_risk_payload(
             "reward_currency",
             "rr_ratio",
             "message",
+            "missing",
+            "note",
         )
         sizing_out = {
             key: sizing.get(key)
@@ -1719,6 +1722,30 @@ def _normalize_trade_risk_payload(
         }
         if sizing_out:
             out["position_sizing"] = sizing_out
+
+    evaluation = payload.get("trade_evaluation")
+    if isinstance(evaluation, dict):
+        evaluation_keys = (
+            "direction",
+            "entry",
+            "stop_loss",
+            "take_profit",
+            "sl_distance",
+            "sl_distance_pct",
+            "tp_distance",
+            "tp_distance_pct",
+            "reward_risk_ratio",
+            "rr_ratio",
+            "ticks_to_sl",
+            "ticks_to_tp",
+        )
+        evaluation_out = {
+            key: evaluation.get(key)
+            for key in evaluation_keys
+            if not _is_empty_value(evaluation.get(key))
+        }
+        if evaluation_out:
+            out["trade_evaluation"] = evaluation_out
 
     for key in (
         "position_sizing_error",
@@ -2263,6 +2290,8 @@ def _normalize_support_resistance_payload(  # noqa: C901
         "method",
         "current_price",
         "level_counts",
+        "role_note",
+        "level_scan_note",
         "units",
     ):
         value = payload.get(key)
@@ -2300,6 +2329,7 @@ def _normalize_support_resistance_payload(  # noqa: C901
                             "strength_rank",
                             "source_timeframes",
                             "dominant_source",
+                            "role_transition",
                         ],
                     )
                     for row in side_levels_in

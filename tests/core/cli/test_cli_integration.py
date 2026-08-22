@@ -3118,6 +3118,23 @@ class TestHelpSuggestions:
         assert "market_ticker" not in out
         assert "tools_list --search indicatr_list --json" in out
 
+    def test_unknown_help_uses_invoked_program_name(self, capsys, monkeypatch):
+        monkeypatch.setattr(
+            "sys.argv",
+            [r"C:\Users\Admin\Documents\Code\mtdata\src\mtdata\__main__.py"],
+        )
+        fns = {
+            "market_ticker": {
+                "func": lambda: None,
+                "meta": {},
+                "_cli_func_info": {"params": [], "doc": ""},
+            },
+        }
+        _print_extended_help(fns, "foobar")
+        out = capsys.readouterr().out
+        assert "python -m mtdata --help" in out
+        assert "python -m mtdata tools_list --search foobar --json" in out
+
 
 # ========================================================================
 # _argparse_color_enabled

@@ -53,8 +53,9 @@ the next buffered H1 close already fits inside it.
 
 A timeframe wait with no symbol and no extra watch list is a pure clock wait
 (no candle payload). Passing the symbol includes a best-effort closed-candle
-snapshot when the boundary hits. If a symbol is supplied and `--watch-for` is
-omitted, the command installs its inferred watcher set and may return mid-bar.
+snapshot when the boundary hits. Omitting `--watch-for` waits only for that
+candle boundary. `max_wait_seconds` defaults to the timeframe length plus 60
+seconds so a weekend H1 wait cannot block until Sunday reopen.
 
 ---
 
