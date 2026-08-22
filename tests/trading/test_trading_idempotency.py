@@ -3,7 +3,7 @@
 import threading
 import time
 
-from src.mtdata.core.trading.idempotency import IdempotencyStore, SQLiteIdempotencyStore
+from mtdata.core.trading.idempotency import IdempotencyStore, SQLiteIdempotencyStore
 
 # ---------------------------------------------------------------------------
 # Basic behavior

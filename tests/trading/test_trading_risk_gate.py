@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from src.mtdata.core.trading.safety import (
+from mtdata.core.trading.safety import (
     AccountRiskLimits,
     _evaluate_account_risk_gate,
 )

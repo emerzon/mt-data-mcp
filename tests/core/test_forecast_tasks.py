@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.mtdata.core.forecast_tasks import (
+from mtdata.core.forecast_tasks import (
     ForecastModelsCleanupRequest,
     ForecastModelsDeleteRequest,
     ForecastTaskCancelAllRequest,
@@ -17,10 +17,10 @@ from src.mtdata.core.forecast_tasks import (
     ForecastTaskWaitRequest,
     ForecastTrainRequest,
 )
-from src.mtdata.forecast.interface import TrainedModelHandle, TrainingProgress
+from mtdata.forecast.interface import TrainedModelHandle, TrainingProgress
 
-_PATCH_TM = "src.mtdata.core.forecast_tasks._get_task_manager"
-_PATCH_STORE = "src.mtdata.core.forecast_tasks._get_model_store"
+_PATCH_TM = "mtdata.core.forecast_tasks._get_task_manager"
+_PATCH_STORE = "mtdata.core.forecast_tasks._get_model_store"
 
 
 def _unwrap(fn):
@@ -58,7 +58,7 @@ def _make_task(
 
 class TestForecastTaskStatus:
     def test_returns_task_info(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = _make_task(
@@ -83,7 +83,7 @@ class TestForecastTaskStatus:
         assert result["cancel_requested"] is False
 
     def test_completed_task_includes_model(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         handle = TrainedModelHandle(
             model_id="nhits/EURUSD_H1/abc",
@@ -119,7 +119,7 @@ class TestForecastTaskStatus:
         assert "result" not in result
 
     def test_expired_model_is_not_reported_as_stored(self, monkeypatch):
-        from src.mtdata.core import forecast_tasks
+        from mtdata.core import forecast_tasks
 
         handle = SimpleNamespace(model_id="m/expired")
         store = SimpleNamespace(
@@ -140,7 +140,7 @@ class TestForecastTaskStatus:
         assert result["model_store_path"] == "expired/path"
 
     def test_full_detail_includes_result_metadata(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         handle = TrainedModelHandle(
             model_id="nhits/EURUSD_H1/abc",
@@ -185,7 +185,7 @@ class TestForecastTaskStatus:
         assert result["cancel_requested"] is True
 
     def test_failed_task_redacts_legacy_worker_traceback(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = _make_task(
@@ -212,7 +212,7 @@ class TestForecastTaskStatus:
         assert "C:\\private" not in result["task_error"]
 
     def test_missing_task_uses_error_envelope(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = None
@@ -230,7 +230,7 @@ class TestForecastTaskStatus:
         assert isinstance(result.get("request_id"), str)
 
     def test_orphaned_task_reports_process_lifecycle_remediation(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_status
+        from mtdata.core.forecast_tasks import forecast_task_status
 
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = _make_task(
@@ -258,7 +258,7 @@ class TestForecastTaskStatus:
 
 class TestForecastTaskCancel:
     def test_successful_cancel(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_cancel
+        from mtdata.core.forecast_tasks import forecast_task_cancel
 
         mock_tm = MagicMock()
         mock_tm.cancel.return_value = {
@@ -276,7 +276,7 @@ class TestForecastTaskCancel:
         assert result["status"] == "cancelling"
 
     def test_cancel_nonexistent(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_cancel
+        from mtdata.core.forecast_tasks import forecast_task_cancel
 
         mock_tm = MagicMock()
         mock_tm.cancel.return_value = {
@@ -298,7 +298,7 @@ class TestForecastTaskCancel:
         assert "message" not in result
 
     def test_cancel_all_defaults_to_pending_and_running(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_cancel_all
+        from mtdata.core.forecast_tasks import forecast_task_cancel_all
 
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = [
@@ -334,7 +334,7 @@ class TestForecastTaskCancel:
         assert {item["status"] for item in result["results"]} == {"cancelled"}
 
     def test_cancel_all_reports_async_teardown_when_wait_budget_expires(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_cancel_all
+        from mtdata.core.forecast_tasks import forecast_task_cancel_all
 
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = [_make_task("running", status="running")]
@@ -366,7 +366,7 @@ class TestForecastTaskWait:
         assert request.timeout_seconds == 600.0
 
     def test_wait_returns_latest_status(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_wait
+        from mtdata.core.forecast_tasks import forecast_task_wait
 
         mock_tm = MagicMock()
         mock_tm.wait_for_status.return_value = _make_task(status="completed")
@@ -379,7 +379,7 @@ class TestForecastTaskWait:
         assert result["wait_timeout_seconds"] == 10.0
 
     def test_wait_timeout_is_an_unsuccessful_wait_with_task_snapshot(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_wait
+        from mtdata.core.forecast_tasks import forecast_task_wait
 
         mock_tm = MagicMock()
         mock_tm.wait_for_status.return_value = _make_task(status="pending")
@@ -404,7 +404,7 @@ class TestForecastTaskWait:
         ],
     )
     def test_wait_terminal_failure_is_unsuccessful(self, status, error_code):
-        from src.mtdata.core.forecast_tasks import forecast_task_wait
+        from mtdata.core.forecast_tasks import forecast_task_wait
 
         mock_tm = MagicMock()
         mock_tm.wait_for_status.return_value = _make_task(
@@ -425,7 +425,7 @@ class TestForecastTaskWait:
 
 class TestForecastTaskList:
     def test_lists_tasks(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_list
+        from mtdata.core.forecast_tasks import forecast_task_list
 
         tasks = [
             _make_task("t1", status="running", progress=TrainingProgress(step=10, total_steps=100)),
@@ -449,7 +449,7 @@ class TestForecastTaskList:
         }
 
         with patch(_PATCH_TM, return_value=mock_tm), patch(
-            "src.mtdata.core.forecast_tasks.time.time",
+            "mtdata.core.forecast_tasks.time.time",
             return_value=1015.0,
         ):
             result = _unwrap(forecast_task_list)()
@@ -477,7 +477,7 @@ class TestForecastTaskList:
         assert result["tasks"][1]["elapsed_seconds"] == 59.0
 
     def test_pages_filtered_tasks(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_list
+        from mtdata.core.forecast_tasks import forecast_task_list
 
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = [
@@ -502,7 +502,7 @@ class TestForecastTaskList:
         assert [task["task_id"] for task in result["tasks"]] == ["t2"]
 
     def test_filters_public_method_and_adapter_independently(self):
-        from src.mtdata.core.forecast_tasks import forecast_task_list
+        from mtdata.core.forecast_tasks import forecast_task_list
 
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = [
@@ -531,7 +531,7 @@ class TestForecastTaskList:
         ],
     )
     def test_rejects_invalid_pagination(self, kwargs, error_code):
-        from src.mtdata.core.forecast_tasks import forecast_task_list
+        from mtdata.core.forecast_tasks import forecast_task_list
 
         result = _unwrap(forecast_task_list)(**kwargs)
 
@@ -541,7 +541,7 @@ class TestForecastTaskList:
 
 class TestForecastModels:
     def test_full_model_handle_exposes_replayable_compatibility_contract(self):
-        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+        from mtdata.core.forecast_tasks import _serialize_model_handle
 
         fingerprint = {
             "method": "nhits",
@@ -578,14 +578,14 @@ class TestForecastModels:
         assert result["compatibility_fingerprint"] == fingerprint
         assert result["reuse_request"]["model_id"] == handle.model_id
         assert result["reuse_request"]["model_cache"] == "require_existing"
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
 
         replay = ForecastGenerateRequest(**result["reuse_request"])
         assert replay.horizon == 24
         assert replay.params == {"seasonality": 24}
 
     def test_full_model_handle_marks_legacy_oversized_horizon_unusable(self):
-        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+        from mtdata.core.forecast_tasks import _serialize_model_handle
 
         handle = TrainedModelHandle(
             "nhits/EURUSD_H1/a",
@@ -607,7 +607,7 @@ class TestForecastModels:
         )
 
     def test_model_handle_includes_describe_error_when_store_lookup_fails(self, caplog):
-        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+        from mtdata.core.forecast_tasks import _serialize_model_handle
 
         handle = TrainedModelHandle(
             "nhits/EURUSD_H1/a",
@@ -619,7 +619,7 @@ class TestForecastModels:
         store = MagicMock()
         store.describe_model.side_effect = RuntimeError("store unavailable")
 
-        with caplog.at_level("WARNING", logger="src.mtdata.core.forecast_tasks"):
+        with caplog.at_level("WARNING", logger="mtdata.core.forecast_tasks"):
             result = _serialize_model_handle(handle, detail="full", store=store)
 
         assert result["model_id"] == "nhits/EURUSD_H1/a"
@@ -628,14 +628,14 @@ class TestForecastModels:
         assert any("Model store describe failed" in record.message for record in caplog.records)
 
     def test_recent_completed_model_tasks_returns_error_row_when_manager_fails(self, caplog):
-        from src.mtdata.core.forecast_tasks import _recent_completed_model_tasks
+        from mtdata.core.forecast_tasks import _recent_completed_model_tasks
 
         mock_tm = MagicMock()
         mock_tm.list_tasks.side_effect = RuntimeError("task manager unavailable")
 
         with patch(_PATCH_TM, return_value=mock_tm), caplog.at_level(
             "ERROR",
-            logger="src.mtdata.core.forecast_tasks",
+            logger="mtdata.core.forecast_tasks",
         ):
             result = _recent_completed_model_tasks()
 
@@ -648,7 +648,7 @@ class TestForecastModels:
         assert any("Forecast task manager list_tasks failed" in record.message for record in caplog.records)
 
     def test_lists_models(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle("nhits/EURUSD_H1/a", "nhits", "EURUSD_H1", "a", 1000.0),
@@ -669,7 +669,7 @@ class TestForecastModels:
         mock_store.describe_model.assert_not_called()
 
     def test_lists_library_aliases_by_public_method_or_adapter(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle(
@@ -694,7 +694,7 @@ class TestForecastModels:
         )
 
     def test_compact_model_rows_show_training_anchor(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handle = TrainedModelHandle(
             "sktime/EURUSD_H1/a",
@@ -719,7 +719,7 @@ class TestForecastModels:
         assert result["models"][0]["training_window_mode"] == "as_of"
 
     def test_lists_models_with_stable_pagination(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
@@ -737,7 +737,7 @@ class TestForecastModels:
         assert [row["model_id"] for row in result["models"]] == ["m/S1/h", "m/S2/h"]
 
     def test_models_compact_default_caps_large_store_at_ten(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle(
@@ -767,7 +767,7 @@ class TestForecastModels:
         assert result["count_by_method"] == {"m": 11, "theta": 4}
 
     def test_models_explicit_fifty_limit_returns_larger_page(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle(f"m/S{i:02d}/h", "m", f"S{i:02d}", "h", float(i))
@@ -784,7 +784,7 @@ class TestForecastModels:
         assert result["pagination"]["has_more"] is False
 
     def test_cleanup_preview_is_bounded_and_deterministically_paged(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_cleanup
+        from mtdata.core.forecast_tasks import forecast_models_cleanup
 
         handles = [
             TrainedModelHandle(
@@ -831,7 +831,7 @@ class TestForecastModels:
         ]
 
     def test_cleanup_apply_targets_same_page_as_preview(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_cleanup
+        from mtdata.core.forecast_tasks import forecast_models_cleanup
 
         handles = [
             TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
@@ -864,7 +864,7 @@ class TestForecastModels:
         ]
 
     def test_lists_models_distinguishes_empty_page_from_empty_store(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_list
+        from mtdata.core.forecast_tasks import forecast_models_list
 
         handles = [
             TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
@@ -884,7 +884,7 @@ class TestForecastModels:
         assert "forecast_train" not in result.get("hint", "")
 
     def test_delete_existing_defaults_to_metadata_preview(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_delete
+        from mtdata.core.forecast_tasks import forecast_models_delete
 
         handle = TrainedModelHandle(
             "nhits/EURUSD_H1/abc",
@@ -931,7 +931,7 @@ class TestForecastModels:
         mock_store.delete.assert_not_called()
 
     def test_delete_existing_requires_exact_confirmation(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_delete
+        from mtdata.core.forecast_tasks import forecast_models_delete
 
         handle = TrainedModelHandle(
             "nhits/EURUSD_H1/abc",
@@ -970,7 +970,7 @@ class TestForecastModels:
         mock_store.delete.assert_called_once_with(handle.model_id)
 
     def test_delete_existing_rejects_apply_without_confirmation(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_delete
+        from mtdata.core.forecast_tasks import forecast_models_delete
 
         handle = TrainedModelHandle("m/S/h", "m", "S", "h", 1_700_000_000.0)
         mock_store = MagicMock()
@@ -987,7 +987,7 @@ class TestForecastModels:
         mock_store.delete.assert_not_called()
 
     def test_delete_missing_marks_failure(self):
-        from src.mtdata.core.forecast_tasks import forecast_models_delete
+        from mtdata.core.forecast_tasks import forecast_models_delete
 
         mock_store = MagicMock()
         mock_store.list_models.return_value = []
@@ -1018,7 +1018,7 @@ class TestForecastTrain:
             )
 
     def test_training_returns_task_snapshot(self):
-        from src.mtdata.core.forecast_tasks import forecast_train
+        from mtdata.core.forecast_tasks import forecast_train
 
         task = _make_task(status="pending")
         mock_tm = MagicMock()
@@ -1027,7 +1027,7 @@ class TestForecastTrain:
 
         with (
             patch(_PATCH_TM, return_value=mock_tm),
-            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+            patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
             result = _unwrap(forecast_train)(
                 ForecastTrainRequest(
@@ -1064,7 +1064,7 @@ class TestForecastTrain:
 
     @pytest.mark.parametrize("method", ["sf_naive", "skt_naive"])
     def test_training_preserves_registered_library_alias_identity(self, method):
-        from src.mtdata.core.forecast_tasks import forecast_train
+        from mtdata.core.forecast_tasks import forecast_train
 
         task = _make_task(status="pending", method=method)
         mock_tm = MagicMock()
@@ -1073,7 +1073,7 @@ class TestForecastTrain:
 
         with (
             patch(_PATCH_TM, return_value=mock_tm),
-            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+            patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
             result = _unwrap(forecast_train)(
                 ForecastTrainRequest(symbol="EURUSD", method=method)
@@ -1086,7 +1086,7 @@ class TestForecastTrain:
         assert "requested_method" not in result
 
     def test_training_can_wait_for_completed_model(self):
-        from src.mtdata.core.forecast_tasks import forecast_train
+        from mtdata.core.forecast_tasks import forecast_train
 
         handle = TrainedModelHandle(
             model_id="mlf_rf/EURUSD_H1/abc",
@@ -1109,7 +1109,7 @@ class TestForecastTrain:
 
         with (
             patch(_PATCH_TM, return_value=mock_tm),
-            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+            patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
             result = _unwrap(forecast_train)(
                 ForecastTrainRequest(
@@ -1129,7 +1129,7 @@ class TestForecastTrain:
         )
 
     def test_training_wait_surfaces_task_failure(self):
-        from src.mtdata.core.forecast_tasks import forecast_train
+        from mtdata.core.forecast_tasks import forecast_train
 
         failed = _make_task(
             task_id="task-train-1",
@@ -1143,7 +1143,7 @@ class TestForecastTrain:
 
         with (
             patch(_PATCH_TM, return_value=mock_tm),
-            patch("src.mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
+            patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise"),
         ):
             result = _unwrap(forecast_train)(
                 ForecastTrainRequest(
@@ -1170,7 +1170,7 @@ class TestForecastTrain:
 
 class TestForecastGenerateRequestAsync:
     def test_async_mode_field_in_schema(self):
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
 
         schema = ForecastGenerateRequest.model_json_schema()
         props = schema["properties"]
@@ -1178,7 +1178,7 @@ class TestForecastGenerateRequestAsync:
         assert "model_id" in props
 
     def test_defaults(self):
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
 
         req = ForecastGenerateRequest(symbol="X", timeframe="H1", method="theta")
         assert req.async_mode is False
@@ -1195,8 +1195,8 @@ class TestForecastTaskStatusRequestSchema:
 
 class TestToolRegistration:
     def test_new_tools_registered(self):
-        from src.mtdata.bootstrap.tools import bootstrap_tools
-        from src.mtdata.core._mcp_instance import mcp
+        from mtdata.bootstrap.tools import bootstrap_tools
+        from mtdata.core._mcp_instance import mcp
 
         bootstrap_tools()
         tool_names = {t.name for t in mcp._tool_manager.list_tools()}

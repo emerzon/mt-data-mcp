@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from src.mtdata.forecast.model_cache import ModelCache
+from mtdata.forecast.model_cache import ModelCache
 
 # ---------------------------------------------------------------------------
 # Basic get_or_load

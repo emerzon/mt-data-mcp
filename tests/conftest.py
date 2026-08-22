@@ -16,9 +16,8 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
-for _path in (str(_SRC), str(_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 
 def _make_mt5_stub() -> MagicMock:

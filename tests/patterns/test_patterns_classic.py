@@ -7,17 +7,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.mtdata.patterns.classic as classic_mod
-from src.mtdata.core import patterns as core_patterns
-from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
-from src.mtdata.patterns.classic import (
+import mtdata.patterns.classic as classic_mod
+from mtdata.core import patterns as core_patterns
+from mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
+from mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
     detect_classic_patterns,
 )
-from src.mtdata.patterns.classic_impl import shapes as shapes_mod
-from src.mtdata.patterns.classic_impl import trend as trend_mod
-from src.mtdata.patterns.classic_impl.utils import (
+from mtdata.patterns.classic_impl import shapes as shapes_mod
+from mtdata.patterns.classic_impl import trend as trend_mod
+from mtdata.patterns.classic_impl.utils import (
     _count_recent_touches,
     _fit_lines_and_arrays,
 )
@@ -62,7 +62,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
             )
         return np.array([], dtype=int), np.array([], dtype=int)
 
-    from src.mtdata.patterns.classic_impl import continuation
+    from mtdata.patterns.classic_impl import continuation
 
     monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
 
@@ -93,7 +93,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
 
 
 def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
-    from src.mtdata.patterns.classic_impl import continuation
+    from mtdata.patterns.classic_impl import continuation
 
     n = 120
     window = 30
@@ -143,7 +143,7 @@ def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
 
 
 def test_detect_flags_pennants_reject_protrend_consolidation(monkeypatch):
-    from src.mtdata.patterns.classic_impl import continuation
+    from mtdata.patterns.classic_impl import continuation
 
     n = 120
     window = 30
@@ -444,7 +444,7 @@ def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypa
 
 
 def test_detect_cup_handle_respects_configurable_handle_pullback():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
     anchors = [
@@ -481,7 +481,7 @@ def test_detect_cup_handle_respects_configurable_handle_pullback():
 
 
 def test_detect_cup_handle_scores_rim_mismatch_instead_of_hard_reject():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
     anchors = [
@@ -526,7 +526,7 @@ def test_detect_cup_handle_scores_rim_mismatch_instead_of_hard_reject():
 
 
 def test_detect_inverted_cup_handle_detects_bearish_variant():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
     anchors = [
@@ -562,7 +562,7 @@ def test_detect_inverted_cup_handle_detects_bearish_variant():
 
 
 def test_forming_cup_reports_expected_but_not_observed_breakout_direction():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     n = 180
     anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 100.0), (165, 96.0), (179, 99.0)]
@@ -588,7 +588,7 @@ def test_forming_cup_reports_expected_but_not_observed_breakout_direction():
 
 
 def test_inverted_cup_metrics_ignore_prices_outside_detection_window():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     anchors = [(0, 100.0), (25, 100.0), (90, 118.0), (135, 100.0), (150, 102.0), (165, 105.0), (179, 99.0)]
     close = np.full(180, 100.0, dtype=float)
@@ -621,7 +621,7 @@ def test_inverted_cup_metrics_ignore_prices_outside_detection_window():
 
 
 def test_detect_cup_handle_scans_configured_window_range():
-    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+    from mtdata.patterns.classic_impl.continuation import detect_cup_handle
 
     anchors = [
         (0, 100.0),
@@ -658,7 +658,7 @@ def test_detect_cup_handle_scans_configured_window_range():
 
 
 def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     peaks = np.array([30, 60, 90, 120], dtype=int)
@@ -697,7 +697,7 @@ def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
 
 
 def test_detect_triangles_allows_near_flat_boundary_with_same_sign_slopes(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     peaks = np.array([30, 60, 90, 120], dtype=int)
@@ -728,7 +728,7 @@ def test_detect_triangles_allows_near_flat_boundary_with_same_sign_slopes(monkey
 
 
 def test_detect_triangles_reject_crossed_boundaries(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     peaks = np.array([30, 60, 90, 120], dtype=int)
@@ -765,7 +765,7 @@ def test_detect_triangles_reject_crossed_boundaries(monkeypatch):
 
 
 def test_detect_triangles_reject_both_flat_boundaries(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     peaks = np.array([30, 60, 90, 120], dtype=int)
@@ -795,7 +795,7 @@ def test_detect_triangles_reject_both_flat_boundaries(monkeypatch):
 
 
 def test_detect_wedges_reject_near_flat_boundaries(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     peaks = np.array([30, 60, 90, 120], dtype=int)
@@ -825,7 +825,7 @@ def test_detect_wedges_reject_near_flat_boundaries(monkeypatch):
 
 
 def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
-    from src.mtdata.patterns.classic_impl import continuation
+    from mtdata.patterns.classic_impl import continuation
 
     n = 160
     window = 30
@@ -874,7 +874,7 @@ def test_detect_flags_prefers_flag_when_convergence_is_only_noise(monkeypatch):
 
 
 def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch):
-    from src.mtdata.patterns.classic_impl import continuation
+    from mtdata.patterns.classic_impl import continuation
 
     n = 130
     window = 30
@@ -930,7 +930,7 @@ def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch)
 
 
 def test_detect_rectangles_mark_completed_on_breakout():
-    from src.mtdata.patterns.classic_impl.shapes import detect_rectangles
+    from mtdata.patterns.classic_impl.shapes import detect_rectangles
 
     n = 120
     close = np.full(n, 100.0, dtype=float)
@@ -954,7 +954,7 @@ def test_detect_rectangles_mark_completed_on_breakout():
 
 
 def test_detect_rectangles_without_time_values_return_none_timestamps():
-    from src.mtdata.patterns.classic_impl.shapes import detect_rectangles
+    from mtdata.patterns.classic_impl.shapes import detect_rectangles
 
     n = 120
     close = np.full(n, 100.0, dtype=float)
@@ -978,7 +978,7 @@ def test_detect_rectangles_without_time_values_return_none_timestamps():
 
 
 def test_detect_trend_lines_extend_to_current_bar():
-    from src.mtdata.patterns.classic_impl.trend import detect_trend_lines
+    from mtdata.patterns.classic_impl.trend import detect_trend_lines
 
     n = 140
     close = np.linspace(100.0, 120.0, n)
@@ -996,7 +996,7 @@ def test_detect_trend_lines_extend_to_current_bar():
 
 
 def test_detect_trend_lines_reject_fit_below_r2_floor(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     close = np.linspace(100.0, 101.0, 40)
     peaks = np.array([5, 15, 25], dtype=int)
@@ -1015,7 +1015,7 @@ def test_detect_trend_lines_reject_fit_below_r2_floor(monkeypatch):
 
 
 def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     n = 160
     close = np.linspace(100.0, 101.0, n)
@@ -1044,7 +1044,7 @@ def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
 
 
 def test_detect_channels_reject_widening_parallel_structure(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     n = 60
     x = np.arange(n, dtype=float)
@@ -1083,7 +1083,7 @@ def test_detect_channels_reject_widening_parallel_structure(monkeypatch):
 
 
 def test_detect_channels_reject_crossed_boundaries(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     n = 60
     x = np.arange(n, dtype=float)
@@ -1122,7 +1122,7 @@ def test_detect_channels_reject_crossed_boundaries(monkeypatch):
 
 
 def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     n = 40
     peaks = np.array([5, 15, 25], dtype=int)
@@ -1183,7 +1183,7 @@ def test_detect_trend_lines_require_breakout_for_completed_status(monkeypatch):
 
 
 def test_detect_channels_require_breakout_for_completed_status(monkeypatch):
-    from src.mtdata.patterns.classic_impl import trend
+    from mtdata.patterns.classic_impl import trend
 
     n = 60
     peaks = np.array([10, 20, 30, 40, 50], dtype=int)
@@ -1247,7 +1247,7 @@ def test_detect_channels_require_breakout_for_completed_status(monkeypatch):
 
 
 def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 200
     close = np.linspace(100.0, 101.0, n)
@@ -1305,7 +1305,7 @@ def test_detect_diamonds_respects_geometry_threshold(monkeypatch):
 
 
 def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 150
     close = np.linspace(100.0, 105.0, n)
@@ -1332,7 +1332,7 @@ def test_detect_diamonds_forward_high_low_arrays_to_pivot_detection(monkeypatch)
 
 
 def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 200
     close = np.linspace(100.0, 101.0, n)
@@ -1373,7 +1373,7 @@ def test_detect_diamonds_accepts_asymmetric_split_with_stricter_default_r2(monke
 
 
 def test_detect_diamonds_reject_disjoint_split_boundaries(monkeypatch):
-    from src.mtdata.patterns.classic_impl import shapes
+    from mtdata.patterns.classic_impl import shapes
 
     n = 200
     close = np.linspace(100.0, 101.0, n)
@@ -1413,7 +1413,7 @@ def test_detect_diamonds_reject_disjoint_split_boundaries(monkeypatch):
 
 
 def test_detect_tops_bottoms_merges_connected_same_level_cluster():
-    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+    from mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
     close = np.array(
         [98.0, 100.1, 95.0, 100.0, 94.8, 99.9, 95.2, 100.2, 96.0],
@@ -1437,7 +1437,7 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
 
 
 def test_detect_tops_bottoms_uses_wick_geometry_with_high_low_pivots():
-    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+    from mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
     close = np.array([98.0, 99.5, 96.0, 98.5, 95.0, 97.0, 96.0])
     high = close + 0.2
@@ -1488,7 +1488,7 @@ def test_detect_tops_bottoms_uses_wick_geometry_with_high_low_pivots():
 def test_detect_tops_bottoms_drops_invalidated_forming_structure(
     kind, close, peaks, troughs
 ):
-    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+    from mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
     prices = np.asarray(close, dtype=float)
     out = detect_tops_bottoms(
@@ -1507,7 +1507,7 @@ def test_detect_tops_bottoms_drops_invalidated_forming_structure(
 
 
 def test_detect_tops_bottoms_scans_all_pivots_in_requested_window():
-    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+    from mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
     close = np.full(30, 90.0, dtype=float)
     close[[1, 3]] = 100.0
@@ -1535,7 +1535,7 @@ def test_level_components_rejects_spread_beyond_tolerance():
     which allowed monotonically escalating peaks to cluster as a horizontal
     "Triple Top". The strict spread check rejects that false positive.
     """
-    from src.mtdata.patterns.classic_impl.reversal import _level_components
+    from mtdata.patterns.classic_impl.reversal import _level_components
 
     vals = np.array([100.0, 112.0, 103.0, 115.0, 106.0], dtype=float)
 
@@ -1553,7 +1553,7 @@ def test_detect_tops_bottoms_rejects_escalating_peaks_as_triple_top():
     which could pick up an unrelated deep low inside the formation span. The
     neckline must come from the lowest *trough pivot* between the cluster peaks.
     """
-    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+    from mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
     # Cluster peaks at indices 0,2,4,6,7,8,9 (values 1.15638..1.15897, ~0.22%
     # spread — within default 0.4% tol so they legitimately cluster as a top).
@@ -1585,7 +1585,7 @@ def test_detect_tops_bottoms_rejects_escalating_peaks_as_triple_top():
 
 
 def test_head_shoulders_dtw_distance_is_normalized_by_window_length(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     monkeypatch.setattr(reversal, "_dtw_distance", lambda _a, _b: 5.2)
     distance = reversal._normalized_dtw_distance(np.zeros(80), np.ones(80))
@@ -1594,7 +1594,7 @@ def test_head_shoulders_dtw_distance_is_normalized_by_window_length(monkeypatch)
 
 
 def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     captured = {}
 
@@ -1629,7 +1629,7 @@ def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
 
 
 def test_detect_head_shoulders_uses_wick_geometry_with_high_low_pivots():
-    from src.mtdata.patterns.classic_impl.reversal import detect_head_shoulders
+    from mtdata.patterns.classic_impl.reversal import detect_head_shoulders
 
     close = np.array([98.0, 101.5, 96.0, 100.0, 105.0, 100.0, 95.5, 99.0, 98.0])
     high = close + 0.2
@@ -1666,7 +1666,7 @@ def test_detect_head_shoulders_uses_wick_geometry_with_high_low_pivots():
 
 
 def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     captured = {}
 
@@ -1701,7 +1701,7 @@ def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypa
 
 
 def test_detect_head_shoulders_rejects_neckline_above_shoulders():
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     close = np.array(
         [96.0, 100.0, 101.0, 103.0, 110.0, 101.5, 101.2, 99.0, 100.5, 97.0], dtype=float
@@ -1723,7 +1723,7 @@ def test_detect_head_shoulders_rejects_neckline_above_shoulders():
 
 
 def test_detect_inverse_head_shoulders_rejects_neckline_below_shoulders():
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     close = np.array([104.0, 95.0, 94.0, 90.0, 94.5, 96.0, 108.0], dtype=float)
     peaks = np.array([0, 2, 4, 6], dtype=int)
@@ -1743,7 +1743,7 @@ def test_detect_inverse_head_shoulders_rejects_neckline_below_shoulders():
 
 
 def test_head_shoulders_two_point_neckline_does_not_get_free_r2_boost():
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     cfg = ClassicDetectorConfig(max_flat_slope=1e-4)
     quality = reversal._neckline_quality_score(
@@ -1757,7 +1757,7 @@ def test_head_shoulders_two_point_neckline_does_not_get_free_r2_boost():
 
 
 def test_detect_rounding_tries_multiple_windows(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     n = 260
     close = np.linspace(100.0, 110.0, n)
@@ -1788,7 +1788,7 @@ def test_detect_rounding_tries_multiple_windows(monkeypatch):
 
 
 def test_detect_rounding_returns_multiple_non_overlapping_windows(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     n = 320
     close = np.linspace(100.0, 110.0, n)
@@ -1820,7 +1820,7 @@ def test_detect_rounding_returns_multiple_non_overlapping_windows(monkeypatch):
 
 
 def test_detect_rounding_uses_a_post_structure_confirmation_bar(monkeypatch):
-    from src.mtdata.patterns.classic_impl import reversal
+    from mtdata.patterns.classic_impl import reversal
 
     x = np.linspace(-1.0, 1.0, 100)
     structure = 100.0 + 5.0 * np.square(x)
@@ -1852,7 +1852,7 @@ def test_detect_rounding_uses_a_post_structure_confirmation_bar(monkeypatch):
 
 
 def test_dedupe_overlapping_head_shoulders_results():
-    from src.mtdata.patterns.classic_impl.reversal import _dedupe_overlapping_patterns
+    from mtdata.patterns.classic_impl.reversal import _dedupe_overlapping_patterns
 
     patterns = [
         ClassicPatternResult(

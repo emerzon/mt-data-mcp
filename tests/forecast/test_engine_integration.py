@@ -18,9 +18,9 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-import src.mtdata.forecast.forecast_engine as fe
-from src.mtdata.forecast.exceptions import ModelCompatibilityError
-from src.mtdata.forecast.interface import (
+import mtdata.forecast.forecast_engine as fe
+from mtdata.forecast.exceptions import ModelCompatibilityError
+from mtdata.forecast.interface import (
     ArtifactCompatibilityError,
     ForecastMethod,
     ForecastResult,
@@ -29,8 +29,8 @@ from src.mtdata.forecast.interface import (
 )
 
 # Canonical patch targets for lazy imports inside forecast_engine helpers.
-_PATCH_MODEL_STORE = "src.mtdata.forecast.model_store.model_store"
-_PATCH_GET_TM = "src.mtdata.forecast.task_manager.get_task_manager"
+_PATCH_MODEL_STORE = "mtdata.forecast.model_store.model_store"
+_PATCH_GET_TM = "mtdata.forecast.task_manager.get_task_manager"
 
 
 # ---------------------------------------------------------------------------
@@ -1124,14 +1124,14 @@ class TestForecastEngineAsyncRouting:
 class TestForecastGenerateRequestFields:
 
     def test_async_mode_defaults_false(self):
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
         req = ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="nhits")
         assert req.async_mode is False
         assert req.model_id is None
         assert req.model_cache == "reuse"
 
     def test_async_mode_can_be_set(self):
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
         req = ForecastGenerateRequest(
             symbol="EURUSD", timeframe="H1", method="nhits",
             async_mode=True, model_id="nhits/EURUSD_H1/xyz",
@@ -1148,7 +1148,7 @@ class TestForecastGenerateRequestFields:
         ],
     )
     def test_incompatible_cache_options_are_rejected(self, kwargs, message):
-        from src.mtdata.forecast.requests import ForecastGenerateRequest
+        from mtdata.forecast.requests import ForecastGenerateRequest
 
         with pytest.raises(ValidationError, match=message):
             ForecastGenerateRequest(symbol="EURUSD", **kwargs)

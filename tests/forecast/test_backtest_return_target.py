@@ -1,17 +1,9 @@
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_SRC = os.path.join(_ROOT, "src")
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 from mtdata.forecast.backtest import (
     _compact_metrics_payload,

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.mtdata.core.trading.validation import _resolve_slippage_to_deviation
+from mtdata.core.trading.validation import _resolve_slippage_to_deviation
 
 # ---------------------------------------------------------------------------
 # Default fallback

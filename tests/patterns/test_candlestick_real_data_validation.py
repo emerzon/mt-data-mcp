@@ -8,9 +8,9 @@ import MetaTrader5 as mt5
 import pandas as pd
 import pytest
 
-from src.mtdata.patterns import candlestick as candlestick_mod
-from src.mtdata.shared.constants import TIMEFRAME_MAP
-from src.mtdata.utils.mt5 import _mt5_copy_rates_from, _rates_to_df
+from mtdata.patterns import candlestick as candlestick_mod
+from mtdata.shared.constants import TIMEFRAME_MAP
+from mtdata.utils.mt5 import _mt5_copy_rates_from, _rates_to_df
 
 
 def _manual_pattern_sign(

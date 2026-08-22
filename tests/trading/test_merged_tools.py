@@ -5,7 +5,7 @@ from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from src.mtdata.utils.time import (
+from mtdata.utils.time import (
     format_epoch_utc,
 )
 
@@ -19,12 +19,12 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.mtdata.core.forecast import forecast_barrier_prob
-from src.mtdata.core.patterns import patterns_detect
-from src.mtdata.core.patterns_requests import PatternsDetectRequest
-from src.mtdata.core.trading import trade_get_open, trade_get_pending
-from src.mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
-from src.mtdata.forecast.requests import ForecastBarrierProbRequest
+from mtdata.core.forecast import forecast_barrier_prob
+from mtdata.core.patterns import patterns_detect
+from mtdata.core.patterns_requests import PatternsDetectRequest
+from mtdata.core.trading import trade_get_open, trade_get_pending
+from mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
+from mtdata.forecast.requests import ForecastBarrierProbRequest
 
 
 def get_open(**kwargs):
@@ -309,7 +309,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertTrue("error" in res or "success" in res)
 
     def test_forecast_barrier_prob(self):
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
             res = barrier_prob(
                 symbol="EURUSD",
@@ -340,7 +340,7 @@ class TestMergedTools(unittest.TestCase):
             self.assertEqual(mock_mc.call_args.kwargs.get("tp_pct"), 0.5)
             self.assertEqual(mock_mc.call_args.kwargs.get("sl_pct"), 0.3)
             
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
             res = barrier_prob(
                 symbol="EURUSD",
@@ -357,7 +357,7 @@ class TestMergedTools(unittest.TestCase):
             )
 
     def test_forecast_barrier_prob_direction_normalization(self):
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
             barrier_prob(
                 symbol="EURUSD",
@@ -373,7 +373,7 @@ class TestMergedTools(unittest.TestCase):
             )
             self.assertEqual(mock_mc.call_args.kwargs.get("direction"), "long")
 
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
             barrier_prob(
                 symbol="EURUSD",
@@ -385,7 +385,7 @@ class TestMergedTools(unittest.TestCase):
             self.assertEqual(mock_cf.call_args.kwargs.get("direction"), "short")
 
     def test_forecast_barrier_prob_rejects_invalid_direction(self):
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             with self.assertRaisesRegex(ValueError, "direction"):
                 barrier_prob(
                     symbol="EURUSD",
@@ -401,7 +401,7 @@ class TestMergedTools(unittest.TestCase):
                 )
             mock_mc.assert_not_called()
 
-        with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
+        with patch('mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             with self.assertRaisesRegex(ValueError, "direction"):
                 barrier_prob(
                     symbol="EURUSD",
@@ -453,8 +453,8 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.retcode_name = lambda code: "DONE"
         self.mt5.last_error.return_value = (0, "")
         
-        from src.mtdata.core.trading import trade_close
-        from src.mtdata.core.trading.requests import TradeCloseRequest
+        from mtdata.core.trading import trade_close
+        from mtdata.core.trading.requests import TradeCloseRequest
 
         # Test close by ticket
         trade_close(request=TradeCloseRequest(ticket=123), __cli_raw=True)
@@ -500,8 +500,8 @@ class TestMergedTools(unittest.TestCase):
         self.mt5.retcode_name = lambda code: "DONE"
         self.mt5.last_error.return_value = (0, "")
 
-        from src.mtdata.core.trading import trade_close
-        from src.mtdata.core.trading.requests import TradeCloseRequest
+        from mtdata.core.trading import trade_close
+        from mtdata.core.trading.requests import TradeCloseRequest
 
         # Test cancel by ticket
         trade_close(

@@ -152,7 +152,7 @@ def _bypass_auto_connect(monkeypatch):
     """Neutralize MT5 connection guards so no real terminal access is needed."""
     passthrough = lambda fn=None, **kw: fn if fn else (lambda f: f)
     monkeypatch.setattr("mtdata.core.trading.gateway.ensure_mt5_connection_or_raise", lambda: None)
-    monkeypatch.setattr("src.mtdata.core.trading.gateway.ensure_mt5_connection_or_raise", lambda: None)
+    monkeypatch.setattr("mtdata.core.trading.gateway.ensure_mt5_connection_or_raise", lambda: None)
     for module_name in [
         "mtdata.core.trading.account",
         "mtdata.core.trading.execution",

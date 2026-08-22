@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import src.mtdata.core.patterns_support as patterns_support_mod
-import src.mtdata.patterns.candlestick as candlestick_mod
-import src.mtdata.services.data_service as data_service_mod
-from src.mtdata.core import patterns as core_patterns
-from src.mtdata.core.patterns_requests import PatternsDetectRequest
-from src.mtdata.patterns.candlestick import (
+import mtdata.core.patterns_support as patterns_support_mod
+import mtdata.patterns.candlestick as candlestick_mod
+import mtdata.services.data_service as data_service_mod
+from mtdata.core import patterns as core_patterns
+from mtdata.core.patterns_requests import PatternsDetectRequest
+from mtdata.patterns.candlestick import (
     _extract_candlestick_rows,
     _get_candlestick_pattern_methods,
     _is_candlestick_allowed,

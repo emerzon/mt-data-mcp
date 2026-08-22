@@ -5,8 +5,8 @@ import math
 import pytest
 from pydantic import ValidationError
 
-from src.mtdata.core.trading.requests import KellySizing
-from src.mtdata.core.trading.sizing import (
+from mtdata.core.trading.requests import KellySizing
+from mtdata.core.trading.sizing import (
     MAX_KELLY_R_MULTIPLE,
     compute_kelly_sizing_context,
     compute_risk_based_volume,

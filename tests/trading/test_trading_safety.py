@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.mtdata.core.trading.safety import (
+from mtdata.core.trading.safety import (
     TradeSafetyPolicy,
     _estimate_order_risk_currency,
     _evaluate_safety_policy,

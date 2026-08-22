@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from src.mtdata.patterns.elliott import (
+from mtdata.patterns.elliott import (
     ElliottWaveConfig,
     _evaluate_impulse_rules,
     _zigzag_pivots_indices,

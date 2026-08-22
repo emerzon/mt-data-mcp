@@ -1,18 +1,9 @@
 
 import importlib.util
-import os
-import sys
 import unittest
 
 import numpy as np
 import pandas as pd
-
-# Add project roots to path for imports
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-_SRC = os.path.join(_ROOT, 'src')
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 from mtdata.forecast.forecast import forecast
 from mtdata.forecast.forecast_engine import forecast_engine
