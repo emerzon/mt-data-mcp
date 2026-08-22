@@ -130,6 +130,10 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
 
 
 
+def _portfolio_error(error: str, error_code: str, **extra: Any) -> Dict[str, Any]:
+    return {"success": False, "error": error, "error_code": error_code, **extra}
+
+
 def _portfolio_model_context_for_detail(
     context: Dict[str, Any],
     detail: str,
@@ -269,13 +273,13 @@ def _validate_proposed_trade(
     except Exception:
         symbol_info = None
     if symbol_info is None:
-        return None, {
-            "error": f"Symbol {input_symbol!r} was not found by MT5.",
-            "error_code": "symbol_not_found",
-            "field": "proposed_trade.symbol",
-            "symbol": input_symbol,
-            "remediation": "Use symbols_list to discover the exact broker symbol name.",
-        }
+        return None, _portfolio_error(
+            f"Symbol {input_symbol!r} was not found by MT5.",
+            "symbol_not_found",
+            field="proposed_trade.symbol",
+            symbol=input_symbol,
+            remediation="Use symbols_list to discover the exact broker symbol name.",
+        )
 
     volume, volume_error = _validate_volume(proposed.volume, symbol_info)
     if volume_error is not None:
@@ -292,26 +296,26 @@ def _validate_proposed_trade(
             maximum=maximum,
             step=step,
         )
-        return None, {
-            "error": (
+        return None, _portfolio_error(
+            (
                 f"Invalid proposed_trade.volume for {resolved_symbol}: "
                 f"{volume_error}."
             ),
-            "error_code": "invalid_proposed_trade_volume",
-            "field": "proposed_trade.volume",
-            "symbol": resolved_symbol,
-            "requested_volume": requested,
-            "constraints": {
+            "invalid_proposed_trade_volume",
+            field="proposed_trade.volume",
+            symbol=resolved_symbol,
+            requested_volume=requested,
+            constraints={
                 "volume_min": minimum,
                 "volume_max": maximum,
                 "volume_step": step,
             },
-            "nearest_valid_volume": nearest,
-            "remediation": (
+            nearest_valid_volume=nearest,
+            remediation=(
                 "Choose a lot size within the broker range and aligned to "
                 "volume_step."
             ),
-        }
+        )
 
     return {
         "symbol": resolved_symbol,
@@ -408,17 +412,17 @@ def decompose_portfolio_risk(  # noqa: C901
         if item.get("usable_for_live_trading") is not True
     ]
     if mark_omissions and not request.allow_partial:
-        return {
-            "error": "One or more material position marks are not live-ready.",
-            "error_code": "portfolio_mark_unusable",
-            "failures": mark_omissions,
-            "model_context": _portfolio_model_context_for_detail(
+        return _portfolio_error(
+            "One or more material position marks are not live-ready.",
+            "portfolio_mark_unusable",
+            failures=mark_omissions,
+            model_context=_portfolio_model_context_for_detail(
                 model_context, request.detail
             ),
-            "remediation": (
+            remediation=(
                 "Refresh MT5 quotes or set allow_partial=true to omit unsafe marks."
             ),
-        }
+        )
     if mark_omissions:
         positions = [
             row
@@ -482,7 +486,11 @@ def decompose_portfolio_risk(  # noqa: C901
         if row.get("proposed"):
             proposed_sensitivity = (symbol, float(sensitivity))
     if failures and not request.allow_partial:
-        return {"error": "One or more material positions could not be priced safely.", "error_code": "portfolio_pricing_incomplete", "failures": failures}
+        return _portfolio_error(
+            "One or more material positions could not be priced safely.",
+            "portfolio_pricing_incomplete",
+            failures=failures,
+        )
     series = {}
     history_failures: List[Dict[str, Any]] = []
     for symbol in sensitivities:
@@ -499,20 +507,24 @@ def decompose_portfolio_risk(  # noqa: C901
                 "reason": "insufficient completed return history",
             })
     if history_failures and not request.allow_partial:
-        return {
-            "error": "One or more material positions lacked sufficient return history.",
-            "error_code": "portfolio_pricing_incomplete",
-            "failures": history_failures,
-        }
+        return _portfolio_error(
+            "One or more material positions lacked sufficient return history.",
+            "portfolio_pricing_incomplete",
+            failures=history_failures,
+        )
     if not series:
-        return {
-            "error": "No aligned return history was available.",
-            "error_code": "insufficient_data",
-            "failures": history_failures,
-        }
+        return _portfolio_error(
+            "No aligned return history was available.",
+            "insufficient_data",
+            failures=history_failures,
+        )
     returns_available = pd.concat(series.values(), axis=1, join="inner").dropna()
     if len(returns_available) < 100:
-        return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns_available)}
+        return _portfolio_error(
+            "At least 100 aligned returns are required.",
+            "insufficient_data",
+            aligned_rows=len(returns_available),
+        )
     returns_available.columns = list(series)
     # Extra leading observations are fetched only to warm up volatility and
     # multi-bar calculations. The requested lookback is the stable calibration

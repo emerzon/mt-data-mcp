@@ -2384,6 +2384,7 @@ def test_portfolio_risk_rejects_invalid_proposed_broker_volume_before_history(
         gateway,
     )
 
+    assert result["success"] is False
     assert result["error_code"] == "invalid_proposed_trade_volume"
     assert result["field"] == "proposed_trade.volume"
     assert result["requested_volume"] == volume
@@ -2614,6 +2615,7 @@ def test_portfolio_risk_fails_closed_on_unusable_material_mark() -> None:
         gateway,
     )
 
+    assert result["success"] is False
     assert result["error_code"] == "portfolio_mark_unusable"
     assert result["failures"][0]["stage"] == "mark_freshness"
     assert result["model_context"]["usable_for_live_trading"] is False
@@ -2787,6 +2789,7 @@ def test_portfolio_risk_fails_closed_when_symbol_history_is_missing() -> None:
         gateway,
     )
 
+    assert result["success"] is False
     assert result["error_code"] == "portfolio_pricing_incomplete"
     assert result["failures"] == [
         {
@@ -2797,6 +2800,123 @@ def test_portfolio_risk_fails_closed_when_symbol_history_is_missing() -> None:
             "reason": "insufficient completed return history",
         }
     ]
+
+
+def test_portfolio_risk_rejects_unknown_proposed_symbol() -> None:
+    gateway = FakeGateway()
+    gateway.symbol_info = lambda symbol: None
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            proposed_trade={
+                "symbol": "NOPE",
+                "side": "buy",
+                "volume": 0.01,
+            },
+        ),
+        gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "symbol_not_found"
+    assert result["symbol"] == "NOPE"
+
+
+def test_portfolio_risk_fails_closed_when_pricing_unavailable() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        }
+    ]
+    gateway.order_calc_profit = lambda *args, **kwargs: None
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "portfolio_pricing_incomplete"
+    assert result["failures"][0]["symbol"] == "EURUSD"
+
+
+def test_portfolio_risk_fails_closed_when_aligned_history_is_short() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        },
+        {
+            "ticket": 2,
+            "symbol": "GBPUSD",
+            "type": 1,
+            "volume": 0.5,
+            "price_current": 1.1,
+        },
+    ]
+    eurusd = _bars(200)
+    gbpusd = _bars(200)
+    for row in gbpusd:
+        row["time"] -= 10_000_000
+    gateway.bar_rows["EURUSD"] = eurusd
+    gateway.bar_rows["GBPUSD"] = gbpusd
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "insufficient_data"
+    assert result["aligned_rows"] < 100
+
+
+def test_portfolio_risk_fails_closed_when_partial_history_leaves_no_series() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        }
+    ]
+    gateway.bar_rows["EURUSD"] = _bars(50)
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+            allow_partial=True,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "insufficient_data"
+    assert result["failures"][0]["symbol"] == "EURUSD"
 
 
 def test_portfolio_risk_discloses_history_omissions_in_partial_mode() -> None:
