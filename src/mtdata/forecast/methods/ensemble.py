@@ -12,10 +12,10 @@ from ..ensemble_dispatch import (
     append_failure as _append_failure,
 )
 from ..ensemble_dispatch import (
-    build_dispatch_error as _build_dispatch_error,
+    dispatch_callback_with_error as _dispatch_callback_with_error,
 )
 from ..ensemble_dispatch import (
-    dispatch_callback_with_error as _dispatch_callback_with_error,
+    dispatch_registered_forecast as _ensemble_dispatch_method_default_impl,
 )
 from ..forecast_registry import (
     ForecastRegistry,
@@ -48,22 +48,6 @@ def _stabilized_rmse_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
     if not np.isfinite(total) or total <= 0.0:
         return None
     return weights / total
-
-
-def _ensemble_dispatch_method_default_impl(
-    method_name: str,
-    series: pd.Series,
-    horizon: int,
-    seasonality: Optional[int],
-    params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
-    method_l = str(method_name).lower().strip()
-    try:
-        forecaster = ForecastRegistry.get(method_l)
-        res = forecaster.forecast(series, horizon, seasonality or 1, dict(params or {}))
-        return res.forecast, None
-    except Exception as ex:
-        return None, _build_dispatch_error(method_l, ex)
 
 
 def _ensemble_dispatch_method_default(

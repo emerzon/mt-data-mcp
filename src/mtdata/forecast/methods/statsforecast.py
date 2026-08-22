@@ -8,8 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..common import edge_pad_to_length as _edge_pad_to_length
 from ..forecast_registry import ForecastRegistry
 from ..interface import (
     CancelToken,
@@ -112,6 +110,29 @@ class StatsForecastMethod(ForecastMethod):
     def train_supports_progress(self) -> bool:
         return True
 
+    def forecast(
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
+        exog_future: Optional[pd.DataFrame] = None,
+        **kwargs: Any,
+    ) -> ForecastResult:
+        ci_alpha = kwargs.get("ci_alpha", (params or {}).get("ci_alpha"))
+        if ci_alpha is not None:
+            alpha_val = float(ci_alpha)
+            if not 0.0 < alpha_val < 1.0:
+                raise ValueError("ci_alpha must be between 0 and 1")
+        return super().forecast(
+            series,
+            horizon,
+            seasonality,
+            params,
+            exog_future=exog_future,
+            **kwargs,
+        )
+
     def train(
         self,
         series: pd.Series,
@@ -203,10 +224,12 @@ class StatsForecastMethod(ForecastMethod):
 
         ci_alpha = kwargs.get('ci_alpha', p.get('ci_alpha'))
         level = None
+        alpha_val = None
         if ci_alpha is not None:
             alpha_val = float(ci_alpha)
-            if 0.0 < alpha_val < 1.0:
-                level = [max(1, min(99, int(round((1.0 - alpha_val) * 100.0))))]
+            if not 0.0 < alpha_val < 1.0:
+                raise ValueError("ci_alpha must be between 0 and 1")
+            level = [max(1, min(99, int(round((1.0 - alpha_val) * 100.0))))]
 
         sf = model  # deserialized StatsForecast object
         with warnings.catch_warnings():
@@ -251,7 +274,24 @@ class StatsForecastMethod(ForecastMethod):
                 ci_values = (lo_vals.astype(float), hi_vals.astype(float))
                 metadata = _build_ci_diagnostics(
                     provider=self.name, requested=True, available=True,
-                    status="available", alpha=float(ci_alpha), level=lev_val,
+                    status="available", alpha=float(alpha_val), level=lev_val,
+                )
+            else:
+                interval_columns = [str(col) for col in Yf.columns]
+                warning_text = (
+                    f"StatsForecast {self.name} did not return matching interval "
+                    f"columns for level {lev_val}; returning point forecast only."
+                )
+                logger.warning("%s Columns=%s", warning_text, interval_columns)
+                metadata = _build_ci_diagnostics(
+                    provider=self.name,
+                    requested=True,
+                    available=False,
+                    status="unavailable",
+                    alpha=float(alpha_val),
+                    level=lev_val,
+                    warning=warning_text,
+                    interval_columns=interval_columns,
                 )
 
         internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}
@@ -261,140 +301,6 @@ class StatsForecastMethod(ForecastMethod):
             params_used={"seasonality": seasonality, **clean_params},
             metadata=metadata or None,
         )
-
-    def forecast(
-        self, 
-        series: pd.Series, 
-        horizon: int, 
-        seasonality: int, 
-        params: Dict[str, Any], 
-        exog_future: Optional[pd.DataFrame] = None,
-        **kwargs
-    ) -> ForecastResult:
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"pkg_resources is deprecated as an API\..*",
-                    category=UserWarning,
-                )
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"Deprecated call to `pkg_resources\.declare_namespace\(.*\)`\..*",
-                    category=DeprecationWarning,
-                )
-                from statsforecast import StatsForecast  # type: ignore
-        except ImportError as ex:
-            raise RuntimeError(f"Failed to import statsforecast: {ex}") from ex
-
-        # Build single-series training dataframe
-        from ..common import _create_training_dataframes, _extract_forecast_values
-        
-        exog_used = kwargs.get('exog_used')
-        if exog_used is None:
-            exog_used = params.get('exog_used')
-        exog_future_arr = kwargs.get('exog_future')
-        if exog_future_arr is None:
-            exog_future_arr = exog_future if exog_future is not None else params.get('exog_future')
-        
-        Y_df, X_df, Xf_df = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
-
-        clean_params = _coerce_params(params)
-        model = self._get_model(seasonality, clean_params)
-        
-        ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
-        level = None
-        if ci_alpha is not None:
-            alpha_val = float(ci_alpha)
-            if not 0.0 < alpha_val < 1.0:
-                raise ValueError("ci_alpha must be between 0 and 1")
-            level = [max(1, min(99, int(round((1.0 - alpha_val) * 100.0))))]
-        
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                sf = StatsForecast(models=[model], freq=1) # freq=1 for integer index fallback
-                if X_df is not None:
-                    sf.fit(Y_df, X_df=X_df)
-                else:
-                    sf.fit(Y_df)
-                
-                if Xf_df is not None:
-                    Yf = sf.predict(h=int(horizon), X_df=Xf_df, level=level)
-                else:
-                    Yf = sf.predict(h=int(horizon), level=level)
-            
-            if 'unique_id' not in Yf.columns:
-                raise RuntimeError("StatsForecast output missing unique_id column")
-            Yf = Yf[Yf['unique_id'] == 'ts']
-            if Yf.empty:
-                raise RuntimeError("StatsForecast output missing rows for unique_id='ts'")
-            
-            # Extract values
-            f_vals = _extract_forecast_values(Yf, horizon, f"StatsForecast {self.name}")
-            
-            # CI extraction
-            ci_values = None
-            metadata: Dict[str, Any] = {}
-            if level:
-                lev_val = level[0]
-                cols = Yf.columns
-                lo_col = None
-                hi_col = None
-                for c in cols:
-                    if str(c).endswith(f'-lo-{lev_val}'):
-                        lo_col = c
-                    elif str(c).endswith(f'-hi-{lev_val}'):
-                        hi_col = c
-                
-                if lo_col and hi_col:
-                    lo_vals = Yf[lo_col].values
-                    hi_vals = Yf[hi_col].values
-                    # Ensure length matches horizon
-                    lo_vals = _edge_pad_to_length(lo_vals, int(horizon))
-                    hi_vals = _edge_pad_to_length(hi_vals, int(horizon))
-                        
-                    ci_values = (lo_vals.astype(float), hi_vals.astype(float))
-                    metadata = _build_ci_diagnostics(
-                        provider=self.name,
-                        requested=True,
-                        available=True,
-                        status="available",
-                        alpha=alpha_val,
-                        level=lev_val,
-                    )
-                else:
-                    interval_columns = [str(col) for col in cols]
-                    warning_text = (
-                        f"StatsForecast {self.name} did not return matching interval columns for level "
-                        f"{lev_val}; returning point forecast only."
-                    )
-                    logger.warning("%s Columns=%s", warning_text, interval_columns)
-                    metadata = _build_ci_diagnostics(
-                        provider=self.name,
-                        requested=True,
-                        available=False,
-                        status="unavailable",
-                        alpha=alpha_val,
-                        level=lev_val,
-                        warning=warning_text,
-                        interval_columns=interval_columns,
-                    )
-
-            # Filter out internal context params and build clean params_used
-            internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future', 'seasonality'}
-            clean_params = {k: v for k, v in clean_params.items() if k not in internal_keys}
-            params_used = {"seasonality": seasonality, **clean_params}
-            
-            return ForecastResult(
-                forecast=f_vals,
-                ci_values=ci_values,
-                params_used=params_used,
-                metadata=metadata or None,
-            )
-            
-        except Exception as ex:
-            raise RuntimeError(f"StatsForecast {self.name} error: {ex}")
 
 @ForecastRegistry.register("statsforecast")
 class GenericStatsForecastMethod(StatsForecastMethod):

@@ -60,6 +60,34 @@ def _requires_fh_in_fit(estimator: Any) -> bool:
     return False
 
 
+def _align_sktime_future_exog(y: pd.Series, X_future: Any, horizon: int) -> Any:
+    if not isinstance(X_future, np.ndarray):
+        return X_future
+    if isinstance(y.index, pd.RangeIndex):
+        start = y.index[-1] + 1
+        return pd.DataFrame(X_future, index=pd.RangeIndex(start, start + horizon))
+    if isinstance(y.index, pd.DatetimeIndex):
+        freq = y.index.freq or pd.infer_freq(y.index)
+        if freq is not None:
+            try:
+                offset = pd.tseries.frequencies.to_offset(freq)
+                start = y.index[-1] + offset
+                idx = pd.date_range(start=start, periods=horizon, freq=offset)
+                return pd.DataFrame(X_future, index=idx)
+            except Exception:
+                return X_future
+    if isinstance(y.index, pd.PeriodIndex):
+        try:
+            freq = y.index.freq
+            if freq is not None:
+                start = y.index[-1] + 1
+                idx = pd.period_range(start=start, periods=horizon, freq=freq)
+                return pd.DataFrame(X_future, index=idx)
+        except Exception:
+            return X_future
+    return X_future
+
+
 class SktimeMethod(ForecastMethod):
     """Base class for Sktime methods."""
     
@@ -181,39 +209,41 @@ class SktimeMethod(ForecastMethod):
             y = y.reset_index(drop=True)
 
         cutoff = getattr(estimator, "cutoff", None)
-        if cutoff is None:
-            raise RuntimeError("Stored sktime model does not expose a training cutoff for live refresh.")
-        if isinstance(cutoff, (pd.Index, np.ndarray, list, tuple)):
-            if len(cutoff) == 0:
-                raise RuntimeError(
-                    "Stored sktime model does not expose a usable training cutoff for live refresh."
-                )
-            cutoff = cutoff[-1]
-        try:
-            new_y = y.loc[y.index > cutoff]
-        except Exception as exc:
-            raise RuntimeError("Stored sktime model cutoff is incompatible with live history.") from exc
-        if len(new_y):
-            X_update = kwargs.get("exog_used")
-            if X_update is None:
-                X_update = params.get("exog_used")
-            if isinstance(X_update, np.ndarray):
-                X_update = pd.DataFrame(X_update, index=y.index)
-            if isinstance(X_update, pd.DataFrame):
-                try:
-                    X_update = X_update.loc[new_y.index]
-                except (KeyError, TypeError, ValueError) as exc:
+        if cutoff is not None:
+            if isinstance(cutoff, (pd.Index, np.ndarray, list, tuple)):
+                if len(cutoff) == 0:
                     raise RuntimeError(
-                        "Stored sktime model cannot align live exogenous history for refresh."
-                    ) from exc
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                estimator.update(y=new_y, X=X_update, update_params=False)
+                        "Stored sktime model does not expose a usable training cutoff for live refresh."
+                    )
+                cutoff = cutoff[-1]
+            try:
+                new_y = y.loc[y.index > cutoff]
+            except Exception as exc:
+                raise RuntimeError(
+                    "Stored sktime model cutoff is incompatible with live history."
+                ) from exc
+            if len(new_y):
+                X_update = kwargs.get("exog_used")
+                if X_update is None:
+                    X_update = params.get("exog_used")
+                if isinstance(X_update, np.ndarray):
+                    X_update = pd.DataFrame(X_update, index=y.index)
+                if isinstance(X_update, pd.DataFrame):
+                    try:
+                        X_update = X_update.loc[new_y.index]
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise RuntimeError(
+                            "Stored sktime model cannot align live exogenous history for refresh."
+                        ) from exc
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    estimator.update(y=new_y, X=X_update, update_params=False)
         fh = np.arange(1, horizon + 1)
 
         X_future = kwargs.get('exog_future')
         if X_future is None:
             X_future = exog_future if exog_future is not None else params.get('exog_future')
+        X_future = _align_sktime_future_exog(y, X_future, int(horizon))
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -279,200 +309,6 @@ class SktimeMethod(ForecastMethod):
             params_used={"seasonality": seasonality, **params},
             metadata=metadata,
         )
-
-    def forecast(  # noqa: C901
-        self, 
-        series: pd.Series, 
-        horizon: int, 
-        seasonality: int, 
-        params: Dict[str, Any], 
-        exog_future: Optional[pd.DataFrame] = None,
-        **kwargs
-    ) -> ForecastResult:
-        if not _HAS_SKTIME:
-            raise RuntimeError(_SKTIME_IMPORT_ERROR)
-
-        # Prepare data
-        # Sktime expects pandas Series/DataFrame with PeriodIndex or DatetimeIndex
-        # Our series usually has DatetimeIndex from the engine
-        
-        y = series.copy()
-        # Ensure frequency is set if missing (DatetimeIndex / PeriodIndex only).
-        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
-            try:
-                y.index.freq = pd.infer_freq(y.index)
-            except Exception:
-                pass
-                
-        # If inference failed, we might need to use integer index or period index
-        # For simplicity, let's assume the engine provides a good index or we fallback to RangeIndex
-        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
-            y = y.reset_index(drop=True)
-
-        estimator = self._get_estimator(seasonality, params)
-        
-        # Exogenous variables
-        X = kwargs.get('exog_used')
-        if X is None:
-            X = params.get('exog_used')
-        X_future = kwargs.get('exog_future')
-        if X_future is None:
-            X_future = exog_future if exog_future is not None else params.get('exog_future')
-        
-        # Convert numpy exog to pandas if needed
-        if isinstance(X, np.ndarray):
-             X = pd.DataFrame(X, index=y.index)
-        
-        fh = np.arange(1, horizon + 1)
-        
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                fit_kwargs: Dict[str, Any] = {}
-                if _requires_fh_in_fit(estimator):
-                    fit_kwargs["fh"] = fh
-                if X is not None:
-                    estimator.fit(y, X=X, **fit_kwargs)
-                else:
-                    estimator.fit(y, **fit_kwargs)
-                    
-                if X_future is not None:
-                    # Ensure X_future has correct index
-                    # This is tricky without knowing the future dates exactly here if using DatetimeIndex
-                    # But engine passes exog_future as numpy array usually.
-                    # We might need to reconstruct index.
-                    # For now, let's assume if X was numpy, X_future is too, and we need to match length
-                    if isinstance(X_future, np.ndarray):
-                        # We need to create an index for X_future
-                        if isinstance(y.index, pd.RangeIndex):
-                            start = y.index[-1] + 1
-                            idx = pd.RangeIndex(start, start + horizon)
-                            X_future = pd.DataFrame(X_future, index=idx)
-                        elif isinstance(y.index, pd.DatetimeIndex):
-                            freq = y.index.freq or pd.infer_freq(y.index)
-                            if freq is not None:
-                                try:
-                                    offset = pd.tseries.frequencies.to_offset(freq)
-                                    start = y.index[-1] + offset
-                                    idx = pd.date_range(start=start, periods=horizon, freq=offset)
-                                    X_future = pd.DataFrame(X_future, index=idx)
-                                except Exception:
-                                    pass
-                        elif isinstance(y.index, pd.PeriodIndex):
-                            try:
-                                freq = y.index.freq
-                                if freq is not None:
-                                    start = y.index[-1] + 1
-                                    idx = pd.period_range(start=start, periods=horizon, freq=freq)
-                                    X_future = pd.DataFrame(X_future, index=idx)
-                            except Exception:
-                                pass
-                        
-                    y_pred = estimator.predict(fh=fh, X=X_future)
-                else:
-                    y_pred = estimator.predict(fh=fh)
-            
-            # Extract values
-            if isinstance(y_pred, pd.Series):
-                f_vals = y_pred.values
-            elif isinstance(y_pred, pd.DataFrame):
-                f_vals = y_pred.iloc[:, 0].values
-            else:
-                f_vals = np.array(y_pred)
-                
-            # CI extraction
-            ci_values = None
-            metadata: Dict[str, Any] = {}
-            ci_alpha = kwargs.get('ci_alpha', params.get('ci_alpha'))
-            if ci_alpha is not None:
-                ci_alpha_value: Optional[float] = None
-                try:
-                    # sktime predict_interval returns DataFrame with MultiIndex columns (coverage, lower/upper)
-                    # coverage is 1 - alpha? No, coverage is e.g. 0.9 for alpha 0.1
-                    ci_alpha_value = float(ci_alpha)
-                    coverage = 1.0 - ci_alpha_value
-                    intervals = estimator.predict_interval(fh=fh, X=X_future, coverage=coverage)
-                    # intervals columns: (var_name, coverage, 'lower'/'upper')
-                    # We assume univariate
-                    cols = intervals.columns
-                    # We want the coverage we asked for
-                    # cols levels: 0=var, 1=coverage, 2=direction
-                    
-                    # Flatten or find correct cols
-                    # Example col: ('y', 0.9, 'lower')
-                    
-                    # Let's try to find them dynamically
-                    lo_vals = None
-                    hi_vals = None
-                    interval_columns = [str(col) for col in cols]
-                    
-                    for col in cols:
-                        # col is a tuple
-                        if isinstance(col, tuple) and len(col) >= 3:
-                            try:
-                                cov = float(col[1])
-                            except (TypeError, ValueError):
-                                continue
-                            direction = col[2]
-                            if np.isclose(cov, coverage, atol=1e-3, rtol=0.0):
-                                if direction == 'lower':
-                                    lo_vals = intervals[col].values
-                                elif direction == 'upper':
-                                    hi_vals = intervals[col].values
-                    
-                    if lo_vals is not None and hi_vals is not None:
-                        ci_values = (lo_vals.astype(float), hi_vals.astype(float))
-                        metadata = _build_ci_diagnostics(
-                            provider=self.name,
-                            requested=True,
-                            available=True,
-                            status="available",
-                            alpha=ci_alpha_value,
-                            coverage=coverage,
-                        )
-                    else:
-                        warning_text = (
-                            f"Sktime {self.name} did not return matching interval columns for coverage "
-                            f"{coverage:g}; returning point forecast only."
-                        )
-                        logger.warning("%s Columns=%s", warning_text, interval_columns)
-                        metadata = _build_ci_diagnostics(
-                            provider=self.name,
-                            requested=True,
-                            available=False,
-                            status="unavailable",
-                            alpha=ci_alpha_value,
-                            coverage=coverage,
-                            warning=warning_text,
-                            interval_columns=interval_columns,
-                        )
-
-                except Exception as ex:
-                    warning_text = (
-                        f"Sktime {self.name} confidence interval extraction failed: {ex}. "
-                        "Returning point forecast only."
-                    )
-                    logger.warning("%s", warning_text)
-                    metadata = _build_ci_diagnostics(
-                        provider=self.name,
-                        requested=True,
-                        available=False,
-                        status="error",
-                        alpha=ci_alpha_value,
-                        warning=warning_text,
-                        error=str(ex),
-                        error_type=type(ex).__name__,
-                    )
-
-            return ForecastResult(
-                forecast=f_vals,
-                ci_values=ci_values,
-                params_used={"seasonality": seasonality, **params},
-                metadata=metadata or None,
-            )
-            
-        except Exception as ex:
-            raise RuntimeError(f"Sktime {self.name} error: {ex}")
 
 @ForecastRegistry.register("sktime")
 class GenericSktimeMethod(SktimeMethod):

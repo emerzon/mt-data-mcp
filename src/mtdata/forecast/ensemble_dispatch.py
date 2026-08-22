@@ -9,6 +9,29 @@ if TYPE_CHECKING:
 FAILURE_DETAIL_LIMIT = 12
 
 
+def dispatch_registered_forecast(
+    method_name: str,
+    series: "pd.Series",
+    horizon: int,
+    seasonality: Optional[int],
+    params: Optional[Dict[str, Any]],
+) -> Tuple[Optional["np.ndarray"], Optional[Dict[str, Any]]]:
+    method_l = str(method_name).lower().strip()
+    try:
+        from .forecast_registry import ForecastRegistry
+
+        forecaster = ForecastRegistry.get(method_l)
+        result = forecaster.forecast(
+            series,
+            horizon,
+            seasonality or 1,
+            dict(params or {}),
+        )
+        return result.forecast, None
+    except Exception as exc:
+        return None, build_dispatch_error(method_l, exc)
+
+
 def build_dispatch_error(method_name: str, exc: BaseException) -> Dict[str, Any]:
     return {
         "method": str(method_name),

@@ -411,31 +411,71 @@ class ForecastMethod(ABC):
         """Dictionary of supported features (price, return, volatility, ci)."""
         return {"price": True, "return": True, "volatility": False, "ci": False}
 
-    @abstractmethod
     def forecast(
-        self, 
-        series: pd.Series, 
-        horizon: int, 
-        seasonality: int, 
-        params: Dict[str, Any], 
+        self,
+        series: pd.Series,
+        horizon: int,
+        seasonality: int,
+        params: Dict[str, Any],
         exog_future: Optional[pd.DataFrame] = None,
-        **kwargs
+        **kwargs: Any,
     ) -> ForecastResult:
+        """Generate a forecast.
+
+        Trainable methods use an ephemeral ``train()`` + ``predict_with_model()``
+        path. One-shot methods must override this.
         """
-        Generate a forecast.
-        
-        Args:
-            series: Historical time series data.
-            horizon: Number of steps to forecast.
-            seasonality: Seasonality period.
-            params: Method-specific parameters.
-            exog_future: Future exogenous variables (optional).
-            **kwargs: Additional arguments.
-            
-        Returns:
-            ForecastResult object containing the forecast and metadata.
-        """
-        ...
+        if not self.supports_training:
+            raise NotImplementedError(f"{self.name} must implement forecast()")
+        train_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key in {"progress_callback", "cancel_token", "timeframe"}
+        }
+        exog = kwargs.get("exog_used")
+        if exog is None:
+            exog = (params or {}).get("exog_used")
+        live_artifact: list[Any] = []
+        original_serialize = self.serialize_artifact
+
+        def _capture_artifact(artifact: Any) -> bytes:
+            live_artifact.append(artifact)
+            try:
+                return original_serialize(artifact)
+            except Exception:
+                return b""
+
+        self.serialize_artifact = _capture_artifact  # type: ignore[method-assign]
+        try:
+            trained = self.train(
+                series,
+                horizon,
+                seasonality,
+                params,
+                exog=exog,
+                **train_kwargs,
+            )
+        finally:
+            self.serialize_artifact = original_serialize  # type: ignore[method-assign]
+        artifact = (
+            live_artifact[0]
+            if live_artifact
+            else self.deserialize_artifact(trained.artifact_bytes)
+        )
+        result = self.predict_with_model(
+            artifact,
+            series,
+            horizon,
+            seasonality,
+            params,
+            exog_future=exog_future,
+            **kwargs,
+        )
+        if getattr(trained, "params_used", None):
+            merged = dict(trained.params_used)
+            merged.update(result.params_used or {})
+            result.params_used = merged
+        return result
     
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """

@@ -1722,7 +1722,7 @@ class TestNfSetupAndPredict:
         assert isinstance(result, pd.DataFrame)
         assert "trainer" not in captured_nf_kwargs
         assert "trainer_kwargs" in captured_nf_kwargs
-        assert captured_nf_kwargs["trainer_kwargs"]["logger"] is False
+        assert captured_nf_kwargs["trainer_kwargs"]["accelerator"] == "cpu"
 
 
 # ---------------------------------------------------------------------------

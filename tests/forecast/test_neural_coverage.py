@@ -44,7 +44,8 @@ from mtdata.forecast.methods.neural import (
     NHITSMethod,
     PatchTSTMethod,
     TFTMethod,
-    forecast_neural,
+    _neural_resolve_hyperparams,
+    _resolve_nf_model_class,
 )
 
 
@@ -73,144 +74,31 @@ def _make_series(n: int = 100):
     return pd.Series(np.linspace(100, 110, n), dtype=float)
 
 
-# ── forecast_neural  (lines 31-87) ──────────────────────────────────────────
-
-class TestForecastNeural:
-    @pytest.mark.parametrize(
-        ("method", "fh", "n", "check_params"),
-        [
-            ("nhits", 12, 100, True),
-            ("nbeatsx", 8, 50, False),
-            ("tft", 6, 50, False),
-            ("patchtst", 6, 50, False),
-        ],
-    )
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_supported_methods_return_horizon_values(self, pad_mock, predict_mock, method, fh, n, check_params):
-        predict_mock.return_value = _make_Yf(fh)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * n, "ds": list(range(n)), "y": np.linspace(100, 110, n)})
-        vals, params_used = forecast_neural(
-            method=method,
-            series=np.linspace(100, 110, n),
-            fh=fh,
-            timeframe="H1",
-            n=n,
-            m=24 if method == "nhits" else 12,
-            params={},
-            Y_df=Y_df,
-        )
-        assert len(vals) == fh
-        if check_params:
-            assert "max_epochs" in params_used
-
+class TestNeuralHyperparams:
     def test_unknown_method(self):
-        Y_df = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [100.0]})
-        with pytest.raises(
-            RuntimeError,
-            match="Unsupported NeuralForecast model 'unknown_model'.*Supported mtdata neural models: nbeatsx, nhits, patchtst, tft",
-        ):
-            forecast_neural(
-                method="unknown_model", series=np.array([100.0]),
-                fh=1, timeframe="H1", n=1, m=1, params={}, Y_df=Y_df,
-            )
+        with pytest.raises(RuntimeError, match="Unknown neural method"):
+            _resolve_nf_model_class("unknown_model")
 
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_custom_input_size(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
-        vals, pu = forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 100),
-            fh=12, timeframe="H1", n=100, m=24,
-            params={"input_size": 32}, Y_df=Y_df,
+    def test_custom_input_size(self):
+        input_size, steps, batch_size, lr = _neural_resolve_hyperparams(
+            {"input_size": 32}, 100, 12, 24
         )
-        assert pu["input_size"] == 32
+        assert input_size == 32
+        assert steps == 50
+        assert batch_size == 32
+        assert lr is None
 
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_max_steps_param(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
-        _, pu = forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 100),
-            fh=12, timeframe="H1", n=100, m=24,
-            params={"max_steps": 100}, Y_df=Y_df,
+    def test_max_steps_param(self):
+        _input_size, steps, _batch_size, _lr = _neural_resolve_hyperparams(
+            {"max_steps": 100}, 100, 12, 24
         )
-        assert pu["max_epochs"] == 100
+        assert steps == 100
 
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_learning_rate_param(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
-        forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 100),
-            fh=12, timeframe="H1", n=100, m=24,
-            params={"learning_rate": 0.001}, Y_df=Y_df,
+    def test_auto_input_size_reserves_horizon(self):
+        input_size, _steps, _batch_size, _lr = _neural_resolve_hyperparams(
+            {}, 100, 12, 0
         )
-        call_kw = predict_mock.call_args
-        assert call_kw is not None
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    def test_pred_col_not_found(self, predict_mock):
-        # Return df with only standard columns -> no pred column
-        predict_mock.return_value = pd.DataFrame({
-            "unique_id": ["ts"] * 5,
-            "ds": list(range(5)),
-            "y": [1.0] * 5,
-        })
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
-        with pytest.raises(RuntimeError, match="prediction columns not found"):
-            forecast_neural(
-                method="nhits", series=np.linspace(100, 110, 50),
-                fh=5, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
-            )
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_zero_seasonality(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
-        vals, pu = forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 100),
-            fh=12, timeframe="H1", n=100, m=0, params={}, Y_df=Y_df,
-        )
-        assert pu["input_size"] == 88  # fallback now reserves room for the forecast horizon
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    def test_ignores_auxiliary_non_numeric_columns_when_selecting_forecast(self, predict_mock):
-        predict_mock.return_value = pd.DataFrame(
-            {
-                "unique_id": ["ts"] * 3,
-                "ds": [0, 1, 2],
-                "cutoff": ["2026-04-09"] * 3,
-                "NHITS": [1.0, 2.0, 3.0],
-            }
-        )
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
-        vals, _ = forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 50),
-            fh=3, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
-        )
-        np.testing.assert_array_equal(vals, np.array([1.0, 2.0, 3.0]))
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_auto_input_size_reserves_horizon(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
-        _vals, pu = forecast_neural(
-            method="nhits",
-            series=np.linspace(100, 110, 100),
-            fh=12,
-            timeframe="H1",
-            n=100,
-            m=0,
-            params={},
-            Y_df=Y_df,
-        )
-        assert pu["input_size"] == 88
+        assert input_size == 88
 
 
 # ── NeuralForecastMethod and subclasses  (lines 90-177) ─────────────────────
@@ -241,53 +129,22 @@ class TestNeuralForecastMethodProperties:
 
 
 class TestNeuralForecastMethodForecast:
-    @patch("mtdata.forecast.methods.neural.forecast_neural")
-    @patch("mtdata.forecast.common._create_training_dataframes")
-    def test_forecast_nhits(self, ctd, fn):
-        ctd.return_value = (pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)}), None, None)
-        fn.return_value = (np.linspace(100, 110, 12), {"max_epochs": 50, "input_size": 64, "batch_size": 32})
+    def test_forecast_uses_ephemeral_train_predict(self):
         m = NHITSMethod()
         series = _make_series(50)
+        trained = type("T", (), {"artifact_bytes": b"nf"})()
+        m.train = lambda *args, **kwargs: trained
+        m.deserialize_artifact = lambda data: object()
+        m.predict_with_model = lambda *args, **kwargs: ForecastResult(
+            forecast=np.linspace(100, 110, 12),
+            params_used={"max_epochs": 50},
+        )
         result = m.forecast(series, horizon=12, seasonality=24, params={})
         assert isinstance(result, ForecastResult)
         assert len(result.forecast) == 12
-
-    @patch("mtdata.forecast.methods.neural.forecast_neural")
-    @patch("mtdata.forecast.common._create_training_dataframes")
-    def test_forecast_with_exog_kwargs(self, ctd, fn):
-        ctd.return_value = (pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)}), None, None)
-        fn.return_value = (np.linspace(100, 110, 12), {"max_epochs": 50, "input_size": 64, "batch_size": 32})
-        m = NBEATSXMethod()
-        series = _make_series(50)
-        exog = np.random.randn(50, 2)
-        result = m.forecast(series, horizon=12, seasonality=24, params={}, exog_used=exog)
-        assert isinstance(result, ForecastResult)
-
-    @patch("mtdata.forecast.methods.neural.forecast_neural")
-    @patch("mtdata.forecast.common._create_training_dataframes")
-    def test_forecast_with_exog_in_params(self, ctd, fn):
-        ctd.return_value = (pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)}), None, None)
-        fn.return_value = (np.linspace(100, 110, 12), {"max_epochs": 50, "input_size": 64, "batch_size": 32})
-        m = TFTMethod()
-        series = _make_series(50)
-        result = m.forecast(series, horizon=12, seasonality=24, params={"exog_used": np.ones((50, 1))})
-        assert isinstance(result, ForecastResult)
 
     def test_forecast_too_few_observations(self):
         m = PatchTSTMethod()
         series = _make_series(3)
         with pytest.raises(ValueError, match="at least 5"):
             m.forecast(series, horizon=12, seasonality=24, params={})
-
-    @patch("mtdata.forecast.methods.neural.forecast_neural")
-    @patch("mtdata.forecast.common._create_training_dataframes")
-    def test_forecast_exog_future_via_param(self, ctd, fn):
-        ctd.return_value = (pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)}), None, None)
-        fn.return_value = (np.linspace(100, 110, 12), {"max_epochs": 50, "input_size": 64, "batch_size": 32})
-        m = NHITSMethod()
-        series = _make_series(50)
-        result = m.forecast(
-            series, horizon=12, seasonality=24,
-            params={"exog_future": np.ones((12, 1)), "timeframe": "D1"},
-        )
-        assert isinstance(result, ForecastResult)

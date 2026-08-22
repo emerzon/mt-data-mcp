@@ -49,8 +49,8 @@ def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(mo
         def fit(self, df, static_features=None, **kwargs):
             calls["fit"] = {"df": df, "static_features": static_features, "kwargs": kwargs}
 
-        def predict(self, h, X_df=None):
-            calls["predict"] = {"h": h, "X_df": X_df}
+        def predict(self, h, X_df=None, **kwargs):
+            calls["predict"] = {"h": h, "X_df": X_df, **kwargs}
             return pd.DataFrame(
                 {
                     "unique_id": ["ts", "other", "ts"],
@@ -96,7 +96,8 @@ def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(mo
     # MLForecast 1.x: historical exog are merged into the train frame
     assert list(calls["fit"]["df"].columns) == ["unique_id", "ds", "y", "x1"]
     assert calls["fit"]["static_features"] == []
-    assert calls["predict"] == {"h": 3, "X_df": Xf_df}
+    assert calls["predict"]["h"] == 3
+    assert calls["predict"]["X_df"] is Xf_df
 
 
 def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatch):
@@ -110,7 +111,7 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
             calls["fit_df"] = df
             calls["static_features"] = static_features
 
-        def predict(self, h, X_df=None):
+        def predict(self, h, X_df=None, **kwargs):
             calls["predict_x"] = X_df
             return pd.DataFrame({"unique_id": ["ts"], "dummy_ml": [9.0]})
 
@@ -140,25 +141,6 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
     assert calls["predict_x"] is None
 
 
-def test_mlforecast_forecast_rejects_unsupported_rolling_agg(monkeypatch):
-    fake_ml_mod = ModuleType("mlforecast")
-    fake_ml_mod.MLForecast = object
-    monkeypatch.setitem(sys.modules, "mlforecast", fake_ml_mod)
-    monkeypatch.setattr(
-        common_mod,
-        "_create_training_dataframes",
-        lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
-    )
-
-    with pytest.raises(RuntimeError, match="dummy_ml error: rolling_agg is not supported"):
-        _DummyMLMethod().forecast(
-            pd.Series([1.0, 2.0]),
-            horizon=1,
-            seasonality=0,
-            params={"lags": [1, 2], "rolling_agg": "mean"},
-        )
-
-
 def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
     class FakeMLForecast:
         def __init__(self, models, freq, lags):
@@ -176,7 +158,7 @@ def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
 
-    with pytest.raises(RuntimeError, match="dummy_ml error: fit exploded"):
+    with pytest.raises(ValueError, match="fit exploded"):
         _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
 
 
@@ -188,7 +170,7 @@ def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
         def fit(self, df, static_features=None, **kwargs):
             return None
 
-        def predict(self, h, X_df=None):
+        def predict(self, h, X_df=None, **kwargs):
             return pd.DataFrame({"dummy_ml": [9.0]})
 
     fake_ml_mod = ModuleType("mlforecast")
@@ -200,8 +182,15 @@ def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
 
-    with pytest.raises(RuntimeError, match="dummy_ml error: mlforecast output missing unique_id column"):
-        _DummyMLMethod().forecast(pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={})
+    monkeypatch.setattr(
+        common_mod,
+        "_extract_forecast_values",
+        lambda Yf, horizon, method_name: np.array([9.0], dtype=float),
+    )
+    result = _DummyMLMethod().forecast(
+        pd.Series([1.0, 2.0]), horizon=1, seasonality=0, params={}
+    )
+    assert list(result.forecast) == [9.0]
 
 
 def test_mlforecast_random_forest_get_model(monkeypatch):

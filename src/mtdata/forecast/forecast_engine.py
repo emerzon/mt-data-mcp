@@ -53,7 +53,7 @@ from .common import (
     fetch_history as _fetch_history,
 )
 from .ensemble_dispatch import (
-    build_dispatch_error as _build_ensemble_dispatch_error,
+    dispatch_registered_forecast as _ensemble_dispatch_method_impl,
 )
 from .exceptions import ModelCompatibilityError
 from .forecast_validation import (
@@ -151,23 +151,6 @@ class TrainingExecutionContext:
     exog_used: Optional[np.ndarray]
 
 
-def _ensemble_dispatch_method_impl(
-    method_name: str,
-    series: pd.Series,
-    horizon: int,
-    seasonality: Optional[int],
-    params: Optional[Dict[str, Any]],
-) -> Tuple[Optional[np.ndarray], Optional[Dict[str, Any]]]:
-    """Run a supported ensemble base method with safe fallbacks."""
-
-    m = str(method_name).lower().strip()
-    method_params = dict(params or {})
-    try:
-        forecaster = ForecastRegistry.get(m)
-        res = forecaster.forecast(series, horizon, seasonality or 1, method_params)
-        return res.forecast, None
-    except Exception as ex:
-        return None, _build_ensemble_dispatch_error(m, ex)
 def _ensemble_dispatch_method(
     method_name: str,
     series: pd.Series,

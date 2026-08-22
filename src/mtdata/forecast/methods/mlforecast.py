@@ -142,7 +142,15 @@ class MLForecastMethod(ForecastMethod):
         if cancel_token is not None:
             cancel_token.raise_if_cancelled()
 
-        Y_df, X_df, _ = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
+        Y_df, X_df, Xf_df = _create_training_dataframes(
+            series.values, horizon, exog_used, exog_future_arr
+        )
+        if (X_df is None) != (Xf_df is None):
+            raise ValueError(
+                "Exogenous feature mismatch: training exog "
+                f"{'absent' if X_df is None else 'present'} but future exog "
+                f"{'absent' if Xf_df is None else 'present'}"
+            )
 
         model = self._get_model(p)
         lags = p.get('lags')
@@ -204,94 +212,13 @@ class MLForecastMethod(ForecastMethod):
         else:
             Yf = mlf.predict(**predict_kwargs)
 
-        Yf = Yf[Yf['unique_id'] == 'ts']
+        if "unique_id" in Yf.columns:
+            Yf = Yf[Yf["unique_id"] == "ts"]
         f_vals = _extract_forecast_values(Yf, horizon, self.name)
 
         internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
         clean_params = {k: v for k, v in p.items() if k not in internal_keys}
         return ForecastResult(forecast=f_vals, ci_values=None, params_used=clean_params)
-
-    def forecast(
-        self, 
-        series: pd.Series, 
-        horizon: int, 
-        seasonality: int, 
-        params: Dict[str, Any], 
-        exog_future: Optional[pd.DataFrame] = None,
-        **kwargs
-    ) -> ForecastResult:
-        try:
-            from mlforecast import MLForecast
-        except ImportError as ex:
-            raise RuntimeError(f"Failed to import mlforecast: {ex}")
-
-        # Build single-series training dataframe
-        from ..common import _create_training_dataframes, _extract_forecast_values
-        
-        exog_used = kwargs.get('exog_used')
-        if exog_used is None:
-            exog_used = params.get('exog_used')
-        exog_future_arr = kwargs.get('exog_future')
-        if exog_future_arr is None:
-            exog_future_arr = exog_future if exog_future is not None else params.get('exog_future')
-        
-        Y_df, X_df, Xf_df = _create_training_dataframes(series.values, horizon, exog_used, exog_future_arr)
-
-        model = self._get_model(params)
-        lags = params.get('lags')
-        if not lags:
-            # Provide a safe default lag set so the method works out-of-the-box.
-            base = int(seasonality) if seasonality and int(seasonality) > 0 else 24
-            max_lag = int(min(30, max(1, base)))
-            lags = list(range(1, max_lag + 1))
-            params = dict(params or {})
-            params["lags"] = lags
-        rolling_agg = params.get("rolling_agg")
-        
-        try:
-            if rolling_agg is not None and str(rolling_agg).strip():
-                raise RuntimeError(
-                    "rolling_agg is not supported for mlforecast methods."
-                )
-            # Pass lags to constructor
-            # Use freq=1 because _create_training_dataframes uses integer index
-            mlf = MLForecast(models=[model], freq=1, lags=lags)
-
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                if (X_df is None) != (Xf_df is None):
-                    raise ValueError(
-                        "Exogenous feature mismatch: training exog "
-                        f"{'absent' if X_df is None else 'present'} but future exog "
-                        f"{'absent' if Xf_df is None else 'present'}"
-                    )
-                _mlforecast_fit(mlf, Y_df, X_df)
-
-            if Xf_df is not None:
-                Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
-            else:
-                Yf = mlf.predict(h=int(horizon))
-            
-            if 'unique_id' not in Yf.columns:
-                raise RuntimeError("mlforecast output missing unique_id column")
-            Yf = Yf[Yf['unique_id'] == 'ts']
-            if Yf.empty:
-                raise RuntimeError("mlforecast output missing rows for unique_id='ts'")
-            
-            f_vals = _extract_forecast_values(Yf, horizon, self.name)
-            
-            # Filter out internal context params
-            internal_keys = {'symbol', 'timeframe', 'as_of', 'exog_used', 'exog_future'}
-            clean_params = {k: v for k, v in params.items() if k not in internal_keys}
-            
-            return ForecastResult(
-                forecast=f_vals,
-                ci_values=None,
-                params_used=clean_params
-            )
-            
-        except Exception as ex:
-            raise RuntimeError(f"{self.name} error: {ex}")
 
 @ForecastRegistry.register("mlf_rf")
 class MLFRandomForest(MLForecastMethod):

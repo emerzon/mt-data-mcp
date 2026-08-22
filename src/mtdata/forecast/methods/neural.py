@@ -15,7 +15,6 @@ from ..common import (
     nf_predict_from_fitted,
 )
 from ..common import edge_pad_to_length as _edge_pad_to_length  # noqa: F401
-from ..common import nf_setup_and_predict as _nf_setup_and_predict
 from ..forecast_registry import ForecastRegistry
 from ..interface import (
     CancelToken,
@@ -69,75 +68,6 @@ def _import_neuralforecast_model_classes() -> Dict[str, Any]:
         'tft': _NF_TFT,
         'patchtst': _NF_PATCHTST,
     }
-
-
-def forecast_neural(
-    *,
-    method: str,
-    series: np.ndarray,
-    fh: int,
-    timeframe: str,
-    n: int,
-    m: int,
-    params: Dict[str, Any],
-    Y_df,
-    exog_used: Optional[np.ndarray] = None,
-    exog_future: Optional[np.ndarray] = None,
-    future_times: Optional[list] = None,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """NeuralForecast models (nhits, nbeatsx, tft, patchtst).
-
-    Returns (forecast_values, params_used).
-    """
-    method_l = str(method).lower().strip()
-    model_map = _import_neuralforecast_model_classes()
-    model_class = model_map.get(method_l)
-    if model_class is None:
-        available_models = ", ".join(sorted(model_map))
-        raise RuntimeError(
-            f"Unsupported NeuralForecast model '{method_l}'. "
-            f"Supported mtdata neural models: {available_models}"
-        )
-
-    # Hyperparameters with defaults and safety caps
-    h = int(fh)
-    available_context = int(max(1, (n - h) if n > h else n))
-    input_size = None
-    if params.get('input_size') is not None:
-        requested = int(params['input_size'])
-        input_size = int(max(1, min(requested, available_context)))
-    else:
-        base = max(64, (int(m) * 3) if m and int(m) > 0 else 96)
-        input_size = int(max(1, min(available_context, base)))
-    steps = int(params.get('max_steps', params.get('max_epochs', 50)))
-    batch_size = int(params.get('batch_size', 32))
-    lr = params.get('learning_rate', None)
-
-    Yf = _nf_setup_and_predict(
-        model_class=model_class,
-        fh=int(fh),
-        timeframe=timeframe,
-        Y_df=Y_df,
-        input_size=int(input_size),
-        batch_size=int(batch_size),
-        steps=int(steps),
-        learning_rate=float(lr) if lr is not None else None,
-        exog_used=exog_used,
-        exog_future=exog_future,
-        future_times=future_times,
-    )
-    try:
-        Yf = Yf[Yf['unique_id'] == 'ts']
-    except Exception:
-        pass
-    f_vals = _extract_forecast_values(
-        Yf,
-        int(fh),
-        f"{method_l.upper()} forecast",
-        allow_actual_fallback=False,
-    )
-    params_used = {'max_epochs': int(steps), 'input_size': int(input_size), 'batch_size': int(batch_size)}
-    return f_vals.astype(float, copy=False), params_used
 
 
 def _resolve_nf_model_class(method_name: str):
@@ -338,50 +268,6 @@ class NeuralForecastMethod(ForecastMethod):
         fp["input_size"] = p.get("input_size")
         fp["batch_size"] = int(p.get("batch_size", 32))
         return fp
-
-    # ------------------------------------------------------------------
-    # Original forecast() — unchanged for backward compatibility
-    # ------------------------------------------------------------------
-
-    def forecast(
-        self,
-        series: pd.Series,
-        horizon: int,
-        seasonality: int,
-        params: Dict[str, Any],
-        exog_future: Optional[pd.DataFrame] = None,
-        **kwargs,
-    ) -> ForecastResult:
-        from ..common import _create_training_dataframes
-
-        p = dict(params or {})
-        x = np.asarray(series.values, dtype=float)
-        n = int(x.size)
-        if n < 5:
-            raise ValueError(f"{self.name} requires at least 5 observations")
-
-        exog_used = kwargs.get("exog_used")
-        if exog_used is None:
-            exog_used = p.get("exog_used")
-        exog_future_arr = kwargs.get("exog_future")
-        if exog_future_arr is None:
-            exog_future_arr = exog_future if exog_future is not None else p.get("exog_future")
-
-        Y_df, _, _ = _create_training_dataframes(x, int(horizon), exog_used, exog_future_arr)
-        f_vals, params_used = forecast_neural(
-            method=self.name,
-            series=x,
-            fh=int(horizon),
-            timeframe=str(p.get("timeframe") or kwargs.get("timeframe") or "H1"),
-            n=n,
-            m=int(seasonality or 0),
-            params=p,
-            Y_df=Y_df,
-            exog_used=exog_used,
-            exog_future=exog_future_arr,
-            future_times=kwargs.get("future_times"),
-        )
-        return ForecastResult(forecast=f_vals, params_used=params_used)
 
 
 @ForecastRegistry.register("nhits")

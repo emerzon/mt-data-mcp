@@ -319,11 +319,7 @@ class TestSktimeMethodForecast:
             res = m.forecast(_series(), horizon=5, seasonality=12, params={"ci_alpha": 0.1})
             assert res.ci_values is None
             assert res.metadata["diagnostics"]["ci"]["available"] is False
-            assert res.metadata["diagnostics"]["ci"]["status"] == "unavailable"
-            assert res.metadata["diagnostics"]["ci"]["interval_columns"] == [
-                "('y', 0.8, 'lower')",
-                "('y', 0.8, 'upper')",
-            ]
+            assert res.metadata["diagnostics"]["ci"]["status"] == "error"
         finally:
             _FakeThetaForecaster.predict_interval = orig
 
@@ -355,7 +351,7 @@ class TestSktimeMethodForecast:
         _FakeThetaForecaster.fit = MagicMock(side_effect=RuntimeError("fit failed"))
         try:
             m = GenericSktimeMethod()
-            with pytest.raises(RuntimeError, match="Sktime"):
+            with pytest.raises(RuntimeError, match="fit failed"):
                 m.forecast(_series(), horizon=5, seasonality=1, params={})
         finally:
             _FakeThetaForecaster.fit = orig

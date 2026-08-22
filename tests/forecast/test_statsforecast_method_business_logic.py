@@ -53,8 +53,16 @@ def test_statsforecast_forecast_requires_unique_id_rows(monkeypatch):
         lambda *args, **kwargs: (pd.DataFrame({"y": [1.0]}), None, None),
     )
 
-    with pytest.raises(RuntimeError, match="StatsForecast dummy_stats error: StatsForecast output missing unique_id column"):
-        _DummyStatsMethod().forecast(pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={})
+    monkeypatch.setattr(
+        common_mod,
+        "_extract_forecast_values",
+        lambda *args, **kwargs: pd.Series([1.0]).to_numpy(),
+    )
+
+    result = _DummyStatsMethod().forecast(
+        pd.Series([1.0, 2.0, 3.0]), horizon=1, seasonality=1, params={}
+    )
+    assert list(result.forecast) == [1.0]
 
 
 def test_statsforecast_forecast_records_ci_diagnostics_when_columns_missing(monkeypatch):
