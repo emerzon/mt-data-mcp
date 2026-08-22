@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -280,7 +281,9 @@ def test_data_fetch_symbol_errors_use_canonical_structured_suggestions() -> None
 
 
 def test_stale_candle_error_names_live_extended_session_sibling(monkeypatch) -> None:
-    now_epoch = data_use_cases.time.time()
+    now_epoch = datetime(2026, 8, 19, 15, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr(data_use_cases.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(symbol_utils.time, "time", lambda: now_epoch)
     candidates = [
         SimpleNamespace(
             name="AAPL.NAS",
@@ -772,6 +775,45 @@ def test_latest_candles_inherit_stale_quote_readiness(monkeypatch):
     assert result["latest_quote_age_seconds"] == 9_000.0
     assert result["data_stale"] is True
     assert result["freshness"] == "stale, bar 3h 30m ago"
+
+
+def test_include_incomplete_without_forming_bar_still_marks_stale_quote(monkeypatch):
+    monkeypatch.setattr("mtdata.core.data.use_cases.time.time", lambda: 10_000.0)
+    monkeypatch.setattr(
+        "mtdata.core.data.use_cases.resolve_quote_tick",
+        lambda *_args, **_kwargs: (SimpleNamespace(time=1_000.0), {}),
+    )
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=1,
+        include_incomplete=True,
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "candles": 1,
+            "forming_candle_status": "none",
+            "data": [{"time": "2026-08-21T20:00:00Z", "close": 1.16, "bar_state": "closed"}],
+            "data_window": {"latest_bar_complete": True},
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest"},
+                    "freshness": {
+                        "data_freshness_seconds": 2_400.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                }
+            },
+        },
+    )
+
+    assert result["forming_candle_status"] == "none"
+    assert result["latest_quote_stale"] is True
+    assert result["data_stale"] is True
     assert result["freshness_basis"] == "bar_policy_and_latest_quote"
 
 
@@ -859,6 +901,35 @@ def test_run_data_fetch_candles_forming_bar_uses_last_tick_freshness(monkeypatch
     assert result["data_age_seconds"] == 5.0
     assert result["data_age_metric"] == "last_tick_age_seconds"
     assert result["freshness"] == "forming bar open 15m 0s ago; last update 5s ago"
+
+
+def test_bounded_provider_window_omits_available_count():
+    rows = [{"time": f"t{i}", "close": i} for i in range(13)]
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        start="2026-08-20",
+        end="2026-08-20",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": rows,
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "range", "provider_end_bounded": True}
+                }
+            },
+        },
+    )
+
+    assert "available_count" not in result
+    assert result["count"] == 5
+    assert "13 bars" not in " ".join(result.get("warnings") or [])
 
 
 def test_run_data_fetch_candles_range_applies_limit_cap():
@@ -2697,6 +2768,35 @@ def test_run_data_fetch_ticks_maps_empty_historical_window_to_success() -> None:
     assert result["requested_limit"] == 20
     assert result["limit_reached"] is False
     assert "error_code" not in result
+
+
+def test_run_data_fetch_ticks_keeps_readiness_failure() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "error": (
+                "Symbol 'EURUSD' was selected but no tick data is available. "
+                "The market may be closed."
+            )
+        },
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "data_fetch_ticks_not_ready"
+
+
+def test_run_data_fetch_ticks_keeps_provider_no_tick_data_failure() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "error": "Failed to get ticks for EURUSD: (1, No tick data)"
+        },
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "data_fetch_ticks_provider_failure"
 
 
 def test_run_data_fetch_ticks_classifies_unknown_symbol() -> None:

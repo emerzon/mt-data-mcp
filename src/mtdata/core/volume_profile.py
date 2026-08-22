@@ -783,6 +783,8 @@ def _profile_freshness_meta(
     data_as_of: Optional[str],
     historical_query: bool,
     timeframe: Optional[str] = None,
+    window_seconds: Optional[float] = None,
+    profile_source: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(fetch_payload, dict):
         fetch_payload = {}
@@ -805,7 +807,22 @@ def _profile_freshness_meta(
                 TIMEFRAME_SECONDS.get(str(timeframe or "").strip().upper(), 0)
                 or 0
             )
-            stale_after_seconds = max(300.0, timeframe_seconds)
+            try:
+                window_length = float(window_seconds) if window_seconds is not None else 0.0
+            except (TypeError, ValueError):
+                window_length = 0.0
+            if not math.isfinite(window_length) or window_length < 0.0:
+                window_length = 0.0
+            source_name = str(profile_source or "").strip().lower()
+            if timeframe_seconds > 0:
+                stale_after_seconds = max(300.0, timeframe_seconds)
+                freshness_basis = "completed_bar_close_timeframe_window"
+            elif source_name == "m1_bars" or window_length >= 3600.0:
+                stale_after_seconds = window_length if window_length > 0.0 else 86400.0
+                freshness_basis = "profile_window"
+            else:
+                stale_after_seconds = max(300.0, window_length)
+                freshness_basis = "observation_age_300_seconds"
             age_seconds = max(
                 0.0,
                 (_utc_now_naive() - observed_at).total_seconds(),
@@ -816,11 +833,7 @@ def _profile_freshness_meta(
                     "data_age_seconds": round(age_seconds, 3),
                     "data_stale": age_seconds > stale_after_seconds,
                     "stale_after_seconds": stale_after_seconds,
-                    "freshness_basis": (
-                        "completed_bar_close_timeframe_window"
-                        if timeframe_seconds > 0
-                        else "observation_age_300_seconds"
-                    ),
+                    "freshness_basis": freshness_basis,
                     "query_type": "historical" if historical_query else "latest",
                 }
             )
@@ -1190,6 +1203,8 @@ def compute_volume_profile_payload(
                     "area describe only the observed window."
                 )
     fetch_payload = selected.get("fetch_payload")
+    window = profile.get("window") if isinstance(profile.get("window"), dict) else {}
+    window_days = _window_days(window.get("start"), window.get("end"))
     profile.update(
         _profile_freshness_meta(
             fetch_payload,
@@ -1198,6 +1213,10 @@ def compute_volume_profile_payload(
                 start is not None or end is not None
             ),
             timeframe=timeframe,
+            window_seconds=(
+                None if window_days is None else float(window_days) * 86400.0
+            ),
+            profile_source=str(profile.get("profile_source") or selected.get("source") or ""),
         )
     )
     profile["units"] = _profile_units(profile)

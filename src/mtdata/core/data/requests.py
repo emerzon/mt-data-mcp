@@ -409,11 +409,12 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "end values."
         ),
     )
-    timestamp_format: Literal["epoch", "iso"] = Field(
+    timestamp_format: Literal["epoch", "iso", "iso_utc"] = Field(
         "iso",
         description=(
-            "Timestamp representation for candle rows. iso returns UTC ISO-8601 "
-            "strings (default); epoch returns Unix seconds."
+            "Timestamp representation for candle rows. iso returns ISO-8601 "
+            "strings in CLIENT_TZ (iso_utc / iso_offset in the payload); "
+            "iso_utc forces UTC Z strings; epoch returns Unix seconds."
         ),
     )
     ohlcv: Optional[str] = Field(
@@ -503,11 +504,12 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
             "Reuse it with the same symbol, start, and end values."
         ),
     )
-    timestamp_format: Literal["epoch", "iso"] = Field(
+    timestamp_format: Literal["epoch", "iso", "iso_utc"] = Field(
         "iso",
         description=(
-            "Timestamp representation for tick rows. iso returns UTC ISO-8601 "
-            "strings where available (default); epoch returns Unix seconds."
+            "Timestamp representation for tick rows. iso returns ISO-8601 "
+            "strings in CLIENT_TZ (iso_utc / iso_offset in the payload); "
+            "iso_utc forces UTC Z strings; epoch returns Unix seconds."
         ),
     )
     simplify: SimplifySpecInput = None

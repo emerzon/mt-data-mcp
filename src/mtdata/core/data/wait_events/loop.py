@@ -387,9 +387,20 @@ def _run_candle_boundary_only(
         preview["remaining_seconds"] = float(preview["sleep_seconds"])
         preview["max_wait_seconds"] = float(max_wait_seconds)
         preview["wait_mode"] = "timeframe_boundary"
-        preview["remediation"] = (
-            "Increase max_wait_seconds beyond remaining_seconds and retry."
-        )
+        if preview.get("market_status") == "closed":
+            preview["error_code"] = "market_closed"
+            preview["error"] = (
+                "Market is closed; the next candle close is after session reopen."
+            )
+            preview["remediation"] = (
+                "Retry after assumed_closure_end or increase max_wait_seconds "
+                "to cover the closed session. Do not treat the next clock hour "
+                "as a live bar close."
+            )
+        else:
+            preview["remediation"] = (
+                "Increase max_wait_seconds beyond remaining_seconds and retry."
+            )
         preview["event"] = None
         preview["boundary_event"] = None
         if identity_payload:
@@ -405,6 +416,7 @@ def _run_candle_boundary_only(
         buffer_seconds=boundary["buffer_seconds"],
         sleep_impl=sleep_impl,
         now_utc=now_utc,
+        symbol=request.symbol or (request.symbols[0] if request.symbols else None),
     )
     payload["event"] = "candle_close"
     payload["boundary_event"] = _boundary_event_payload(
@@ -824,7 +836,6 @@ def _build_wait_result(
     successful_boundary = status == "boundary_reached" and (
         not watch_for_payload
         or watch_for_inferred
-        or request.symbols is not None
     )
     successful_duration = (
         status == "completed"

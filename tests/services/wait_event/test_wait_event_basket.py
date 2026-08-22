@@ -188,7 +188,8 @@ def test_basket_boundary_returns_available_candles_and_failures(monkeypatch) -> 
         end_on_inferred=True,
     )
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["partial_failure"] is True
     assert boundary_event["closed_candles"] == [candle]
     assert boundary_event["candle_failures"][0]["symbol"] == "GBPUSD"
@@ -203,7 +204,7 @@ def test_symbol_less_boundary_does_not_require_mt5_connection(monkeypatch) -> No
     monkeypatch.setattr(
         wait_events_mod.compile,
         "_next_candle_wait_payload",
-        lambda timeframe, buffer_seconds, now_utc: {
+        lambda timeframe, buffer_seconds, now_utc, **_kwargs: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
             "sleep_seconds": 0.0,
@@ -216,7 +217,7 @@ def test_symbol_less_boundary_does_not_require_mt5_connection(monkeypatch) -> No
     monkeypatch.setattr(
         wait_events_mod.loop,
         "_sleep_until_next_candle",
-        lambda timeframe, buffer_seconds, sleep_impl, now_utc: {
+        lambda timeframe, buffer_seconds, sleep_impl, now_utc, **_kwargs: {
             "timeframe": timeframe,
             "buffer_seconds": buffer_seconds,
             "sleep_seconds": 0.0,

@@ -679,6 +679,7 @@ def fetch_ticks(  # noqa: C901
     range_selection: Literal["first_n", "last_n"] = "first_n",
     page_offset: int = 0,
     probe_more: bool = False,
+    force_utc: bool = False,
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
 
@@ -1059,7 +1060,7 @@ def fetch_ticks(  # noqa: C901
 
         # Choose a consistent millisecond time format for tick rows.
         # Low-level tick fetch helpers have already normalized epochs to UTC.
-        client_tz = _resolve_client_tz()
+        client_tz = None if force_utc else _resolve_client_tz()
         _use_ctz = client_tz is not None
 
         def _format_tick_time(epoch: float) -> str:

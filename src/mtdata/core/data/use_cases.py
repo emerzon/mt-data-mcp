@@ -276,7 +276,8 @@ def _run_data_fetch_candles_impl(
         indicators=request.indicators,
         denoise=request.denoise,
         simplify=request.simplify,
-        time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
+        time_as_epoch=not _iso_timestamp_requested(request.timestamp_format),
+        force_utc=_force_utc_timestamps(request.timestamp_format),
         include_spread=request.include_spread,
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
@@ -434,6 +435,28 @@ def _attach_forming_candle_update_freshness(
         payload["freshness"] = f"forming bar; last update {update_text} ago"
 
 
+def _forming_candle_present(payload: Dict[str, Any]) -> bool:
+    if str(payload.get("forming_candle_status") or "").strip().lower() == "included":
+        return True
+    data_window = payload.get("data_window")
+    if isinstance(data_window, dict) and data_window.get("latest_bar_complete") is False:
+        return True
+    rows = payload.get("data")
+    if isinstance(rows, list) and rows:
+        last = rows[-1]
+        if isinstance(last, dict) and last.get("bar_state") == "forming":
+            return True
+    return False
+
+
+def _iso_timestamp_requested(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"iso", "iso_utc"}
+
+
+def _force_utc_timestamps(value: Any) -> bool:
+    return str(value or "").strip().lower() == "iso_utc"
+
+
 def _attach_latest_candle_quote_freshness(
     payload: Dict[str, Any],
     *,
@@ -441,7 +464,9 @@ def _attach_latest_candle_quote_freshness(
     gateway: Any,
 ) -> None:
     """Prevent a stale latest quote from being presented as a fresh candle mark."""
-    if request.start or request.end or request.include_incomplete or payload.get("error"):
+    if request.start or request.end or payload.get("error"):
+        return
+    if request.include_incomplete and _forming_candle_present(payload):
         return
     rows = payload.get("data")
     if not isinstance(rows, list) or not rows:
@@ -904,13 +929,20 @@ def _apply_range_limit_cap(
     else:
         result["range_incomplete_reason"] = "limit"
     if available > limit_value:
-        result["available_count"] = available
         result["truncation"]["excluded_count"] = available - len(retained)
         retained_label = "earliest" if start_anchored else "latest"
-        warning = (
-            f"Fetched range contained {available} bars; returned the {retained_label} "
-            f"{len(retained)} because limit={limit_value}."
-        )
+        if query.get("provider_end_bounded"):
+            warning = (
+                f"Returned the {retained_label} {len(retained)} bars because "
+                f"limit={limit_value}. Increase limit or continue paging; the "
+                "remaining range size is not known from this fetch window."
+            )
+        else:
+            result["available_count"] = available
+            warning = (
+                f"Fetched range contained {available} bars; returned the {retained_label} "
+                f"{len(retained)} because limit={limit_value}."
+            )
         pagination: Dict[str, Any] = {
             "total": None if query.get("provider_end_bounded") else page_offset + available,
             "returned": len(retained),
@@ -1923,7 +1955,8 @@ def _run_data_fetch_ticks_impl(
         start=request.start,
         end=request.end,
         simplify=request.simplify,
-        time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
+        time_as_epoch=not _iso_timestamp_requested(request.timestamp_format),
+        force_utc=_force_utc_timestamps(request.timestamp_format),
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
         range_selection=range_selection,
         page_offset=page_offset,
@@ -1977,13 +2010,16 @@ def _attach_tick_timestamp_metadata(
         )
     representation = _timestamp_representation(timestamp_value)
     if representation is None:
-        if str(requested_format).strip().lower() == "iso":
-            timezone_label = str(payload.get("timezone") or "UTC").strip()
-            representation = (
-                ("iso_utc", "utc", "UTC")
-                if timezone_label.upper() == "UTC"
-                else ("iso_offset", "client_timezone", "client_timezone")
-            )
+        if _iso_timestamp_requested(requested_format):
+            if _force_utc_timestamps(requested_format):
+                representation = ("iso_utc", "utc", "UTC")
+            else:
+                timezone_label = str(payload.get("timezone") or "UTC").strip()
+                representation = (
+                    ("iso_utc", "utc", "UTC")
+                    if timezone_label.upper() == "UTC"
+                    else ("iso_offset", "client_timezone", "client_timezone")
+                )
         else:
             representation = ("epoch_seconds", "utc", "UTC")
     timestamp_format, timestamp_mode, timestamp_timezone = representation
@@ -2058,6 +2094,15 @@ def _normalize_tick_query_error(
                 "no historical tick data is available for future dates."
             )
             remediation = "Use a start and end timestamp at or before the current time."
+        elif "was selected" in normalized:
+            error_code = "data_fetch_ticks_not_ready"
+            remediation = (
+                "Ensure the symbol is selected and the broker is streaming ticks, "
+                "then retry. An empty range is returned only when MT5 yields no rows."
+            )
+        elif "failed to get" in normalized:
+            error_code = "data_fetch_ticks_provider_failure"
+            remediation = "Check the MT5 connection and broker data feed, then retry."
         else:
             empty: Dict[str, Any] = {
                 "success": True,

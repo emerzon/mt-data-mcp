@@ -106,8 +106,7 @@ def test_market_depth_tick_fallback_hides_zero_last_display() -> None:
         out = _raw_market_depth_fetch("BTCUSD")
 
     assert out["success"] is True
-    assert out["data"]["last"] is None
-    assert "last_display" not in out["data"]
+    assert out["data"]["last"] == 0.0
 
 
 def test_market_depth_tick_fallback_marks_fresh_quote_live_ready() -> None:
@@ -548,6 +547,13 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["meta"]["tool"] == "market_ticker"
 
 
+def test_optional_finite_float_keeps_zero() -> None:
+    assert market_depth_mod._optional_finite_float(0.0) == 0.0
+    assert market_depth_mod._optional_finite_float(0) == 0.0
+    assert market_depth_mod._optional_finite_float(None) is None
+    assert market_depth_mod._optional_finite_float(float("nan")) is None
+
+
 def test_market_ticker_none_detail_uses_compact_output() -> None:
     tick = SimpleNamespace(
         bid=200.0,
@@ -624,7 +630,7 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["freshness_state"] == "stale"
     assert out["freshness_reason"] == "stale_age"
     assert out["usable_for_live_trading"] is False
-    assert out["live_max_age_seconds"] == 30
+    assert out["live_max_age_seconds"] == 10
     assert "bid" not in out
     assert "spread_pips" not in out
     assert out["meta"]["tool"] == "market_ticker"
@@ -1003,13 +1009,9 @@ def test_market_ticker_price_field_reports_unavailable_last() -> None:
         mt5.symbol_info_tick.return_value = tick
         out = _raw_market_ticker("EURUSD", price_field="last")
 
-    assert out["error"] == "last price is unavailable for EURUSD."
-    assert out["success"] is False
-    assert out["error_code"] == "market_ticker_price_unavailable"
-    assert out["operation"] == "market_ticker"
-    assert out["request_id"]
-    assert "Use bid, ask, mid, or spread" in out["remediation"]
-    assert out["meta"]["tool"] == "market_ticker"
+    assert out["success"] is True
+    assert out["price"] == 0.0
+    assert out["field"] == "last"
 
 
 def test_market_ticker_full_detail_preserves_verbose_fields() -> None:

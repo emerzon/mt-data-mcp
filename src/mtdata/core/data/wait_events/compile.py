@@ -323,6 +323,7 @@ def _compile_boundary_event(
         timeframe,
         buffer_seconds=buffer_seconds,
         now_utc=started_at_utc,
+        symbol=request.symbol or (request.symbols[0] if request.symbols else None),
     )
     boundary_at_utc = _normalize_utc_datetime(preview["next_candle_close_utc"])
     return {

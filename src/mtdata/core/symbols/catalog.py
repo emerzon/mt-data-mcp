@@ -22,6 +22,7 @@ from ...shared.schema import (
 )
 from ...utils.mt5 import (
     MT5ConnectionError,
+    _ensure_symbol_ready,
     _symbol_visibility_snapshot_guard,
     ensure_mt5_connection_or_raise,
     mt5,
@@ -1017,6 +1018,7 @@ def symbols_describe(  # noqa: C901
                 symbol,
                 gateway=mt5_gateway,
             )
+            _ensure_symbol_ready(resolved_symbol)
             symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
                 suggestions = _find_symbol_suggestions(mt5_gateway, symbol)

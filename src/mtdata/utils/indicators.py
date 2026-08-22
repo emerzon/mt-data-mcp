@@ -52,6 +52,26 @@ _TA_PERIOD_PARAMETER_NAMES = frozenset(
         "window",
     }
 )
+_TA_LENGTH_ALIASES = ("period", "timeperiod", "window")
+
+
+def _canonicalize_ta_period_kwargs(
+    indicator: str,
+    kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = dict(kwargs)
+    alias_value = None
+    for key in _TA_LENGTH_ALIASES:
+        if key in out:
+            alias_value = out.pop(key)
+            break
+    if alias_value is None:
+        return out
+    if _normalize_ta_indicator_name(indicator) == "stoch":
+        out.setdefault("k", alias_value)
+    else:
+        out.setdefault("length", alias_value)
+    return out
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
@@ -558,6 +578,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
         volume_series = _resolve_indicator_volume_series(df)
         for name, args, kwargs in specs:
             lname = _normalize_ta_indicator_name(name)
+            kwargs = _canonicalize_ta_period_kwargs(lname, kwargs)
             if lname == "vwap":
                 if args or kwargs:
                     raise ValueError(
@@ -702,6 +723,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
     specs = _parse_ti_specs(ti_spec)
     for name, args, kwargs in specs:
         lname = _normalize_ta_indicator_name(name)
+        kwargs = _canonicalize_ta_period_kwargs(lname, kwargs)
         def geti(key, default):
             if key in kwargs:
                 try:

@@ -422,20 +422,9 @@ def _market_scan_completed_rates(
         if latest_close is not None
         else None
     )
-    closed_session = (
-        closed_session_context(
-            symbol,
-            now_epoch=now_epoch,
-            item="bar",
-            data_age_seconds=age_seconds,
-        )
-        if age_seconds is not None
-        else None
-    )
     if (
         age_seconds is not None
         and age_seconds > _market_scan_stale_bar_seconds(timeframe)
-        and not bool((closed_session or {}).get("freshness_policy_relaxed"))
     ):
         refreshed = _completed(
             _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, requested + 1),

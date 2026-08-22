@@ -11,6 +11,7 @@ from typing import Optional, Tuple, Union
 from ...bootstrap.settings import mt5_config
 from ...shared.constants import TIMEFRAME_SECONDS
 from ...shared.validators import unsupported_timeframe_seconds_error
+from ...utils.freshness import closed_session_context
 
 ExpirationValue = Union[int, float, str, datetime]
 _GTC_EXPIRATION_TOKENS = {"GTC"}
@@ -172,7 +173,12 @@ def _server_time_naive_to_utc(dt: datetime) -> datetime:
     return (dt - timedelta(seconds=offset_sec)).replace(tzinfo=timezone.utc)
 
 
-def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime] = None) -> datetime:
+def _next_candle_close_server_time(
+    timeframe: str,
+    *,
+    now_utc: Optional[datetime] = None,
+    symbol: Optional[str] = None,
+) -> datetime:
     """Return the next candle close in server-local naive time."""
     tf = str(timeframe or "").upper().strip()
     if tf not in TIMEFRAME_SECONDS:
@@ -190,31 +196,52 @@ def _next_candle_close_server_time(timeframe: str, *, now_utc: Optional[datetime
 
     if tf == "MN1":
         if server_now.month == 12:
-            return server_now.replace(year=server_now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-        return server_now.replace(month=server_now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
-
-    if tf == "W1":
+            result = server_now.replace(year=server_now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            result = server_now.replace(month=server_now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif tf == "W1":
         days_until_next_monday = (7 - server_now.weekday()) % 7
         if days_until_next_monday == 0:
             days_until_next_monday = 7
-        return (server_now + timedelta(days=days_until_next_monday)).replace(
+        result = (server_now + timedelta(days=days_until_next_monday)).replace(
             hour=0,
             minute=0,
             second=0,
             microsecond=0,
         )
+    elif tf == "D1":
+        result = (server_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        interval_seconds = int(TIMEFRAME_SECONDS[tf])
+        if interval_seconds <= 0:
+            raise ValueError(unsupported_timeframe_seconds_error(tf))
 
-    if tf == "D1":
-        return (server_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    interval_seconds = int(TIMEFRAME_SECONDS[tf])
-    if interval_seconds <= 0:
-        raise ValueError(unsupported_timeframe_seconds_error(tf))
-
-    day_start = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elapsed_seconds = max(0.0, (server_now - day_start).total_seconds())
-    next_slot = int(math.floor(elapsed_seconds / float(interval_seconds))) + 1
-    return day_start + timedelta(seconds=float(next_slot * interval_seconds))
+        day_start = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elapsed_seconds = max(0.0, (server_now - day_start).total_seconds())
+        next_slot = int(math.floor(elapsed_seconds / float(interval_seconds))) + 1
+        result = day_start + timedelta(seconds=float(next_slot * interval_seconds))
+    if symbol:
+        next_utc = _server_time_naive_to_utc(result)
+        closed = closed_session_context(
+            symbol,
+            now_epoch=current_utc.timestamp(),
+            item="bar",
+            data_age_seconds=max(0.0, (next_utc - current_utc).total_seconds()),
+        )
+        if closed and closed.get("assumed_closure_end"):
+            try:
+                closure_end = datetime.fromisoformat(
+                    str(closed["assumed_closure_end"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                closure_end = None
+            if closure_end is not None and next_utc <= closure_end:
+                return _next_candle_close_server_time(
+                    timeframe,
+                    now_utc=closure_end,
+                    symbol=None,
+                )
+    return result
 
 
 def _format_utc_offset(offset_seconds: int) -> str:
@@ -230,6 +257,7 @@ def _next_candle_wait_payload(
     *,
     buffer_seconds: float = 1.0,
     now_utc: Optional[datetime] = None,
+    symbol: Optional[str] = None,
 ) -> dict:
     """Build timing metadata for the next candle close without sleeping."""
     current_utc = now_utc or datetime.now(timezone.utc)
@@ -238,7 +266,11 @@ def _next_candle_wait_payload(
     else:
         current_utc = current_utc.astimezone(timezone.utc)
 
-    next_close_server = _next_candle_close_server_time(timeframe, now_utc=current_utc)
+    next_close_server = _next_candle_close_server_time(
+        timeframe,
+        now_utc=current_utc,
+        symbol=symbol,
+    )
     next_close_utc = _server_time_naive_to_utc(next_close_server)
     server_offset_seconds = int(
         round(
@@ -262,7 +294,7 @@ def _next_candle_wait_payload(
     except Exception:
         server_tz_name = "UTC"
 
-    return {
+    payload = {
         "timeframe": str(timeframe).upper().strip(),
         "buffer_seconds": float(buffer_seconds),
         "sleep_seconds": float(wait_seconds),
@@ -272,6 +304,27 @@ def _next_candle_wait_payload(
         "server_timezone": str(server_tz_name),
         "server_utc_offset": server_utc_offset,
     }
+    if symbol:
+        closed = closed_session_context(
+            symbol,
+            now_epoch=current_utc.timestamp(),
+            item="bar",
+            data_age_seconds=max(0.0, (next_close_utc - current_utc).total_seconds()),
+        )
+        if closed:
+            payload.update(
+                {
+                    key: closed[key]
+                    for key in (
+                        "market_status",
+                        "market_status_reason",
+                        "assumed_closure_start",
+                        "assumed_closure_end",
+                    )
+                    if key in closed
+                }
+            )
+    return payload
 
 
 def _sleep_until_next_candle(
@@ -280,12 +333,14 @@ def _sleep_until_next_candle(
     buffer_seconds: float = 1.0,
     sleep_impl=time.sleep,
     now_utc: Optional[datetime] = None,
+    symbol: Optional[str] = None,
 ) -> dict:
     """Sleep until the next candle closes and return timing metadata."""
     payload = _next_candle_wait_payload(
         timeframe,
         buffer_seconds=buffer_seconds,
         now_utc=now_utc,
+        symbol=symbol,
     )
     sleep_seconds = float(payload.get("sleep_seconds", 0.0) or 0.0)
     sleep_impl(sleep_seconds)

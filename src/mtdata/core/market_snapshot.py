@@ -81,6 +81,9 @@ def _preflight_snapshot_symbol(
             operation="market_snapshot",
         )
     if symbol_info is not None:
+        from ..utils.mt5 import _ensure_symbol_ready
+
+        _ensure_symbol_ready(symbol_name)
         return None
     suggestions = symbol_suggestions_from_gateway(mt5_gateway, symbol_name)
     return build_error_payload(

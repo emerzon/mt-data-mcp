@@ -1943,6 +1943,7 @@ def fetch_candles(  # noqa: C901
     denoise: Optional[DenoiseSpec] = None,
     simplify: Optional[SimplifySpec] = None,
     time_as_epoch: bool = False,
+    force_utc: bool = False,
     *,
     include_spread: bool = False,
     include_incomplete: bool = False,
@@ -2123,7 +2124,7 @@ def fetch_candles(  # noqa: C901
         )
         
         # Construct DataFrame to support indicators and consistent output
-        client_tz = _resolve_client_tz()
+        client_tz = None if force_utc else _resolve_client_tz()
         _use_ctz = client_tz is not None
         df = _build_rates_df(rates, _use_ctz)
         if include_spread:

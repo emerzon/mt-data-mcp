@@ -35,6 +35,19 @@ def test_wait_candle_request_rejects_negative_max_wait() -> None:
         WaitCandleRequest(timeframe="M5", max_wait_seconds=-0.1)
 
 
+def test_next_candle_close_skips_weekend_closure(utc_server_clock) -> None:
+    friday_night = datetime(2026, 8, 21, 21, 38, tzinfo=timezone.utc)
+
+    result = _next_candle_close_server_time(
+        "H1",
+        now_utc=friday_night,
+        symbol="EURUSD",
+    )
+
+    next_utc = time._server_time_naive_to_utc(result)
+    assert next_utc >= datetime(2026, 8, 23, 21, tzinfo=timezone.utc)
+
+
 def test_next_candle_close_server_time_rounds_intraday_frame(utc_server_clock) -> None:
     now_utc = datetime(2026, 3, 13, 10, 2, 10, tzinfo=timezone.utc)
 

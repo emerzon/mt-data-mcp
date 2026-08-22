@@ -114,6 +114,43 @@ def test_tick_results_publish_timestamp_format(
         assert result["timezone"] == "UTC"
 
 
+def test_iso_utc_request_labels_utc_even_with_client_timezone() -> None:
+    request = DataFetchTicksRequest(
+        symbol="EURUSD",
+        limit=1,
+        detail="full",
+        timestamp_format="iso_utc",
+    )
+    seen = {}
+
+    def fetch_ticks_impl(**kwargs):
+        seen.update(kwargs)
+        timezone_name = "UTC" if kwargs.get("force_utc") else "America/New_York"
+        time_value = (
+            "2026-08-21T19:00:00Z"
+            if kwargs.get("force_utc")
+            else "2026-08-21T15:00:00-04:00"
+        )
+        return {
+            "success": True,
+            "count": 1,
+            "tick_count": 1,
+            "timezone": timezone_name,
+            "data": [{"time": time_value, "bid": 1.1, "ask": 1.2}],
+        }
+
+    result = run_data_fetch_ticks(
+        request,
+        gateway=_gateway(),
+        fetch_ticks_impl=fetch_ticks_impl,
+    )
+
+    assert seen.get("force_utc") is True
+    assert seen.get("time_as_epoch") is False
+    assert result["timestamp_format"] == "iso_utc"
+    assert result["data"][0]["time"].endswith("Z")
+
+
 @pytest.mark.parametrize(
     "time_value",
     ["2026-01-15T09:30:00-05:00", "2026-07-15T09:30:00-04:00"],

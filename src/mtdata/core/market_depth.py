@@ -24,6 +24,7 @@ from ..utils.market_metadata import (
 )
 from ..utils.mt5 import (
     MT5ConnectionError,
+    _ensure_symbol_ready,
     account_currency_from_gateway,
     describe_mt5_time_normalization,
     ensure_mt5_connection_or_raise,
@@ -255,6 +256,18 @@ def _positive_market_ticker_float(value: Any) -> Optional[float]:
     return number
 
 
+def _optional_finite_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
 def _format_mt5_error_text(error: Any) -> str:
     if isinstance(error, tuple) and len(error) >= 2:
         code = error[0]
@@ -473,9 +486,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             finally:
                 if book_subscription_active:
                     try:
-                        mt5_gateway.market_book_release(symbol)
-                    except Exception:
-                        pass
+                        if not mt5_gateway.market_book_release(symbol):
+                            logger.warning("market_book_release failed for %s", symbol)
+                    except Exception as exc:
+                        logger.warning("market_book_release failed for %s: %s", symbol, exc)
 
             if depth is not None and len(depth) > 0:
                 buy_orders = []
@@ -627,9 +641,9 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "fallback_reason": "market_book_get returned no levels",
                 },
                 "data": {
-                    "bid": float(tick_value(tick, "bid")) if tick_value(tick, "bid") else None,
-                    "ask": float(tick_value(tick, "ask")) if tick_value(tick, "ask") else None,
-                    "last": float(tick_value(tick, "last")) if tick_value(tick, "last") else None,
+                    "bid": _optional_finite_float(tick_value(tick, "bid")),
+                    "ask": _optional_finite_float(tick_value(tick, "ask")),
+                    "last": _optional_finite_float(tick_value(tick, "last")),
                     "volume": int(tick_value(tick, "volume")) if tick_value(tick, "volume") else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
                 },
@@ -759,6 +773,7 @@ def market_ticker(  # noqa: C901
                 )
             if was_visible is False:
                 restore_symbol = resolved_symbol
+                _ensure_symbol_ready(resolved_symbol)
 
             symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
@@ -817,11 +832,13 @@ def market_ticker(  # noqa: C901
             bid_raw = tick_value(tick, "bid")
             ask_raw = tick_value(tick, "ask")
             last_raw = tick_value(tick, "last")
-            bid = float(bid_raw) if bid_raw else None
-            ask = float(ask_raw) if ask_raw else None
-            last = float(last_raw) if last_raw else None
+            bid = _optional_finite_float(bid_raw)
+            ask = _optional_finite_float(ask_raw)
+            last = _optional_finite_float(last_raw)
             tick_time = tick_epoch(tick)
-            if bid is None and ask is None and last is None and tick_time is None:
+            if tick_time is None and not any(
+                value not in (None, 0.0) for value in (bid, ask, last)
+            ):
                 remediation, details = _market_ticker_live_symbol_recovery(
                     mt5_gateway,
                     resolved_symbol,
