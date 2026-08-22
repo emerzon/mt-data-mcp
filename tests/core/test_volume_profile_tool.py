@@ -434,7 +434,28 @@ def test_default_m1_profile_uses_window_length_not_quote_ttl(monkeypatch):
     monkeypatch.setattr(
         vp,
         "_utc_now_naive",
-        lambda: vp.datetime(2026, 8, 21, 21, 30),
+        lambda: vp.datetime(2026, 8, 20, 21, 30),
+    )
+    out = vp._profile_freshness_meta(
+        {},
+        data_as_of="2026-08-20T20:56:00Z",
+        historical_query=False,
+        timeframe=None,
+        window_seconds=86400.0,
+        profile_source="m1_bars",
+        symbol="EURUSD",
+    )
+
+    assert out["data_stale"] is False
+    assert out["stale_after_seconds"] == 86400.0
+    assert out["freshness_basis"] == "profile_window"
+
+
+def test_latest_m1_profile_is_stale_on_weekend(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "_utc_now_naive",
+        lambda: vp.datetime(2026, 8, 22, 1, 30),
     )
     out = vp._profile_freshness_meta(
         {},
@@ -443,11 +464,13 @@ def test_default_m1_profile_uses_window_length_not_quote_ttl(monkeypatch):
         timeframe=None,
         window_seconds=86400.0,
         profile_source="m1_bars",
+        symbol="EURUSD",
     )
 
-    assert out["data_stale"] is False
-    assert out["stale_after_seconds"] == 86400.0
-    assert out["freshness_basis"] == "profile_window"
+    assert out["data_stale"] is True
+    assert out["market_status"] == "closed"
+    assert out["market_status_reason"] == "weekend"
+    assert out["freshness_state"] == "closed_weekend_snapshot"
 
 
 def test_latest_bar_window_uses_profile_window_end_for_freshness(monkeypatch):

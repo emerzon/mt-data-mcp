@@ -11,7 +11,7 @@ from ..services.data_service import fetch_candles, fetch_ticks
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_crypto_symbol
-from ..utils.freshness import standard_weekend_window
+from ..utils.freshness import closed_session_context, standard_weekend_window
 from ..utils.mt5 import (
     MT5ConnectionError,
     _symbol_ready_guard,
@@ -739,6 +739,10 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "stale_after_seconds",
         "freshness_basis",
         "freshness_applicability",
+        "freshness_state",
+        "market_status",
+        "market_status_reason",
+        "note",
         "query_type",
         "units",
     ]
@@ -785,6 +789,7 @@ def _profile_freshness_meta(
     timeframe: Optional[str] = None,
     window_seconds: Optional[float] = None,
     profile_source: Optional[str] = None,
+    symbol: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(fetch_payload, dict):
         fetch_payload = {}
@@ -827,11 +832,27 @@ def _profile_freshness_meta(
                 0.0,
                 (_utc_now_naive() - observed_at).total_seconds(),
             )
+            data_stale = age_seconds > stale_after_seconds
+            if not historical_query:
+                session = closed_session_context(
+                    symbol or fetch_payload.get("symbol") or out.get("symbol"),
+                    now_epoch=_utc_now_naive().replace(tzinfo=timezone.utc).timestamp(),
+                    item="volume profile",
+                    data_age_seconds=age_seconds,
+                )
+                if session:
+                    data_stale = True
+                    out["market_status"] = session.get("market_status")
+                    out["market_status_reason"] = session.get("market_status_reason")
+                    out["freshness_state"] = "closed_weekend_snapshot"
+                    note = session.get("note")
+                    if note:
+                        out["note"] = note
             out.update(
                 {
                     "as_of": data_as_of,
                     "data_age_seconds": round(age_seconds, 3),
-                    "data_stale": age_seconds > stale_after_seconds,
+                    "data_stale": data_stale,
                     "stale_after_seconds": stale_after_seconds,
                     "freshness_basis": freshness_basis,
                     "query_type": "historical" if historical_query else "latest",
@@ -1217,6 +1238,7 @@ def compute_volume_profile_payload(
                 None if window_days is None else float(window_days) * 86400.0
             ),
             profile_source=str(profile.get("profile_source") or selected.get("source") or ""),
+            symbol=str(profile.get("symbol") or ""),
         )
     )
     profile["units"] = _profile_units(profile)

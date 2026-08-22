@@ -162,7 +162,11 @@ PARAM_HINTS = {
         "reports a single non-historical reference or spread_mode=unavailable."
     ),
     "include_incomplete": "Include the latest forming candle; defaults to false. Compact candle responses expose forming_candle_status=skipped and an inclusion hint when a forming bar is omitted; full detail also includes forming-candle counts and booleans.",
-    "allow_stale": "Return the latest available closed bars when freshness checks would otherwise fail; defaults to false.",
+    "allow_stale": (
+        "Allow unrecognized stale closed bars for unbounded latest-N queries; "
+        "defaults to false. Recognized weekend/session closures still return the "
+        "last session bar and set freshness_policy_relaxed."
+    ),
     "explain_indicators": "Add compact latest-value interpretation notes for requested indicators; defaults to false.",
     "method": "Method/algorithm for this tool.",
     "adapter": "Optional forecast adapter-family filter, such as statsforecast or sktime.",

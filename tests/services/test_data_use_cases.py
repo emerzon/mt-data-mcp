@@ -898,8 +898,8 @@ def test_run_data_fetch_candles_forming_bar_uses_last_tick_freshness(monkeypatch
 
     assert result["bar_open_age_seconds"] == 900.0
     assert result["last_update_age_seconds"] == 5.0
-    assert result["data_age_seconds"] == 5.0
-    assert result["data_age_metric"] == "last_tick_age_seconds"
+    assert result["data_age_seconds"] == 900.0
+    assert result["data_age_metric"] == "latest_bar_open_age_seconds"
     assert result["freshness"] == "forming bar open 15m 0s ago; last update 5s ago"
 
 

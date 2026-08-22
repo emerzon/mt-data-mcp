@@ -409,9 +409,12 @@ def _attach_forming_candle_update_freshness(
         payload["bar_open_age_seconds"] = round(bar_open_age_value, 3)
         data_window["latest_bar_open_age_seconds"] = round(bar_open_age_value, 3)
     payload["last_update_age_seconds"] = round(update_age, 3)
-    payload["data_age_seconds"] = round(update_age, 3)
+    if bar_open_age_value is not None:
+        payload["data_age_seconds"] = round(bar_open_age_value, 3)
+        payload["data_age_metric"] = str(
+            data_window.get("latest_bar_age_metric") or "latest_bar_open_age_seconds"
+        )
     payload["data_age_anchor"] = FRESHNESS_ANCHOR_WALL_CLOCK
-    payload["data_age_metric"] = FRESHNESS_METRIC_LAST_TICK_AGE
     data_window["latest_bar_update_age_seconds"] = round(update_age, 3)
     update_text = _format_age_seconds(update_age)
     if bar_open_age_value is not None:
@@ -523,6 +526,7 @@ def _normalize_candle_query_error(
         if details.get("no_data_reason") is not None:
             payload["no_data_reason"] = details["no_data_reason"]
         for key in (
+            "market_status",
             "market_status_reason",
             "note",
             "requested_range",

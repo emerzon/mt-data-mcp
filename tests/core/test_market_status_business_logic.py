@@ -571,11 +571,11 @@ def test_market_status_blocks_new_entries_when_tick_timestamp_is_unsafe(monkeypa
     assert result["tick_freshness"] == "clock_skew"
     assert result["freshness_reason"] == "future_timestamp"
     assert result["timestamp_in_future"] is True
-    assert result["last_tick_time"] <= result["data_fetched_at"]
-    assert result["wall_clock_observed_at"] < result["data_fetched_at"]
-    assert result["data_fetched_at_basis"] == (
-        "wall_clock_adjusted_to_quote_timestamp"
-    )
+    assert result["data_fetched_at"] == result["wall_clock_observed_at"]
+    assert result["last_tick_time"] > result["data_fetched_at"]
+    assert result["data_fetched_at_basis"] == "wall_clock"
+    assert result["tradable_now"] is False
+    assert result["is_tradable_means"] == "broker_trade_mode"
 
 
 def test_market_status_symbol_timezone_context_honors_local_and_utc_display(

@@ -191,12 +191,15 @@ def _bounded_weekend_no_data_context(
         duration = end_utc - start_utc
         if duration.total_seconds() < 0 or duration > timedelta(days=3):
             return {}
+        midpoint = start_utc + duration / 2
         if not (
             is_standard_weekend_closure(start_utc)
-            and is_standard_weekend_closure(end_utc)
+            and (
+                is_standard_weekend_closure(end_utc)
+                or is_standard_weekend_closure(midpoint)
+            )
         ):
             return {}
-        midpoint = start_utc + duration / 2
         session = closed_session_context(
             symbol,
             now_epoch=midpoint.timestamp(),

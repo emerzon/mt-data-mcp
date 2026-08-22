@@ -1203,10 +1203,7 @@ def _check_symbol_market_status(
 
     quote_epoch = tick_epoch(tick)
     observed_epoch = now_utc.timestamp()
-    fetched_epoch = max(
-        observed_epoch,
-        quote_epoch if quote_epoch is not None else observed_epoch,
-    )
+    fetched_epoch = observed_epoch
     result: Dict[str, Any] = {
         "success": True,
         "mode": "symbol",
@@ -1218,6 +1215,8 @@ def _check_symbol_market_status(
         "can_open_new_positions": can_open,
         "is_tradable": _coerce_optional_bool(mode_status["is_tradable"]),
         "is_tradable_confidence": "broker_trade_mode",
+        "is_tradable_means": "broker_trade_mode",
+        "tradable_now": can_open,
         "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,
@@ -1239,11 +1238,7 @@ def _check_symbol_market_status(
         "message": message,
         "data_fetched_at": format_epoch_utc(fetched_epoch),
         "wall_clock_observed_at": format_datetime_utc(now_utc),
-        "data_fetched_at_basis": (
-            "wall_clock_adjusted_to_quote_timestamp"
-            if fetched_epoch > observed_epoch
-            else "wall_clock"
-        ),
+        "data_fetched_at_basis": "wall_clock",
         "timezone": "UTC",
         "timezone_context": _symbol_market_status_timezone_context(
             timezone_display,
@@ -1377,6 +1372,8 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
         "heuristic_note",
         "is_tradable",
         "is_tradable_confidence",
+        "is_tradable_means",
+        "tradable_now",
         "can_open_new_positions",
         "trade_mode_allows_opening",
         "usable_for_live_trading",

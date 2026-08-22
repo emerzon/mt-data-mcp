@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from ...bootstrap.settings import mt5_config
 from ...shared.schema import DetailLiteral
 from ...utils.coercion import round_finite
+from ...utils.freshness import is_standard_weekend_closure
 from ...utils.mt5 import (
     MT5ConnectionError,
     account_currency_from_gateway,
@@ -74,6 +75,8 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "leverage",
     "trade_allowed",
     "broker_trade_allowed",
+    "readiness_scope",
+    "session_note",
     "execution_ready",
     "execution_hard_blockers",
     "account_risk_status",
@@ -1255,6 +1258,7 @@ def trade_account_info(
             "leverage": info.leverage,
             "trade_allowed": actionable_trade_allowed,
             "broker_trade_allowed": broker_trade_allowed,
+            "readiness_scope": "account_and_terminal_not_symbol_session",
             "account_risk_status": margin_stress.get("status"),
             "account_risk_reasons": margin_stress.get("reasons"),
             "trade_expert": info.trade_expert,
@@ -1279,6 +1283,12 @@ def trade_account_info(
             payload.pop("login", None)
         if margin_level_note:
             payload["margin_level_note"] = margin_level_note
+        if is_standard_weekend_closure(retrieved_dt):
+            payload["session_note"] = (
+                "FX/metals/equities are typically closed; "
+                "trade_allowed is account-level. Use trade_session_context "
+                "<symbol> before sending an order."
+            )
         payload = _trade_account_payload_for_mode(payload, mode=requested_mode)
         return attach_mt5_source(
             ensure_common_meta(

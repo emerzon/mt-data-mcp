@@ -451,8 +451,10 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     allow_stale: bool = Field(
         False,
         description=(
-            "Allow stale closed bars for unbounded latest-N queries. Bounded start/end "
-            "ranges are historical and do not run the live-feed freshness check."
+            "Allow unrecognized stale closed bars for unbounded latest-N queries. "
+            "Recognized weekend/session closures still return the last session bar "
+            "and set freshness_policy_relaxed. Bounded start/end ranges are historical "
+            "and do not run the live-feed freshness check."
         ),
     )
     explain_indicators: bool = Field(
