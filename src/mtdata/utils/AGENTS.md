@@ -1,12 +1,12 @@
 # utils/ — Cross-Cutting Utilities
 
-Shared numerical and formatting helpers imported by `core/`, `forecast/`, `patterns/`, and `services/`. 39 Python files including the `denoise/` package, heavy numpy/scipy/TA-Lib code.
+Shared numerical and formatting helpers imported by `core/`, `forecast/`, `patterns/`, and `services/`. 39 Python files including the `denoise/` package, heavy numpy/scipy/pandas-ta code.
 
 ## FILE MAP
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `indicators.py` | — | 194 technical indicators (wraps TA-Lib + pandas-ta) |
+| `indicators.py` | — | 194 technical indicators (pandas-ta; optional TA-Lib oracle backend) |
 | `denoise/` | package | 10+ signal filters: wavelet, EMD, VMD, Kalman, Savgol, LOESS, etc. |
 | `simplify.py` | 913 | Price series simplification/compression |
 | `dimred.py` | 592 | Dimension reduction (PCA, t-SNE, UMAP wrappers) |
@@ -26,5 +26,5 @@ Shared numerical and formatting helpers imported by `core/`, `forecast/`, `patte
 
 - **`utils/patterns.py` ≠ `patterns/`**: This file has shared pattern helpers; the `patterns/` package has the actual detectors.
 - **No `__init__.py` exports** — import modules directly: `from mtdata.utils.denoise import ...`
-- **Heavy numerical**: Most files depend on numpy, scipy, pandas. `indicators.py` requires TA-Lib C library.
+- **Heavy numerical**: Most files depend on numpy, scipy, pandas. `indicators.py` wraps pandas-ta; TA-Lib is optional.
 - **`denoise/` filter methods** follow a common signature: `(series, **params) → filtered_series`. Each filter is a standalone function.

@@ -218,6 +218,15 @@ See [DENOISING.md](DENOISING.md) for more options.
 
 ---
 
+## Deeper detail: pandas-ta vs TA-Lib
+
+mtdata gets its indicator list from pandas-ta. That library can compute the
+indicators on its own, so you do not need to install TA-Lib. If TA-Lib is
+present, some functions may use it instead, and a few values (especially
+candlestick pattern columns) can look slightly different.
+
+---
+
 ## See Also
 
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions

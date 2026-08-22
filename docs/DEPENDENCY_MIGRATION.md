@@ -16,6 +16,7 @@ unresolvable or where a dependent framework has not migrated yet.
 |------|----------|-------------|--------------|
 | MCP SDK | 1.28.1 | 1.29.0 (`<2`) | Server and Web API import smoke; MCP 2 dropped `mcp.server.fastmcp` |
 | Unused direct pins | Prefect FastMCP, PyYAML, h5py | Removed | No remaining imports; Prefect FastMCP is distinct from MCP SDK FastMCP |
+| Over-declared pins | matplotlib, TA-Lib, torchvision, extra hmmlearn | Demoted | matplotlib is script-only; TA-Lib is pandas-ta's optional oracle; torchvision unused; hmmlearn already core |
 | StatsForecast | 1.7.6 | 2.1.1 | Windows cp314 wheel resolution plus a real `Naive` forecast |
 | sktime | 1.0.1 | 1.1.0 | Resolver check plus a real `NaiveForecaster` forecast |
 | TimesFM | Git commit / 2.0.0 | PyPI 2.0.2 | Package API/import tests; added to `[all]` |
@@ -25,9 +26,9 @@ unresolvable or where a dependent framework has not migrated yet.
 | Web UI | React 18, Lightweight Charts 4, Tailwind 3, TypeScript 5 | React 19.2, Lightweight Charts 5.2, Tailwind 4.3, TypeScript 7.0 | Frontend tests, type-check, production build, and visual smoke |
 
 The Python floor updates also include current compatible releases of MetaTrader5,
-SciPy, Matplotlib, TA-Lib, QuantLib, LightGBM, FastAPI, Uvicorn,
-Sentence Transformers, Hugging Face Hub, and the timezone/date libraries. See
-`pyproject.toml` for the canonical ranges.
+SciPy, QuantLib, LightGBM, FastAPI, Uvicorn, Sentence Transformers, Hugging Face
+Hub, and the timezone/date libraries. See `pyproject.toml` for the canonical
+ranges.
 
 ## Still blocked or intentionally deferred
 
