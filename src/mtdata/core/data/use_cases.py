@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from ...shared.result import Err, Ok, Result, to_dict
 from ...utils.freshness import format_age_seconds as _format_age_seconds
 from ...utils.freshness import format_freshness_label
 from ...utils.market_metadata import (
@@ -180,7 +179,7 @@ def run_wait_candle(
     *,
     sleep_impl: Any = time.sleep,
 ) -> Dict[str, Any]:
-    result = run_logged_operation(
+    return run_logged_operation(
         logger,
         operation="wait_candle",
         timeframe=request.timeframe,
@@ -190,7 +189,6 @@ def run_wait_candle(
             sleep_impl=sleep_impl,
         ),
     )
-    return to_dict(result) if isinstance(result, (Ok, Err)) else result
 
 
 def run_wait_event(
@@ -214,18 +212,8 @@ def run_wait_event(
             monotonic_impl=monotonic_impl,
             now_utc_impl=now_utc_impl,
         ),
-        success_eval=lambda r: (
-            (
-                isinstance(r, Ok)
-                and (
-                    not isinstance(r.value, dict)
-                    or r.value.get("success") is not False
-                )
-            )
-            or (isinstance(r, dict) and "error" not in r)
-        ),
     )
-    payload = to_dict(result) if isinstance(result, (Ok, Err)) else result
+    payload = result
     if not _wait_event_needs_gateway(request):
         return payload
     return attach_mt5_source(payload, gateway=gateway)
@@ -2456,7 +2444,7 @@ def _run_wait_candle_impl(
     *,
     request: WaitCandleRequest,
     sleep_impl: Any,
-) -> Result[Dict[str, Any]]:
+) -> Dict[str, Any]:
     try:
         preview = _next_candle_wait_payload(
             request.timeframe,
@@ -2479,7 +2467,7 @@ def _run_wait_candle_impl(
             preview["remediation"] = (
                 "Increase max_wait_seconds beyond remaining_seconds and retry."
             )
-            return Ok(preview)
+            return preview
 
         payload = _sleep_until_next_candle(
             request.timeframe,
@@ -2487,13 +2475,17 @@ def _run_wait_candle_impl(
             sleep_impl=sleep_impl,
         )
     except ValueError as exc:
-        return Err(str(exc))
+        return build_error_payload(
+            str(exc),
+            code="wait_candle_error",
+            operation="wait_candle",
+        )
 
     payload["max_wait_seconds"] = (
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     payload["success"] = True
-    return Ok(payload)
+    return payload
 
 
 def _run_wait_event_impl(
@@ -2503,17 +2495,21 @@ def _run_wait_event_impl(
     sleep_impl: Any,
     monotonic_impl: Any,
     now_utc_impl: Any,
-) -> Result[Dict[str, Any]]:
+) -> Dict[str, Any]:
     try:
-        return Ok(run_wait_event_loop(
+        return run_wait_event_loop(
             request,
             gateway=gateway,
             sleep_impl=sleep_impl,
             monotonic_impl=monotonic_impl,
             now_utc_impl=now_utc_impl,
-        ))
+        )
     except ValueError as exc:
-        return Err(str(exc))
+        return build_error_payload(
+            str(exc),
+            code="wait_event_error",
+            operation="wait_event",
+        )
 
 
 def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:

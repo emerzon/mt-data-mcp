@@ -18,18 +18,6 @@ _ACTIVE_OPERATIONS: ContextVar[tuple[str, ...]] = ContextVar(
 
 
 def infer_result_success(result: Any) -> bool:
-    try:
-        from ..shared.result import Err, Ok
-    except Exception:  # pragma: no cover - package always ships shared.result
-        Ok = ()  # type: ignore[assignment,misc]
-        Err = ()  # type: ignore[assignment,misc]
-    if isinstance(result, Ok):
-        if result.value is None:
-            return True
-        return infer_result_success(result.value)
-    if isinstance(result, Err):
-        return False
-
     if isinstance(result, dict):
         error_text = result.get("error")
         if isinstance(error_text, str) and error_text.strip():
@@ -167,21 +155,7 @@ def _pop_operation(operation: str) -> Optional[str]:
 
 def _failure_log_fields(result: Any) -> dict[str, Any]:
     """Extract bounded, non-payload diagnostics from a structured failure."""
-    try:
-        from ..shared.result import Err, Ok
-    except Exception:  # pragma: no cover - package always ships shared.result
-        Err = ()  # type: ignore[assignment,misc]
-        Ok = ()  # type: ignore[assignment,misc]
-
-    if isinstance(result, Ok):
-        return _failure_log_fields(result.value)
-    if isinstance(result, Err):
-        source: dict[str, Any] = {
-            "error": result.message,
-            "error_code": result.code,
-            **result.details,
-        }
-    elif isinstance(result, dict):
+    if isinstance(result, dict):
         source = result
     elif isinstance(result, list):
         source = next(

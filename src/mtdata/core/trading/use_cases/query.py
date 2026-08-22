@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from mtdata.core.error_envelope import build_error_payload
 from mtdata.core.execution_logging import run_logged_operation
 from mtdata.core.trading import validation
 from mtdata.core.trading.requests import TradeGetOpenRequest, TradeGetPendingRequest
@@ -12,7 +13,6 @@ from mtdata.core.trading.use_cases.common import (
     _trade_rows_to_dataframe,
     logger,
 )
-from mtdata.shared.result import Err, Ok, Result, to_dict
 from mtdata.utils.mt5 import MT5ConnectionError, _ensure_symbol_ready
 
 
@@ -47,10 +47,6 @@ def run_trade_get_open(
             pd_module=pd,
         ),
     )
-    if isinstance(result, Ok):
-        return result.value
-    if isinstance(result, Err):
-        return [to_dict(result)]
     return result
 
 
@@ -85,10 +81,6 @@ def run_trade_get_pending(
             pd_module=pd,
         ),
     )
-    if isinstance(result, Ok):
-        return result.value
-    if isinstance(result, Err):
-        return [to_dict(result)]
     return result
 
 
@@ -483,11 +475,17 @@ def _run_trade_query_impl(
     no_rows_message: str,
     time_source_fields: tuple[str, ...],
     build_output: Any,
-) -> Result[List[Dict[str, Any]]]:
+) -> Any:
     try:
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
-        return Err(str(exc), code="MT5_CONNECTION")
+        return [
+            build_error_payload(
+                str(exc),
+                code="MT5_CONNECTION",
+                operation="trade_query",
+            )
+        ]
 
     try:
         use_client_tz_value = bool(use_client_tz())
@@ -503,12 +501,18 @@ def _run_trade_query_impl(
             no_rows_message=no_rows_message,
         )
         if empty_response is not None:
-            return Ok(empty_response)
+            return empty_response
 
         if bool(getattr(request, "profit_only", False)) and bool(
             getattr(request, "loss_only", False)
         ):
-            return Err("profit_only and loss_only cannot both be true.")
+            return [
+                build_error_payload(
+                    "profit_only and loss_only cannot both be true.",
+                    code="trade_query_error",
+                    operation="trade_query",
+                )
+            ]
 
         df = _trade_rows_to_dataframe(rows, pd_module=pd_module)
         df = _filter_trade_query_magic(df, request)
@@ -517,7 +521,7 @@ def _run_trade_query_impl(
         if len(df) == 0:
             message = _trade_query_empty_filter_message(request)
             if message is not None:
-                return Ok([{"message": message}])
+                return [{"message": message}]
         time_utc, time_txt = _build_trade_time_columns(
             df,
             time_source_fields=time_source_fields,
@@ -540,7 +544,7 @@ def _run_trade_query_impl(
         if len(out_df) == 0:
             message = _trade_query_empty_filter_message(request)
             if message is not None:
-                return Ok([{"message": message}])
+                return [{"message": message}]
         detail = str(getattr(request, "detail", "compact") or "compact").strip().lower()
         if detail == "full":
             _append_trade_comment_metadata(
@@ -559,19 +563,23 @@ def _run_trade_query_impl(
         )
         records = out_df.to_dict(orient="records")
         if limit_value and total_count > len(records):
-            return Ok(
-                {
-                    "items": records,
-                    "total_count": int(total_count),
-                    "limit": int(limit_value),
-                    "has_more": True,
-                    "truncated": True,
-                    "more_available": int(total_count - len(records)),
-                }
-            )
-        return Ok(records)
+            return {
+                "items": records,
+                "total_count": int(total_count),
+                "limit": int(limit_value),
+                "has_more": True,
+                "truncated": True,
+                "more_available": int(total_count - len(records)),
+            }
+        return records
     except Exception as exc:
-        return Err(str(exc))
+        return [
+            build_error_payload(
+                str(exc),
+                code="trade_query_error",
+                operation="trade_query",
+            )
+        ]
 
 
 def _run_trade_get_open_impl(
@@ -585,7 +593,7 @@ def _run_trade_get_open_impl(
     normalize_limit: Any,
     comment_row_metadata: Any,
     pd_module: Any,
-) -> Result[List[Dict[str, Any]]]:
+) -> Any:
     return _run_trade_query_impl(
         request=request,
         gateway=gateway,
@@ -617,7 +625,7 @@ def _run_trade_get_pending_impl(
     normalize_limit: Any,
     comment_row_metadata: Any,
     pd_module: Any,
-) -> Result[List[Dict[str, Any]]]:
+) -> Any:
     return _run_trade_query_impl(
         request=request,
         gateway=gateway,
