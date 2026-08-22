@@ -773,7 +773,10 @@ def wait_event(
     With explicit `watch_for`, a timeout is a failed wait (`success=false`,
     `error_code=wait_event_timeout`) and produces a nonzero CLI exit status. Timeout responses set
     `timed_out=true`, return `events=[]`, identify `wait_mode`, and include the
-    requested/elapsed timing context plus a retry remediation. For singular
+    requested/elapsed timing context plus a retry remediation. When the watched
+    symbol's market is closed for the wait window, the timeout also includes
+    `market_status`, `assumed_closure_end`, and a remediation that points at
+    reopen instead of a blind retry. For singular
     waits with explicit watchers, reaching an `end_on` boundary before a match
     is also a failed wait
     (`success=false`, `matched=false`,

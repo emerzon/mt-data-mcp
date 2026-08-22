@@ -54,10 +54,19 @@ from mtdata.core.data.wait_events.ticks import (
     _wait_event_symbol_error,
 )
 from mtdata.core.trading.time import _sleep_until_next_candle
+from mtdata.utils.freshness import closed_session_context
 from mtdata.utils.market_metadata import build_tick_freshness_context
 from mtdata.utils.time import format_epoch_utc
 
 _WAIT_EVENT_IDENTITY_FIELDS = ("symbol", "ticket", "order_ticket", "position_ticket")
+_CLOSED_SESSION_TIMEOUT_FIELDS = (
+    "market_status",
+    "market_status_reason",
+    "market_status_source",
+    "assumed_closure_start",
+    "assumed_closure_end",
+    "assumed_closure_seconds",
+)
 
 def _wait_event_connection_error(gateway: Any) -> Optional[Dict[str, Any]]:
     try:
@@ -929,7 +938,73 @@ def _build_wait_result(
     )
     if quote_payload:
         result.update(quote_payload)
+    if timed_out:
+        _annotate_wait_timeout_session(
+            result,
+            request=request,
+            watch_for_payload=watch_for_payload,
+            observed_at_utc=observed_at_utc,
+        )
     return result
+
+
+def _wait_timeout_closed_session(
+    request: WaitEventRequest,
+    *,
+    watch_for_payload: List[Dict[str, Any]],
+    observed_at_utc: datetime,
+) -> Dict[str, Any]:
+    symbol = _resolved_wait_result_symbol(
+        request,
+        watch_for_payload=watch_for_payload,
+    )
+    if not symbol:
+        return {}
+    closed = closed_session_context(
+        symbol,
+        now_epoch=observed_at_utc.timestamp(),
+        item="tick",
+        data_age_seconds=0.0,
+    )
+    if not closed:
+        return {}
+    return {
+        key: closed[key]
+        for key in _CLOSED_SESSION_TIMEOUT_FIELDS
+        if key in closed
+    }
+
+
+def _annotate_wait_timeout_session(
+    result: Dict[str, Any],
+    *,
+    request: WaitEventRequest,
+    watch_for_payload: List[Dict[str, Any]],
+    observed_at_utc: datetime,
+) -> None:
+    session = _wait_timeout_closed_session(
+        request,
+        watch_for_payload=watch_for_payload,
+        observed_at_utc=observed_at_utc,
+    )
+    if not session:
+        return
+    result.update(session)
+    closure_end = session.get("assumed_closure_end")
+    result["error"] = (
+        "Wait timed out before a watched event or boundary was observed. "
+        "Market is closed; timeframe/tick events cannot fire before reopen."
+    )
+    if closure_end:
+        result["remediation"] = (
+            f"Market is closed until {closure_end}; retry after "
+            "assumed_closure_end. Do not keep waiting on an unreachable trigger."
+        )
+        return
+    result["remediation"] = (
+        "Market is closed; retry after session reopen. "
+        "Do not keep waiting on an unreachable trigger."
+    )
 
 def _wait_event_identity_payload(item: Any) -> Dict[str, Any]:
     if not isinstance(item, dict):

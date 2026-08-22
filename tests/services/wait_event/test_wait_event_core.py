@@ -902,6 +902,130 @@ def test_symbol_less_duration_timer_completes_when_clock_expires() -> None:
     assert "source" not in result
 
 
+def test_wait_event_timeout_includes_closed_weekend_session() -> None:
+    clock = FakeClock(datetime(2026, 8, 22, 15, 0, tzinfo=timezone.utc))
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            watch_for=[{
+                "type": "price_touch_level",
+                "symbol": "EURUSD",
+                "level": 100.0,
+                "price_source": "mid",
+                "direction": "up",
+                "tolerance": 0.05,
+            }],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=SequenceGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["success"] is False
+    assert result["error_code"] == "wait_event_timeout"
+    assert result["market_status"] == "closed"
+    assert result["market_status_reason"] == "weekend"
+    assert result["assumed_closure_end"] == "2026-08-23T21:00:00Z"
+    assert "Market is closed" in result["error"]
+    assert "assumed_closure_end" in result["remediation"]
+    assert "Retry the same wait" not in result["remediation"]
+
+
+def test_wait_event_timeout_omits_session_when_market_is_open() -> None:
+    clock = FakeClock(datetime(2026, 8, 19, 15, 0, tzinfo=timezone.utc))
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            watch_for=[{
+                "type": "price_touch_level",
+                "symbol": "EURUSD",
+                "level": 100.0,
+                "price_source": "mid",
+                "direction": "up",
+                "tolerance": 0.05,
+            }],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=SequenceGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["error_code"] == "wait_event_timeout"
+    assert "market_status" not in result
+    assert result["remediation"] == "Retry the same wait or increase max_wait_seconds."
+
+
+def test_wait_event_timeout_omits_weekend_session_for_crypto() -> None:
+    clock = FakeClock(datetime(2026, 8, 22, 15, 0, tzinfo=timezone.utc))
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="BTCUSD",
+            watch_for=[{
+                "type": "price_touch_level",
+                "symbol": "BTCUSD",
+                "level": 100.0,
+                "price_source": "mid",
+                "direction": "up",
+                "tolerance": 0.05,
+            }],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=SequenceGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["error_code"] == "wait_event_timeout"
+    assert "market_status" not in result
+    assert result["remediation"] == "Retry the same wait or increase max_wait_seconds."
+
+
+def test_wait_event_compact_timeout_keeps_closed_session_remediation() -> None:
+    result = core_data._compact_wait_event_public_result(
+        {
+            "success": False,
+            "status": "timeout",
+            "error_code": "wait_event_timeout",
+            "error": (
+                "Wait timed out before a watched event or boundary was observed. "
+                "Market is closed; timeframe/tick events cannot fire before reopen."
+            ),
+            "remediation": (
+                "Market is closed until 2026-08-23T21:00:00Z; retry after "
+                "assumed_closure_end. Do not keep waiting on an unreachable trigger."
+            ),
+            "market_status": "closed",
+            "market_status_reason": "weekend",
+            "assumed_closure_end": "2026-08-23T21:00:00Z",
+            "matched": False,
+            "event": None,
+            "elapsed_seconds": 10.0,
+            "poll_interval_seconds": 0.5,
+            "max_wait_seconds": 10.0,
+            "criteria": {
+                "watch_for": [{"type": "tick_count_spike", "symbol": "EURUSD"}],
+                "end_on": [],
+            },
+        },
+        explicit_watch_for=True,
+        explicit_end_on=False,
+    )
+
+    assert result["market_status"] == "closed"
+    assert result["assumed_closure_end"] == "2026-08-23T21:00:00Z"
+    assert "assumed_closure_end" in result["remediation"]
+    assert "Retry the same wait" not in result["remediation"]
+
+
 def test_inferred_market_watcher_reports_timeout_when_unmatched() -> None:
     request = WaitEventRequest(
         symbol="EURUSD",

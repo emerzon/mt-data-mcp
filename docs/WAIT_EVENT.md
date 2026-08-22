@@ -68,7 +68,10 @@ mtdata-cli wait_event EURUSD --max-wait-seconds 30 \
 
 If nothing fills in time, the command fails (`success=false`,
 `error_code=wait_event_timeout`) and the CLI exits nonzero. That is
-intentional: a script can decide whether to retry.
+intentional: a script can decide whether to retry. When the symbol's market
+is closed — for example the FX weekend — the timeout also reports
+`market_status=closed` and `assumed_closure_end`, and the remediation points
+at reopen instead of asking you to wait longer.
 
 Omitting `--watch-for` in duration mode makes this a pure timer. It does not
 connect to MT5 or poll order, position, or market state. Completion reports
