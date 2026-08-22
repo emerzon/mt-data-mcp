@@ -328,7 +328,6 @@ class TestFetchCandlesCore(unittest.TestCase):
             },
         ),
     )
-    @patch(f'{_DS}.fetch_ticks')
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
     @patch(
@@ -345,7 +344,6 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_info,
         mock_from,
         mock_cfg,
-        mock_fetch_ticks,
         mock_live_spread,
     ):
         mock_cfg.get_time_offset_seconds.return_value = 0
@@ -385,7 +383,6 @@ class TestFetchCandlesCore(unittest.TestCase):
         ]
         self.assertEqual(len(spread_warnings), 1)
         mock_live_spread.assert_called_once_with('EURUSD')
-        mock_fetch_ticks.assert_not_called()
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -527,8 +524,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_cfg.get_server_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(6, base_ts=base_ts, step=3600)
-        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60), \
-             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60):
             result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
@@ -551,8 +547,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_cfg.get_server_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates_array(6, base_ts=base_ts, step=3600)
-        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60), \
-             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts - 60):
             result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
@@ -611,8 +606,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_cfg.get_server_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(6, base_ts=base_ts, step=3600)
-        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts + 7200), \
-             patch(f'{_DS}.mt5.symbol_info_tick', return_value=SimpleNamespace(time=base_ts + 120)):
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=base_ts + 7200):
             result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
@@ -1158,16 +1152,21 @@ class TestFetchCandlesCore(unittest.TestCase):
     ):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_cfg.get_server_tz.return_value = ZoneInfo('Europe/Nicosia')
+        mock_cfg.time_offset_minutes = 0
         bar_open = datetime(2026, 8, 5, 21, tzinfo=_UTC).timestamp()
         mock_range.return_value = _make_rates(2, base_ts=bar_open, step=86_400)
 
-        result = fetch_candles(
-            'EURUSD',
-            timeframe='D1',
-            limit=10,
-            start='2026-08-04',
-            end='2026-08-06',
-        )
+        with patch(
+            'mtdata.services.data_service.query.mt5_config',
+            mock_cfg,
+        ):
+            result = fetch_candles(
+                'EURUSD',
+                timeframe='D1',
+                limit=10,
+                start='2026-08-04',
+                end='2026-08-06',
+            )
 
         self.assertEqual(result['data'][-1]['broker_trading_day'], '2026-08-06')
         self.assertEqual(result['data'][-1]['broker_session_date'], '2026-08-06')

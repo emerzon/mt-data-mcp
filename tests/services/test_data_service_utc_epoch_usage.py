@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from mtdata.services import data_service
+from mtdata.services.data_service import query as data_service_query
 
 
 def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
@@ -195,16 +196,58 @@ def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
 
 
 def test_daily_date_only_bounds_fail_without_broker_timezone() -> None:
-    with patch.object(data_service.candles.mt5_config, "get_server_tz", return_value=None):
-        data_service.candles.mt5_config.time_offset_minutes = 0
-        parsed, error = data_service.candles._parse_fetch_datetime_arg(
-            "2026-08-13",
-            timeframe="D1",
-        )
+    config = data_service.candles.mt5_config
+    original_offset = config.time_offset_minutes
+    with patch.object(config, "get_server_tz", return_value=None):
+        config.time_offset_minutes = 0
+        try:
+            parsed, error = data_service.candles._parse_fetch_datetime_arg(
+                "2026-08-13",
+                timeframe="D1",
+            )
+        finally:
+            config.time_offset_minutes = original_offset
 
     assert parsed is None
     assert error is not None
     assert "MT5_SERVER_TZ" in error
+    assert "MT5_TIME_OFFSET_MINUTES" in error
+
+
+def test_daily_date_only_bounds_succeed_with_static_offset() -> None:
+    config = data_service.candles.mt5_config
+    original_offset = config.time_offset_minutes
+    with patch.object(config, "get_server_tz", return_value=None):
+        config.time_offset_minutes = 180
+        try:
+            parsed, error = data_service.candles._parse_fetch_datetime_arg(
+                "2026-08-13",
+                timeframe="D1",
+            )
+        finally:
+            config.time_offset_minutes = original_offset
+
+    assert error is None
+    assert parsed == datetime(2026, 8, 12, 21, tzinfo=timezone.utc)
+
+
+def test_daily_date_bounds_prefer_static_offset_over_named_zone() -> None:
+    config = data_service.candles.mt5_config
+    original_offset = config.time_offset_minutes
+    with patch.object(config, "get_server_tz", return_value=ZoneInfo("Europe/Athens")):
+        config.time_offset_minutes = 120
+        try:
+            query = data_service.candles._candle_query_applied(
+                timeframe="D1",
+                start="2026-08-13",
+                end="2026-08-13",
+                limit=10,
+            )
+        finally:
+            config.time_offset_minutes = original_offset
+
+    assert query["resolved_start"] == "2026-08-12T22:00:00Z"
+    assert query["resolved_end"] == "2026-08-13T21:59:59.999999Z"
 
 
 def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
@@ -217,7 +260,7 @@ def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
             return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
 
     with (
-        patch.object(data_service.candles, "datetime", FixedDateTime),
+        patch.object(data_service_query, "datetime", FixedDateTime),
         patch.object(data_service.candles.mt5_config, "get_server_tz", return_value=broker_tz),
     ):
         week_start, week_error = data_service.candles._parse_fetch_datetime_arg(

@@ -1,11 +1,5 @@
-
-import errno
-import json
-import logging
 import math
-import re
 import time
-import warnings
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 from numbers import Real
@@ -13,71 +7,24 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
 
-from ...bootstrap.settings import mt5_config
-from ...core.error_envelope import build_error_payload
-from ...core.output_contract import normalize_output_detail
 from ...shared.constants import (
     DEFAULT_ROW_LIMIT,
     FETCH_RETRY_ATTEMPTS,
     FETCH_RETRY_DELAY,
-    SANITY_BARS_TOLERANCE,
     SIMPLIFY_DEFAULT_METHOD,
     SIMPLIFY_DEFAULT_MODE,
-    SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
-    TI_NAN_WARMUP_FACTOR,
-    TI_NAN_WARMUP_MIN_ADD,
     TICKS_LOOKBACK_DAYS,
-    TIMEFRAME_MAP,
-    TIMEFRAME_SECONDS,
 )
 from ...shared.market_units import forex_points_per_pip
-from ...shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
-from ...shared.validators import invalid_timeframe_error
-from ...utils.coercion import round_finite
-from ...utils.denoise import (
-    DenoiseCausalityError,
-    consume_denoise_warnings,
-)
-from ...utils.denoise import (
-    apply_denoise as apply_denoise_util,
-)
-from ...utils.denoise import (
-    normalize_denoise_spec as _normalize_denoise_spec,
-)
-from ...utils.freshness import closed_session_context, is_standard_weekend_closure
-from ...utils.indicators import (
-    _apply_ta_indicators,
-    _estimate_warmup_bars,
-    _find_unknown_ta_indicators,
-    _parse_ti_specs,
-)
-from ...utils.market_metadata import (
-    FRESHNESS_ANCHOR_QUERY_EXPECTED_END,
-    FRESHNESS_ANCHOR_WALL_CLOCK,
-    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
-    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
-    TICK_VOLUME_COMPARISON_NOTE,
-    TICK_VOLUME_EVENT_BASIS,
-    TICK_VOLUME_TAPE_EQUIVALENT,
-    build_tick_freshness_context,
-)
-
-# Imports from utils
+from ...shared.schema import SimplifySpec
+from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.mt5 import (
-    _mt5_copy_rates_from,
-    _mt5_copy_rates_from_pos,
-    _mt5_copy_rates_range,
     _mt5_copy_ticks_range,
-    _rates_to_df,
     _symbol_ready_guard,
     describe_mt5_time_normalization,
-    get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     mt5,
     resolve_broker_symbol_name,
-)
-from ...utils.mt5 import (
-    symbol_candle_price_basis as _symbol_candle_price_basis,
 )
 from ...utils.mt5 import (
     symbol_path as _symbol_path,
@@ -91,7 +38,6 @@ from ...utils.mt5 import (
 from ...utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
-from ...utils.ohlcv import validate_and_clean_ohlcv_frame
 from ...utils.quote import (
     canonical_quote_midpoint,
     canonical_quote_spread,
@@ -100,8 +46,6 @@ from ...utils.quote import (
     tick_epoch,
 )
 from ...utils.quote import tick_value as _tick_field_value
-
-# Simplify entrypoint and helpers.
 from ...utils.simplify import (
     _choose_simplify_points,
     _lttb_select_indices,
@@ -109,27 +53,14 @@ from ...utils.simplify import (
     _simplify_dataframe_rows_ext,
 )
 from ...utils.tick_flags import is_mt5_trade_event
-from ...utils.time import (
-    _format_datetime_minute_explicit,
-    _format_time_explicit,
-    _format_time_explicit_local,
-    _localize_broker_calendar_time,
-    _resolve_client_tz,
-    bar_close_epoch,
-    format_datetime_utc,
-    format_epoch_utc,
-)
+from ...utils.time import _format_time_explicit, _resolve_client_tz
 from ...utils.utils import (
-    _calendar_period_bounds,
     _format_numeric_rows_from_df,
     _iana_timezone_datetime_issue,
-    _is_calendar_period_expression,
-    _normalize_ohlcv_arg,
     _parse_end_datetime,
     _parse_start_datetime,
     _table_from_rows,
     _utc_epoch_seconds,
-    coerce_scalar,
 )
 from .candles import (
     _normalize_simplify_spec,
@@ -137,7 +68,8 @@ from .candles import (
     _round_row_price_columns,
     _timezone_label,
 )
-from .errors import _DATE_FORMAT_HINT, _future_start_error
+from .errors import _future_start_error
+from .query import _DATE_FORMAT_HINT
 
 _TICK_COUNT_EVENT_BASIS = "mt5_copy_ticks_all_records"
 

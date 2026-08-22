@@ -1,142 +1,20 @@
-
-import errno
-import json
-import logging
 import math
-import re
 import time
-import warnings
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
-from numbers import Real
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import pandas as pd
-
-from ...bootstrap.settings import mt5_config
 from ...core.error_envelope import build_error_payload
-from ...core.output_contract import normalize_output_detail
-from ...shared.constants import (
-    DEFAULT_ROW_LIMIT,
-    FETCH_RETRY_ATTEMPTS,
-    FETCH_RETRY_DELAY,
-    SANITY_BARS_TOLERANCE,
-    SIMPLIFY_DEFAULT_METHOD,
-    SIMPLIFY_DEFAULT_MODE,
-    SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
-    TI_NAN_WARMUP_FACTOR,
-    TI_NAN_WARMUP_MIN_ADD,
-    TICKS_LOOKBACK_DAYS,
-    TIMEFRAME_MAP,
-    TIMEFRAME_SECONDS,
-)
-from ...shared.market_units import forex_points_per_pip
-from ...shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
-from ...shared.validators import invalid_timeframe_error
-from ...utils.coercion import round_finite
-from ...utils.denoise import (
-    DenoiseCausalityError,
-    consume_denoise_warnings,
-)
-from ...utils.denoise import (
-    apply_denoise as apply_denoise_util,
-)
-from ...utils.denoise import (
-    normalize_denoise_spec as _normalize_denoise_spec,
-)
+from ...shared.schema import TimeframeLiteral
 from ...utils.freshness import closed_session_context, is_standard_weekend_closure
-from ...utils.indicators import (
-    _apply_ta_indicators,
-    _estimate_warmup_bars,
-    _find_unknown_ta_indicators,
-    _parse_ti_specs,
-)
-from ...utils.market_metadata import (
-    FRESHNESS_ANCHOR_QUERY_EXPECTED_END,
-    FRESHNESS_ANCHOR_WALL_CLOCK,
-    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
-    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
-    TICK_VOLUME_COMPARISON_NOTE,
-    TICK_VOLUME_EVENT_BASIS,
-    TICK_VOLUME_TAPE_EQUIVALENT,
-    build_tick_freshness_context,
-)
-
-# Imports from utils
 from ...utils.mt5 import (
-    _mt5_copy_rates_from,
     _mt5_copy_rates_from_pos,
-    _mt5_copy_rates_range,
-    _mt5_copy_ticks_range,
-    _rates_to_df,
-    _symbol_ready_guard,
-    describe_mt5_time_normalization,
-    get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     mt5,
-    resolve_broker_symbol_name,
 )
-from ...utils.mt5 import (
-    symbol_candle_price_basis as _symbol_candle_price_basis,
-)
-from ...utils.mt5 import (
-    symbol_path as _symbol_path,
-)
-from ...utils.mt5 import (
-    symbol_price_currency as _symbol_price_currency,
-)
-from ...utils.mt5 import (
-    symbol_price_digits as _symbol_price_digits,
-)
-from ...utils.mt5 import (
-    symbol_price_point as _symbol_price_point,
-)
-from ...utils.ohlcv import validate_and_clean_ohlcv_frame
-from ...utils.quote import (
-    canonical_quote_midpoint,
-    canonical_quote_spread,
-    enforce_quote_execution_readiness,
-    resolve_quote_tick,
-    tick_epoch,
-)
-from ...utils.quote import tick_value as _tick_field_value
-
-# Simplify entrypoint and helpers.
-from ...utils.simplify import (
-    _choose_simplify_points,
-    _lttb_select_indices,
-    _select_indices_for_timeseries,
-    _simplify_dataframe_rows_ext,
-)
-from ...utils.tick_flags import is_mt5_trade_event
-from ...utils.time import (
-    _format_datetime_minute_explicit,
-    _format_time_explicit,
-    _format_time_explicit_local,
-    _localize_broker_calendar_time,
-    _resolve_client_tz,
-    bar_close_epoch,
-    format_datetime_utc,
-    format_epoch_utc,
-)
-from ...utils.utils import (
-    _calendar_period_bounds,
-    _format_numeric_rows_from_df,
-    _iana_timezone_datetime_issue,
-    _is_calendar_period_expression,
-    _normalize_ohlcv_arg,
-    _parse_end_datetime,
-    _parse_start_datetime,
-    _table_from_rows,
-    _utc_epoch_seconds,
-    coerce_scalar,
-)
-
-_DATE_FORMAT_HINT = (
-    "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
-    "'2026-01-15T14:30:00Z', '2026-01-15 09:30 America/New_York', "
-    "'yesterday', '2 days ago', 'last Friday'."
-)
+from ...utils.time import _format_time_explicit
+from ...utils.utils import _utc_epoch_seconds
+from .query import _candle_query_applied, _parse_fetch_datetime_arg
 
 
 def _format_mt5_last_error() -> str:
@@ -233,8 +111,7 @@ def _build_no_data_error_with_context(
     """Build a detailed error payload when no data is available for the requested range."""
     error_msg = "No data available"
     details: Dict[str, Any] = {}
-    
-    # Add requested range to context if provided
+
     if start_datetime or end_datetime:
         details["requested_range"] = {
             k: v for k, v in [("start", start_datetime), ("end", end_datetime)]
@@ -243,10 +120,7 @@ def _build_no_data_error_with_context(
     details.update(
         _bounded_weekend_no_data_context(symbol, start_datetime, end_datetime)
     )
-    
-    # Fetch only the latest available bar. Error construction must remain cheap;
-    # discovering the terminal's full historical floor would require an
-    # unbounded history read.
+
     try:
         available_bars = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
 
@@ -270,7 +144,6 @@ def _build_no_data_error_with_context(
                 "earliest_status": "not_scanned",
             }
 
-            # Provide a suggestion based on the mismatch
             if start_datetime:
                 try:
                     req_start, _ = _parse_fetch_datetime_arg(
@@ -287,9 +160,8 @@ def _build_no_data_error_with_context(
                 except Exception:
                     pass
     except Exception:
-        # Silently ignore any errors when trying to get available range
         pass
-    
+
     payload = build_error_payload(
         error_msg,
         code="data_fetch_candles_no_data",
@@ -327,6 +199,3 @@ def _future_start_error(
     except Exception:
         return None
     return None
-
-
-from .candles import _candle_query_applied, _parse_fetch_datetime_arg

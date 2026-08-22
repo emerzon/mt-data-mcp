@@ -394,7 +394,10 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             step=7 * 86_400,
         )
 
-        with patch(f"{_DS}._broker_calendar_timezone", return_value=_UTC):
+        with patch(
+            "mtdata.services.data_service.query._broker_calendar_timezone",
+            return_value=_UTC,
+        ):
             result, err = _fetch_rates_with_warmup(
                 "EURUSD",
                 32769,
@@ -1089,10 +1092,5 @@ def test_live_bar_reference_uses_wall_clock_when_tick_is_stale(monkeypatch):
     from mtdata.services import data_service
 
     monkeypatch.setattr(data_service.candles, "_utc_epoch_seconds", lambda _value: 1_000.0)
-    monkeypatch.setattr(
-        data_service.candles.mt5,
-        "symbol_info_tick",
-        lambda _symbol: type("Tick", (), {"time": 900.0})(),
-    )
 
     assert data_service.candles._resolve_live_bar_reference_epoch("EURUSD", "M1") == 1_000.0

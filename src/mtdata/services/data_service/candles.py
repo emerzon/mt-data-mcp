@@ -1,4 +1,3 @@
-
 import errno
 import json
 import logging
@@ -8,29 +7,24 @@ import time
 import warnings
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
-from numbers import Real
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from ...bootstrap.settings import mt5_config
 from ...core.error_envelope import build_error_payload
-from ...core.output_contract import normalize_output_detail
 from ...shared.constants import (
     DEFAULT_ROW_LIMIT,
     FETCH_RETRY_ATTEMPTS,
     FETCH_RETRY_DELAY,
     SANITY_BARS_TOLERANCE,
-    SIMPLIFY_DEFAULT_METHOD,
     SIMPLIFY_DEFAULT_MODE,
     SIMPLIFY_DEFAULT_POINTS_RATIO_FROM_LIMIT,
     TI_NAN_WARMUP_FACTOR,
     TI_NAN_WARMUP_MIN_ADD,
-    TICKS_LOOKBACK_DAYS,
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
-from ...shared.market_units import forex_points_per_pip
 from ...shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 from ...shared.validators import invalid_timeframe_error
 from ...utils.coercion import round_finite
@@ -44,7 +38,7 @@ from ...utils.denoise import (
 from ...utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ...utils.freshness import closed_session_context, is_standard_weekend_closure
+from ...utils.freshness import closed_session_context
 from ...utils.indicators import (
     _apply_ta_indicators,
     _estimate_warmup_bars,
@@ -59,28 +53,19 @@ from ...utils.market_metadata import (
     TICK_VOLUME_COMPARISON_NOTE,
     TICK_VOLUME_EVENT_BASIS,
     TICK_VOLUME_TAPE_EQUIVALENT,
-    build_tick_freshness_context,
 )
-
-# Imports from utils
 from ...utils.mt5 import (
     _mt5_copy_rates_from,
-    _mt5_copy_rates_from_pos,
     _mt5_copy_rates_range,
-    _mt5_copy_ticks_range,
     _rates_to_df,
     _symbol_ready_guard,
     describe_mt5_time_normalization,
     get_cached_mt5_time_alignment,
     get_symbol_info_cached,
-    mt5,
     resolve_broker_symbol_name,
 )
 from ...utils.mt5 import (
     symbol_candle_price_basis as _symbol_candle_price_basis,
-)
-from ...utils.mt5 import (
-    symbol_path as _symbol_path,
 )
 from ...utils.mt5 import (
     symbol_price_currency as _symbol_price_currency,
@@ -92,38 +77,17 @@ from ...utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
 from ...utils.ohlcv import validate_and_clean_ohlcv_frame
-from ...utils.quote import (
-    canonical_quote_midpoint,
-    canonical_quote_spread,
-    enforce_quote_execution_readiness,
-    resolve_quote_tick,
-    tick_epoch,
-)
-from ...utils.quote import tick_value as _tick_field_value
-
-# Simplify entrypoint and helpers.
-from ...utils.simplify import (
-    _choose_simplify_points,
-    _lttb_select_indices,
-    _select_indices_for_timeseries,
-    _simplify_dataframe_rows_ext,
-)
-from ...utils.tick_flags import is_mt5_trade_event
+from ...utils.simplify import _simplify_dataframe_rows_ext
 from ...utils.time import (
     _format_datetime_minute_explicit,
     _format_time_explicit,
     _format_time_explicit_local,
-    _localize_broker_calendar_time,
     _resolve_client_tz,
     bar_close_epoch,
-    format_datetime_utc,
     format_epoch_utc,
 )
 from ...utils.utils import (
-    _calendar_period_bounds,
     _format_numeric_rows_from_df,
-    _iana_timezone_datetime_issue,
-    _is_calendar_period_expression,
     _normalize_ohlcv_arg,
     _parse_end_datetime,
     _parse_start_datetime,
@@ -132,10 +96,16 @@ from ...utils.utils import (
     coerce_scalar,
 )
 from .errors import (
-    _DATE_FORMAT_HINT,
     _build_no_data_error_with_context,
     _describe_rate_fetch_error,
     _future_start_error,
+)
+from .query import (
+    _broker_calendar_timezone,
+    _candle_query_applied,
+    _is_calendar_query_bound,
+    _parse_candle_calendar_bound,
+    _parse_fetch_datetime_arg,
 )
 
 logger = logging.getLogger(__name__)
@@ -771,175 +741,6 @@ def _fetch_rates_with_warmup(  # noqa: C901
     return rates, None
 
 
-def _parse_fetch_datetime_arg(
-    value: str,
-    *,
-    end_bound: bool = False,
-    timeframe: Optional[str] = None,
-) -> tuple[Optional[datetime], Optional[str]]:
-    try:
-        parsed = _parse_candle_calendar_bound(
-            value,
-            timeframe=timeframe,
-            end_bound=end_bound,
-        )
-    except ValueError as exc:
-        return None, str(exc)
-    if parsed is None:
-        parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
-    if parsed is None:
-        issue = _iana_timezone_datetime_issue(value)
-        if issue is not None:
-            return None, f"{issue['error']} {issue['remediation']}"
-        return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt_timezone.utc)
-    else:
-        parsed = parsed.astimezone(dt_timezone.utc)
-    return parsed, None
-
-
-def _broker_calendar_timezone() -> Any:
-    try:
-        broker_tz = mt5_config.get_server_tz()
-    except Exception:
-        broker_tz = None
-    if broker_tz is not None:
-        return broker_tz
-    try:
-        static_offset_minutes = int(getattr(mt5_config, "time_offset_minutes", 0) or 0)
-    except (TypeError, ValueError):
-        static_offset_minutes = 0
-    if static_offset_minutes:
-        return dt_timezone(timedelta(minutes=static_offset_minutes))
-    return None
-
-
-def _missing_broker_session_timezone_error(
-    timeframe: Optional[str],
-    value: Optional[str],
-) -> Optional[str]:
-    if timeframe not in {"D1", "W1", "MN1"} or not _is_calendar_query_bound(value):
-        return None
-    if _broker_calendar_timezone() is not None:
-        return None
-    return (
-        f"{timeframe} date-only and calendar bounds need MT5_SERVER_TZ so they "
-        "resolve broker-local session days. Set MT5_SERVER_TZ (for example "
-        "Europe/Nicosia) or pass an explicit UTC timestamp."
-    )
-
-
-def _parse_candle_calendar_bound(
-    value: Optional[str],
-    *,
-    timeframe: Optional[str],
-    end_bound: bool,
-) -> Optional[datetime]:
-    """Resolve D1/W1/MN1 calendar labels at broker-local midnight."""
-    if timeframe not in {"D1", "W1", "MN1"} or not _is_calendar_query_bound(value):
-        return None
-    tz_error = _missing_broker_session_timezone_error(timeframe, value)
-    if tz_error:
-        raise ValueError(tz_error)
-    broker_tz = _broker_calendar_timezone()
-    if broker_tz is None:
-        raise ValueError(
-            _missing_broker_session_timezone_error(timeframe, value)
-            or "Broker session timezone is not configured."
-        )
-    text = str(value or "").strip()
-    if _is_iso_date_only(text):
-        local_date = datetime.strptime(text, "%Y-%m-%d").date()
-        local_bound = datetime.combine(
-            local_date,
-            datetime.max.time() if end_bound else datetime.min.time(),
-        )
-    else:
-        period = _calendar_period_bounds(
-            text,
-            now=datetime.now(dt_timezone.utc),
-            calendar_timezone=broker_tz,
-        )
-        if period is None:
-            return None
-        local_bound = period[1] if end_bound else period[0]
-    return _localize_broker_calendar_time(
-        broker_tz,
-        local_bound,
-    ).astimezone(dt_timezone.utc)
-
-
-def _format_resolved_query_bound(value: datetime) -> str:
-    """Format a parsed query bound without hiding an inclusive day-end."""
-    resolved = (
-        value.replace(tzinfo=dt_timezone.utc)
-        if value.tzinfo is None
-        else value.astimezone(dt_timezone.utc)
-    )
-    timespec = "microseconds" if resolved.microsecond else "seconds"
-    return format_datetime_utc(resolved, timespec=timespec)
-
-
-def _is_calendar_query_bound(value: Optional[str]) -> bool:
-    return _is_iso_date_only(value) or _is_calendar_period_expression(value)
-
-
-def _candle_query_applied(
-    *,
-    timeframe: TimeframeLiteral,
-    start: Optional[str],
-    end: Optional[str],
-    limit: Optional[int],
-) -> Dict[str, Any]:
-    query: Dict[str, Any] = {"mode": "range", "timeframe": timeframe}
-    if limit is not None:
-        query["limit"] = int(limit)
-    calendar_session_bounds = timeframe in {"D1", "W1", "MN1"} and (
-        _is_calendar_query_bound(start) or _is_calendar_query_bound(end)
-    )
-    if calendar_session_bounds:
-        query["bound_basis"] = "broker_session_calendar"
-    elif _is_calendar_query_bound(start) or _is_calendar_query_bound(end):
-        query["bound_basis"] = "utc_calendar"
-    if end not in (None, ""):
-        query["end_filter"] = (
-            "bar_open_calendar_period"
-            if _is_calendar_query_bound(end)
-            else "bar_close"
-        )
-
-    for name, raw_value, end_bound in (
-        ("start", start, False),
-        ("end", end, True),
-    ):
-        if raw_value in (None, ""):
-            continue
-        query[name] = raw_value
-        resolved, _ = _parse_fetch_datetime_arg(
-            raw_value,
-            end_bound=end_bound,
-            timeframe=timeframe,
-        )
-        if resolved is None:
-            continue
-        query[f"resolved_{name}"] = _format_resolved_query_bound(resolved)
-        is_iso_day = _is_iso_date_only(raw_value)
-        is_natural_period = _is_calendar_period_expression(raw_value)
-        if calendar_session_bounds and (is_iso_day or is_natural_period):
-            bound_mode = "inclusive_broker_session_period"
-        elif is_iso_day:
-            bound_mode = "inclusive_day_end" if end_bound else "inclusive_day_start"
-        elif is_natural_period:
-            period = _calendar_period_bounds(str(raw_value))
-            period_kind = period[2] if period is not None else "day"
-            bound_mode = f"inclusive_{period_kind}_{'end' if end_bound else 'start'}"
-        else:
-            bound_mode = "inclusive_instant"
-        query[f"{name}_bound"] = bound_mode
-    return query
-
-
 def _mt5_history_start_with_warmup(
     start: datetime,
     warmup_seconds: int,
@@ -1105,13 +906,6 @@ def _trim_df_to_target(
     else:
         out = df.iloc[-candles:] if len(df) > candles else df
     return out.copy() if copy_rows else out
-
-
-def _is_iso_date_only(value: Optional[str]) -> bool:
-    return bool(
-        value is not None
-        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value).strip())
-    )
 
 
 def _next_calendar_period_date(value: Any, timeframe: str):
@@ -2855,7 +2649,9 @@ def fetch_candles(  # noqa: C901
                 )
             if spread_available_count == 0:
                 try:
-                    live_spread, reference_freshness = _live_tick_spread_reference(symbol)
+                    live_spread, reference_freshness = _live_tick_spread_reference(
+                        symbol
+                    )
                     if live_spread is not None:
                         estimate = float(live_spread)
                         payload.setdefault("warnings", []).append(
@@ -2901,4 +2697,7 @@ def fetch_candles(  # noqa: C901
         }
 
 
-from .ticks import _live_tick_spread_reference, fetch_ticks
+def _live_tick_spread_reference(symbol: str):
+    from .ticks import _live_tick_spread_reference as resolve_live_tick_spread
+
+    return resolve_live_tick_spread(symbol)
