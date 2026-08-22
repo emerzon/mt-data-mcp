@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from mtdata.core import causal
-from mtdata.core.causal import common, cointegration, correlation, cross, discover
+from mtdata.core.causal import cointegration, common, correlation, cross, discover
 
 _TOOL_MODULES = {
     "causal_discover_signals": discover,

@@ -16,8 +16,6 @@ from mtdata.core import forecast as cf
 from mtdata.core import options as opt
 from mtdata.forecast import barriers_shared
 from mtdata.forecast import use_cases as forecast_use_cases
-from mtdata.forecast.use_cases import compact as forecast_compact
-from mtdata.forecast.use_cases import sktime_index as forecast_sktime_index
 from mtdata.forecast.exceptions import ForecastError, ModelCompatibilityError
 from mtdata.forecast.requests import (
     ForecastBacktestRequest,
@@ -30,6 +28,8 @@ from mtdata.forecast.requests import (
     ForecastTuneOptunaRequest,
     ForecastVolatilityEstimateRequest,
 )
+from mtdata.forecast.use_cases import compact as forecast_compact
+from mtdata.forecast.use_cases import sktime_index as forecast_sktime_index
 from mtdata.utils.mt5 import MT5ConnectionError
 
 

@@ -1201,7 +1201,6 @@ def _check_symbol_market_status(
             "(heuristic from MT5 trade_mode and tick freshness)."
         )
 
-    quote_epoch = tick_epoch(tick)
     observed_epoch = now_utc.timestamp()
     fetched_epoch = observed_epoch
     result: Dict[str, Any] = {

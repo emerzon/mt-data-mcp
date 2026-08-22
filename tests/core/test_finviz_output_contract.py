@@ -2,7 +2,6 @@ from unittest.mock import patch
 
 import pytest
 
-from mtdata.core.finviz.common import _normalize_finviz_market_payload
 from mtdata.core.finviz import (
     finviz_calendar,
     finviz_earnings,
@@ -13,6 +12,7 @@ from mtdata.core.finviz import (
     finviz_peers,
     finviz_ratings,
 )
+from mtdata.core.finviz.common import _normalize_finviz_market_payload
 
 
 def _unwrap(fn):
