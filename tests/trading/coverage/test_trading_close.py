@@ -349,7 +349,12 @@ class TestTradeClose:
             __cli_raw=True,
         )
         mock_close.assert_not_called()
-        mock_cancel.assert_called_once_with(ticket=123, symbol=None, comment=None)
+        mock_cancel.assert_called_once_with(
+            ticket=123,
+            symbol=None,
+            comment=None,
+            dry_run=False,
+        )
         assert out["cancelled_count"] == 1
 
     @patch("mtdata.core.trading._cancel_pending")
@@ -384,6 +389,7 @@ class TestTradeClose:
             close_priority=None,
             comment=None,
             deviation=20,
+            dry_run=False,
         )
         mock_cancel.assert_not_called()
 
@@ -528,7 +534,7 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_symbol_bulk_close_dry_run_does_not_require_live_confirmation(self, mock_close, mock_cancel):
+    def test_symbol_bulk_close_dry_run_requires_confirmation(self, mock_close, mock_cancel):
         mock_close.return_value = {
             "success": True,
             "matched_count": 0,
@@ -537,9 +543,10 @@ class TestTradeClose:
             "message": "No open positions for EURUSD",
         }
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
-        assert out["success"] is True
+        assert out["success"] is False
         assert out["dry_run"] is True
-        assert out["preview_ok"] is True
+        assert out["preview_ok"] is False
+        assert out["required_confirmation"] == "--confirm-close-all true"
         assert out["would_send_order"] is False
         assert out["operation"] == "close_symbol_positions"
         assert out["symbol"] == "EURUSD"
@@ -688,7 +695,11 @@ class TestTradeClose:
             "pending_orders": "ok",
         }
         mock_close.assert_called_once()
-        mock_cancel.assert_called_once_with(symbol="EURUSD", comment=None)
+        mock_cancel.assert_called_once_with(
+            symbol="EURUSD",
+            comment=None,
+            dry_run=False,
+        )
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
@@ -741,7 +752,12 @@ class TestTradeClose:
             ],
         }
 
-        out = trade_close(magic=3001, dry_run=True, __cli_raw=True)
+        out = trade_close(
+            magic=3001,
+            dry_run=True,
+            confirm_close_all=True,
+            __cli_raw=True,
+        )
 
         assert out["success"] is True
         assert out["preview_ok"] is True
@@ -773,6 +789,7 @@ class TestTradeClose:
             symbol="EURUSD",
             target="all_exposure",
             dry_run=True,
+            confirm_close_all=True,
             __cli_raw=True,
         )
 
@@ -784,6 +801,62 @@ class TestTradeClose:
         assert out["cancelled_pending_orders"]["matched_pending_count"] == 1
         mock_close.assert_called_once()
         mock_cancel.assert_called_once()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_all_exposure_dry_run_ands_child_preview_ok(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_close.return_value = {
+            "success": True,
+            "matched_count": 1,
+            "preview_ok": False,
+        }
+        mock_cancel.return_value = {
+            "success": True,
+            "matched_pending_count": 0,
+            "preview_ok": True,
+        }
+
+        out = trade_close(
+            symbol="EURUSD",
+            target="all_exposure",
+            dry_run=True,
+            confirm_close_all=True,
+            __cli_raw=True,
+        )
+
+        assert out["success"] is False
+        assert out["preview_ok"] is False
+        assert out["error_code"] == "preview_blocked"
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_empty_pending_dry_run_does_not_claim_cancel(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_cancel.return_value = {
+            "success": True,
+            "matched_pending_count": 0,
+            "would_cancel_pending_orders": 0,
+            "message": "No pending orders",
+        }
+
+        out = trade_close(
+            close_all=True,
+            target="pending",
+            dry_run=True,
+            confirm_close_all=True,
+            __cli_raw=True,
+        )
+
+        assert out["would_cancel_pending_order"] is False
+        assert out["would_cancel_pending_orders"] == 0
+        mock_close.assert_not_called()
 
 
 # ===================================================================

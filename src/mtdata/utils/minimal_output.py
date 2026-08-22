@@ -882,6 +882,10 @@ def _normalize_trade_payload(  # noqa: C901
             "preview_ok",
             "would_send_order",
             "would_send_orders",
+            "would_cancel_pending_order",
+            "order_sent",
+            "required_confirmation",
+            "protection_removed",
         ):
             _maybe_add_trade_key(out, key, payload.get(key))
         _maybe_add_trade_key(out, "checked_scopes", payload.get("checked_scopes"))
@@ -1033,6 +1037,10 @@ def _normalize_trade_payload(  # noqa: C901
     _maybe_add_trade_key(out, "take_profit", requested_tp)
     _maybe_add_trade_key(out, "applied_sl", applied_sl)
     _maybe_add_trade_key(out, "applied_tp", applied_tp)
+    _maybe_add_trade_key(out, "protection_removed", payload.get("protection_removed"))
+    _maybe_add_trade_key(out, "required_confirmation", payload.get("required_confirmation"))
+    _maybe_add_trade_key(out, "order_sent", payload.get("order_sent"))
+    _maybe_add_trade_key(out, "would_cancel_pending_order", payload.get("would_cancel_pending_order"))
     _maybe_add_trade_key(out, "expiration", payload.get("expiration"))
     _maybe_add_trade_key(
         out, "expiration_normalized", payload.get("expiration_normalized")

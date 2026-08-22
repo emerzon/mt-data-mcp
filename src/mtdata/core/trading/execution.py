@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from ...bootstrap.settings import trade_guardrails_config
+from ...utils.freshness import QUOTE_LIVE_SECONDS
 from ...utils.mt5 import _to_mt5_history_epoch_seconds
 from ...utils.quote import resolve_quote_tick
 from . import comments, time, validation
@@ -444,6 +445,49 @@ def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     return success_count
 
 
+def _protection_removed_fields(
+    explicit_remove_sl: bool,
+    explicit_remove_tp: bool,
+) -> List[str]:
+    removed: List[str] = []
+    if explicit_remove_sl:
+        removed.append("stop_loss")
+    if explicit_remove_tp:
+        removed.append("take_profit")
+    return removed
+
+
+def _modify_freshness_block(
+    freshness_error: Dict[str, Any],
+    *,
+    dry_run: bool,
+    ticket: Any,
+    symbol: str,
+    applied_sl: Any = None,
+    applied_tp: Any = None,
+    protection_removed: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    if not dry_run:
+        return freshness_error
+    out: Dict[str, Any] = {
+        "success": False,
+        "dry_run": True,
+        "preview_ok": False,
+        "would_send_order": False,
+        "error_code": "preview_blocked",
+        "ticket": ticket,
+        "symbol": symbol,
+        **freshness_error,
+    }
+    if applied_sl is not None:
+        out["applied_sl"] = applied_sl
+    if applied_tp is not None:
+        out["applied_tp"] = applied_tp
+    if protection_removed:
+        out["protection_removed"] = list(protection_removed)
+    return out
+
+
 def _modify_position(  # noqa: C901
     ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
@@ -558,6 +602,24 @@ def _modify_position(  # noqa: C901
             tick = mt5.symbol_info_tick(position.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {position.symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                tick,
+                symbol=position.symbol,
+                max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return _modify_freshness_block(
+                    freshness_error,
+                    dry_run=dry_run,
+                    ticket=ticket_id,
+                    symbol=position.symbol,
+                    applied_sl=0.0 if explicit_remove_sl else desired_sl,
+                    applied_tp=0.0 if explicit_remove_tp else desired_tp,
+                    protection_removed=_protection_removed_fields(
+                        explicit_remove_sl,
+                        explicit_remove_tp,
+                    ),
+                )
             live_protection_error = validation._validate_live_protection_levels(
                 symbol_info=symbol_info,
                 tick=tick,
@@ -592,32 +654,36 @@ def _modify_position(  # noqa: C901
             )
 
             if dry_run:
-                return comments._attach_comment_preview_metadata(
-                    {
-                        "success": True,
-                        "dry_run": True,
-                        "actionability": "preview_only",
-                        "operation": "modify_position",
-                        "scope": "positions",
-                        "ticket": ticket_id,
-                        "position_ticket": resolved_ticket,
-                        "ticket_requested": ticket_id,
-                        "ticket_resolution": ticket_resolution,
-                        "symbol": position.symbol,
-                        "would_send_order": False,
-                        "preview_scope_summary": (
-                            "Validated position routing and protection levels; no modify request was sent to MT5."
-                        ),
-                        "applied_sl": desired_sl,
-                        "applied_tp": desired_tp,
-                        "not_estimated": [
-                            "broker_acceptance",
-                            "execution_latency",
-                        ],
-                    },
-                    comment,
-                    default="mtdata modify position",
+                preview = {
+                    "success": True,
+                    "dry_run": True,
+                    "actionability": "preview_only",
+                    "operation": "modify_position",
+                    "scope": "positions",
+                    "ticket": ticket_id,
+                    "position_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "ticket_resolution": ticket_resolution,
+                    "symbol": position.symbol,
+                    "would_send_order": False,
+                    "preview_ok": True,
+                    "preview_scope_summary": (
+                        "Validated position routing and protection levels; no modify request was sent to MT5."
+                    ),
+                    "applied_sl": 0.0 if explicit_remove_sl else desired_sl,
+                    "applied_tp": 0.0 if explicit_remove_tp else desired_tp,
+                    "not_estimated": [
+                        "broker_acceptance",
+                        "execution_latency",
+                    ],
+                }
+                removed = _protection_removed_fields(
+                    explicit_remove_sl,
+                    explicit_remove_tp,
                 )
+                if removed:
+                    preview["protection_removed"] = removed
+                return preview
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,
@@ -831,7 +897,12 @@ def _modify_pending_order(  # noqa: C901
                 max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
             )
             if freshness_error is not None:
-                return freshness_error
+                return _modify_freshness_block(
+                    freshness_error,
+                    dry_run=dry_run,
+                    ticket=ticket_id,
+                    symbol=order.symbol,
+                )
             order_type_value = validation._safe_int_attr(order, "type", -1)
             stop_limit_types = {
                 validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP_LIMIT", 6),
@@ -1091,16 +1162,19 @@ def _modify_pending_order(  # noqa: C901
                         if normalized_expiration is not None
                         else None
                     ),
+                    "preview_ok": True,
                     "not_estimated": [
                         "broker_acceptance",
                         "execution_latency",
                     ],
                 }
-                return comments._attach_comment_preview_metadata(
-                    preview,
-                    comment,
-                    default="mtdata modify pending order",
+                removed = _protection_removed_fields(
+                    explicit_remove_sl,
+                    explicit_remove_tp,
                 )
+                if removed:
+                    preview["protection_removed"] = removed
+                return preview
 
             send_tick = mt5.symbol_info_tick(order.symbol)
             if send_tick is None:
@@ -1319,7 +1393,7 @@ def _modify_pending_order(  # noqa: C901
     return _modify_pending_order()
 
 
-_CLOSE_TICK_MAX_AGE_SECONDS = 10.0
+_CLOSE_TICK_MAX_AGE_SECONDS = float(QUOTE_LIVE_SECONDS)
 
 
 def _execute_single_close(  # noqa: C901
@@ -2476,6 +2550,13 @@ def _cancel_pending(  # noqa: C901
                         context=f"cancel pending orders for {symbol}",
                     )
                 if len(orders) == 0:
+                    if dry_run:
+                        return _cancel_pending_dry_run_preview(
+                            [],
+                            symbol=symbol,
+                            magic=magic_filter,
+                            comment=comment,
+                        )
                     return {"message": f"No pending orders for {symbol}"}
             else:
                 orders = mt5.orders_get()
@@ -2486,6 +2567,13 @@ def _cancel_pending(  # noqa: C901
                         context="cancel pending orders",
                     )
                 if len(orders) == 0:
+                    if dry_run:
+                        return _cancel_pending_dry_run_preview(
+                            [],
+                            symbol=symbol,
+                            magic=magic_filter,
+                            comment=comment,
+                        )
                     return {"message": "No pending orders"}
             if magic_filter is not None:
                 orders = [
@@ -2495,6 +2583,13 @@ def _cancel_pending(  # noqa: C901
                     == magic_filter
                 ]
                 if not orders:
+                    if dry_run:
+                        return _cancel_pending_dry_run_preview(
+                            [],
+                            symbol=symbol,
+                            magic=magic_filter,
+                            comment=comment,
+                        )
                     return {"message": "No pending orders matched criteria"}
 
             if dry_run:

@@ -98,6 +98,9 @@ def test_run_trade_place_replays_duplicate_result_without_resending():
     assert first == {
         "success": True,
         "order_id": 7,
+        "dry_run": False,
+        "order_sent": True,
+        "would_send_order": True,
         "guardrails_enabled": False,
         "warnings": [
             "Live trade submitted without configured trade guardrails. Set "
@@ -278,6 +281,9 @@ def test_run_trade_modify_replays_duplicate_result_without_resending():
     assert first == {
         "success": True,
         "ticket": 123,
+        "dry_run": False,
+        "order_sent": True,
+        "would_send_order": True,
         "guardrails_enabled": False,
         "warnings": [
             "Live trade submitted without configured trade guardrails. Set "

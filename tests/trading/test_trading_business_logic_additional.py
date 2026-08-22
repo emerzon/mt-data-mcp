@@ -284,7 +284,7 @@ def test_run_trade_close_passes_magic_filter_to_all_exposure_legs():
 
 def test_run_trade_close_preview_uses_transport_neutral_comment():
     result = run_trade_close(
-        TradeCloseRequest(symbol="EURUSD", dry_run=True),
+        TradeCloseRequest(symbol="EURUSD", dry_run=True, confirm_close_all=True),
         close_positions=lambda **_kwargs: {"success": True, "matched_count": 1},
         cancel_pending=MagicMock(),
     )

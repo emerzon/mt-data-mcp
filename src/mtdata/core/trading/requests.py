@@ -240,7 +240,7 @@ class TradePlaceRequest(BaseModel):
 
 
 class TradeModifyRequest(BaseModel):
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     ticket: MT5Ticket
     detail: DetailLiteral = Field(
@@ -255,16 +255,29 @@ class TradeModifyRequest(BaseModel):
             "stop-limit order preserves its broker price_stoplimit value."
         ),
     )
-    stop_loss: Optional[Union[int, float]] = None
-    take_profit: Optional[Union[int, float]] = None
-    expiration: Optional[ExpirationValue] = None
-    comment: Optional[str] = Field(
+    stop_loss: Optional[Union[int, float]] = Field(
         default=None,
         description=(
-            "Not supported. MT5 cannot retag an existing ticket; set the "
-            "comment when placing or closing instead."
+            "New stop-loss price. Zero is rejected; pass clear_stop_loss=true "
+            "to remove an existing stop."
         ),
     )
+    take_profit: Optional[Union[int, float]] = Field(
+        default=None,
+        description=(
+            "New take-profit price. Zero is rejected; pass clear_take_profit=true "
+            "to remove an existing take-profit."
+        ),
+    )
+    clear_stop_loss: bool = Field(
+        default=False,
+        description="Explicitly remove stop-loss protection from the ticket.",
+    )
+    clear_take_profit: bool = Field(
+        default=False,
+        description="Explicitly remove take-profit protection from the ticket.",
+    )
+    expiration: Optional[ExpirationValue] = None
     dry_run: bool = Field(
         default=True,
         description=(

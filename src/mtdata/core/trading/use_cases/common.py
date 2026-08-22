@@ -316,24 +316,58 @@ def _shape_trade_place_preview(
     return out
 
 
+def _attach_trade_attempt_markers(
+    result: Dict[str, Any],
+    *,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    out["dry_run"] = bool(dry_run)
+    if dry_run:
+        out.setdefault("would_send_order", False)
+        out.setdefault("order_sent", False)
+        return out
+    if out.get("order_sent") is None:
+        if out.get("no_action") is True or out.get("success") is False:
+            sent = False
+        elif out.get("ambiguous") is True:
+            sent = True
+        else:
+            sent = out.get("success") is True or any(
+                out.get(key) is not None
+                for key in ("retcode", "deal", "order", "position_ticket")
+            )
+        out["order_sent"] = bool(sent)
+    out.setdefault("would_send_order", bool(out.get("order_sent")))
+    return out
+
+
 def _standardize_trade_operation_payload(
     result: Dict[str, Any],
     *,
     operation: str,
     default_error_code: str,
     request_id: Optional[str] = None,
+    dry_run: Optional[bool] = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
     if str(result.get("error") or "").strip():
-        return normalize_error_payload(
+        out = normalize_error_payload(
             result,
             default_code=default_error_code,
             request_id=request_id,
             operation=operation,
         )
+        if dry_run is not None:
+            return _attach_trade_attempt_markers(out, dry_run=dry_run)
+        return out
     out = dict(result)
     out.setdefault("success", True)
+    if dry_run is not None:
+        return _attach_trade_attempt_markers(out, dry_run=dry_run)
     return out
 
 

@@ -17,6 +17,7 @@ from mtdata.core.trading.use_cases.common import (
     _TRADE_IDEMPOTENCY_STORE,
     TradeIdempotencyStore,
     _annotate_idempotency_scope,
+    _attach_trade_attempt_markers,
     _attach_trade_correlation,
     _begin_trade_idempotency,
     _build_trade_request_signature,
@@ -60,13 +61,14 @@ def _run_trade_close_once(  # noqa: C901
         *,
         scope: Optional[str] = None,
     ) -> Dict[str, Any]:
+        result = _attach_trade_attempt_markers(result, dry_run=request.dry_run)
         if (
             request.dry_run
             and result.get("success") is True
             and not str(result.get("error") or "").strip()
+            and result.get("preview_ok") is not False
         ):
             result.setdefault("preview_ok", True)
-            result.setdefault("would_send_order", False)
             if request.target == "all_exposure":
                 result.setdefault(
                     "comment_previews",
@@ -141,6 +143,31 @@ def _run_trade_close_once(  # noqa: C901
         )
         return result
 
+    def _mark_bulk_preview_unconfirmed(payload: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(payload)
+        out["success"] = False
+        out["preview_ok"] = False
+        out["error_code"] = "preview_blocked"
+        out["required_confirmation"] = "--confirm-close-all true"
+        out["error"] = (
+            "Ticketless bulk close preview is not live-eligible until "
+            "--confirm-close-all true is passed."
+        )
+        validation_payload = out.get("validation")
+        if not isinstance(validation_payload, dict):
+            validation_payload = {}
+        validation_payload["live_submission_eligible"] = False
+        blockers = [
+            str(item)
+            for item in list(validation_payload.get("blockers") or [])
+            if str(item).strip()
+        ]
+        if "confirmation_required" not in blockers:
+            blockers.append("confirmation_required")
+        validation_payload["blockers"] = blockers
+        out["validation"] = validation_payload
+        return out
+
     def _with_no_action(
         payload: Optional[Dict[str, Any]] = None,
         *,
@@ -206,7 +233,21 @@ def _run_trade_close_once(  # noqa: C901
         if request.dry_run:
             out["would_send_orders"] = closed_count
             out["would_cancel_pending_orders"] = cancelled_count
+            out["would_cancel_pending_order"] = cancelled_count > 0
             out["actionability"] = "preview_only"
+            child_preview_ok = True
+            for child in (position_result, pending_result):
+                if isinstance(child, dict) and child.get("preview_ok") is False:
+                    child_preview_ok = False
+                    break
+            out["preview_ok"] = child_preview_ok
+            if not child_preview_ok:
+                out["success"] = False
+                out.setdefault("error_code", "preview_blocked")
+                out.setdefault(
+                    "error",
+                    "One or more exposure legs are not live-ready.",
+                )
         if not failed_legs and closed_count == 0 and cancelled_count == 0:
             out["no_action"] = True
             out["message"] = "No matching open positions or pending orders."
@@ -423,7 +464,7 @@ def _run_trade_close_once(  # noqa: C901
             "operation": operation,
             "scope": scope,
             "would_send_order": False,
-            "would_cancel_pending_order": target == "pending",
+            "would_cancel_pending_order": False,
             "preview_scope_summary": (
                 "Routing and request validation only; no close or cancel request was sent to MT5."
             ),
@@ -476,6 +517,8 @@ def _run_trade_close_once(  # noqa: C901
                         "close_all": request.close_all,
                     }
                 )
+                if bulk_request and not request.confirm_close_all:
+                    combined = _mark_bulk_preview_unconfirmed(combined)
                 return _finish(
                     {key: value for key, value in combined.items() if value is not None},
                     scope=scope,
@@ -502,6 +545,16 @@ def _run_trade_close_once(  # noqa: C901
                 ):
                     if key in selected_preview:
                         preview[key] = selected_preview[key]
+            if target == "pending":
+                matched_pending = _leg_count(
+                    preview,
+                    "matched_pending_count",
+                    "would_cancel_pending_orders",
+                )
+                preview["would_cancel_pending_orders"] = matched_pending
+                preview["would_cancel_pending_order"] = matched_pending > 0
+                if matched_pending == 0:
+                    preview.setdefault("no_action", True)
         if request.ticket is not None:
             preview["ticket"] = request.ticket
             preview["ticket_resolution"] = (
@@ -547,6 +600,8 @@ def _run_trade_close_once(  # noqa: C901
             preview["close_priority"] = request.close_priority
         if request.deviation != 20:
             preview["deviation"] = request.deviation
+        if bulk_request and not request.confirm_close_all:
+            preview = _mark_bulk_preview_unconfirmed(preview)
         return _finish(preview, scope=scope)
 
     if target == "pending":
@@ -555,6 +610,7 @@ def _run_trade_close_once(  # noqa: C901
             symbol=request.symbol,
             **magic_kwargs,
             comment=request.comment,
+            dry_run=False,
         )
         if isinstance(pending_result, dict):
             message = str(pending_result.get("message") or "").strip().lower()
@@ -572,11 +628,13 @@ def _run_trade_close_once(  # noqa: C901
             close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
+            dry_run=False,
         )
         pending_result = cancel_pending(
             symbol=request.symbol,
             **magic_kwargs,
             comment=request.comment,
+            dry_run=False,
         )
         return _finish(
             _combine_exposure_legs(position_result, pending_result),
@@ -594,6 +652,7 @@ def _run_trade_close_once(  # noqa: C901
             close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
+            dry_run=False,
         )
         if isinstance(result, dict):
             msg = str(result.get("message", "")).strip().lower()
@@ -615,6 +674,7 @@ def _run_trade_close_once(  # noqa: C901
             close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
+            dry_run=False,
         )
         if (
             request.volume is not None
@@ -670,6 +730,7 @@ def _run_trade_close_once(  # noqa: C901
             close_priority=request.close_priority,
             comment=request.comment,
             deviation=request.deviation,
+            dry_run=False,
         )
         if isinstance(position_result, dict):
             msg = str(position_result.get("message", "")).strip().lower()
@@ -685,6 +746,7 @@ def _run_trade_close_once(  # noqa: C901
         close_priority=request.close_priority,
         comment=request.comment,
         deviation=request.deviation,
+        dry_run=False,
     )
     if isinstance(position_result, dict):
         msg = str(position_result.get("message", "")).strip().lower()

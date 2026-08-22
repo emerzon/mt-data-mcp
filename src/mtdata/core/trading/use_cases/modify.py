@@ -11,13 +11,14 @@ from mtdata.core.execution_logging import (
     log_operation_finish,
     log_operation_start,
 )
-from mtdata.core.trading import comments
+from mtdata.core.trading import validation
 from mtdata.core.trading.requests import TradeModifyRequest
 from mtdata.core.trading.use_cases.common import (
     _TRADE_IDEMPOTENCY_STORE,
     TradeIdempotencyStore,
     _annotate_idempotency_scope,
     _attach_live_guardrail_status,
+    _attach_trade_attempt_markers,
     _attach_trade_correlation,
     _begin_trade_idempotency,
     _build_trade_request_signature,
@@ -60,23 +61,14 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
+        result = _attach_trade_attempt_markers(result, dry_run=request.dry_run)
         if (
             request.dry_run
             and result.get("success") is True
             and not str(result.get("error") or "").strip()
+            and result.get("preview_ok") is not False
         ):
             result.setdefault("preview_ok", True)
-            result.setdefault("would_send_order", False)
-            if pending is not None:
-                result = comments._attach_comment_preview_metadata(
-                    result,
-                    request.comment,
-                    default=(
-                        "mtdata modify pending order"
-                        if pending
-                        else "mtdata modify position"
-                    ),
-                )
         if correlation_id and str(result.get("error") or "").strip():
             result = normalize_error_payload(
                 result,
@@ -108,21 +100,60 @@ def run_trade_modify(
         )
         return result
 
-    if "comment" in request.model_fields_set and request.comment is not None:
+    sl_zero = validation._zero_price_requested(request.stop_loss)
+    tp_zero = validation._zero_price_requested(request.take_profit)
+    if sl_zero and not request.clear_stop_loss:
         return _finish(
             {
                 "success": False,
-                "error_code": "unsupported_field",
+                "preview_ok": False,
+                "error_code": "protection_clear_requires_flag",
                 "error": (
-                    "trade_modify cannot change broker comments on positions or "
-                    "pending orders."
+                    "stop_loss=0 would remove stop-loss protection. Pass "
+                    "clear_stop_loss=true to confirm."
                 ),
                 "remediation": (
-                    "Set the comment when placing or closing the order. MT5 does "
-                    "not support retagging an existing ticket via trade_modify."
+                    "Use --clear-stop-loss true to remove the stop, or pass a "
+                    "positive protective price."
                 ),
                 "ticket": request.ticket,
-                "unsupported_fields": ["comment"],
+            }
+        )
+    if tp_zero and not request.clear_take_profit:
+        return _finish(
+            {
+                "success": False,
+                "preview_ok": False,
+                "error_code": "protection_clear_requires_flag",
+                "error": (
+                    "take_profit=0 would remove take-profit protection. Pass "
+                    "clear_take_profit=true to confirm."
+                ),
+                "remediation": (
+                    "Use --clear-take-profit true to remove the take-profit, or "
+                    "pass a positive protective price."
+                ),
+                "ticket": request.ticket,
+            }
+        )
+    if request.clear_stop_loss and request.stop_loss is not None and not sl_zero:
+        return _finish(
+            {
+                "success": False,
+                "error_code": "conflicting_protection_fields",
+                "error": "clear_stop_loss cannot be combined with a new stop_loss price.",
+                "ticket": request.ticket,
+            }
+        )
+    if request.clear_take_profit and request.take_profit is not None and not tp_zero:
+        return _finish(
+            {
+                "success": False,
+                "error_code": "conflicting_protection_fields",
+                "error": (
+                    "clear_take_profit cannot be combined with a new take_profit price."
+                ),
+                "ticket": request.ticket,
             }
         )
     mutable_fields = {
@@ -130,6 +161,8 @@ def run_trade_modify(
         "stop_limit_price",
         "stop_loss",
         "take_profit",
+        "clear_stop_loss",
+        "clear_take_profit",
         "expiration",
     }
     if not (request.model_fields_set & mutable_fields):
@@ -160,6 +193,8 @@ def run_trade_modify(
 
     try:
         price_val = request.price
+        resolved_sl = 0.0 if request.clear_stop_loss else request.stop_loss
+        resolved_tp = 0.0 if request.clear_take_profit else request.take_profit
         try:
             _, expiration_specified = normalize_pending_expiration(request.expiration)
         except (TypeError, ValueError) as ex:
@@ -175,19 +210,14 @@ def run_trade_modify(
             or request.stop_limit_price is not None
             or expiration_specified
         ):
-            pending_kwargs = {
-                "ticket": request.ticket,
-                "price": price_val,
-                "stop_limit_price": request.stop_limit_price,
-                "stop_loss": request.stop_loss,
-                "take_profit": request.take_profit,
-                "expiration": request.expiration,
-                "comment": request.comment,
-            }
-            if request.dry_run:
-                pending_kwargs["dry_run"] = True
             result = modify_pending_order(
-                **pending_kwargs,
+                ticket=request.ticket,
+                price=price_val,
+                stop_limit_price=request.stop_limit_price,
+                stop_loss=resolved_sl,
+                take_profit=resolved_tp,
+                expiration=request.expiration,
+                dry_run=bool(request.dry_run),
             )
             if result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(
@@ -205,33 +235,23 @@ def run_trade_modify(
                 )
             return _finish(result, pending=True)
 
-        position_kwargs = {
-            "ticket": request.ticket,
-            "stop_loss": request.stop_loss,
-            "take_profit": request.take_profit,
-            "comment": request.comment,
-        }
-        if request.dry_run:
-            position_kwargs["dry_run"] = True
         position_result = modify_position(
-            **position_kwargs,
+            ticket=request.ticket,
+            stop_loss=resolved_sl,
+            take_profit=resolved_tp,
+            dry_run=bool(request.dry_run),
         )
         if position_result.get("success"):
             return _finish(position_result, pending=False)
         if position_result.get("error") == f"Position {request.ticket} not found":
-            pending_kwargs = {
-                "ticket": request.ticket,
-                "price": None,
-                "stop_limit_price": request.stop_limit_price,
-                "stop_loss": request.stop_loss,
-                "take_profit": request.take_profit,
-                "expiration": None,
-                "comment": request.comment,
-            }
-            if request.dry_run:
-                pending_kwargs["dry_run"] = True
             pending_result = modify_pending_order(
-                **pending_kwargs,
+                ticket=request.ticket,
+                price=None,
+                stop_limit_price=request.stop_limit_price,
+                stop_loss=resolved_sl,
+                take_profit=resolved_tp,
+                expiration=None,
+                dry_run=bool(request.dry_run),
             )
             if pending_result.get("error") == f"Pending order {request.ticket} not found":
                 return _finish(

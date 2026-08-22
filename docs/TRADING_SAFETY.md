@@ -171,18 +171,23 @@ mtdata-cli trade_place EURUSD --volume 0.10 --order-type BUY_STOP_LIMIT \
 Modifies an existing order/position by ticket.
 
 At least one of `price`, `stop_limit_price`, `stop_loss`, `take_profit`,
-or `expiration` must be supplied. An explicit value that already
-matches the live object is a successful idempotent no-change request; omitting
-every modification field is an error. MT5 does not support changing an existing
-ticket's comment; set the comment at place or close time.
+`clear_stop_loss`, `clear_take_profit`, or `expiration` must be supplied. An
+explicit value that already matches the live object is a successful
+idempotent no-change request; omitting every modification field is an error.
+MT5 does not support changing an existing ticket's comment; set the comment
+at place or close time. Passing `0` for `--stop-loss` or `--take-profit`
+is rejected; use `--clear-stop-loss true` or `--clear-take-profit true` to
+remove protection.
 
 | Flag | Default | Notes |
 |------|---------|-------|
 | `ticket` | — | **Required** |
 | `--price` | — | New pending-order price |
 | `--stop-limit-price` | — | New limit leg for an existing stop-limit order |
-| `--stop-loss` | — | New stop-loss |
-| `--take-profit` | — | New take-profit |
+| `--stop-loss` | — | New stop-loss price. Zero is rejected |
+| `--take-profit` | — | New take-profit price. Zero is rejected |
+| `--clear-stop-loss` | `false` | Explicitly remove the stop-loss |
+| `--clear-take-profit` | `false` | Explicitly remove the take-profit |
 | `--expiration` | — | New future pending-order expiry, or literal `GTC` |
 | `--idempotency-key` | — | Durable dedupe shared across processes/restarts |
 | `--dry-run` | `true` | Preview by default; set `false` explicitly for a live modification |

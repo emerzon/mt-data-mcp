@@ -192,14 +192,14 @@ def test_small_future_clock_skew_is_disclosed_without_zero_age() -> None:
 def test_quote_at_shared_execution_threshold_is_live() -> None:
     result = build_tick_freshness_context(
         "EURUSD",
-        tick_epoch=970.0,
+        tick_epoch=990.0,
         now_epoch=1_000.0,
     )
 
     assert result["data_stale"] is False
     assert result["freshness_state"] == "live"
-    assert result["freshness"] == "fresh, tick 30s ago"
-    assert result["live_max_age_seconds"] == 30
+    assert result["freshness"] == "fresh, tick 10s ago"
+    assert result["live_max_age_seconds"] == 10
     assert result["usable_for_live_trading"] is True
     assert result["usable_for_live_trading_basis"] == "quote_age_and_market_session"
 

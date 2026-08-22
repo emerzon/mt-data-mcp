@@ -216,17 +216,14 @@ class TestTradeModify:
             ticket=100,
             stop_loss=1.08,
             take_profit=None,
-            comment=None,
             dry_run=True,
         )
         mock_pend.assert_not_called()
 
     def test_comment_modifications_are_rejected(self):
-        out = trade_modify(ticket=100, comment="retag", __cli_raw=True)
-
-        assert out["success"] is False
-        assert out["error_code"] == "unsupported_field"
-        assert "comment" in out["unsupported_fields"]
+        with pytest.raises(Exception) as exc_info:
+            TradeModifyRequest(ticket=100, comment="retag")
+        assert "comment" in str(exc_info.value)
 
     @patch("mtdata.core.trading._modify_pending_order")
     @patch("mtdata.core.trading._modify_position")
@@ -477,6 +474,64 @@ class TestModifyPosition:
         request = mt5.order_send.call_args.args[0]
         assert request["sl"] == 0.0
         assert request["tp"] == pytest.approx(1.12)
+
+    def test_zero_stop_loss_is_rejected_without_clear_flag(self):
+        out = trade_modify(ticket=100, stop_loss=0, dry_run=True, __cli_raw=True)
+        assert out["success"] is False
+        assert out["preview_ok"] is False
+        assert out["error_code"] == "protection_clear_requires_flag"
+        assert "clear_stop_loss" in out["error"]
+
+    @patch("mtdata.core.trading._modify_pending_order")
+    @patch("mtdata.core.trading._modify_position")
+    def test_clear_stop_loss_flag_forwards_zero(self, mock_pos, mock_pend):
+        mock_pos.return_value = {
+            "success": True,
+            "dry_run": True,
+            "applied_sl": 0.0,
+            "protection_removed": ["stop_loss"],
+            "preview_ok": True,
+        }
+        out = trade_modify(
+            ticket=100,
+            clear_stop_loss=True,
+            dry_run=True,
+            __cli_raw=True,
+        )
+        assert out["success"] is True
+        assert out["protection_removed"] == ["stop_loss"]
+        mock_pos.assert_called_once_with(
+            ticket=100,
+            stop_loss=0.0,
+            take_profit=None,
+            dry_run=True,
+        )
+        mock_pend.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_stale_tick_modify_preview_is_blocked(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(sl=1.09, tp=1.12)]
+        mt5.symbol_info.return_value = _sym()
+        mt5.symbol_info_tick.return_value = SimpleNamespace(
+            bid=1.1050,
+            ask=1.1052,
+            time=time.time() - 60,
+        )
+        from mtdata.core.trading import _modify_position
+
+        result = _modify_position(
+            ticket=1,
+            stop_loss=1.08,
+            take_profit=1.13,
+            dry_run=True,
+        )
+        assert result["success"] is False
+        assert result["preview_ok"] is False
+        assert result["error_code"] == "preview_blocked"
+        assert "stale" in str(result.get("error") or "").lower()
+        mt5.order_send.assert_not_called()
 
 
 # ===================================================================

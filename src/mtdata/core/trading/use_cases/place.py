@@ -93,6 +93,7 @@ def run_trade_place(  # noqa: C901
             operation="trade_place",
             default_error_code="trade_place_error",
             request_id=correlation_id,
+            dry_run=request.dry_run,
         )
         result = _attach_live_guardrail_status(result, dry_run=request.dry_run)
         result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)

@@ -16,6 +16,7 @@ from ...shared.market_units import (
     forex_points_per_pip,
 )
 from ...utils.coercion import round_finite
+from ...utils.freshness import QUOTE_LIVE_SECONDS
 from ...utils.quote import compute_spread_metrics, resolve_quote_tick, tick_value
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
@@ -45,7 +46,7 @@ class _OrderSubmitOutcome(TypedDict):
 
 
 _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2, 2.4)
-_TRADE_TICK_MAX_AGE_SECONDS = 10.0
+_TRADE_TICK_MAX_AGE_SECONDS = float(QUOTE_LIVE_SECONDS)
 _POSITION_DEAL_LOOKUP_WINDOW_SECONDS = 30
 _TRADE_DECISION_LOCK = threading.RLock()
 logger = logging.getLogger(__name__)

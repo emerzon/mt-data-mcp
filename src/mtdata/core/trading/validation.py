@@ -12,6 +12,7 @@ from ...shared.market_units import (
     snap_to_increment,
 )
 from ...utils.coercion import coerce_finite_float, coerce_scalar
+from ...utils.freshness import QUOTE_LIVE_SECONDS
 from ...utils.quote import tick_value
 from .sizing import _floor_volume_steps
 
@@ -1304,7 +1305,7 @@ def _safe_int_magic(value: Any) -> Optional[int]:
 
 import time as _time_module
 
-_DEFAULT_TICK_MAX_AGE_SECONDS = 30.0
+_DEFAULT_TICK_MAX_AGE_SECONDS = float(QUOTE_LIVE_SECONDS)
 
 
 def _tick_age_seconds(tick: Any) -> Optional[float]:

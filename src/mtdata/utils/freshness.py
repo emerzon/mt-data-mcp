@@ -11,7 +11,7 @@ from .time import bar_close_epoch, format_epoch_utc
 
 # Keep market-data readiness aligned with the pre-trade validator so the same
 # quote age is not rejected by one public surface and accepted by another.
-QUOTE_LIVE_SECONDS = 30
+QUOTE_LIVE_SECONDS = 10
 QUOTE_RECENT_SECONDS = 60
 QUOTE_STALE_SECONDS = 300
 _NEW_YORK = ZoneInfo("America/New_York")

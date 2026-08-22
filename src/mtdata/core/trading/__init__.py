@@ -87,7 +87,9 @@ def trade_place(request: TradePlaceRequest) -> dict:
 def trade_modify(request: TradeModifyRequest) -> dict:
     """Modify an open position or pending order by ticket.
 
-    Supply at least one of price, stop_loss, take_profit, expiration, or comment.
+    Supply at least one of price, stop_limit_price, stop_loss, take_profit,
+    expiration, clear_stop_loss, or clear_take_profit. MT5 cannot retag an
+    existing ticket; set the comment when placing or closing instead.
     Defaults to preview mode. Set `dry_run=false` explicitly to send a live
     modify request.
     Risk-increasing pending-order and position-protection changes can be
