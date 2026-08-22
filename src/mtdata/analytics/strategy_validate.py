@@ -13,9 +13,8 @@ from ..core.analytics_requests import (
     StrategyCandidate,
     StrategyValidateRequest,
 )
-from ..shared.constants import TIMEFRAME_SECONDS
 from ..utils.barriers import normalize_same_bar_policy
-from ..utils.time import format_epoch_utc
+from ..utils.time import bar_close_epoch, format_epoch_utc
 from .engine_common import (
     _bootstrap_mean_ci,
     _finite,
@@ -752,8 +751,7 @@ def validate_strategies(  # noqa: C901
                 "requested_end": request.end,
                 "first_bar_open": format_epoch_utc(float(df["time"].iloc[0])),
                 "last_bar_close": format_epoch_utc(
-                    float(df["time"].iloc[-1])
-                    + float(TIMEFRAME_SECONDS[request.timeframe])
+                    bar_close_epoch(float(df["time"].iloc[-1]), request.timeframe)
                 ),
             },
         },

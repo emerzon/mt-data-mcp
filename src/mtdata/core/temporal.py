@@ -8,7 +8,10 @@ import numpy as np
 import pandas as pd
 from pydantic import Field
 
-from ..services.data_service.candles import _parse_candle_calendar_bound
+from ..services.data_service.candles import (
+    _drop_incomplete_tail_df,
+    _parse_candle_calendar_bound,
+)
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_fx_session_symbol
@@ -36,7 +39,6 @@ from ..utils.time import (
     _broker_calendar_timezone,
     _format_datetime_minute_explicit,
     _resolve_client_tz,
-    bar_close_epoch,
 )
 from ..utils.utils import (
     _parse_end_datetime,
@@ -1199,13 +1201,7 @@ def temporal_analyze(  # noqa: C901
                 return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
             if timeframe in TIMEFRAME_SECONDS:
-                now_ts = datetime.now(dt_timezone.utc).timestamp()
-                last_epoch = float(df["__epoch"].iloc[-1])
-                if (
-                    last_epoch <= now_ts < bar_close_epoch(last_epoch, timeframe)
-                    and len(df) > 1
-                ):
-                    df = df.iloc[:-1]
+                df, _ = _drop_incomplete_tail_df(df, timeframe)
 
             if len(df) < 2:
                 return _error_response(

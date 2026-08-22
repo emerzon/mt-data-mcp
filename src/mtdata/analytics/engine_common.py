@@ -9,8 +9,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.time import format_datetime_utc
+from ..shared.constants import TIMEFRAME_MAP
+from ..utils.time import bar_close_epoch, format_datetime_utc
 from ..utils.utils import (
     _parse_end_datetime,
     _parse_start_datetime,
@@ -267,9 +267,9 @@ def _rates(
             df[column] = 0.0
         df[column] = _finite(df[column])
     now = datetime.now(timezone.utc).timestamp()
-    seconds = TIMEFRAME_SECONDS[timeframe]
     information_cutoff = min(now, to_dt.timestamp()) if start and end else now
-    df = df[df["time"] + seconds <= information_cutoff]
+    close_epochs = df["time"].map(lambda value: bar_close_epoch(float(value), timeframe))
+    df = df[close_epochs <= information_cutoff]
     if not (start and end):
         df = df.tail(int(count))
     return df.reset_index(drop=True)

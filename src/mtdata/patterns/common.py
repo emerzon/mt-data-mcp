@@ -1,5 +1,4 @@
 import logging
-import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Literal, Optional, Tuple
@@ -8,9 +7,8 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 
-from ..shared.constants import TIMEFRAME_SECONDS
+from ..services.data_service.candles import _is_last_bar_forming
 from ..shared.symbols import is_probably_crypto_symbol
-from ..utils.time import bar_close_epoch
 from ..utils.utils import to_float_np
 
 
@@ -463,25 +461,7 @@ def should_drop_last_live_bar(
     current_time_epoch: Optional[float] = None,
 ) -> bool:
     """Return True when the last bar is still forming or cannot be validated."""
-    if len(df) < 2:
-        return False
-    if timeframe not in TIMEFRAME_SECONDS or "time" not in df.columns:
-        return True
-    try:
-        last_open = float(pd.to_numeric(df["time"], errors="coerce").iloc[-1])
-    except Exception:
-        return True
-    if not math.isfinite(last_open):
-        return True
-    if current_time_epoch is not None:
-        try:
-            current_ts = float(current_time_epoch)
-        except Exception:
-            current_ts = float("nan")
-        if not math.isfinite(current_ts):
-            current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
-    else:
-        current_ts = float((now_utc or datetime.now(timezone.utc)).timestamp())
-    if current_ts < last_open:
-        return True
-    return current_ts < bar_close_epoch(last_open, timeframe)
+    epoch = current_time_epoch
+    if epoch is None and now_utc is not None:
+        epoch = now_utc.timestamp()
+    return _is_last_bar_forming(df, timeframe, current_time_epoch=epoch)

@@ -12,11 +12,13 @@ import pandas as pd
 
 from mtdata.core.mt5_gateway import create_mt5_gateway, mt5_connection_error
 from mtdata.core.output_contract import build_pagination_meta
-from mtdata.services.data_service.candles import _parse_candle_calendar_bound
+from mtdata.services.data_service.candles import (
+    _is_last_bar_forming,
+    _parse_candle_calendar_bound,
+)
 from mtdata.shared.constants import (
     TIME_DISPLAY_FORMAT,
     TIMEFRAME_MAP,
-    TIMEFRAME_SECONDS,
 )
 from mtdata.utils.mt5 import (
     _ensure_symbol_ready,
@@ -31,7 +33,6 @@ from mtdata.utils.symbol import (
 from mtdata.utils.symbol import (
     _normalize_group_path_query,
 )
-from mtdata.utils.time import bar_close_epoch
 from mtdata.utils.utils import (
     _parse_end_datetime,
     _parse_start_datetime,
@@ -512,10 +513,8 @@ def _fetch_series(
             )
         forming_trimmed = False
         last_is_forming = False
-        if timeframe_name in TIMEFRAME_SECONDS and not df.empty:
-            last_open_epoch = float(df.iloc[-1]["time"])
-            now_epoch = datetime.now(timezone.utc).timestamp()
-            last_is_forming = bar_close_epoch(last_open_epoch, timeframe_name) > now_epoch
+        if timeframe_name and not df.empty:
+            last_is_forming = _is_last_bar_forming(df, timeframe_name)
             if not include_incomplete and last_is_forming:
                 df = df.iloc[:-1]
                 forming_trimmed = True

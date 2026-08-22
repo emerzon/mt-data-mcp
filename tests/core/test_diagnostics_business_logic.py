@@ -104,6 +104,38 @@ def test_fetch_diagnostic_bars_applies_date_only_as_of_cutoff(monkeypatch):
     assert completed.attrs["resolved_as_of"] == "2024-01-02T23:59:59Z"
 
 
+def test_fetch_diagnostic_bars_uses_broker_close_for_daily_cutoff(monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    opened = datetime(2026, 3, 28, 22, tzinfo=timezone.utc).timestamp()
+    frame = pd.DataFrame({"time": [opened], "close": [1.1]})
+    monkeypatch.setattr(diagnostics, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(
+        diagnostics,
+        "_mt5_copy_rates_from",
+        lambda *_args, **_kwargs: frame.to_dict("records"),
+    )
+    monkeypatch.setattr(
+        "mtdata.bootstrap.settings.mt5_config.get_server_tz",
+        lambda: ZoneInfo("Europe/Nicosia"),
+    )
+    monkeypatch.setattr(
+        "mtdata.bootstrap.settings.mt5_config.time_offset_minutes",
+        0,
+    )
+
+    completed, error = diagnostics._fetch_diagnostic_bars(
+        "TEST",
+        "D1",
+        2,
+        as_of="2026-03-29T21:30:00Z",
+        include_incomplete=True,
+    )
+
+    assert error is None
+    assert completed["close"].tolist() == [1.1]
+
+
 def test_diagnostic_history_metadata_describes_effective_window() -> None:
     frame = _bars(np.linspace(100.0, 110.0, 3))
     frame.attrs.update(

@@ -15,6 +15,7 @@ from typing import (
 
 from pydantic import Field
 
+from ...services.data_service.candles import _drop_incomplete_tail
 from ...shared.constants import (
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
@@ -394,13 +395,11 @@ def _market_scan_completed_rates(
     def _completed(raw_rates: Any, *, now_epoch: float) -> Any:
         if raw_rates is None or len(raw_rates) < 1:
             return raw_rates
-        completed = raw_rates
-        latest_time = _market_scan_float(completed[-1]["time"])
-        if (
-            latest_time is not None
-            and bar_close_epoch(latest_time, timeframe) > now_epoch
-        ):
-            completed = completed[:-1]
+        completed = _drop_incomplete_tail(
+            raw_rates,
+            timeframe,
+            current_time_epoch=now_epoch,
+        )
         if len(completed) > requested:
             completed = completed[-requested:]
         return completed

@@ -24,7 +24,7 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
-from ..utils.time import format_datetime_utc
+from ..utils.time import bar_close_epoch, format_datetime_utc
 from ..utils.utils import _parse_end_datetime
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -94,11 +94,15 @@ def _fetch_diagnostic_bars(
     if frame.empty or not required.issubset(frame.columns):
         return pd.DataFrame(), "Fetched bars do not contain time and close fields."
     frame = frame.sort_values("time").drop_duplicates("time", keep="last")
-    frame = frame[
-        pd.to_numeric(frame["time"], errors="coerce")
-        + TIMEFRAME_SECONDS[str(timeframe).upper()]
-        <= anchor.timestamp()
-    ]
+    open_epochs = pd.to_numeric(frame["time"], errors="coerce")
+    close_epochs = open_epochs.map(
+        lambda value: (
+            bar_close_epoch(float(value), str(timeframe))
+            if pd.notna(value)
+            else float("nan")
+        )
+    )
+    frame = frame[close_epochs <= anchor.timestamp()]
     forming = _is_last_bar_forming(frame, timeframe)
     forming_status = "none_detected"
     if forming:

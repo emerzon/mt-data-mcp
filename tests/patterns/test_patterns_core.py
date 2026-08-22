@@ -23,7 +23,7 @@ from mtdata.patterns.classic_impl.utils import (
     _count_recent_touches,
     _fit_lines_and_arrays,
 )
-from mtdata.patterns.common import data_quality_warnings
+from mtdata.patterns.common import data_quality_warnings, should_drop_last_live_bar
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -76,6 +76,22 @@ def test_bounded_pattern_fetch_drops_forming_tail(monkeypatch):
     assert error is None
     assert frame is not None
     assert frame["time"].tolist() == [row["time"] for row in rates[:-1]]
+
+
+def test_should_drop_last_live_bar_uses_shared_forming_helper() -> None:
+    open_epoch = 1_700_000_000.0
+    frame = pd.DataFrame({"time": [open_epoch], "close": [1.1]})
+
+    assert should_drop_last_live_bar(
+        frame,
+        "H1",
+        current_time_epoch=open_epoch + 1800,
+    )
+    assert not should_drop_last_live_bar(
+        frame,
+        "H1",
+        current_time_epoch=open_epoch + 3600,
+    )
 
 
 def test_bounded_historical_pattern_fetch_skips_wall_clock_staleness(monkeypatch):

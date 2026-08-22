@@ -16,6 +16,7 @@ except Exception:
 
 # Dimensionality reduction abstraction
 # Reuse existing MT5 helpers and denoise utilities
+from ..services.data_service.candles import _drop_incomplete_tail_df
 from ..shared.constants import TIMEFRAME_MAP
 from .denoise import (
     denoise_series as apply_denoise_series,
@@ -30,7 +31,6 @@ from .dimred import DimReducer as _DimReducer
 from .dimred import create_reducer as _create_reducer
 from .dtw import _get_ts_dtw, dtw_distance
 from .mt5 import _mt5_copy_rates_from, _rates_to_df
-from .time import bar_close_epoch
 from .utils import align_finite
 
 
@@ -473,15 +473,12 @@ def _fetch_symbol_df(
         raise RuntimeError(f"Failed to fetch rates for {symbol}")
     df = _rates_to_df(rates)
     if drop_last_live and len(df) >= 1:
-        epoch_column = "__epoch" if "__epoch" in df.columns else "time"
         reference_epoch = pd.Timestamp(to_dt).timestamp()
-        try:
-            tail_open = float(df[epoch_column].iloc[-1])
-            if reference_epoch < bar_close_epoch(tail_open, timeframe):
-                df = df.iloc[:-1]
-        except (KeyError, TypeError, ValueError):
-            # An unclassifiable tail is not safe to treat as a completed bar.
-            df = df.iloc[:-1]
+        df, _ = _drop_incomplete_tail_df(
+            df,
+            timeframe,
+            current_time_epoch=reference_epoch,
+        )
     # Keep last `bars` rows
     if len(df) > bars:
         df = df.iloc[-bars:].copy()
