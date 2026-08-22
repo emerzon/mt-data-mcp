@@ -2,7 +2,7 @@
 
 **Audience:** Contributor
 
-**Audited:** 2026-08-10
+**Audited:** 2026-08-21
 **Runtime:** Windows x86-64, CPython 3.14.3, pip 26.x
 
 This is the compatibility snapshot for direct project dependencies. Lower bounds in
@@ -14,8 +14,8 @@ unresolvable or where a dependent framework has not migrated yet.
 
 | Area | Previous | Migrated to | Verification |
 |------|----------|-------------|--------------|
-| MCP SDK | 1.28.1 | 1.29.0 (`<2`) | Server and Web API import smoke; MCP 2 remains blocked by FastMCP |
-| FastMCP | 3.4.4 | 3.4.7 | Server import smoke and backend tests |
+| MCP SDK | 1.28.1 | 1.29.0 (`<2`) | Server and Web API import smoke; MCP 2 dropped `mcp.server.fastmcp` |
+| Unused direct pins | Prefect FastMCP, PyYAML, h5py | Removed | No remaining imports; Prefect FastMCP is distinct from MCP SDK FastMCP |
 | StatsForecast | 1.7.6 | 2.1.1 | Windows cp314 wheel resolution plus a real `Naive` forecast |
 | sktime | 1.0.1 | 1.1.0 | Resolver check plus a real `NaiveForecaster` forecast |
 | TimesFM | Git commit / 2.0.0 | PyPI 2.0.2 | Package API/import tests; added to `[all]` |
@@ -38,7 +38,7 @@ Sentence Transformers, Hugging Face Hub, and the timezone/date libraries. See
 | scikit-learn | 1.9.0 | sktime 1.1.0 requires `scikit-learn<1.8` | sktime raises its ceiling |
 | ruptures | 1.1.10 | Stable release declares `Requires-Python <3.14` and has no cp314 wheel | A stable release accepts real Python 3.14 patch versions |
 | NeuralForecast | 3.2.1 | Requires Ray; Ray 2.57 has cp314 wheels for Linux/macOS but not Windows | Ray publishes a Windows cp314 wheel or NeuralForecast makes Ray optional |
-| MCP SDK | 2.0.0 | FastMCP 3.4.7 requires `mcp>=1.24,<2` | FastMCP supports MCP 2 |
+| MCP SDK | 2.0.0 | MCP 2 renamed `FastMCP` to `MCPServer` and removed `mcp.server.fastmcp` | Server import paths are migrated |
 | hmmlearn | 0.3.3 | No upstream cp314 wheel, but the MSVC source build succeeds and remains in core | Prefer an upstream wheel to remove the compiler prerequisite |
 | hnswlib | 0.8.0 | No upstream wheels at all; the validated MSVC build is now supported | Prefer an upstream Windows cp314 wheel |
 | GluonTS / Lag-Llama | GluonTS 0.17.0 | GluonTS now resolves, but mtdata has no GluonTS or Lag-Llama adapter to enable | An adapter and model contract are implemented and tested |
@@ -68,5 +68,5 @@ Upstream package metadata used for the compatibility boundaries:
 [numba](https://pypi.org/project/numba/),
 [ruptures](https://pypi.org/project/ruptures/),
 [NeuralForecast](https://pypi.org/project/neuralforecast/),
-[Ray](https://pypi.org/project/ray/), and
-[FastMCP](https://pypi.org/project/fastmcp/).
+[Ray](https://pypi.org/project/ray/), and the
+[MCP Python SDK v1→v2 migration guide](https://py.sdk.modelcontextprotocol.io/migration/).

@@ -13,12 +13,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "MetaTrader5>=5.0.6090",
-    # FastMCP 3.4.x has not migrated to the MCP 2.x SDK yet.
+    # MCP 2 removed mcp.server.fastmcp (renamed to MCPServer).
     "mcp>=1.29.0,<2",
-    "fastmcp>=3.4.7,<4",
     "typing-extensions>=4.16.0",
     "python-dotenv>=1.2.2",
-    "PyYAML>=6.0.3",
     "dateparser>=1.4.2",
     "pytz>=2026.3.post1",
     "tzlocal>=5.4.4",
@@ -41,7 +39,6 @@ dependencies = [
     "ruptures>=1.0.6,<1.1.0",
     "statsmodels>=0.14.6",
     "tslearn>=0.9.0",
-    "h5py>=3.16.0",
     "stumpy>=1.14.1",
     "matplotlib>=3.11.1",
     "finvizfinance>=1.3.0",
