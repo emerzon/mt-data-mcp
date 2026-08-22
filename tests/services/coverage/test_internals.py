@@ -14,17 +14,19 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 
-from mtdata.services.data_service import (
+from mtdata.services.data_service.candles import (
     _build_candle_freshness_diagnostics,
     _build_candle_headers,
-    _build_no_data_error_with_context,
     _build_rates_df,
     _candle_query_applied,
-    _compact_tick_summary,
     _fetch_rates_with_warmup,
+    _trim_df_to_target,
+)
+from mtdata.services.data_service.errors import _build_no_data_error_with_context
+from mtdata.services.data_service.ticks import (
+    _compact_tick_summary,
     _fetch_recent_ticks_backwards,
     _fetch_ticks_forward,
-    _trim_df_to_target,
 )
 
 from ._helpers import (
@@ -1069,9 +1071,9 @@ def test_live_bar_reference_uses_wall_clock_when_tick_is_stale(monkeypatch):
 
     monkeypatch.setattr(data_service.candles, "_utc_epoch_seconds", lambda _value: 1_000.0)
     monkeypatch.setattr(
-        data_service.mt5,
+        data_service.candles.mt5,
         "symbol_info_tick",
         lambda _symbol: type("Tick", (), {"time": 900.0})(),
     )
 
-    assert data_service._resolve_live_bar_reference_epoch("EURUSD", "M1") == 1_000.0
+    assert data_service.candles._resolve_live_bar_reference_epoch("EURUSD", "M1") == 1_000.0

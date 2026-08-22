@@ -10,18 +10,20 @@ import pandas as pd
 import pytest
 
 from mtdata.core.causal import (
-    _expand_symbols_for_group,
-    _expand_symbols_for_group_path,
-    _fetch_series,
-    _format_summary,
-    _pair_overlap_symbols,
-    _parse_symbols,
-    _standardize_frame,
-    _transform_frame,
     causal_discover_signals,
     cointegration_test,
     correlation_matrix,
 )
+from mtdata.core.causal.common import (
+    _expand_symbols_for_group,
+    _expand_symbols_for_group_path,
+    _fetch_series,
+    _pair_overlap_symbols,
+    _parse_symbols,
+    _standardize_frame,
+    _transform_frame,
+)
+from mtdata.core.causal.discover import _format_summary
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -1791,7 +1793,7 @@ class TestCointegrationTest:
 
 
 def test_correlation_fisher_ci_bounds():
-    from mtdata.core.causal import _correlation_fisher_ci
+    from mtdata.core.causal.correlation import _correlation_fisher_ci
     lo, hi = _correlation_fisher_ci(0.948, 50)
     assert lo is not None and hi is not None
     assert lo < 0.948 < hi

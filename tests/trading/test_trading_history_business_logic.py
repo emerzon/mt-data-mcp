@@ -18,7 +18,8 @@ from mtdata.core.trading.requests import (
     TradeHistoryRequest,
     TradeJournalAnalyzeRequest,
 )
-from mtdata.core.trading.use_cases import _trade_rows_to_dataframe, run_trade_history
+from mtdata.core.trading.use_cases import run_trade_history
+from mtdata.core.trading.use_cases.common import _trade_rows_to_dataframe
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 
 

@@ -8,23 +8,23 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-import src.mtdata.core.patterns_support as patterns_support_mod
-import src.mtdata.patterns.candlestick as candlestick_mod
-import src.mtdata.patterns.classic as classic_mod
-import src.mtdata.services.data_service as data_service_mod
-from src.mtdata.core import patterns as core_patterns
-from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
-from src.mtdata.core.patterns_requests import PatternsDetectRequest
-from src.mtdata.patterns.classic import (
+import mtdata.core.patterns_support as patterns_support_mod
+import mtdata.patterns.candlestick as candlestick_mod
+import mtdata.patterns.classic as classic_mod
+import mtdata.services.data_service.candles as data_service_mod
+from mtdata.core import patterns as core_patterns
+from mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
+from mtdata.core.patterns_requests import PatternsDetectRequest
+from mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
 )
-from src.mtdata.patterns.classic_impl.utils import (
+from mtdata.patterns.classic_impl.utils import (
     _count_recent_touches,
     _fit_lines_and_arrays,
 )
-from src.mtdata.patterns.common import data_quality_warnings
-from src.mtdata.utils.mt5 import MT5ConnectionError
+from mtdata.patterns.common import data_quality_warnings
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 def patterns_detect(**kwargs):
@@ -354,7 +354,7 @@ def test_fit_lines_and_arrays_uses_cfg_for_robust_fit(monkeypatch):
         return 1.0, 2.0, 0.9
 
     # Patch the implementation module since we refactored logic into classic_impl
-    from src.mtdata.patterns.classic_impl import utils as impl_utils
+    from mtdata.patterns.classic_impl import utils as impl_utils
 
     monkeypatch.setattr(impl_utils, "_fit_line_robust", _fake_robust)
 

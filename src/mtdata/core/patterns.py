@@ -272,7 +272,7 @@ def _fetch_pattern_data_after_select(  # noqa: C901
     warnings_out.extend(quality_warnings)
 
     # Drop the last bar only when it is still open or cannot be validated.
-    from ..services.data_service import _resolve_live_bar_reference_epoch
+    from ..services.data_service.candles import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
     if _should_drop_last_pattern_bar(

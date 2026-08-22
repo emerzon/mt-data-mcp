@@ -14,12 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from mtdata.services.data_service import (
-    _build_rates_df,
-    _trim_df_to_target,
-    fetch_candles,
-    fetch_ticks,
-)
+from mtdata.services.data_service import fetch_candles, fetch_ticks
+from mtdata.services.data_service.candles import _build_rates_df, _trim_df_to_target
 
 from ._helpers import (
     _CACHED_INFO,

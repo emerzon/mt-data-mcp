@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from mtdata.services import data_service
+from mtdata.services.data_service import ticks as data_service
 
 
 def test_json_safe_payload_skips_pandas_checks_for_plain_scalars(monkeypatch) -> None:

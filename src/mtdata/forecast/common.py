@@ -13,7 +13,7 @@ import holidays
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import (
+from ..services.data_service.candles import (
     _is_last_bar_forming,
     _parse_candle_calendar_bound,
     _trim_calendar_bars_to_session_dates,

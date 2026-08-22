@@ -32,7 +32,7 @@ def test_normalize_finviz_equity_symbol(broker_symbol: str, expected: str) -> No
 
 
 def test_finviz_fundamental_percent_units_are_explicit() -> None:
-    from mtdata.core.finviz import _finviz_fundamental_units
+    from mtdata.core.finviz.fundamentals import _finviz_fundamental_units
 
     assert _finviz_fundamental_units({"change_pct": 1.2}) == {
         "change_pct": "percent (1.0 = 1%)"
@@ -40,7 +40,7 @@ def test_finviz_fundamental_percent_units_are_explicit() -> None:
 
 
 def test_finviz_numeric_percent_values_scale_above_one_hundred_percent() -> None:
-    from mtdata.core.finviz import _finviz_percent_value
+    from mtdata.core.finviz.common import _finviz_percent_value
 
     assert _finviz_percent_value(5.1702) == 517.02
     assert _finviz_percent_value("517.02%") == 517.02
@@ -49,7 +49,7 @@ def test_finviz_numeric_percent_values_scale_above_one_hundred_percent() -> None
 def test_finviz_intraday_news_time_is_localized_from_new_york() -> None:
     from datetime import datetime, timezone
 
-    from mtdata.core.finviz import _normalize_finviz_published_at
+    from mtdata.core.finviz.news import _normalize_finviz_published_at
 
     now = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
     assert _normalize_finviz_published_at("05:30AM", now=now) == (
@@ -860,7 +860,7 @@ class TestFinvizService:
         assert "Merged 1 duplicate" in first_page["warnings"][0]
 
     def test_calendar_conflict_keys_are_normalized_for_public_rows(self):
-        from mtdata.core.finviz import _normalize_finviz_calendar_payload
+        from mtdata.core.finviz.calendar import _normalize_finviz_calendar_payload
 
         result = _normalize_finviz_calendar_payload(
             {
@@ -1606,7 +1606,7 @@ class TestFinvizTools:
         assert isinstance(result.get("request_id"), str)
 
     def test_finviz_equity_symbol_normalization_strips_mt5_suffixes(self):
-        from mtdata.core.finviz import _normalize_equity_symbol
+        from mtdata.core.finviz.common import _normalize_equity_symbol
 
         for raw_symbol, finviz_symbol in (
             ("AAPL.NAS", "AAPL"),
@@ -1949,7 +1949,7 @@ class TestFinvizTools:
         assert "missing_fields" not in duplicates
 
     def test_finviz_screen_normalizes_actual_percent_column_aliases(self):
-        from mtdata.core.finviz import (
+        from mtdata.core.finviz.common import (
             _canonicalize_finviz_market_row,
             _finviz_screen_units_for_rows,
             _normalize_finviz_output_key,
@@ -2479,7 +2479,7 @@ class TestFinvizTools:
     def test_finviz_earnings_yearless_dates_follow_period_across_new_year(self):
         from datetime import date
 
-        from mtdata.core.finviz import _normalize_finviz_earnings_rows
+        from mtdata.core.finviz.calendar import _normalize_finviz_earnings_rows
 
         next_week = _normalize_finviz_earnings_rows(
             [{"Earnings": "Jan 02/a"}],
@@ -2795,7 +2795,7 @@ class TestFinvizTools:
         )
 
     def test_finviz_screen_normalizes_roic_and_declares_units(self):
-        from mtdata.core.finviz import (
+        from mtdata.core.finviz.common import (
             _canonicalize_finviz_market_row,
             _finviz_screen_units_for_rows,
         )
@@ -2862,7 +2862,7 @@ class TestFinvizTools:
         ]
 
     def test_finviz_screen_valuation_numeric_contract_handles_nulls(self):
-        from mtdata.core.finviz import (
+        from mtdata.core.finviz.common import (
             _canonicalize_finviz_market_row,
             _compact_finviz_screen_row,
             _normalize_finviz_screen_numeric_fields,

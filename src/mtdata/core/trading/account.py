@@ -42,7 +42,8 @@ from . import comments, safety, validation
 from .gateway import create_trading_gateway
 from .positions import normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
-from .use_cases import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS, run_trade_history
+from .use_cases import run_trade_history
+from .use_cases.history import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS
 
 logger = logging.getLogger(__name__)
 

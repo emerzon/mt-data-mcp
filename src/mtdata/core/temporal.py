@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from pydantic import Field
 
-from ..services.data_service import _parse_candle_calendar_bound
+from ..services.data_service.candles import _parse_candle_calendar_bound
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_fx_session_symbol

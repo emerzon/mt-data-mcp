@@ -198,7 +198,7 @@ max-complexity = 25
 "src/mtdata/core/schema_attach.py" = ["B023"]
 "src/mtdata/utils/indicators.py" = ["B023"]
 "src/mtdata/services/data_service/*.py" = ["F401"]
-"src/mtdata/services/data_service/__init__.py" = ["F401", "I001"]
+
 "src/mtdata/forecast/barriers_shared.py" = ["F401"]
 "src/mtdata/forecast/forecast.py" = ["F401"]
 "src/mtdata/patterns/classic.py" = ["F401"]

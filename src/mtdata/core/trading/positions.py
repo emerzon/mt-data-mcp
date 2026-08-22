@@ -20,11 +20,11 @@ from . import comments, validation
 from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .use_cases import (
-    _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS,
-    _linearized_account_currency_notional,
     run_trade_get_open,
     run_trade_get_pending,
 )
+from .use_cases.common import _linearized_account_currency_notional
+from .use_cases.history import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS
 
 logger = logging.getLogger(__name__)
 

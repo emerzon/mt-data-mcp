@@ -187,7 +187,7 @@ class TestFetchPatternData:
         mock_datetime.now.return_value = datetime(2024, 1, 9, 7, 30, tzinfo=timezone.utc)
 
         with patch(
-            "mtdata.services.data_service._resolve_live_bar_reference_epoch",
+            "mtdata.services.data_service.candles._resolve_live_bar_reference_epoch",
             return_value=float(mock_rates.return_value[-1].time) + 1800.0,
         ):
             df, err = self._call("EURUSD", "H1", 100)
@@ -208,7 +208,7 @@ class TestFetchPatternData:
         live_bar_reference_epoch = float(rates_df["time"].iloc[-1] + 120)
 
         with patch(
-            "mtdata.services.data_service._resolve_live_bar_reference_epoch",
+            "mtdata.services.data_service.candles._resolve_live_bar_reference_epoch",
             return_value=live_bar_reference_epoch,
         ):
             df, err = self._call("EURUSD", "H1", 200)

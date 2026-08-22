@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
+from mtdata.core.finviz.common import _normalize_finviz_market_payload
 from mtdata.core.finviz import (
-    _normalize_finviz_market_payload,
     finviz_calendar,
     finviz_earnings,
     finviz_filters_list,
@@ -557,7 +557,7 @@ class TestFinvizCalendarOutputContract:
     def test_calendar_earnings_session_markers_are_not_exact_instants(
         self, provider_time, expected_timing
     ):
-        from mtdata.core.finviz import _normalize_finviz_earnings_calendar_time
+        from mtdata.core.finviz.calendar import _normalize_finviz_earnings_calendar_time
 
         result = _normalize_finviz_earnings_calendar_time(
             {"earnings_date": provider_time, "symbol": "TEST"}
@@ -570,7 +570,7 @@ class TestFinvizCalendarOutputContract:
         assert "local_time" not in result
 
     def test_calendar_earnings_non_session_time_remains_exact(self):
-        from mtdata.core.finviz import _normalize_finviz_earnings_calendar_time
+        from mtdata.core.finviz.calendar import _normalize_finviz_earnings_calendar_time
 
         result = _normalize_finviz_earnings_calendar_time(
             {"earnings_date": "2026-04-29T10:15:00", "symbol": "TEST"}
@@ -580,7 +580,7 @@ class TestFinvizCalendarOutputContract:
         assert result["event_time_precision"] == "exact"
 
     def test_calendar_reference_label_is_not_shifted_as_a_utc_instant(self):
-        from mtdata.core.finviz import _normalize_finviz_calendar_payload
+        from mtdata.core.finviz.calendar import _normalize_finviz_calendar_payload
 
         result = _normalize_finviz_calendar_payload(
             {
@@ -1349,7 +1349,7 @@ class TestFinvizProgressiveDisclosure:
 
 
 def test_finviz_description_compact_truncates_long_text():
-    from mtdata.core.finviz import _apply_finviz_description_detail
+    from mtdata.core.finviz.fundamentals import _apply_finviz_description_detail
     long_text = 'A. ' + 'word ' * 300
     compact = _apply_finviz_description_detail(
         {'success': True, 'symbol': 'AAPL', 'description': long_text}, detail='compact'

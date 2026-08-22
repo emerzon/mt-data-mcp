@@ -32,7 +32,7 @@ from mtdata.core.trading.use_cases.common import (
     _validate_trading_symbol,
     logger,
 )
-from mtdata.services.data_service import _is_last_bar_forming
+from mtdata.services.data_service.candles import _is_last_bar_forming
 from mtdata.shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
 from mtdata.shared.market_units import price_delta_ticks
 from mtdata.shared.validators import invalid_timeframe_error

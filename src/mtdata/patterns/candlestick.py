@@ -809,7 +809,7 @@ def detect_candlestick_patterns(  # noqa: C901
         return {"error": "No candle data available"}
 
     df = _rates_to_df(rates)
-    from ..services.data_service import _resolve_live_bar_reference_epoch
+    from ..services.data_service.candles import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
     if should_drop_last_live_bar(

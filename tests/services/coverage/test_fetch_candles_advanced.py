@@ -218,7 +218,7 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
             return ["TEST"]
 
         with patch(f"{_DS}._apply_ta_indicators", side_effect=apply_indicator):
-            columns = data_service._apply_indicator_stage(
+            columns = data_service.candles._apply_indicator_stage(
                 df,
                 [],
                 "test",

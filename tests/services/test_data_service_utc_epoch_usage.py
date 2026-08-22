@@ -17,7 +17,7 @@ def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
     ) as mock_epoch:
         mock_parse.side_effect = [datetime(2025, 1, 1, 0, 0), datetime(2025, 1, 1, 1, 0)]
         mock_epoch.side_effect = [150.0, 250.0]
-        out = data_service._trim_df_to_target(df, "2025-01-01 00:00", "2025-01-01 01:00", candles=100)
+        out = data_service.candles._trim_df_to_target(df, "2025-01-01 00:00", "2025-01-01 01:00", candles=100)
 
     assert mock_epoch.call_count == 2
     # End bound is inclusive: epochs in [150, 250] are kept.
@@ -32,7 +32,7 @@ def test_trim_df_to_target_includes_entire_date_only_end() -> None:
     ]
     df = pd.DataFrame({"__epoch": epochs, "close": [1.0, 2.0, 3.0]})
 
-    out = data_service._trim_df_to_target(
+    out = data_service.candles._trim_df_to_target(
         df,
         "2025-01-01",
         "2025-01-01",
@@ -52,7 +52,7 @@ def test_trim_df_to_target_uses_bar_close_time_for_historical_end() -> None:
         }
     )
 
-    out = data_service._trim_df_to_target(
+    out = data_service.candles._trim_df_to_target(
         df,
         None,
         "2025-01-01 12:30",
@@ -69,7 +69,7 @@ def test_trim_df_to_target_excludes_bar_opening_at_equal_bounds() -> None:
     epoch = pd.Timestamp("2025-01-01 12:00", tz="UTC").timestamp()
     df = pd.DataFrame({"__epoch": [epoch], "close": [1.1]})
 
-    out = data_service._trim_df_to_target(
+    out = data_service.candles._trim_df_to_target(
         df,
         "2025-01-01 12:00",
         "2025-01-01 12:00",
@@ -84,7 +84,7 @@ def test_trim_df_to_target_includes_bar_closing_at_end_bound() -> None:
     epoch = pd.Timestamp("2025-01-01 11:00", tz="UTC").timestamp()
     df = pd.DataFrame({"__epoch": [epoch], "close": [1.1]})
 
-    out = data_service._trim_df_to_target(
+    out = data_service.candles._trim_df_to_target(
         df,
         "2025-01-01 11:00",
         "2025-01-01 12:00",
@@ -108,11 +108,11 @@ def test_trim_daily_date_only_range_uses_broker_session_date() -> None:
     )
 
     with patch.object(
-        data_service.mt5_config,
+        data_service.candles.mt5_config,
         "get_server_tz",
         return_value=ZoneInfo("Europe/Nicosia"),
     ):
-        out = data_service._trim_df_to_target(
+        out = data_service.candles._trim_df_to_target(
             df,
             "2026-08-11",
             "2026-08-11",
@@ -133,10 +133,10 @@ def test_daily_date_only_provider_range_starts_at_broker_session_open() -> None:
         return [{"time": expected_open.timestamp()}]
 
     with (
-        patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
+        patch.object(data_service.candles.mt5_config, "get_server_tz", return_value=broker_tz),
         patch.object(data_service.candles, "_mt5_copy_rates_range", side_effect=copy_rates),
     ):
-        rates, error = data_service._fetch_rates_with_warmup(
+        rates, error = data_service.candles._fetch_rates_with_warmup(
             symbol="EURUSD",
             mt5_timeframe=1,
             timeframe="D1",
@@ -159,11 +159,11 @@ def test_daily_date_only_provider_range_starts_at_broker_session_open() -> None:
 
 def test_higher_timeframe_query_metadata_echoes_broker_session_bounds() -> None:
     with patch.object(
-        data_service.mt5_config,
+        data_service.candles.mt5_config,
         "get_server_tz",
         return_value=ZoneInfo("Europe/Nicosia"),
     ):
-        query = data_service._candle_query_applied(
+        query = data_service.candles._candle_query_applied(
             timeframe="D1",
             start="2026-08-13",
             end="2026-08-13",
@@ -179,11 +179,11 @@ def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
     import pytz
 
     with patch.object(
-        data_service.mt5_config,
+        data_service.candles.mt5_config,
         "get_server_tz",
         return_value=pytz.timezone("Europe/Nicosia"),
     ):
-        query = data_service._candle_query_applied(
+        query = data_service.candles._candle_query_applied(
             timeframe="D1",
             start="2026-08-10",
             end="2026-08-13",
@@ -195,9 +195,9 @@ def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
 
 
 def test_daily_date_only_bounds_fail_without_broker_timezone() -> None:
-    with patch.object(data_service.mt5_config, "get_server_tz", return_value=None):
-        data_service.mt5_config.time_offset_minutes = 0
-        parsed, error = data_service._parse_fetch_datetime_arg(
+    with patch.object(data_service.candles.mt5_config, "get_server_tz", return_value=None):
+        data_service.candles.mt5_config.time_offset_minutes = 0
+        parsed, error = data_service.candles._parse_fetch_datetime_arg(
             "2026-08-13",
             timeframe="D1",
         )
@@ -218,13 +218,13 @@ def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
 
     with (
         patch.object(data_service.candles, "datetime", FixedDateTime),
-        patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
+        patch.object(data_service.candles.mt5_config, "get_server_tz", return_value=broker_tz),
     ):
-        week_start, week_error = data_service._parse_fetch_datetime_arg(
+        week_start, week_error = data_service.candles._parse_fetch_datetime_arg(
             "this week",
             timeframe="W1",
         )
-        month_start, month_error = data_service._parse_fetch_datetime_arg(
+        month_start, month_error = data_service.candles._parse_fetch_datetime_arg(
             "2026-08-01",
             timeframe="MN1",
         )
@@ -261,9 +261,9 @@ def test_trim_weekly_and_monthly_date_only_ranges_match_containing_period() -> N
             }
         )
         with patch.object(
-            data_service.mt5_config, "get_server_tz", return_value=broker_tz
+            data_service.candles.mt5_config, "get_server_tz", return_value=broker_tz
         ):
-            out = data_service._trim_df_to_target(
+            out = data_service.candles._trim_df_to_target(
                 df,
                 requested_date,
                 requested_date,
@@ -279,7 +279,7 @@ def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
         "mtdata.services.data_service.candles._utc_epoch_seconds", return_value=1000.0
     ) as mock_epoch, patch("mtdata.services.data_service.candles._mt5_copy_rates_range", return_value=rates):
         mock_parse.side_effect = [datetime(2025, 1, 1, 0, 0), datetime(2025, 1, 1, 1, 0)]
-        out_rates, out_err = data_service._fetch_rates_with_warmup(
+        out_rates, out_err = data_service.candles._fetch_rates_with_warmup(
             symbol="EURUSD",
             mt5_timeframe=1,
             timeframe="H1",
@@ -310,12 +310,12 @@ def test_weekly_range_safety_budget_does_not_overflow_datetime() -> None:
             side_effect=_copy_rates,
         ),
         patch.object(
-            data_service.mt5_config,
+            data_service.candles.mt5_config,
             "get_server_tz",
             return_value=ZoneInfo("Europe/Nicosia"),
         ),
     ):
-        out_rates, out_err = data_service._fetch_rates_with_warmup(
+        out_rates, out_err = data_service.candles._fetch_rates_with_warmup(
             symbol="EURUSD",
             mt5_timeframe=1,
             timeframe="W1",
@@ -357,10 +357,10 @@ def test_fetch_candles_exposes_time_normalization_metadata() -> None:
         "mtdata.services.data_service.candles._resolve_client_tz",
         return_value=None,
     ), patch(
-        "mtdata.services.data_service.mt5_config.server_tz_name",
+        "mtdata.services.data_service.candles.mt5_config.server_tz_name",
         "Europe/Nicosia",
     ), patch(
-        "mtdata.services.data_service.mt5_config.time_offset_minutes",
+        "mtdata.services.data_service.candles.mt5_config.time_offset_minutes",
         0,
     ):
         result = data_service.fetch_candles(

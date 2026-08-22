@@ -1,4 +1,4 @@
-from mtdata.core.causal import _compact_causal_pair_rows
+from mtdata.core.causal.discover import _compact_causal_pair_rows
 
 
 def test_compact_causal_pair_rows_keeps_near_miss_test_context() -> None:

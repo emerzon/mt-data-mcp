@@ -14,7 +14,7 @@ from pydantic import Field
 from scipy.signal import find_peaks, periodogram
 
 from ..forecast.common import bars_per_year, observed_bars_per_session
-from ..services.data_service import _is_last_bar_forming
+from ..services.data_service.candles import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol

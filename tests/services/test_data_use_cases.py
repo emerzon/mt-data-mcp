@@ -1459,7 +1459,7 @@ def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
 
 
 def test_live_spread_reference_uses_reconciled_tick_stream(monkeypatch) -> None:
-    from mtdata.services import data_service
+    from mtdata.services.data_service import ticks as data_service
 
     now = 1_700_000_100.0
     monkeypatch.setattr(data_service.time, "time", lambda: now)
@@ -1494,7 +1494,7 @@ def test_live_spread_reference_uses_reconciled_tick_stream(monkeypatch) -> None:
 
 
 def test_live_spread_reference_omits_locked_quote(monkeypatch) -> None:
-    from mtdata.services import data_service
+    from mtdata.services.data_service import ticks as data_service
 
     now = 1_700_000_100.0
     locked = SimpleNamespace(time=now - 1.0, bid=1.1, ask=1.1)

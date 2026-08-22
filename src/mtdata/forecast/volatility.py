@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterator, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import _is_last_bar_forming
+from ..services.data_service.candles import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import (

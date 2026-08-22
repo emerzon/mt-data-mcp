@@ -3,15 +3,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.core.causal import (
-    _TRANSFORM_LEGEND,
+from mtdata.core.causal.cointegration import (
     _build_cointegration_summary,
-    _build_correlation_matrix,
-    _build_correlation_summary,
     _cointegration_pair_sort_key,
     _evaluate_cointegration_pair,
     _fit_cointegration_hedge,
-    _format_summary,
+)
+from mtdata.core.causal.common import (
+    _TRANSFORM_LEGEND,
     _limit_pair_rows,
     _normalize_cointegration_transform,
     _normalize_cointegration_trend,
@@ -20,12 +19,17 @@ from mtdata.core.causal import (
     _pair_transform_comparability,
     _pair_transform_guidance,
     _parse_symbols,
-    _rank_correlation_pairs,
     _standardize_frame,
     _transform_aligned_pair,
     _transform_cointegration_frame,
     _transform_frame,
 )
+from mtdata.core.causal.correlation import (
+    _build_correlation_matrix,
+    _build_correlation_summary,
+    _rank_correlation_pairs,
+)
+from mtdata.core.causal.discover import _format_summary
 from mtdata.core.output_contract import related_tools_for
 
 

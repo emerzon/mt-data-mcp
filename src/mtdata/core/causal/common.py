@@ -12,7 +12,7 @@ import pandas as pd
 
 from mtdata.core.mt5_gateway import create_mt5_gateway, mt5_connection_error
 from mtdata.core.output_contract import build_pagination_meta
-from mtdata.services.data_service import _parse_candle_calendar_bound
+from mtdata.services.data_service.candles import _parse_candle_calendar_bound
 from mtdata.shared.constants import (
     TIME_DISPLAY_FORMAT,
     TIMEFRAME_MAP,
