@@ -2284,8 +2284,8 @@ def fetch_candles(  # noqa: C901
                         if str(timeframe).upper() == "D1":
                             row["broker_trading_day"] = session_date
                     payload["broker_timezone"] = (
-                        getattr(broker_tz, "zone", None)
-                        or getattr(broker_tz, "key", None)
+                        getattr(broker_tz, "key", None)
+                        or getattr(broker_tz, "zone", None)
                         or str(broker_tz)
                     )
         source_rows_excluded = max(0, candles_requested - source_rows_returned)

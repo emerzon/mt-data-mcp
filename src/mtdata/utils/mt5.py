@@ -850,11 +850,7 @@ def _server_epoch_to_utc(epoch_seconds: float) -> float:
 
     local_naive = datetime(1970, 1, 1) + timedelta(seconds=float(epoch_seconds))
     try:
-        localize = getattr(server_tz, "localize", None)
-        if callable(localize):
-            local_aware = localize(local_naive, is_dst=False)
-        else:
-            local_aware = local_naive.replace(tzinfo=server_tz, fold=1)
+        local_aware = local_naive.replace(tzinfo=server_tz, fold=1)
         return local_aware.astimezone(timezone.utc).timestamp()
     except Exception:
         offset_seconds = _configured_server_offset_seconds(float(epoch_seconds))

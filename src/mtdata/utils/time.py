@@ -59,14 +59,8 @@ def _broker_calendar_timezone(at_time: datetime):
 
 
 def _localize_broker_calendar_time(broker_tz: Any, value: datetime) -> datetime:
-    localize = getattr(broker_tz, "localize", None)
-    if callable(localize):
-        try:
-            return localize(value, is_dst=None)
-        except Exception as exc:
-            if type(exc).__name__ not in {"AmbiguousTimeError", "NonExistentTimeError"}:
-                raise
-            return localize(value, is_dst=False)
+    if value.tzinfo is not None:
+        return value
     return value.replace(tzinfo=broker_tz)
 
 

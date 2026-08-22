@@ -96,10 +96,10 @@ def test_sleep_until_next_candle_returns_expected_wait(utc_server_clock) -> None
     assert payload["next_candle_close_utc"] == "2026-03-13T10:05:00+00:00"
 
 
-def test_next_candle_wait_payload_handles_pytz_dst_gap(monkeypatch) -> None:
-    pytz = pytest.importorskip("pytz")
+def test_next_candle_wait_payload_handles_dst_gap(monkeypatch) -> None:
+    from zoneinfo import ZoneInfo
 
-    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: ZoneInfo("Europe/Nicosia"))
     monkeypatch.setattr(time.mt5_config, "get_time_offset_seconds", lambda: 7200)
     monkeypatch.setattr(time.mt5_config, "server_tz_name", "Europe/Nicosia")
 

@@ -176,13 +176,11 @@ def test_higher_timeframe_query_metadata_echoes_broker_session_bounds() -> None:
     assert query["resolved_end"] == "2026-08-13T20:59:59.999999Z"
 
 
-def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
-    import pytz
-
+def test_daily_date_bounds_localize_named_zone_without_lmt_shift() -> None:
     with patch.object(
         data_service.candles.mt5_config,
         "get_server_tz",
-        return_value=pytz.timezone("Europe/Nicosia"),
+        return_value=ZoneInfo("Europe/Nicosia"),
     ):
         query = data_service.candles._candle_query_applied(
             timeframe="D1",

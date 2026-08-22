@@ -1378,11 +1378,12 @@ def test_run_wait_event_respects_boundary_when_live_state_changes_after_overslee
     assert result["matched_event"] is None
     assert result["boundary_event"]["type"] == "candle_close"
 
-def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
-    pytz = pytest.importorskip("pytz")
+def test_run_wait_event_waits_across_dst_gap(monkeypatch) -> None:
+    from zoneinfo import ZoneInfo
+
     from mtdata.core.trading import time
 
-    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: pytz.timezone("Europe/Nicosia"))
+    monkeypatch.setattr(time.mt5_config, "get_server_tz", lambda: ZoneInfo("Europe/Nicosia"))
     monkeypatch.setattr(time.mt5_config, "get_time_offset_seconds", lambda: 7200)
     monkeypatch.setattr(time.mt5_config, "server_tz_name", "Europe/Nicosia")
 

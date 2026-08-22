@@ -89,9 +89,6 @@ def test_normalize_pending_expiration_none_is_not_explicit() -> None:
 
 
 def test_normalize_pending_expiration_preserves_absolute_epoch_with_server_tz() -> None:
-    if getattr(mt5_config_module, "pytz", None) is None:
-        pytest.skip("pytz is not available")
-
     original = _with_clean_tz_config()
     try:
         mt5_config.server_tz_name = "Europe/Athens"
@@ -114,9 +111,6 @@ def test_relative_expiration_base_uses_utc_without_client_timezone() -> None:
 
 
 def test_relative_expiration_base_uses_configured_client_timezone() -> None:
-    if getattr(mt5_config_module, "pytz", None) is None:
-        pytest.skip("pytz is not available")
-
     original = _with_clean_tz_config()
     try:
         mt5_config.client_tz_name = "America/New_York"

@@ -145,7 +145,7 @@ def _safe_tz_name(value: Any) -> Optional[str]:
     if isinstance(value, str):
         text = value.strip()
         return text or None
-    name = getattr(value, "zone", None) or getattr(value, "key", None)
+    name = getattr(value, "key", None) or getattr(value, "zone", None)
     if isinstance(name, str):
         text = name.strip()
         return text or None
@@ -256,7 +256,12 @@ def display_timezone_label(
 
             resolve_client_tz = default_resolver
         client_tz = resolve_client_tz()
-        return str(getattr(client_tz, "zone", None) or client_tz or fallback)
+        return str(
+            getattr(client_tz, "key", None)
+            or getattr(client_tz, "zone", None)
+            or client_tz
+            or fallback
+        )
     except Exception:
         return fallback
 

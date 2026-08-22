@@ -1,29 +1,9 @@
 import sys
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from mtdata.bootstrap import settings as cfg
-
-
-class _FixedOffsetTZ(tzinfo):
-    def __init__(self, hours):
-        self._delta = timedelta(hours=hours)
-
-    def utcoffset(self, dt):
-        return self._delta
-
-    def dst(self, dt):
-        return timedelta(0)
-
-
-class _FakePytz:
-    def timezone(self, name):
-        if name == "bad/tz":
-            raise ValueError("invalid tz")
-        if name == "client/three":
-            return _FixedOffsetTZ(3)
-        return _FixedOffsetTZ(2)
 
 
 def test_mt5_config_credentials_and_login_parsing(monkeypatch):
@@ -31,7 +11,7 @@ def test_mt5_config_credentials_and_login_parsing(monkeypatch):
     monkeypatch.setenv("MT5_PASSWORD", "secret")
     monkeypatch.setenv("MT5_SERVER", "Demo-Server")
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 
@@ -46,7 +26,7 @@ def test_mt5_config_ignores_invalid_login_and_warns(monkeypatch, caplog):
     monkeypatch.setenv("MT5_PASSWORD", "secret")
     monkeypatch.setenv("MT5_SERVER", "Demo-Server")
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     with caplog.at_level("WARNING"):
         conf = cfg.MT5Config()
@@ -59,7 +39,7 @@ def test_mt5_config_ignores_invalid_login_and_warns(monkeypatch, caplog):
 def test_mt5_config_allows_timezone_info_to_be_missing(monkeypatch, caplog):
     monkeypatch.delenv("MT5_SERVER_TZ", raising=False)
     monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     with caplog.at_level("WARNING", logger="mtdata.bootstrap.settings"):
         cfg.MT5Config()
@@ -74,7 +54,7 @@ def test_mt5_config_allows_timezone_info_to_be_missing(monkeypatch, caplog):
 def test_get_time_offset_seconds_prefers_explicit_minutes(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "90")
     monkeypatch.setenv("MT5_SERVER_TZ", "any/tz")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
     monkeypatch.setattr(cfg, "_WARNED_STATIC_OFFSET_OVERRIDE", False)
 
     conf = cfg.MT5Config()
@@ -85,7 +65,7 @@ def test_get_time_offset_seconds_prefers_explicit_minutes(monkeypatch):
 def test_get_time_offset_seconds_warns_when_static_offset_overrides_timezone(monkeypatch, caplog):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "90")
     monkeypatch.setenv("MT5_SERVER_TZ", "Europe/Athens")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
     monkeypatch.setattr(cfg, "_WARNED_STATIC_OFFSET_OVERRIDE", False)
 
     conf = cfg.MT5Config()
@@ -104,25 +84,21 @@ def test_get_time_offset_seconds_warns_when_static_offset_overrides_timezone(mon
 
 def test_get_time_offset_seconds_uses_server_timezone_when_offset_zero(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
-    monkeypatch.setenv("MT5_SERVER_TZ", "server/two")
-    monkeypatch.setattr(cfg, "pytz", _FakePytz())
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setenv("MT5_SERVER_TZ", "Europe/Athens")
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
+    winter = datetime(2024, 1, 15, 12, 0, tzinfo=timezone.utc)
 
-    assert conf.get_time_offset_seconds() == 7200
-    assert conf.get_server_tz() is not None
+    assert conf.get_time_offset_seconds(at_time=winter) == 7200
+    assert isinstance(conf.get_server_tz(), ZoneInfo)
+    assert str(conf.get_server_tz()) == "Europe/Athens"
 
 
 def test_get_time_offset_seconds_uses_historical_offset_for_requested_instant(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MT5_SERVER_TZ", "Europe/Athens")
-    monkeypatch.setattr(
-        cfg,
-        "pytz",
-        SimpleNamespace(timezone=lambda name: ZoneInfo(name)),
-    )
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 
@@ -139,8 +115,7 @@ def test_mt5_config_handles_invalid_offset_and_bad_timezone(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "not-a-number")
     monkeypatch.setenv("MT5_SERVER_TZ", "bad/tz")
     monkeypatch.setenv("CLIENT_TZ", "bad/tz")
-    monkeypatch.setattr(cfg, "pytz", _FakePytz())
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 
@@ -155,7 +130,7 @@ def test_mt5_config_autodetects_client_timezone_when_env_unset(monkeypatch):
     monkeypatch.delenv("CLIENT_TZ", raising=False)
     monkeypatch.delenv("MT5_CLIENT_TZ", raising=False)
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
     monkeypatch.setattr(cfg, "_detect_local_client_tz", lambda: sentinel_tz)
 
     conf = cfg.MT5Config()
@@ -175,7 +150,7 @@ def test_detect_local_client_tz_prefers_tzlocal(monkeypatch):
 def test_mt5_config_handles_invalid_timeout_with_warning(monkeypatch, caplog):
     monkeypatch.setenv("MT5_TIMEOUT", "not-a-number")
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     with caplog.at_level("WARNING"):
         conf = cfg.MT5Config()
@@ -188,7 +163,7 @@ def test_mt5_config_reads_broker_time_check_settings(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "true")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "300")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 
@@ -199,7 +174,7 @@ def test_mt5_config_reads_broker_time_check_settings(monkeypatch):
 def test_mt5_config_reads_order_magic_setting(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MTDATA_ORDER_MAGIC", "345678")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 
@@ -210,7 +185,7 @@ def test_mt5_config_handles_invalid_broker_time_check_ttl(monkeypatch):
     monkeypatch.setenv("MT5_TIME_OFFSET_MINUTES", "0")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK", "off")
     monkeypatch.setenv("MTDATA_BROKER_TIME_CHECK_TTL_SECONDS", "bad")
-    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
+    monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False, raising=False)
 
     conf = cfg.MT5Config()
 

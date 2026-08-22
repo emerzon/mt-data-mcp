@@ -2,6 +2,7 @@ import importlib.util
 import sys
 import warnings
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -198,7 +199,7 @@ def test_vwap_uses_utc_epoch_and_resets_on_broker_day(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "mtdata.bootstrap.settings.mt5_config.get_server_tz",
-        lambda: __import__("pytz").timezone("Europe/Nicosia"),
+        lambda: ZoneInfo("Europe/Nicosia"),
     )
 
     _apply_ta_indicators(df, "vwap")
@@ -222,7 +223,7 @@ def test_vwap_resets_at_broker_midnight_not_utc_midnight(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "mtdata.bootstrap.settings.mt5_config.get_server_tz",
-        lambda: __import__("pytz").timezone("Europe/Nicosia"),
+        lambda: ZoneInfo("Europe/Nicosia"),
     )
 
     with warnings.catch_warnings(record=True) as caught:

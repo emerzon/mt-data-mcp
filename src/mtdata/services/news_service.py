@@ -294,7 +294,7 @@ def _parse_news_filter_datetime(value: str, client_tz: Any = None) -> datetime:
         return dt.astimezone(timezone.utc)
     if client_tz is not None:
         try:
-            aware = client_tz.localize(dt) if hasattr(client_tz, "localize") else dt.replace(tzinfo=client_tz)
+            aware = dt.replace(tzinfo=client_tz)
             return aware.astimezone(timezone.utc)
         except Exception:
             pass

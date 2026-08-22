@@ -6,13 +6,9 @@ import threading
 import warnings
 from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .env import get_bool_env
-
-try:
-    import pytz  # type: ignore
-except Exception:
-    pytz = None  # optional
 
 try:
     from dateutil import tz as dateutil_tz  # type: ignore
@@ -28,6 +24,15 @@ _WARNED_STATIC_OFFSET_OVERRIDE = False
 _ENV_LOADED = False
 _ENV_LOAD_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
+
+
+def _zoneinfo_from_name(name: Optional[str]):
+    if not name:
+        return None
+    try:
+        return ZoneInfo(str(name))
+    except (ZoneInfoNotFoundError, Exception):
+        return None
 
 
 def _detect_local_client_tz():
@@ -481,9 +486,9 @@ class MT5Config:
             return int(self.time_offset_minutes) * 60
             
         # 2. Derive from MT5_SERVER_TZ if available
-        if self.server_tz_name and pytz:
+        tz = self.get_server_tz()
+        if tz is not None:
             try:
-                tz = pytz.timezone(self.server_tz_name)
                 reference_time = at_time
                 if reference_time is None:
                     reference_time = datetime.now(timezone.utc)
@@ -491,30 +496,23 @@ class MT5Config:
                     reference_time = reference_time.replace(tzinfo=timezone.utc)
                 else:
                     reference_time = reference_time.astimezone(timezone.utc)
-                return int(reference_time.astimezone(tz).utcoffset().total_seconds())
+                offset = reference_time.astimezone(tz).utcoffset()
+                if offset is None:
+                    return 0
+                return int(offset.total_seconds())
             except Exception:
                 pass
-                
+
         return 0
 
     def get_server_tz(self):
-        """Return a pytz timezone for the MT5 server, if configured and pytz is available."""
-        try:
-            if pytz and self.server_tz_name:
-                return pytz.timezone(self.server_tz_name)
-        except Exception:
-            return None
-        return None
+        """Return a ZoneInfo timezone for the MT5 server, if configured."""
+        return _zoneinfo_from_name(self.server_tz_name)
 
     def get_client_tz(self):
         """Return the client timezone from config or local autodetection."""
-        try:
-            if self.client_tz_name:
-                if pytz:
-                    return pytz.timezone(self.client_tz_name)
-                return None
-        except Exception:
-            return None
+        if self.client_tz_name:
+            return _zoneinfo_from_name(self.client_tz_name)
         return _detect_local_client_tz()
 
 
