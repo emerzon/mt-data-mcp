@@ -16,17 +16,17 @@ dependencies = [
     # MCP 2 removed mcp.server.fastmcp (renamed to MCPServer).
     "mcp>=1.29.0,<2",
     "typing-extensions>=4.16.0",
-    "python-dotenv>=1.2.2",
+    "python-dotenv>=1.2.3",
     "dateparser>=1.4.2",
     "pytz>=2026.3.post1",
     "tzlocal>=5.4.4",
     # StatsForecast, sktime, and MLForecast still require pandas<3.
     "pandas>=2.3.3,<3",
-    # numpy 2.5+ conflicts with numba 0.66 and sktime 1.1.x.
+    # numpy 2.5+ still blocked by sktime 1.1.x (numba 0.67 allows numpy<2.6).
     "numpy>=2.4.6,<2.5",
     "pandas-ta-classic>=0.6.52",
-    "holidays>=0.102",
-    "scipy>=1.18.0",
+    "holidays>=0.103",
+    "scipy>=1.18.1",
     # sktime 1.1.x still requires scikit-learn<1.8.
     "scikit-learn>=1.7.2,<1.8",
     "hmmlearn>=0.3.3",
@@ -66,7 +66,7 @@ forecast-classical = [
     "lightgbm>=4.7.0",
     "coreforecast>=0.0.18",
     "fugue>=0.9.7",
-    "numba>=0.66.0",
+    "numba>=0.67.0",
     "tsfresh>=0.21.2",
 ]
 forecast-foundation = [
@@ -74,8 +74,8 @@ forecast-foundation = [
     "pillow>=12.3.0",
     "accelerate>=1.14.0",
     "chronos-forecasting>=2.3.1",
-    "transformers>=5.15.0,<6",
-    "huggingface-hub>=1.27.0,<2",
+    "transformers>=5.15.1,<6",
+    "huggingface-hub>=1.28.0,<2",
 ]
 forecast-timesfm = [
     "torch>=2.13.0,<3",
@@ -90,11 +90,11 @@ pattern-search-hnsw = [
 ]
 web = [
     "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.52.4",
 ]
 news-embeddings = [
     "sentence-transformers>=5.7.0,<6",
-    "huggingface-hub>=1.27.0,<2",
+    "huggingface-hub>=1.28.0,<2",
 ]
 news-ycnbc = [
     "ycnbc @ git+https://github.com/codestorm-official/ycnbc.git@d5e50293be499b617edaa10a03467b4184193a4e",
@@ -112,19 +112,19 @@ all = [
     "lightgbm>=4.7.0",
     "coreforecast>=0.0.18",
     "fugue>=0.9.7",
-    "numba>=0.66.0",
+    "numba>=0.67.0",
     "tsfresh>=0.21.2",
     "torch>=2.13.0,<3",
     "pillow>=12.3.0",
     "accelerate>=1.14.0",
     "chronos-forecasting>=2.3.1",
-    "transformers>=5.15.0,<6",
-    "huggingface-hub>=1.27.0,<2",
+    "transformers>=5.15.1,<6",
+    "huggingface-hub>=1.28.0,<2",
     "timesfm[torch]>=2.0.2,<3",
     "tsdownsample>=0.1.5.1",
     "hnswlib==0.8.0",
     "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.52.4",
     "sentence-transformers>=5.7.0,<6",
     "umap-learn>=0.5.12",
 ]
@@ -138,19 +138,19 @@ all-git = [
     "lightgbm>=4.7.0",
     "coreforecast>=0.0.18",
     "fugue>=0.9.7",
-    "numba>=0.66.0",
+    "numba>=0.67.0",
     "tsfresh>=0.21.2",
     "torch>=2.13.0,<3",
     "pillow>=12.3.0",
     "accelerate>=1.14.0",
     "chronos-forecasting>=2.3.1",
-    "transformers>=5.15.0,<6",
-    "huggingface-hub>=1.27.0,<2",
+    "transformers>=5.15.1,<6",
+    "huggingface-hub>=1.28.0,<2",
     "timesfm[torch]>=2.0.2,<3",
     "tsdownsample>=0.1.5.1",
     "hnswlib==0.8.0",
     "fastapi>=0.141.1",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.52.4",
     "sentence-transformers>=5.7.0,<6",
     "umap-learn>=0.5.12",
     "ycnbc @ git+https://github.com/codestorm-official/ycnbc.git@d5e50293be499b617edaa10a03467b4184193a4e",
