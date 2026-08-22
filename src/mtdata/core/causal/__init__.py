@@ -8,14 +8,6 @@ from mtdata.core.causal.correlation import correlation_matrix
 from mtdata.core.causal.cross import cross_correlation
 from mtdata.core.causal.discover import causal_discover_signals
 
-for _tool in (
-    causal_discover_signals,
-    correlation_matrix,
-    cross_correlation,
-    cointegration_test,
-):
-    _tool.__module__ = "mtdata.core.causal"
-
 __all__ = [
     "causal_discover_signals",
     "cointegration",

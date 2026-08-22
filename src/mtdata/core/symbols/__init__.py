@@ -33,9 +33,6 @@ from .scan import (
     symbols_top_markets,
 )
 
-for _tool in (symbols_list, symbols_describe, symbols_top_markets, market_scan):
-    _tool.__module__ = "mtdata.core.symbols"
-
 __all__ = [
     "time",
     "mt5",

@@ -575,6 +575,16 @@ def test_static_command_catalog_matches_registered_tools():
     assert set(available_command_names()) == set(discover_tools())
 
 
+def test_tool_metadata_registry_has_no_private_names():
+    from mtdata.bootstrap.tools import bootstrap_tools
+    from mtdata.core._mcp_tools import _TOOL_METADATA_REGISTRY
+
+    bootstrap_tools()
+
+    private = sorted(name for name in _TOOL_METADATA_REGISTRY if str(name).startswith("_"))
+    assert private == []
+
+
 def test_shell_is_registered_and_has_help(monkeypatch, capsys):
     from mtdata.core.cli import api
 

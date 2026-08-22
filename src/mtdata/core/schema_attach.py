@@ -26,7 +26,7 @@ from ..shared.schema import (
 from ..shared.schema import (
     get_function_info as _get_function_info,
 )
-from ._mcp_tools import get_mcp_registry
+from ._mcp_tools import _is_public_tool_name, get_mcp_registry
 from .cli.parsing.discovery import _COMMAND_PARAM_HELP_OVERRIDES
 
 logger = logging.getLogger(__name__)
@@ -337,7 +337,7 @@ def _iter_manager_tools(mcp: Any) -> Iterable[tuple[str, Any]]:
         return [
             (name, tool)
             for name, tool in tools.items()
-            if str(name or "").strip() and str(name) != "_tool"
+            if _is_public_tool_name(name)
         ]
     return []
 
@@ -705,7 +705,7 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
     attached = 0
     failed = 0
     for name in sorted(set(registry.keys()) | set(manager_tools.keys())):
-        if not str(name or "").strip() or str(name) == "_tool":
+        if not _is_public_tool_name(name):
             continue
         try:
             attached += int(

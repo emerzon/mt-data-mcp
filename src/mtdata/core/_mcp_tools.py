@@ -82,7 +82,7 @@ def _sync_tool_registry_views() -> None:
 
 def _is_public_tool_name(name: Any) -> bool:
     key = str(name or "").strip()
-    return bool(key) and key != "_tool"
+    return bool(key) and not key.startswith("_")
 
 
 def _upsert_tool_registration(
